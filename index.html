@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tanks</title>
+    <meta name="description" content="Realistyczna gra czołgowa 3D w przeglądarce — Three.js + TypeScript" />
+    <link rel="stylesheet" href="./src/ui/styles.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <!-- gunner sight vignette -->
+    <div id="sight-mask" style="display: none"></div>
+
+    <!-- full-screen symbol layer: reticle, gun marker, lead mark (symbols only in the centre zone) -->
+    <svg id="markers" xmlns="http://www.w3.org/2000/svg">
+      <g id="reticle"><path d="M0 -9 L8 6 L-8 6 Z" /></g>
+      <g id="gun-marker" visibility="hidden"><circle r="11" /><path d="M-16 0h-6M16 0h6M0 16v6" /></g>
+      <g id="lead-mark" visibility="hidden"><path d="M0 -9V9" /></g>
+      <g id="target-box" visibility="hidden"><path id="target-box-path" /></g>
+      <path id="mil-scale" visibility="hidden" />
+      <g id="sight-chevron" visibility="hidden"><path d="M-14 10 L0 0 L14 10" /></g>
+      <g id="hit-dir" visibility="hidden"><path id="hit-dir-path" /></g>
+    </svg>
+
+    <!-- HUD anchored to the centred 16:9 area; text lives inside the 90 % title-safe box -->
+    <div id="hud" style="display: none">
+      <div class="safe">
+        <div id="tl" class="zone">
+          <svg id="turret-hull" viewBox="0 0 100 100" aria-label="wieża względem kadłuba">
+            <g id="hull-ind"><rect x="36" y="22" width="28" height="56" rx="3" /><path d="M40 26h20" /></g>
+            <g id="turret-ind"><circle cx="50" cy="52" r="11" /><path d="M50 52V14" /></g>
+          </svg>
+          <div id="speed">0 km/h</div>
+          <div id="perf" style="display: none"></div>
+        </div>
+        <div id="tc" class="zone">
+          <div id="wave"></div>
+          <div id="messages"></div>
+        </div>
+        <div id="tr" class="zone">
+          <div class="row"><span class="lbl">DALMIERZ</span> <span id="range">----</span> <span class="unit">m</span></div>
+          <div id="ammo"></div>
+          <div class="reload"><div id="reload-bar"></div></div>
+          <div id="reload-txt"></div>
+        </div>
+        <div id="bl" class="zone">
+          <canvas id="minimap" width="200" height="200"></canvas>
+        </div>
+        <div id="br" class="zone">
+          <svg id="modules" viewBox="0 0 90 150" aria-label="stan modułów">
+            <rect data-m="trackL" class="mod ok" x="70" y="8" width="12" height="134" rx="3"><title>gąsienica L</title></rect>
+            <rect data-m="trackR" class="mod ok" x="8" y="8" width="12" height="134" rx="3"><title>gąsienica P</title></rect>
+            <rect data-m="fuel" class="mod ok" x="24" y="14" width="18" height="22" rx="2"><title>paliwo</title></rect>
+            <circle data-m="turretDrive" class="mod ok" cx="45" cy="70" r="20"><title>napęd wieży</title></circle>
+            <rect data-m="gun" class="mod ok" x="42" y="4" width="6" height="46" rx="2"><title>działo</title></rect>
+            <rect data-m="ammo" class="mod ok" x="30" y="92" width="30" height="12" rx="2"><title>amunicja</title></rect>
+            <rect data-m="engine" class="mod ok" x="26" y="110" width="38" height="30" rx="3"><title>silnik</title></rect>
+          </svg>
+          <div class="hp"><div id="hp-bar"></div></div>
+          <div id="hp-txt"></div>
+          <div id="fire-ind" style="display: none"></div>
+        </div>
+        <div id="sight-info" style="display: none"></div>
+      </div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <h1>TANKS</h1>
+        <p class="sub">Walka pancerna · Three.js · fizyczne oświetlenie · balistyka punktu materialnego</p>
+        <div id="status"></div>
+        <div class="buttons">
+          <button id="btn-play" disabled>Ładowanie…</button>
+        </div>
+        <div class="settings">
+          <label>Jakość
+            <select id="set-quality"><option value="high">Wysoka</option><option value="low">Niska</option></select>
+          </label>
+          <label>Oświetlenie <select id="set-light"></select></label>
+          <label>Tone mapping
+            <select id="set-tone"><option value="aces">ACES filmic</option><option value="agx">AgX</option></select>
+          </label>
+          <label>Kompensacja ekspozycji <input id="set-ev" type="range" min="-2" max="2" step="0.1" value="0.5" /></label>
+          <label>Czułość myszy <input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" value="1" /></label>
+          <label>Głośność <input id="set-vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
+        </div>
+        <div class="help">
+          <div><b>W S A D</b> jazda · <b>Shift</b> wolno · <b>Spacja</b> hamulec</div>
+          <div><b>Mysz</b> celowanie · <b>LPM</b> strzał · <b>PPM / V</b> celownik działonowego</div>
+          <div><b>Kółko</b> zoom · <b>R</b> dalmierz laserowy (namiar celu) · <b>N</b> termowizja</div>
+          <div><b>1 2 3</b> APFSDS / HEAT / HE · <b>F</b> gaśnica · <b>L</b> reflektory · <b>C</b> wolne rozglądanie</div>
+          <div><b>T</b> pora dnia · <b>O</b> jakość · <b>F3</b> wydajność · <b>Esc</b> pauza</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="gameover" class="overlay" style="display: none">
+      <div class="panel">
+        <h1 id="go-title">CZOŁG ZNISZCZONY</h1>
+        <div id="go-stats"></div>
+        <div class="buttons"><button id="btn-restart">Jeszcze raz</button></div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
