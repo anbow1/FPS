@@ -66,7 +66,6 @@ export class Tank {
   throttle = 0;
   steer = 0;
   readonly aimDir = new THREE.Vector3(0, 0, 1);
-  wantFire = false;
   // turret
   turretYaw = 0;
   gunPitch = 0;
@@ -93,6 +92,15 @@ export class Tank {
   engineVoice: EngineVoice | null = null;
   /** world velocity, for AI lead and FCS */
   readonly velocity = new THREE.Vector3();
+  // render interpolation between fixed steps
+  private readonly prevPos = new THREE.Vector3();
+  private readonly curPos = new THREE.Vector3();
+  private readonly prevQuat = new THREE.Quaternion();
+  private readonly curQuat = new THREE.Quaternion();
+  private prevTurret = 0;
+  private curTurret = 0;
+  private prevGun = 0;
+  private curGun = 0;
   // cook-off turret toss
   turretFlying: { vel: THREE.Vector3; spin: THREE.Vector3; landed: boolean } | null = null;
 
@@ -115,10 +123,6 @@ export class Tank {
     return AMMO[this.loaded ?? this.selected];
   }
 
-  get forward(): THREE.Vector3 {
-    return _v2.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-  }
-
   get mobile(): boolean {
     return this.modules.engine > 0 && this.modules.trackL > 0 && this.modules.trackR > 0;
   }
@@ -132,6 +136,32 @@ export class Tank {
     this.yaw = yaw;
     this.aimDir.set(Math.sin(yaw), 0, Math.cos(yaw));
     this.updatePose(world, 0);
+    this.capture();
+    this.capture();
+  }
+
+  /** Shift current pose to previous and record the pose after this step. */
+  private capture(): void {
+    this.prevPos.copy(this.curPos);
+    this.prevQuat.copy(this.curQuat);
+    this.prevTurret = this.curTurret;
+    this.prevGun = this.curGun;
+    this.curPos.copy(this.model.root.position);
+    this.curQuat.copy(this.model.root.quaternion);
+    this.curTurret = this.turretYaw;
+    this.curGun = this.gunPitch;
+  }
+
+  /** Blend the rendered pose between the last two physics steps (alpha in [0,1]). */
+  interpolate(alpha: number): void {
+    const r = this.model.root;
+    r.position.lerpVectors(this.prevPos, this.curPos, alpha);
+    r.quaternion.slerpQuaternions(this.prevQuat, this.curQuat, alpha);
+    if (!this.turretFlying) {
+      const d = Math.atan2(Math.sin(this.curTurret - this.prevTurret), Math.cos(this.curTurret - this.prevTurret));
+      this.model.turret.rotation.y = this.prevTurret + d * alpha;
+    }
+    this.model.gun.rotation.x = -(this.prevGun + (this.curGun - this.prevGun) * alpha);
   }
 
   selectAmmo(id: AmmoId): void {
@@ -148,10 +178,15 @@ export class Tank {
   // ------------------------------------------------------------------ simulation
 
   step(dt: number, world: World): void {
+    this.stepInner(dt, world);
+    this.capture();
+  }
+
+  private stepInner(dt: number, world: World): void {
     if (!this.alive) {
       const u = this.model.uniforms;
       u.uBurnt.value = Math.min(1, u.uBurnt.value + dt * 0.4);
-      u.uHeatBase.value = Math.max(0.3, u.uHeatBase.value - dt * 0.004);
+      u.uHeatBase.value = Math.max(0.5, u.uHeatBase.value - dt * 0.01);
       u.uHeatEngine.value = 0;
       this.speed *= Math.exp(-dt * 3);
       this.yawRate = 0;
@@ -164,26 +199,27 @@ export class Tank {
     const engine = this.modules.engine <= 0 ? 0 : this.modules.engine < 0.5 ? 0.55 : 1;
     const mobile = this.mobile;
 
-    // --- longitudinal
+    // --- longitudinal: traction- and power-limited drive, grade, rolling resistance, brakes
     const thr = mobile ? this.throttle : 0;
     const want = thr >= 0 ? spec.maxFwd * thr * engine : spec.maxRev * thr * engine;
-    const sinPitch = Math.sin(this.pitch);
-    let a = 0;
-    const sameDir = Math.abs(thr) > 0.05 && (Math.sign(want) === Math.sign(this.speed) || Math.abs(this.speed) < 0.4);
-    if (sameDir) {
-      const drive = Math.min(spec.maxAccel, (spec.powerW * engine) / (spec.mass * Math.max(Math.abs(this.speed), 1.5)));
-      const diff = want - this.speed;
-      a = Math.sign(diff) * Math.min(Math.abs(diff) / dt, drive);
-    } else if (Math.abs(this.speed) > 0.01) {
-      const brake = Math.abs(thr) > 0.05 ? spec.brakeDecel : 1.8;
-      a = -Math.sign(this.speed) * Math.min(brake, Math.abs(this.speed) / dt);
-    }
-    // grade resistance (tracks hold on slopes when braking)
-    if (Math.abs(thr) > 0.05 || Math.abs(sinPitch) > 0.45) a -= GRAVITY * sinPitch * 0.9;
-    a -= Math.sign(this.speed) * 0.25; // rolling resistance
+    const grade = GRAVITY * Math.sin(this.pitch); // resists forward motion uphill
+    const roll = 0.35 * Math.sign(this.speed);
     const prev = this.speed;
-    this.speed += a * dt;
-    if (!sameDir && Math.sign(prev) !== Math.sign(this.speed) && Math.abs(thr) < 0.05) this.speed = 0;
+    const driving = Math.abs(thr) > 0.05 && (Math.sign(want) === Math.sign(this.speed) || Math.abs(this.speed) < 0.5);
+    if (driving) {
+      const driveMax = Math.min(0.75 * GRAVITY, (spec.powerW * engine) / (spec.mass * Math.max(Math.abs(this.speed), 1)));
+      // force needed to reach the demanded speed this step, then limited by traction/power
+      let f = (want - this.speed) / dt + grade + roll;
+      f = Math.max(-driveMax, Math.min(driveMax, f));
+      // comfort limit on the net acceleration (not on the force fighting the slope)
+      const net = Math.max(-spec.brakeDecel, Math.min(spec.maxAccel, f - grade - roll));
+      this.speed += net * dt;
+    } else {
+      // braking or coasting; tracks and brakes hold the tank on slopes up to the traction limit
+      const brake = Math.abs(thr) > 0.05 ? spec.brakeDecel : 2.2;
+      if (Math.abs(this.speed) < 0.3 && Math.abs(grade) < 0.75 * GRAVITY) this.speed = 0;
+      else this.speed -= (Math.sign(this.speed) * Math.min(brake, Math.abs(this.speed) / dt) + (Math.abs(grade) > 0.75 * GRAVITY ? grade : 0)) * dt;
+    }
     this.lastAccel = (this.speed - prev) / dt;
 
     // wading: slows down, deep water stops the tank
@@ -236,8 +272,8 @@ export class Tank {
     }
     this.barrelHeat = Math.max(0, this.barrelHeat - dt * 0.012);
     const u = this.model.uniforms;
-    u.uHeatEngine.value = 0.35 + 0.35 * Math.abs(this.throttle) + (this.burning > 0 ? 0.6 : 0);
-    u.uHeatTracks.value = Math.min(0.35, u.uHeatTracks.value + (Math.abs(this.speed) * 0.002 - 0.004) * dt * 10);
+    u.uHeatEngine.value = 0.6 + 0.5 * Math.abs(this.throttle) + (this.burning > 0 ? 1.2 : 0);
+    u.uHeatTracks.value = Math.max(0.05, Math.min(0.5, u.uHeatTracks.value + (Math.abs(this.speed) * 0.003 - 0.006) * dt * 10));
     u.uHeatBarrel.value = this.barrelHeat;
   }
 
@@ -400,7 +436,7 @@ export class Tank {
     this.reloadLeft = this.reloadTime;
     this.shotsFired++;
     this.lastShotTime = time;
-    this.barrelHeat = Math.min(0.9, this.barrelHeat + 0.18);
+    this.barrelHeat = Math.min(1.2, this.barrelHeat + 0.25);
     const k = 0.9;
     this.pitchV += Math.cos(this.turretYaw) * k;
     this.rollV += Math.sin(this.turretYaw) * k * 0.7;
@@ -554,7 +590,7 @@ export class Tank {
     this.steer = 0;
     this.loaded = null;
     this.burning = 0;
-    this.model.uniforms.uHeatBase.value = 0.9;
+    this.model.uniforms.uHeatBase.value = 2.2;
     if (cookOff) {
       const up = 12 + Math.random() * 8;
       this.turretFlying = {

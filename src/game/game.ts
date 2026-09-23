@@ -53,7 +53,7 @@ export class Game {
 
   // player view / fire control
   private camYaw = 0;
-  private camPitch = -0.08;
+  private camPitch = 0.02;
   private camDist = 12;
   sight = false;
   private zoomIdx = 0;
@@ -140,6 +140,8 @@ export class Game {
     this.player.engineVoice = this.audio.createEngine(true, this.player.pos);
     this.tanks.push(this.player);
     this.camYaw = PLAYER_SPAWN.yaw + Math.PI;
+    this.camPitch = 0.02;
+    this.sight = false;
     this.wave = 0;
     this.score = 0;
     this.time = 0;
@@ -219,9 +221,6 @@ export class Game {
   handleInput(dt: number): void {
     const inp = this.input;
     const p = this.player;
-    if (inp.wasPressed('Escape')) {
-      // pointer lock release comes first; the menu opens via pointerlockchange
-    }
     if (inp.wasPressed('F3')) this.hud.perfVisible = !this.hud.perfVisible;
     if (inp.wasPressed('KeyT')) {
       this.setPreset(this.presetIndex + 1);
@@ -442,11 +441,11 @@ export class Game {
       if (!t.alive) continue;
       const speed = Math.abs(t.speed);
       // exhaust
-      const exhaustRate = 0.3 + Math.abs(t.throttle) * 1.4;
+      const exhaustRate = 0.15 + Math.abs(t.throttle) * 1.2;
       for (const e of t.model.exhaust) {
         if (Math.random() < exhaustRate * dt * 12) {
           _v.copy(e).applyMatrix4(t.model.hull.matrixWorld);
-          fx.emit(PKind.Smoke, _v.x, _v.y, _v.z, (Math.random() - 0.5) * 0.6, 0.8 + Math.random(), (Math.random() - 0.5) * 0.6, 0.5, 1.8 + Math.random(), 0.25, 0.24, 0.23, 0.25 + Math.abs(t.throttle) * 0.3, 5);
+          fx.emit(PKind.Smoke, _v.x, _v.y, _v.z, (Math.random() - 0.5) * 0.6, 0.8 + Math.random(), (Math.random() - 0.5) * 0.6, 0.35, 1.2 + Math.random(), 0.2, 0.19, 0.18, 0.06 + Math.abs(t.throttle) * 0.14, 3.5);
         }
       }
       // track dust on dry ground
@@ -560,10 +559,11 @@ export class Game {
 
   // ------------------------------------------------------------------ render-rate update
 
-  frame(dt: number): MarkerState {
+  frame(dt: number, alpha = 1): MarkerState {
     const p = this.player;
     const cam = this.camera;
     this.hitAge += dt;
+    for (const t of this.tanks) t.interpolate(alpha);
     // own gun and turret would fill the gunner's view: hide them in the sight (shadows too, acceptable)
     const inSight = this.sight && p.alive;
     p.model.gun.visible = !inSight;
@@ -579,7 +579,8 @@ export class Game {
     } else {
       this.sight = false;
       cam.fov = 60;
-      const pivot = _v.copy(p.pos).setY(p.pos.y + 3.0);
+      const rp = p.model.root.position;
+      const pivot = _v.copy(rp).setY(rp.y + 3.0);
       if (!p.alive) {
         this.deadCamT += dt;
         this.camYaw += dt * 0.15;
@@ -587,6 +588,9 @@ export class Game {
       const cy = Math.cos(this.camPitch);
       _fwd.set(Math.sin(this.camYaw) * cy, Math.sin(-this.camPitch), Math.cos(this.camYaw) * cy);
       const want = _v2.copy(pivot).addScaledVector(_fwd, this.camDist);
+      // pull the camera in front of walls and hills between it and the tank
+      this.world.raycast(pivot.x, pivot.y, pivot.z, want.x, want.y, want.z, _ray, 1.5);
+      if (_ray.kind !== 'none') want.lerpVectors(pivot, want, Math.max(0.12, _ray.t - 0.06));
       const ground = this.world.hf.heightAt(want.x, want.z) + 1.2;
       if (want.y < ground) want.y = ground;
       // smooth only the height to avoid jitter over bumps

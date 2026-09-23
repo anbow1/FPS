@@ -293,18 +293,21 @@ export class Hud {
     } else set('target-box', { visibility: 'hidden' });
     // gunner-sight mil reticle
     if (m.sight) {
+      // mil stadia: keep ticks at least ~9 px apart whatever the zoom
       const k = m.pxPerMil;
+      const step = [1, 2, 5, 10].find((q) => q * k >= 9) ?? 10;
+      const span = Math.min(20, Math.max(step * 4, Math.floor(Math.min(w, h) * 0.13 / k / step) * step));
       let d = '';
-      for (let i = -10; i <= 10; i++) {
+      for (let i = -span; i <= span; i += step) {
         if (i === 0) continue;
-        const len = i % 5 === 0 ? 10 : 5;
+        const len = i % (step * 5) === 0 ? 10 : 5;
         d += `M${cx + i * k} ${cy}v${len}`;
       }
-      for (let i = 1; i <= 8; i++) {
-        const len = i % 2 === 0 ? 14 : 7;
+      for (let i = step; i <= span; i += step) {
+        const len = i % (step * 2) === 0 ? 14 : 7;
         d += `M${cx - len / 2} ${cy + i * k}h${len}`;
       }
-      d += `M${cx - 40 * s - 10 * k} ${cy}H${cx - 10 * k}M${cx + 10 * k} ${cy}H${cx + 40 * s + 10 * k}M${cx} ${cy + 8 * k + 20}V${cy + 8 * k + 60 * s}`;
+      d += `M${cx - 40 * s - span * k} ${cy}H${cx - span * k}M${cx + span * k} ${cy}H${cx + 40 * s + span * k}M${cx} ${cy + span * k + 20}V${cy + span * k + 60 * s}`;
       set('mil-scale', { d, visibility: 'visible' });
       set('sight-chevron', { transform: `translate(${cx} ${cy}) scale(${s})`, visibility: 'visible' });
     } else {

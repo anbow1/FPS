@@ -21,7 +21,7 @@ export function makeVehicleUniforms(seed: number, camo: [number, number, number]
     uBurnt: { value: 0 },
     uDust: { value: 0.35 },
     uSeed: { value: seed },
-    uHeatBase: { value: 0.16 },
+    uHeatBase: { value: 0.24 },
     uHeatEngine: { value: 0.5 },
     uHeatTracks: { value: 0.1 },
     uHeatBarrel: { value: 0 },

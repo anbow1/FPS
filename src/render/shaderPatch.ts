@@ -88,7 +88,7 @@ export function thermalPatch(key: string, heatExpr: string, extraUniforms?: Reco
         shader,
         'fragment',
         '#include <tonemapping_fragment>',
-        `{ float tkHeat = ${heatExpr}; gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(max(tkHeat, 0.0)), uThermal); }`,
+        `{ float tkHeat = ${heatExpr}; gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(max(tkHeat, 0.0) * 0.4), uThermal); }`,
         'before',
       );
     },

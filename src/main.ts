@@ -139,7 +139,7 @@ async function boot(): Promise<void> {
   game.onStateChange = (s: GameState) => {
     menu.style.display = s === 'paused' ? '' : 'none';
     hud.show(s !== 'paused' && s !== 'menu');
-    playBtn.textContent = 'Wznów';
+    if (!firstStart) playBtn.textContent = 'Wznów';
     if (s === 'dead') {
       setTimeout(() => {
         if (game.state !== 'dead') return;
@@ -178,7 +178,7 @@ async function boot(): Promise<void> {
       }
       if (steps === 5) acc = 0;
     }
-    const markers = game.frame(running ? dt : 0);
+    const markers = game.frame(running ? dt : 0, running ? acc / PHYS_DT : 1);
     pipeline.render(game.now);
     const info = pipeline.info.render;
     hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.calls, triangles: info.triangles }, game.quality.id, markers);

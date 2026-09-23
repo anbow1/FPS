@@ -75,7 +75,7 @@ export class Grass {
     });
     addPatch(this.material, foliageNormalPatch);
     addPatch(this.material, translucencyPatch(0.45));
-    addPatch(this.material, thermalPatch('grass', '0.06 + 0.05 * uDay'));
+    addPatch(this.material, thermalPatch('grass', '0.07 + 0.08 * uDay'));
     this.blade = makeBlade();
   }
 

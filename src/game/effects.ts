@@ -58,12 +58,13 @@ void main() {
   float c = cos(vRot), s = sin(vRot);
   p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) + 0.5;
   vec4 t = texture2D(tSprite, p);
-  float a = t.a * vAlpha;
+  // thermal imagers see through most smoke and dust
+  float a = t.a * vAlpha * mix(1.0, 0.25, uThermal);
   if (a < 0.004) discard;
   // cheap volumetric lighting: ambient + forward-scattered sun, darker in dense cores
   vec3 light = uAmbient * 1.6 + uSun * (0.35 + 0.25 * t.r);
   vec3 col = vCol * light * (0.7 + 0.3 * t.r);
-  col = mix(col, vec3(0.05 + vCol.r * 0.4), uThermal);
+  col = mix(col, vec3(0.03 + vCol.r * 0.1), uThermal);
   float depth = gl_FragCoord.z / gl_FragCoord.w;
   float fogF = 1.0 - exp(-fogDensity * fogDensity * depth * depth);
   col = mix(col, fogColor, fogF);
@@ -204,7 +205,10 @@ export class Effects {
 
   /** Changes the light's shader variant, so only call on quality changes. */
   setWreckShadow(on: boolean): void {
-    this.fireLights[0]!.castShadow = on;
+    const l = this.fireLights[0]!;
+    l.castShadow = on;
+    // render the cube map once so an idle light never samples uninitialised memory (NaN → bloom smear)
+    l.shadow.needsUpdate = true;
   }
 
   setMaxParticles(n: number): void {

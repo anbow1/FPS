@@ -114,8 +114,8 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture): THREE.
     mat,
     thermalPatch(
       'terrain',
-      `0.07 + 0.05 * tkFine + tkRockMask * 0.05 + tkRoad * 0.03 - tkWet * 0.04
-       + 0.16 * uDay * max(dot(tkNrmW, uSunDir), 0.0)`,
+      `0.06 + 0.04 * tkFine + tkRockMask * 0.04 + tkRoad * 0.02 - tkWet * 0.03
+       + 0.1 * uDay * max(dot(tkNrmW, uSunDir), 0.0)`,
     ),
   );
   return mat;
