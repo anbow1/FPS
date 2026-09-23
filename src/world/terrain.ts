@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import { linear, PBR } from '../render/palette';
 import { addPatch, inject, thermalPatch } from '../render/shaderPatch';
+import type { GroundLayers } from '../render/groundTextures';
 import type { NoiseSet } from '../render/textures';
 import { makeRoadTexture } from '../render/textures';
 import type { Heightfield } from './heightfield';
@@ -11,27 +12,28 @@ const LOD_STEPS = [1, 2, 4, 8, 16];
 const LOD_DIST = [170, 380, 760, 1400];
 
 /**
- * Terrain PBR material. Layers follow the material sheet: fresh/dry grass, dry soil, rock on
- * slopes (triplanar, no stretch), wet mud at the shoreline, dirt roads. A world-space detail
- * normal from the gradient texture replaces a tangent-space normal map.
+ * Terrain PBR material. Layer choice follows the material sheet — fresh/dry grass, dry soil, rock
+ * on slopes (no stretch), wet mud at the shoreline, dirt roads — and each layer is a generated
+ * close-range texture (albedo + height + normal). Layers are height-blended, so pebbles and tufts
+ * poke through the neighbouring layer instead of cross-fading, and sampled with stochastic tiling
+ * (after Inigo Quilez) so the 2–4 m tiles never repeat visibly. `NOTILE 0` is the cheap path.
  */
-export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture): THREE.MeshStandardMaterial {
+export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground: GroundLayers, fancy: boolean): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
+  mat.defines = { NOTILE: fancy ? 1 : 0 };
   const uniforms = {
     tNoise: { value: noise.texture },
     tGrad: { value: noise.gradient },
     tRoad: { value: roadTex },
+    tLayers: { value: ground.albedo },
+    tLayerN: { value: ground.normal },
     uWorld: { value: new THREE.Vector2(WORLD_SIZE / 2, WORLD_SIZE + HEIGHT_CELL) },
-    cGrass: { value: linear(PBR.grassFresh.color) },
-    cGrassDry: { value: linear(PBR.grassDry.color) },
-    cSoil: { value: linear(PBR.drySoil.color) },
-    cMud: { value: linear(PBR.mudWet.color) },
-    cRock: { value: linear(PBR.rock.color) },
+    cDryTint: { value: new THREE.Vector3(linear(PBR.grassDry.color).r / linear(PBR.grassFresh.color).r, linear(PBR.grassDry.color).g / linear(PBR.grassFresh.color).g, linear(PBR.grassDry.color).b / linear(PBR.grassFresh.color).b) },
     cSand: { value: linear(PBR.sand.color) },
     uWater: { value: WATER_LEVEL },
   };
   addPatch(mat, {
-    key: 'terrain',
+    key: 'terrain2',
     apply(shader) {
       Object.assign(shader.uniforms, uniforms);
       inject(shader, 'vertex', '#include <common>', 'varying vec3 vTPos;\nvarying vec3 vTNrm;', 'after');
@@ -42,11 +44,27 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture): THREE.
         '#include <common>',
         `varying vec3 vTPos; varying vec3 vTNrm;
          uniform sampler2D tNoise, tGrad, tRoad;
+         uniform highp sampler2DArray tLayers, tLayerN;
          uniform vec2 uWorld;
-         uniform vec3 cGrass, cGrassDry, cSoil, cMud, cRock, cSand;
+         uniform vec3 cDryTint, cSand;
          uniform float uWater;
          float tkRockMask; float tkWet; float tkRoad; float tkFine;
-         vec3 tkNrmW;`,
+         vec3 tkNrmW;
+         // stochastic tiling: two offset lookups per layer, blended on a low-frequency index
+         void tkSample(float layer, vec2 uv, float idx, out vec4 a, out vec4 n) {
+           vec2 dx = dFdx(uv), dy = dFdy(uv);
+         #if NOTILE
+           float l = idx * 8.0; float ia = floor(l); float f = fract(l);
+           vec2 oa = sin(vec2(3.0, 7.0) * ia), ob = sin(vec2(3.0, 7.0) * (ia + 1.0));
+           vec4 a0 = textureGrad(tLayers, vec3(uv + oa, layer), dx, dy), a1 = textureGrad(tLayers, vec3(uv + ob, layer), dx, dy);
+           vec4 n0 = textureGrad(tLayerN, vec3(uv + oa, layer), dx, dy), n1 = textureGrad(tLayerN, vec3(uv + ob, layer), dx, dy);
+           float m = smoothstep(0.2, 0.8, f - 0.1 * dot(a0.rgb - a1.rgb, vec3(1.0)));
+           a = mix(a0, a1, m); n = mix(n0, n1, m);
+         #else
+           a = textureGrad(tLayers, vec3(uv, layer), dx, dy);
+           n = textureGrad(tLayerN, vec3(uv, layer), dx, dy);
+         #endif
+         }`,
         'after',
       );
       inject(
@@ -59,38 +77,50 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture): THREE.
          float macro2 = texture2D(tNoise, wp / 380.0 + 0.3).g;
          float mid = texture2D(tNoise, wp / 64.0).g;
          tkFine = texture2D(tNoise, wp / 5.5).b;
-         float pebble = texture2D(tNoise, wp / 1.3).a;
+         float idx = texture2D(tNoise, wp / 170.0).g;
          float slope = 1.0 - nW.y;
          float dry = smoothstep(0.4, 0.66, macro * 0.7 + macro2 * 0.3 + (mid - 0.5) * 0.3);
-         vec3 col = mix(cGrass, cGrassDry, dry);
-         col *= 0.85 + 0.3 * macro2;
-         float soil = smoothstep(0.66, 0.8, mid + (tkFine - 0.5) * 0.35 + dry * 0.08);
-         col = mix(col, cSoil * (0.8 + 0.4 * pebble), soil);
-         float rough = mix(mix(0.85, 0.9, dry), 0.95, soil);
+         tkRoad = texture2D(tRoad, (wp + uWorld.x) / uWorld.y).r;
          tkWet = 1.0 - smoothstep(0.2, 2.4, vTPos.y - uWater + (tkFine - 0.5) * 0.8);
          float beach = (1.0 - smoothstep(1.2, 3.5, vTPos.y - uWater)) * (1.0 - tkWet);
-         col = mix(col, mix(cSoil, cSand, 0.35), beach * 0.7);
-         col = mix(col, cMud, tkWet);
-         rough = mix(rough, 0.4, tkWet);
-         tkRoad = texture2D(tRoad, (wp + uWorld.x) / uWorld.y).r;
-         float rut = smoothstep(0.35, 0.95, tkRoad) * (0.75 + 0.5 * tkFine);
-         vec3 roadCol = mix(cSoil * 1.12, cSoil * 0.7, smoothstep(0.55, 0.9, tkRoad) * (0.5 + pebble * 0.5));
-         col = mix(col, roadCol, smoothstep(0.05, 0.5, tkRoad));
-         rough = mix(rough, 0.93, smoothstep(0.05, 0.5, tkRoad));
-         // triplanar rock on steep ground
-         vec3 bw = pow(abs(nW), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
-         float rx = texture2D(tNoise, vTPos.zy / 7.0).b;
-         float ry = texture2D(tNoise, vTPos.xz / 7.0).b;
-         float rz = texture2D(tNoise, vTPos.xy / 7.0).b;
-         float rn = rx * bw.x + ry * bw.y + rz * bw.z;
-         float rStrata = texture2D(tNoise, vec2(vTPos.y / 3.0, (vTPos.x + vTPos.z) / 90.0)).a;
          tkRockMask = smoothstep(0.24, 0.36, slope + (mid - 0.5) * 0.14 + (macro2 - 0.5) * 0.06);
-         vec3 rockCol = cRock * (0.62 + 0.55 * rn) * (0.85 + 0.3 * rStrata);
-         col = mix(col, rockCol, tkRockMask);
-         rough = mix(rough, 0.85, tkRockMask);
-         col *= 0.84 + 0.32 * tkFine;
-         diffuseColor.rgb = col;
-         float tkRough = rough;`,
+         // bare soil: small scattered patches, worn banks on moderate slopes, roads
+         float soilW = smoothstep(0.74, 0.86, mid + (tkFine - 0.5) * 0.4 + dry * 0.06);
+         soilW = max(soilW, smoothstep(0.15, 0.24, slope) * 0.7);
+         soilW = max(soilW, smoothstep(0.05, 0.5, tkRoad));
+         soilW = max(soilW, beach * 0.8);
+         // layer weights: meadow, soil, rock, mud
+         vec4 w = vec4(1.0 - soilW, soilW, 0.0, 0.0);
+         w = mix(w, vec4(0.0, 0.0, 1.0, 0.0), tkRockMask);
+         w = mix(w, vec4(0.0, 0.0, 0.0, 1.0), tkWet);
+         vec4 aG = vec4(0.0), aS = vec4(0.0), aR = vec4(0.0), aM = vec4(0.0);
+         vec4 nG = vec4(0.5, 0.5, 1.0, 1.0), nS = nG, nR = nG, nM = nG;
+         if (w.x > 0.01) tkSample(0.0, wp / 2.2, idx, aG, nG);
+         if (w.y > 0.01) tkSample(1.0, wp / 1.7, idx, aS, nS);
+         if (w.z > 0.01) {
+           // rock on slopes: sample on the plane facing the slope so the pattern does not stretch
+           vec3 an = abs(nW);
+           vec2 ruv = an.x > an.z ? vTPos.zy : vTPos.xy;
+           ruv = mix(ruv, wp, smoothstep(0.55, 0.8, an.y)) / 3.5;
+           tkSample(2.0, ruv, idx, aR, nR);
+         }
+         if (w.w > 0.01) tkSample(3.0, wp / 2.5, idx, aM, nM);
+         // height blend: the taller texel of the neighbouring layers wins the transition
+         vec4 hw = w * (vec4(aG.a, aS.a, aR.a, aM.a) + 0.35);
+         float hm = max(max(hw.x, hw.y), max(hw.z, hw.w)) - 0.18;
+         hw = max(hw - hm, 0.0);
+         hw /= max(hw.x + hw.y + hw.z + hw.w, 1e-4);
+         vec3 grassCol = aG.rgb * mix(vec3(1.0), cDryTint, dry) * (0.85 + 0.3 * macro2);
+         vec3 soilCol = aS.rgb * mix(vec3(1.0), cSand / max(aS.rgb, vec3(0.02)) * 0.5, beach * 0.35) * (1.0 - 0.2 * smoothstep(0.55, 0.95, tkRoad));
+         vec3 col = grassCol * hw.x + soilCol * hw.y + aR.rgb * hw.z + aM.rgb * hw.w;
+         col *= 0.9 + 0.2 * macro;
+         float ao = dot(hw, vec4(nG.b, nS.b, nR.b, nM.b));
+         col *= 0.55 + 0.45 * ao;
+         // puddles in the low spots of the mud
+         float puddle = hw.w * (1.0 - smoothstep(0.25, 0.4, aM.a));
+         diffuseColor.rgb = col * (1.0 - puddle * 0.35);
+         float tkRough = dot(hw, vec4(0.88, 0.95, 0.85, 0.5)) * (1.0 - puddle * 0.75);
+         vec2 tkLN = (nG.xy * 2.0 - 1.0) * hw.x + (nS.xy * 2.0 - 1.0) * hw.y + (nR.xy * 2.0 - 1.0) * hw.z + (nM.xy * 2.0 - 1.0) * hw.w * (1.0 - puddle);`,
         'after',
       );
       inject(shader, 'fragment', '#include <roughnessmap_fragment>', 'roughnessFactor = tkRough;', 'after');
@@ -99,11 +129,10 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture): THREE.
         'fragment',
         '#include <normal_fragment_maps>',
         `{
-           vec4 g1 = texture2D(tGrad, wp / 5.5) * 2.0 - 1.0;
-           vec4 g2 = texture2D(tGrad, wp / 1.3) * 2.0 - 1.0;
-           float str = mix(0.35, 1.1, tkRockMask) * (1.0 - tkWet * 0.8);
-           vec2 grad = g1.xy * 0.5 * str + g2.zw * 0.35 * (1.0 - tkRoad * 0.5);
-           tkNrmW = normalize(nW + vec3(-grad.x, 0.0, -grad.y) * 0.6);
+           vec4 g2 = texture2D(tGrad, wp / 11.0) * 2.0 - 1.0;
+           vec2 grad = g2.xy * 0.25 * (1.0 - tkRoad * 0.5) * (1.0 - tkWet);
+           // layer relief is in the ground plane; blend towards the slope for rock faces
+           tkNrmW = normalize(nW + vec3(tkLN.x - grad.x, 0.0, tkLN.y - grad.y) * 0.9);
            normal = normalize((viewMatrix * vec4(tkNrmW, 0.0)).xyz);
          }`,
         'after',
@@ -138,10 +167,10 @@ export class Terrain {
   private readonly hf: Heightfield;
   private readonly normals: Float32Array;
 
-  constructor(hf: Heightfield, noise: NoiseSet) {
+  constructor(hf: Heightfield, noise: NoiseSet, ground: GroundLayers, fancy: boolean) {
     this.hf = hf;
     const roadTex = makeRoadTexture(hf.road, hf.n);
-    this.material = terrainMaterial(noise, roadTex);
+    this.material = terrainMaterial(noise, roadTex, ground, fancy);
     this.normals = this.computeNormals();
     const per = (hf.n - 1) / CHUNK_CELLS;
     for (let cj = 0; cj < per; cj++) {
@@ -285,6 +314,13 @@ export class Terrain {
         this.setLod(ch, lod);
       }
     }
+  }
+
+  setFancy(on: boolean): void {
+    const v = on ? 1 : 0;
+    if (this.material.defines?.NOTILE === v) return;
+    this.material.defines = { NOTILE: v };
+    this.material.needsUpdate = true;
   }
 
   /** Force full-detail chunks around a point (used at spawn so nothing pops). */

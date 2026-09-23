@@ -7,6 +7,7 @@ import type { Pipeline } from '../render/pipeline';
 import { G } from '../render/shaderPatch';
 import type { Hud, MarkerState } from '../ui/hud';
 import { PLAYER_SPAWN } from '../world/layout';
+import { Water } from '../world/water';
 import type { World } from '../world/world';
 import { TankAI } from './ai';
 import type { Audio } from './audio';
@@ -43,6 +44,7 @@ export class Game {
   private ais: TankAI[] = [];
   private tanks: Tank[] = [];
   private headlight: THREE.SpotLight;
+  private water: Water;
   private time = 0;
   wave = 0;
   score = 0;
@@ -83,6 +85,7 @@ export class Game {
     private readonly input: Input,
     private readonly hud: Hud,
     private readonly audio: Audio,
+    initialDetail: 'high' | 'low' = 'high',
   ) {
     pipeline.camera = this.camera;
     this.scene = pipeline.sceneRef;
@@ -96,6 +99,8 @@ export class Game {
     this.scene.fog = new THREE.FogExp2(0xffffff, 0.0003);
     this.setQuality(this.quality);
     this.setPreset(0);
+    this.water = new Water(pipeline.renderer, world.hf, world.noise, this.lighting, initialDetail);
+    this.scene.add(this.water.group);
     hud.buildMinimap(world);
   }
 
@@ -106,6 +111,7 @@ export class Game {
     this.effects.setMaxParticles(q.maxParticles);
     this.effects.setWreckShadow(q.wreckShadow);
     this.world.grass.setDensity(q.grassPerChunk, q.grassRadius);
+    this.world.terrain.setFancy(q.id === 'high');
   }
 
   setPreset(i: number): void {
@@ -651,6 +657,7 @@ export class Game {
     }
 
     this.world.update(dt, cam.position);
+    this.water.update(this.pipeline.renderer, this.time, cam.position);
     this.effects.update(dt, cam.position, this.quality.wreckShadow);
     this.effects.setWind(G.uWind.value);
 

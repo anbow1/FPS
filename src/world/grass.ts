@@ -160,7 +160,7 @@ export class Grass {
       const mid = sampleWrap(this.noise.g, NOISE_SIZE, x / 64, z / 64);
       const fine = sampleWrap(this.noise.b, NOISE_SIZE, x / 5.5, z / 5.5);
       const dry = smooth(0.4, 0.66, macro * 0.7 + macro2 * 0.3 + (mid - 0.5) * 0.3);
-      const soil = smooth(0.62, 0.78, mid + (fine - 0.5) * 0.35 + dry * 0.08);
+      const soil = smooth(0.74, 0.86, mid + (fine - 0.5) * 0.4 + dry * 0.06);
       const y = this.hf.heightAt(x, z);
       this.hf.normalAt(x, z, tn);
       const road = this.hf.roadAt(x, z);

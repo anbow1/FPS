@@ -65,7 +65,7 @@ async function boot(): Promise<void> {
   status.textContent = 'Kompilowanie shaderów…';
   await nextFrame();
   const pipeline = new Pipeline(canvas, new THREE.Scene(), new THREE.PerspectiveCamera());
-  const game = new Game(pipeline, world, input, hud, audio);
+  const game = new Game(pipeline, world, input, hud, audio, quality.id);
   game.setQuality(quality);
   game.setPreset(Number(lightSel.value));
   pipeline.setToneMapping(toneSel.value === 'agx' ? 'agx' : 'aces');

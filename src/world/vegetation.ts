@@ -9,6 +9,7 @@ import type { NoiseSet } from '../render/textures';
 import { NOISE_SIZE } from '../render/textures';
 import type { Heightfield } from './heightfield';
 import { SITES } from './layout';
+import { broadleafGeometry, coniferGeometry, makeBarkTexture, makeLeafTexture, makeNeedleTexture } from './treeModels';
 
 export interface Tree {
   x: number;
@@ -49,56 +50,22 @@ function windPatch(mat: THREE.Material, strength: number): void {
   });
 }
 
-function pineGeometry(rng: Rng, height: number): { trunk: THREE.BufferGeometry; crown: THREE.BufferGeometry } {
-  const trunk = new THREE.CylinderGeometry(0.1, 0.24, height * 0.9, 7, 1, true);
-  trunk.translate(0, height * 0.45, 0);
-  const layers = 7;
-  const crownParts: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < layers; i++) {
-    const t = i / (layers - 1);
-    const r = (1 - t) * 2.2 + 0.35;
-    const h = 1.9 - t * 0.6;
-    const y = height * 0.22 + t * height * 0.72;
-    const cone = new THREE.ConeGeometry(r, h, 9, 2, true);
-    // ragged, drooping branch tips
-    const p = cone.getAttribute('position') as THREE.BufferAttribute;
-    for (let k = 0; k < p.count; k++) {
-      const px = p.getX(k);
-      const pz = p.getZ(k);
-      const rr = Math.hypot(px, pz);
-      if (rr > 0.2) {
-        const j = 0.75 + rng.next() * 0.5;
-        p.setX(k, px * j);
-        p.setZ(k, pz * j);
-        p.setY(k, p.getY(k) - (rr / r) * 0.35 * rng.next());
-      }
-    }
-    cone.rotateY(rng.next() * Math.PI);
-    cone.translate(0, y, 0);
-    cone.computeVertexNormals();
-    crownParts.push(cone);
-  }
-  const crown = mergeParts(crownParts);
-  // soften normals outward so the crown shades like a volume, not a stack of cones
-  const n = crown.getAttribute('normal') as THREE.BufferAttribute;
-  const pos = crown.getAttribute('position') as THREE.BufferAttribute;
-  const c = new THREE.Vector3();
-  const v = new THREE.Vector3();
-  for (let k = 0; k < n.count; k++) {
-    v.set(pos.getX(k), pos.getY(k) - height * 0.55, pos.getZ(k)).normalize();
-    c.set(n.getX(k), n.getY(k), n.getZ(k)).lerp(v, 0.6).normalize();
-    n.setXYZ(k, c.x, c.y, c.z);
-  }
-  // darker inside and lower down (cheap AO) via vertex colour
-  const col = new Float32Array(pos.count * 3);
-  for (let k = 0; k < pos.count; k++) {
-    const rr = Math.hypot(pos.getX(k), pos.getZ(k));
-    const ao = 0.6 + 0.55 * Math.min(1, rr / 1.6) * (0.6 + 0.4 * (pos.getY(k) / height));
-    col[k * 3] = col[k * 3 + 1] = col[k * 3 + 2] = ao;
-  }
-  crown.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  return { trunk: mergeParts([trunk]), crown };
-}
+/** Keep alpha-clipped foliage from thinning out in the distance as mip levels average alpha down. */
+const alphaCoveragePatch = {
+  key: 'alphaCoverage',
+  apply(shader: THREE.WebGLProgramParametersWithUniforms) {
+    inject(
+      shader,
+      'fragment',
+      '#include <map_fragment>',
+      `#ifdef USE_MAP
+        vec2 tkTexel = fwidth(vMapUv) * vec2(textureSize(map, 0));
+        diffuseColor.a *= 1.0 + 0.28 * max(0.0, log2(max(max(tkTexel.x, tkTexel.y), 1e-3)));
+      #endif`,
+      'after',
+    );
+  },
+};
 
 function rockGeometry(rng: Rng): THREE.BufferGeometry {
   const g = new THREE.IcosahedronGeometry(1, 2);
@@ -125,17 +92,32 @@ export class Vegetation {
   readonly rocks: { x: number; z: number; r: number }[] = [];
   private dirty = new Set<number>();
 
-  constructor(hf: Heightfield, noise: NoiseSet, seed: number) {
+  constructor(hf: Heightfield, noise: NoiseSet, seed: number, lite = false) {
     const rng = new Rng(seed);
-    const bark = stdMat('treeBark');
-    const pine = stdMat('pineFoliage', { vertexColors: true, side: THREE.DoubleSide });
-    pine.shadowSide = THREE.FrontSide;
-    addPatch(pine, foliageNormalPatch);
-    addPatch(pine, translucencyPatch(0.35));
-    windPatch(pine, 0.35);
-    windPatch(bark, 0.12);
-    addThermalConst(pine, 0.05);
-    addThermalConst(bark, 0.07);
+    // Foliage: alpha-clipped cards (sheet: "alpha-clip + A2C"; no MSAA here, so plain clip),
+    // normals kept on back faces, thin-sheet translucency, wind.
+    const foliage = (map: THREE.Texture, transl: number) => {
+      const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.42, side: THREE.DoubleSide, vertexColors: true, roughness: 0.85, metalness: 0 });
+      addPatch(m, foliageNormalPatch);
+      addPatch(m, alphaCoveragePatch);
+      addPatch(m, translucencyPatch(transl));
+      windPatch(m, 0.35);
+      addThermalConst(m, 0.05);
+      return m;
+    };
+    const needles = foliage(makeNeedleTexture(seed + 1), 0.3);
+    const leaves = foliage(makeLeafTexture(seed + 2), 0.5);
+    const barkDark = stdMat('treeBark', { map: makeBarkTexture(seed + 3), color: 0xffffff, vertexColors: true });
+    const barkBirch = stdMat('treeBark', { map: makeBarkTexture(seed + 4, true), color: 0xffffff, roughness: 0.8, vertexColors: true });
+    for (const b of [barkDark, barkBirch]) {
+      windPatch(b, 0.12);
+      addThermalConst(b, 0.07);
+    }
+    const kinds = [
+      { geo: () => coniferGeometry(rng, 13, lite), crown: needles, bark: barkDark },
+      { geo: () => coniferGeometry(rng, 18, lite), crown: needles, bark: barkDark },
+      { geo: () => broadleafGeometry(rng, 12, lite), crown: leaves, bark: barkBirch },
+    ];
 
     // --- scatter trees in forest patches
     const macro = (x: number, z: number) => sampleWrap(noise.r, NOISE_SIZE, x / 1100, z / 1100);
@@ -157,7 +139,8 @@ export class Vegetation {
       if (hf.roadAt(x, z) > 0.02) continue;
       if (SITES.some((s) => Math.hypot(x - s.x, z - s.z) < s.r * 0.9)) continue;
       if (mid(x, z) > 0.8) continue;
-      const t: Tree = { x, z, y: y - 0.2, s: rng.range(0.75, 1.35), rot: rng.next() * Math.PI * 2, variant: rng.int(0, variants - 1), fall: 0, fallDir: 0, falling: false };
+      const variant = rng.next() < 0.22 ? 2 : rng.next() < 0.5 ? 0 : 1;
+      const t: Tree = { x, z, y: y - 0.2, s: rng.range(0.75, 1.3), rot: rng.next() * Math.PI * 2, variant, fall: 0, fallDir: 0, falling: false };
       const idx = this.trees.length;
       this.trees.push(t);
       perVariant[t.variant]!.push(t);
@@ -167,12 +150,14 @@ export class Vegetation {
       list.push(idx);
     }
     for (let v = 0; v < variants; v++) {
-      const g = pineGeometry(rng, 11 + v * 3);
+      const kind = kinds[v]!;
+      const g = kind.geo();
       const list = perVariant[v]!;
-      const tm = new THREE.InstancedMesh(g.trunk, bark, Math.max(1, list.length));
-      const cm = new THREE.InstancedMesh(g.crown, pine, Math.max(1, list.length));
+      const tm = new THREE.InstancedMesh(g.trunk, kind.bark, Math.max(1, list.length));
+      const cm = new THREE.InstancedMesh(g.crown, kind.crown, Math.max(1, list.length));
       tm.count = cm.count = list.length;
       tm.castShadow = cm.castShadow = true;
+      cm.userData.noAO = true;
       tm.receiveShadow = cm.receiveShadow = true;
       this.trunks.push(tm);
       this.crowns.push(cm);

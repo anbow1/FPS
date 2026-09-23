@@ -236,7 +236,7 @@ export class Lighting {
     const glow = key.clone().multiplyScalar(beam * 0.012 * (1 + p.haze * 2));
     if (p.id === 'twilight') glow.copy(kelvinToLinear(2200)).multiplyScalar(L * 1.2);
     // The disk is capped so FP16 targets never see inf (a real sun is ~1.6e9 cd/m²).
-    const disk = key.clone().multiplyScalar(Math.min(beam * 4000, 5000));
+    const disk = key.clone().multiplyScalar(Math.min(beam * 8, 60));
 
     for (const m of [this.sky.material, this.envSky.material]) {
       const u = m.uniforms;

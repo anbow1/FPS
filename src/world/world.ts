@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { QualityPreset } from '../config';
+import { makeGroundLayers } from '../render/groundTextures';
 import { makeNoiseSet, type NoiseSet } from '../render/textures';
 import { buildBuildings, type Obb, segmentObb } from './buildings';
 import { Decals } from './decals';
@@ -7,7 +8,6 @@ import { Grass } from './grass';
 import { Heightfield } from './heightfield';
 import { Terrain } from './terrain';
 import { Vegetation } from './vegetation';
-import { buildWater } from './water';
 
 export interface RayHit {
   t: number;
@@ -31,13 +31,13 @@ export class World {
   constructor(seed: number, quality: QualityPreset) {
     this.hf = new Heightfield(seed);
     this.noise = makeNoiseSet(seed);
-    this.terrain = new Terrain(this.hf, this.noise);
-    this.vegetation = new Vegetation(this.hf, this.noise, seed + 11);
+    this.terrain = new Terrain(this.hf, this.noise, makeGroundLayers(seed), quality.id === 'high');
+    this.vegetation = new Vegetation(this.hf, this.noise, seed + 11, quality.id === 'low');
     this.grass = new Grass(this.hf, this.noise, quality.grassPerChunk, quality.grassRadius);
     this.decals = new Decals(this.hf);
     const b = buildBuildings(this.hf, seed + 5);
     this.buildings = b.colliders;
-    this.group.add(this.terrain.group, this.vegetation.group, this.grass.group, this.decals.group, b.group, buildWater(this.noise));
+    this.group.add(this.terrain.group, this.vegetation.group, this.grass.group, this.decals.group, b.group);
   }
 
   /**

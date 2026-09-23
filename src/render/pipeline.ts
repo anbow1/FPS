@@ -69,7 +69,28 @@ export class Pipeline {
     this.gtao.blendIntensity = 0.75;
     this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.0, samples: 12 });
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+    // GTAO draws its normal/depth buffer with an override material that ignores alpha clipping;
+    // alpha-tested foliage would show up as solid quads, so it is left out of the AO pass.
+    const g = this.gtao as unknown as { _overrideVisibility: () => void; _visibilityCache: THREE.Object3D[] };
+    const baseOverride = g._overrideVisibility.bind(this.gtao);
+    g._overrideVisibility = () => {
+      baseOverride();
+      scene.traverse((o) => {
+        if (o.userData.noAO && o.visible) {
+          o.visible = false;
+          g._visibilityCache.push(o);
+        }
+      });
+    };
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.12, 0.35, 1.6);
+    // Clamp what feeds the bloom: a sun glint on water is ~100x brighter than the threshold and
+    // would otherwise flood the frame. The image itself keeps full HDR; only the halo is capped.
+    const hp = this.bloom.materialHighPassFilter;
+    hp.fragmentShader = hp.fragmentShader.replace(
+      'gl_FragColor = mix( outputColor, texel, alpha );',
+      'vec4 bloomIn = mix( outputColor, texel, alpha ); float bl = max(max(bloomIn.r, bloomIn.g), bloomIn.b); gl_FragColor = bloomIn * min(1.0, 6.0 / max(bl, 1e-4));',
+    );
+    hp.needsUpdate = true;
     this.output = new OutputPass();
     this.smaa = new SMAAPass();
     this.thermal = new ShaderPass(ThermalShader);

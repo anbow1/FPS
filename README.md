@@ -82,6 +82,23 @@ src/
 tests/                 vitest: balistyka, pancerz
 ```
 
+## Woda, las, budynki, ziemia
+
+- **Jeziora** — fale z widma wiatrowego liczone FFT na GPU (Tessendorf), dokładny Fresnel,
+  odblaski słońca Beckmann + LEAN (wariancja nachyleń z mipmap), załamany widok dna śledzony po
+  prawdziwej wysokości terenu, absorpcja Beer–Lamberta i rozpraszanie w toni, kaustyki z
+  soczewkowania fal (Wysoka). Na podstawie [Clearwater](https://github.com/Aureliengmz/clearwater)
+  (MIT, zob. `THIRD_PARTY_NOTICES.md`).
+- **Las** — świerki z okółków gałęzi na kartach alpha-clip z proceduralnymi igłami, brzozy z
+  kępami liści i jasną korą; normalne wygięte na zewnątrz korony, przeświecanie pod słońce,
+  wiatr, korekta mipmap alfy.
+- **Budynki** — cegła z fugą, tynk odpadający płatami, dachówka z mchem, deski, blacha falista z
+  rdzą; zawilgocenie przy ziemi i zacieki; ramy okien, parapety, rynny, deski okapowe, kominy.
+  Wszystko proceduralnie w shaderze (bump z pochodnych), z filtrowaniem przeciw aliasingowi.
+- **Ziemia** — generowane tekstury bliskiego planu (łąka, gleba z kamykami, granit ze
+  spękaniami i porostami, błoto z kałużami), mieszane po wysokości i próbkowane stochastycznie
+  (bez widocznego powtarzania).
+
 ## Android (APK)
 
 Gra jest opakowana w natywną aplikację przez **Capacitor** (`android/`): pełny ekran, orientacja
