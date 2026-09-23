@@ -15,6 +15,8 @@ import { LAKES } from './layout';
  * absorption and in-scattering. Caustics come from first-order lensing: the divergence of the
  * surface slope where the sun ray entered focuses or spreads the light on the bed.
  *
+ * Shoreline foam is adapted from "WaterCuda" (SamG-Coder, MIT).
+ *
  * Water optics follow the material sheet: river tint #3E5A4C, attenuation distance 1.5 m, IOR 1.33.
  */
 export class Water {
@@ -102,6 +104,27 @@ export class Water {
         float terrainH(vec2 xz) { return texture(tHeight, (xz + uWorld.x) / uWorld.y).r; }
         vec4 surf(vec2 xz) { return texture(uSurf, xz / uL); }
         const mat2 M = mat2(0.8, -0.6, 0.6, 0.8);
+        float h21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+        float vn2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+        // fade noise that the pixel footprint can no longer resolve
+        float fpWeight(float fp, float wl) { return 1.0 - smoothstep(0.25 * wl, wl, fp); }
+        // Shoreline wash after WaterCuda (SamG-Coder, MIT): wave fronts anchored to the depth
+        // contour, lacy breakup, trailing backwash and a thin contact line at the waterline.
+        float shoreFoam(vec2 p, float depth, float fp, float t) {
+          float wb = fpWeight(fp, 4.0), wf = fpWeight(fp, 1.0);
+          float broad = 0.5 + (vn2((p + vec2(t * 0.32, -t * 0.13)) / 4.0) - 0.5) * wb;
+          float fine = 0.5 + (vn2((p + vec2(-t * 0.18, t * 0.24)) / 1.0) - 0.5) * wf;
+          // lake banks here are steep, so the wash band is scaled to ~2.5 m of depth
+          float shore = 1.0 - smoothstep(0.5, 2.5, depth);
+          float phase = depth * 1.3 + t * 1.22 + (broad - 0.5) * 2.3;
+          float front = pow(clamp(0.5 + 0.5 * sin(phase), 0.0, 1.0), 10.0);
+          float backwash = pow(clamp(0.5 + 0.5 * sin(phase - 1.05), 0.0, 1.0), 3.0) * 0.32;
+          float lace = smoothstep(0.25, 0.69, broad * 0.58 + fine * 0.42);
+          float wash = mix(0.13, (front + backwash) * lace, wb);
+          float contact = (1.0 - smoothstep(0.03, 0.6, depth)) * (0.3 + fine * 0.45);
+          return clamp(shore * wash * 0.85 + contact, 0.0, 1.0);
+        }
         vec2 slopeAt(vec2 xz) {
           vec2 a = texture(uSurf, xz / uL).yz;
           vec2 b = texture(uSurf, (M * xz) / (uL * 0.41) + 0.37).yz;
@@ -186,8 +209,13 @@ export class Water {
           vec3 under = Lbed * Tv + Lin;
 
           vec3 col = F * refl + (1.0 - F) * under + spec;
+          // shoreline foam, lit like a rough white diffuse layer
+          float fp = max(length(fwidth(P.xz)), 1e-3);
+          float foam = shoreFoam(P.xz, max(depthHere, 0.0), fp, uTime);
+          vec3 foamCol = 0.75 * (uSunBeam * max(uSun.y, 0.0) + uAmb * PI) / PI;
+          col = mix(col, foamCol, foam);
           // fade into the terrain mesh at the waterline
-          float alpha = smoothstep(0.0, 0.25, depthHere);
+          float alpha = max(smoothstep(0.0, 0.25, depthHere), foam * 0.9);
           col = mix(col, vec3(0.01), uThermal);
           gl_FragColor = vec4(col, alpha);
           #include <fog_fragment>

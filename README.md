@@ -87,8 +87,8 @@ tests/                 vitest: balistyka, pancerz
 - **Jeziora** — fale z widma wiatrowego liczone FFT na GPU (Tessendorf), dokładny Fresnel,
   odblaski słońca Beckmann + LEAN (wariancja nachyleń z mipmap), załamany widok dna śledzony po
   prawdziwej wysokości terenu, absorpcja Beer–Lamberta i rozpraszanie w toni, kaustyki z
-  soczewkowania fal (Wysoka). Na podstawie [Clearwater](https://github.com/Aureliengmz/clearwater)
-  (MIT, zob. `THIRD_PARTY_NOTICES.md`).
+  soczewkowania fal (Wysoka), piana przy brzegu. Na podstawie [Clearwater](https://github.com/Aureliengmz/clearwater)
+  i [WaterCuda](https://github.com/SamG-Coder/WaterCuda) (MIT, zob. `THIRD_PARTY_NOTICES.md`).
 - **Las** — świerki z okółków gałęzi na kartach alpha-clip z proceduralnymi igłami, brzozy z
   kępami liści i jasną korą; normalne wygięte na zewnątrz korony, przeświecanie pod słońce,
   wiatr, korekta mipmap alfy.
