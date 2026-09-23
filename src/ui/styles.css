@@ -396,3 +396,129 @@ input[type='range'] {
     padding: 20px 16px;
   }
 }
+
+/* ---------------------------------------------------------------- touch controls */
+#touch {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#touch-look {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+#stick {
+  position: absolute;
+  width: 26vmin;
+  height: 26vmin;
+  margin: -13vmin 0 0 -13vmin;
+  border-radius: 50%;
+  border: 2px solid rgba(240, 192, 120, 0.35);
+  background: rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+  left: 18vw;
+  top: 70vh;
+}
+body.touch #stick {
+  opacity: 0.45;
+}
+#stick.on {
+  opacity: 1 !important;
+}
+#stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10vmin;
+  height: 10vmin;
+  margin: -5vmin 0 0 -5vmin;
+  border-radius: 50%;
+  background: rgba(240, 192, 120, 0.55);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+}
+.tbtn {
+  position: absolute;
+  width: 15vmin;
+  height: 15vmin;
+  border-radius: 50%;
+  border: 2px solid rgba(240, 192, 120, 0.5);
+  background: rgba(10, 12, 14, 0.42);
+  color: var(--hud);
+  font-size: 2.6vmin;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tbtn.on {
+  background: rgba(240, 192, 120, 0.4);
+  color: #fff;
+}
+.tbtn.big {
+  width: 24vmin;
+  height: 24vmin;
+  font-size: 3.6vmin;
+  border-width: 3px;
+  background: rgba(120, 30, 20, 0.35);
+}
+.tbtn.small {
+  width: 10vmin;
+  height: 10vmin;
+  font-size: 2.2vmin;
+}
+/* right-hand cluster around the fire button, clear of notches */
+#t-fire { right: calc(4vw + env(safe-area-inset-right)); bottom: 6vh; }
+#t-sight { right: calc(4vw + 26vmin + env(safe-area-inset-right)); bottom: 5vh; }
+#t-lase { right: calc(4vw + 23vmin + env(safe-area-inset-right)); bottom: calc(6vh + 19vmin); }
+#t-zoom { right: calc(4vw + 5vmin + env(safe-area-inset-right)); bottom: calc(6vh + 27vmin); }
+#t-ammo { right: calc(4vw + 42vmin + env(safe-area-inset-right)); bottom: 5vh; }
+#t-thermal { right: calc(4vw + 40vmin + env(safe-area-inset-right)); bottom: calc(6vh + 18vmin); }
+#t-brake { left: calc(3vw + env(safe-area-inset-left)); bottom: calc(5vh + 32vmin); }
+#t-ext { right: calc(2vw + env(safe-area-inset-right)); top: 40vh; }
+#t-pause { right: calc(1.5vw + env(safe-area-inset-right)); top: 2vh; }
+
+/* HUD rearranged so the thumbs never cover it */
+body.touch #bl {
+  top: calc(var(--u) * 9);
+  bottom: auto;
+}
+body.touch #minimap {
+  width: calc(var(--u) * 11);
+  height: calc(var(--u) * 11);
+}
+body.touch #br {
+  right: auto;
+  bottom: auto;
+  top: 0;
+  left: calc(var(--u) * 13);
+  text-align: left;
+}
+body.touch #br .hp {
+  margin-left: 0;
+}
+body.touch #modules {
+  width: calc(var(--u) * 4);
+  height: calc(var(--u) * 6.5);
+}
+body.touch #tr {
+  right: calc(var(--u) * 3);
+}
+body.touch #sight-info {
+  top: 30%;
+}
+body.touch .help .keys {
+  display: none;
+}
+body:not(.touch) .help .touchhelp {
+  display: none;
+}
+body.touch #hud {
+  font-size: calc(var(--u) * 1.45);
+}

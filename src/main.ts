@@ -6,6 +6,7 @@ import { Game, type GameState } from './game/game';
 import { PRESETS } from './render/lighting';
 import { Pipeline } from './render/pipeline';
 import { Hud } from './ui/hud';
+import { isTouchDevice, TouchControls } from './ui/touch';
 import { World } from './world/world';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -44,7 +45,7 @@ for (const [i, p] of PRESETS.entries()) {
   o.textContent = p.label;
   lightSel.append(o);
 }
-qualitySel.value = settings.quality ?? (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 6 ? 'low' : 'high');
+qualitySel.value = settings.quality ?? (isTouchDevice() || (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 6) ? 'low' : 'high');
 lightSel.value = settings.light ?? '0';
 toneSel.value = settings.tone ?? 'aces';
 sensIn.value = settings.sens ?? '1';
@@ -56,6 +57,7 @@ async function boot(): Promise<void> {
   await nextFrame();
   const t0 = performance.now();
   const input = new Input(canvas);
+  const touch = new TouchControls(input);
   const hud = new Hud();
   const audio = new Audio();
   const quality = QUALITY[qualitySel.value === 'low' ? 'low' : 'high'];
@@ -136,9 +138,11 @@ async function boot(): Promise<void> {
     if (!input.locked && game.state === 'playing') game.pause(true);
   });
 
+  touch.onPause = () => game.pause(true);
   game.onStateChange = (s: GameState) => {
     menu.style.display = s === 'paused' ? '' : 'none';
     hud.show(s !== 'paused' && s !== 'menu');
+    touch.show(s === 'playing' || s === 'intermission');
     if (!firstStart) playBtn.textContent = 'Wznów';
     if (s === 'dead') {
       setTimeout(() => {

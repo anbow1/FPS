@@ -2,7 +2,7 @@
 <html lang="pl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Tanks</title>
     <meta name="description" content="Realistyczna gra czołgowa 3D w przeglądarce — Three.js + TypeScript" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%23141618%22/%3E%3Crect x=%225%22 y=%2216%22 width=%2222%22 height=%228%22 rx=%222%22 fill=%22%234b5340%22/%3E%3Crect x=%229%22 y=%2211%22 width=%2211%22 height=%226%22 rx=%221.5%22 fill=%22%235d6650%22/%3E%3Crect x=%2219%22 y=%2213%22 width=%2210%22 height=%222%22 fill=%22%23f0c078%22/%3E%3C/svg%3E" />
@@ -88,11 +88,14 @@
           <label>Głośność <input id="set-vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
         </div>
         <div class="help">
+          <div class="touchhelp"><b>Lewy kciuk</b> jazda (joystick) · <b>Prawy kciuk</b> przeciągnij, by celować · <b>OGIEŃ</b> strzał (przesuń po nim kciuk, by poprawić celowanie) · <b>CEL</b> celownik · <b>LASER</b> dalmierz · <b>AMUN.</b> zmiana amunicji</div>
+          <div class="keys">
           <div><b>W S A D</b> jazda · <b>Shift</b> wolno · <b>Spacja</b> hamulec</div>
           <div><b>Mysz</b> celowanie · <b>LPM</b> strzał · <b>PPM / V</b> celownik działonowego</div>
           <div><b>Kółko</b> zoom · <b>R</b> dalmierz laserowy (namiar celu) · <b>N</b> termowizja</div>
           <div><b>1 2 3</b> APFSDS / HEAT / HE · <b>F</b> gaśnica · <b>L</b> reflektory · <b>C</b> wolne rozglądanie</div>
-          <div><b>T</b> pora dnia · <b>O</b> jakość · <b>F3</b> wydajność · <b>Esc</b> pauza</div>
+          <div><b>T</b> pora dnia · <b>O</b> jakość · <b>F3</b> wydajność · <b>Esc</b> pauza · <b>Q</b> zmiana amunicji · <b>Z</b> zoom</div>
+          </div>
         </div>
       </div>
     </div>

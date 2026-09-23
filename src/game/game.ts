@@ -134,6 +134,7 @@ export class Game {
 
   start(): void {
     this.clearBattle();
+    this.hud.clearMessages();
     this.player = new Tank(PLAYER_TANK, 'player', 'west', 7);
     this.scene.add(this.player.model.root);
     this.player.place(PLAYER_SPAWN.x, PLAYER_SPAWN.z, PLAYER_SPAWN.yaw, this.world);
@@ -236,13 +237,19 @@ export class Game {
 
     const fwd = (inp.isDown('KeyW') || inp.isDown('ArrowUp') ? 1 : 0) - (inp.isDown('KeyS') || inp.isDown('ArrowDown') ? 1 : 0);
     const right = (inp.isDown('KeyD') || inp.isDown('ArrowRight') ? 1 : 0) - (inp.isDown('KeyA') || inp.isDown('ArrowLeft') ? 1 : 0);
-    p.throttle = fwd * (inp.isDown('ShiftLeft') && !this.sight ? 0.45 : 1);
-    p.steer = right;
+    const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
+    p.throttle = clamp1(fwd + inp.stickY) * (inp.isDown('ShiftLeft') && !this.sight ? 0.45 : 1);
+    p.steer = clamp1(right + inp.stickX);
     if (inp.isDown('Space')) p.throttle = 0; // hand brake / short halt
 
     if (inp.wasPressed('Digit1')) p.selectAmmo('APFSDS');
     if (inp.wasPressed('Digit2')) p.selectAmmo('HEAT');
     if (inp.wasPressed('Digit3')) p.selectAmmo('HE');
+    if (inp.wasPressed('KeyQ')) {
+      const order = ['APFSDS', 'HEAT', 'HE'] as const;
+      p.selectAmmo(order[(order.indexOf(p.selected) + 1) % order.length]!);
+      this.audio.uiBeep(1000, 0.03);
+    }
     if (inp.wasPressed('KeyF')) {
       if (p.extinguish()) this.hud.message('Pożar ugaszony', 'good');
     }
@@ -265,6 +272,7 @@ export class Game {
       if (inp.wheel !== 0) {
         this.zoomIdx = Math.max(0, Math.min(this.zooms.length - 1, this.zoomIdx - inp.wheel));
       }
+      if (inp.wasPressed('KeyZ')) this.zoomIdx = (this.zoomIdx + 1) % this.zooms.length;
     } else {
       this.camYaw -= inp.mouseDX * sens;
       this.camPitch = Math.max(-0.75, Math.min(0.5, this.camPitch - inp.mouseDY * sens));

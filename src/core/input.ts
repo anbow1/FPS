@@ -8,6 +8,10 @@ export class Input {
   buttons = 0;
   private clicked = 0;
   locked = false;
+  /** virtual joystick from the touch UI, -1..1 (y = forward) */
+  stickX = 0;
+  stickY = 0;
+  touchMode = false;
 
   constructor(private readonly el: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -49,6 +53,23 @@ export class Input {
 
   releaseLock(): void {
     if (this.locked) document.exitPointerLock();
+  }
+
+  /** Edge-triggered virtual key (touch buttons). */
+  press(code: string): void {
+    this.pressed.add(code);
+  }
+
+  /** Held virtual key (touch buttons). */
+  hold(code: string, on: boolean): void {
+    if (on) this.down.add(code);
+    else this.down.delete(code);
+  }
+
+  /** Aim delta from a touch drag, in pixels like mouse movement. */
+  look(dx: number, dy: number): void {
+    this.mouseDX += dx;
+    this.mouseDY += dy;
   }
 
   isDown(code: string): boolean {

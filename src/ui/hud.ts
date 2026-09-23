@@ -152,6 +152,11 @@ export class Hud {
     while (this.msgs.length > 5) this.msgs.pop()!.el.remove();
   }
 
+  clearMessages(): void {
+    for (const m of this.msgs) m.el.remove();
+    this.msgs.length = 0;
+  }
+
   setWave(text: string): void {
     this.waveEl.textContent = text;
   }
