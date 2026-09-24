@@ -185,6 +185,7 @@ async function boot(): Promise<void> {
     const markers = game.frame(running ? dt : 0, running ? acc / PHYS_DT : 1);
     pipeline.render(game.now);
     const info = pipeline.info.render;
+    hud.setExtras({ drone: game.droneMap, infantry: game.spottedInfantry, droneStatus: game.droneStatus });
     hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.calls, triangles: info.triangles }, game.quality.id, markers);
     input.endFrame();
     cpuMs += (performance.now() - frameStart - cpuMs) * 0.05;

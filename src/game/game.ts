@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ENEMY_TANK, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
+import { DRONE, ENEMY_TANK, HMG_127, MG_762, MG_AIM, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
 import type { Input } from '../core/input';
 import { Rng } from '../core/rng';
 import { Lighting, PRESETS } from '../render/lighting';
@@ -12,7 +12,10 @@ import type { World } from '../world/world';
 import { TankAI } from './ai';
 import type { Audio } from './audio';
 import { aimDirection, stepShell, timeOfFlight } from './ballistics';
+import { Bullets, type SoftTarget } from './bullets';
+import { Drone } from './drone';
 import { Effects, PKind } from './effects';
+import { Infantry, type Soldier } from './infantry';
 import { type ImpactEvent, Projectiles } from './projectiles';
 import { type HitInfo, Tank } from './tank';
 
@@ -45,6 +48,18 @@ export class Game {
   private tanks: Tank[] = [];
   private headlight: THREE.SpotLight;
   private water: Water;
+  readonly bullets: Bullets;
+  readonly drone = new Drone();
+  readonly infantry = new Infantry();
+  droneView = false;
+  private mgHeld = false;
+  private mgT = 0;
+  private mgCount = 0;
+  private aa = new Map<Tank, { t: number; burst: number }>();
+  private droneSpotted = new Map<Tank, number>();
+  private droneSpotT = 0;
+  private rotor: ReturnType<Audio['createRotor']> = null;
+  private soft: SoftTarget[] = [];
   private time = 0;
   wave = 0;
   score = 0;
@@ -94,6 +109,9 @@ export class Game {
     this.effects = new Effects(this.quality.maxParticles);
     this.scene.add(this.effects.group);
     this.projectiles = new Projectiles(this.effects);
+    this.bullets = new Bullets(this.effects);
+    this.scene.add(this.bullets.tracers, this.drone.model, this.infantry.group);
+    this.infantry.onKill = (s, how) => this.onSoldierKilled(s, how);
     this.headlight = new THREE.SpotLight(0xfff4e0, 0, 120, 0.5, 0.45, 2);
     this.scene.add(this.headlight, this.headlight.target);
     this.scene.fog = new THREE.FogExp2(0xffffff, 0.0003);
@@ -146,6 +164,9 @@ export class Game {
     this.player.place(PLAYER_SPAWN.x, PLAYER_SPAWN.z, PLAYER_SPAWN.yaw, this.world);
     this.player.engineVoice = this.audio.createEngine(true, this.player.pos);
     this.tanks.push(this.player);
+    this.drone.reset();
+    this.droneView = false;
+    this.droneSpotted.clear();
     this.camYaw = PLAYER_SPAWN.yaw + Math.PI;
     this.camPitch = 0.02;
     this.sight = false;
@@ -166,6 +187,9 @@ export class Game {
     this.enemies = [];
     this.ais = [];
     this.projectiles.clear();
+    this.bullets.clear();
+    this.infantry.clear();
+    this.aa.clear();
     this.effects.clear();
     this.world.decals.clear();
     this.lockTarget = null;
@@ -219,8 +243,14 @@ export class Game {
       this.enemies.push(e);
       this.ais.push(new TankAI(e, skill, 900 + this.wave * 31 + i));
     }
+    // infantry AT teams wait in cover along the approach
+    const centre = new THREE.Vector3();
+    for (const e of this.enemies) if (e.alive) centre.add(e.pos);
+    centre.divideScalar(Math.max(1, this.enemies.filter((e) => e.alive).length));
+    const squads = Math.min(1 + Math.floor(this.wave / 2), 3);
+    for (let i = 0; i < squads; i++) this.infantry.spawnSquad(this.world, p.pos, centre);
     this.hud.setWave(`FALA ${this.wave} · wrogów: ${count}`);
-    this.hud.message(`Fala ${this.wave}: ${count} czołgów wroga`, 'info');
+    this.hud.message(`Fala ${this.wave}: ${count} czołgów wroga, piechota w zasadzkach`, 'info');
   }
 
   // ------------------------------------------------------------------ per-frame input (render rate)
@@ -241,6 +271,35 @@ export class Game {
     if (this.state !== 'playing') return;
     if (!p.alive) return;
 
+    // ---- recon drone
+    if (inp.wasPressed('KeyB')) this.toggleDrone();
+    if (inp.wasPressed('KeyG') && this.drone.alive) {
+      this.drone.recall();
+      this.droneView = false;
+      this.hud.message('Dron wraca do czołgu', 'info');
+    }
+    if (this.droneView && !this.drone.alive) this.droneView = false;
+    if (this.droneView) {
+      const d = this.drone;
+      const f = (inp.isDown('KeyW') || inp.isDown('ArrowUp') ? 1 : 0) - (inp.isDown('KeyS') || inp.isDown('ArrowDown') ? 1 : 0) + inp.stickY;
+      const r = (inp.isDown('KeyD') || inp.isDown('ArrowRight') ? 1 : 0) - (inp.isDown('KeyA') || inp.isDown('ArrowLeft') ? 1 : 0) + inp.stickX;
+      const u = (inp.isDown('KeyE') || inp.isDown('Space') ? 1 : 0) - (inp.isDown('KeyQ') || inp.isDown('KeyC') ? 1 : 0);
+      d.input.fwd = Math.max(-1, Math.min(1, f));
+      d.input.right = Math.max(-1, Math.min(1, r));
+      d.input.up = u;
+      d.input.boost = inp.isDown('ShiftLeft');
+      const sens = 0.0022 * this.sensitivity;
+      d.camYaw -= inp.mouseDX * sens;
+      d.camPitch = Math.max(-1.5, Math.min(0.35, d.camPitch - inp.mouseDY * sens));
+      p.throttle = 0;
+      p.steer = 0;
+      this.mgHeld = false;
+      if (inp.wasPressed('KeyN')) this.toggleThermal();
+      if (inp.wasPressed('KeyR') || inp.wasClicked(0)) this.droneLase();
+      return;
+    }
+    this.mgHeld = inp.isButton(2) || inp.isDown('KeyM');
+
     const fwd = (inp.isDown('KeyW') || inp.isDown('ArrowUp') ? 1 : 0) - (inp.isDown('KeyS') || inp.isDown('ArrowDown') ? 1 : 0);
     const right = (inp.isDown('KeyD') || inp.isDown('ArrowRight') ? 1 : 0) - (inp.isDown('KeyA') || inp.isDown('ArrowLeft') ? 1 : 0);
     const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
@@ -260,14 +319,8 @@ export class Game {
       if (p.extinguish()) this.hud.message('Pożar ugaszony', 'good');
     }
     if (inp.wasPressed('KeyL')) this.headlightsOn = !this.headlightsOn;
-    if (inp.wasPressed('KeyV') || inp.wasClicked(2)) this.toggleSight();
-    if (inp.wasPressed('KeyN')) {
-      this.thermal = !this.thermal;
-      G.uThermal.value = this.thermal ? 1 : 0;
-      this.pipeline.thermalOn = this.thermal;
-      this.applyFog();
-      this.audio.uiBeep(this.thermal ? 880 : 660);
-    }
+    if (inp.wasPressed('KeyV')) this.toggleSight();
+    if (inp.wasPressed('KeyN')) this.toggleThermal();
     this.freeLook = inp.isDown('KeyC');
 
     const fovRad = (this.camera.fov * Math.PI) / 180;
@@ -287,6 +340,59 @@ export class Game {
     if (inp.wasPressed('KeyR')) this.lase();
     if (inp.wasClicked(0) || inp.wasPressed('Enter')) this.playerFire();
     void dt;
+  }
+
+  private toggleThermal(): void {
+    this.thermal = !this.thermal;
+    G.uThermal.value = this.thermal ? 1 : 0;
+    this.pipeline.thermalOn = this.thermal;
+    this.applyFog();
+    this.audio.uiBeep(this.thermal ? 880 : 660);
+  }
+
+  /** B: launch the drone, or switch between the drone and the tank while it flies. */
+  private toggleDrone(): void {
+    const d = this.drone;
+    if (d.canLaunch()) {
+      d.launch(this.player);
+      this.droneView = true;
+      this.sight = false;
+      this.hud.message(`Dron startuje (zapas: ${d.spares})`, 'info');
+      this.audio.uiBeep(1300, 0.05);
+    } else if (d.alive) {
+      this.droneView = !this.droneView;
+      if (this.droneView) this.sight = false;
+    } else if (d.state === 'rearming') {
+      this.hud.message(d.spares > 0 ? `Dron: przygotowanie ${Math.ceil(d.rearmT)} s` : 'Brak dronów', 'info');
+    } else if (d.spares <= 0) this.hud.message('Brak dronów', 'info');
+  }
+
+  /** Mark whatever sits under the drone's crosshair (tanks and infantry within 25 m of the aim point). */
+  private droneLase(): void {
+    const d = this.drone;
+    const dir = d.cameraDir(_v);
+    const end = _m.copy(d.pos).addScaledVector(dir, 2500);
+    const r = this.world.raycast(d.pos.x, d.pos.y, d.pos.z, end.x, end.y, end.z, _ray, 5);
+    if (r.kind === 'none') return;
+    const hit = _v2.set(r.x, r.y, r.z);
+    let n = 0;
+    for (const e of this.enemies) if (e.alive && e.pos.distanceTo(hit) < 25) {
+      this.droneSpotted.set(e, this.time + 60);
+      n++;
+    }
+    for (const s of this.infantry.soldiers) if (s.alive && s.pos.distanceTo(hit) < 25) {
+      s.spottedUntil = this.time + 60;
+      n++;
+    }
+    this.audio.uiBeep(n ? 1500 : 500, 0.05);
+    if (n) this.hud.message(`Dron oznaczył cele: ${n}`, 'good');
+  }
+
+  private onSoldierKilled(s: Soldier, how: string): void {
+    this.score += 20 * Math.max(1, this.wave);
+    if (s.spottedUntil > this.time || how === 'crushed' || how === 'blast' || how === 'bullet') {
+      this.hud.message(how === 'crushed' ? 'Piechota przejechana' : `Piechota zneutralizowana${s.role === 'rpg' ? ' (RPG)' : ''}`, 'good');
+    }
   }
 
   private toggleSight(): void {
@@ -369,16 +475,30 @@ export class Game {
     G.uTime.value = this.time;
     const p = this.player;
 
-    // player's aim → turret demand (stabilised)
-    if (p.alive && !this.freeLook) {
-      p.muzzlePosition(_m);
-      aimDirection(p.ammoSpec, _m, this.aimPoint, _dir);
+    // player's aim → turret demand (stabilised); the FCS switches to coax ballistics while the MG fires
+    if (p.alive && !this.freeLook && !this.droneView) {
+      // lay from the weapon actually firing (the coax sits beside the main gun)
+      if (this.mgHeld) {
+        p.model.coax.updateWorldMatrix(true, false);
+        _m.setFromMatrixPosition(p.model.coax.matrixWorld);
+      } else p.muzzlePosition(_m);
+      aimDirection(this.mgHeld ? MG_AIM : p.ammoSpec, _m, this.aimPoint, _dir);
       p.aimDir.set(_dir.x, _dir.y, _dir.z);
     }
+    this.fireCoax(dt);
     for (const ai of this.ais) ai.update(dt, this.world, p, this.time, (t) => this.fireTank(t));
     for (const t of this.tanks) t.step(dt, this.world);
     this.collideTanks();
-    this.projectiles.update(dt, this.world, this.tanks, this.camera.position, (e) => this.onImpact(e), (pos) => this.audio.crack(pos));
+    // drone, infantry, small arms
+    this.drone.update(dt, this.world, p, this.effects);
+    this.droneSpotting(dt);
+    this.infantry.update(dt, this.time, this.world, p, this.drone.alive ? this.drone : null, this.projectiles, this.bullets, this.effects, this.audio);
+    this.antiDroneFire(dt);
+    this.soft.length = 0;
+    for (const s of this.infantry.soldiers) if (s.alive) this.soft.push(s);
+    if (this.drone.alive) this.soft.push(this.drone);
+    this.bullets.update(dt, this.world, this.tanks, this.soft, this.audio);
+    this.projectiles.update(dt, this.world, this.tanks, this.soft, this.camera.position, (e) => this.onImpact(e), (pos) => this.audio.crack(pos));
     this.vehicleEffects(dt);
 
     // deaths
@@ -406,6 +526,98 @@ export class Game {
         this.nextWave();
         this.setState('playing');
       }
+    }
+  }
+
+  /** Coaxial 7.62 mm: ~800 rds/min, every fourth a tracer. */
+  private fireCoax(dt: number): void {
+    const p = this.player;
+    this.mgT -= dt;
+    p.mgHeat = Math.max(0, p.mgHeat - dt * 0.08);
+    if (!this.mgHeld || !p.alive || this.droneView || p.mgAmmo <= 0 || p.modules.gun <= 0) return;
+    while (this.mgT <= 0 && p.mgAmmo > 0) {
+      this.mgT += 60 / 800;
+      p.mgAmmo--;
+      this.mgCount++;
+      p.mgHeat = Math.min(1, p.mgHeat + 0.004);
+      p.model.coax.updateWorldMatrix(true, false);
+      const pos = _v.setFromMatrixPosition(p.model.coax.matrixWorld);
+      const dir = p.gunDirection(_v2);
+      const disp = 0.0007 + p.mgHeat * 0.002 + Math.min(1, Math.abs(p.speed) / 10) * 0.0012;
+      dir.x += this.rng.gauss() * disp;
+      dir.y += this.rng.gauss() * disp;
+      dir.z += this.rng.gauss() * disp;
+      dir.normalize();
+      this.bullets.fire(MG_762, 'player', pos, dir, this.mgCount % 4 === 0, p);
+      this.effects.emit(PKind.Flash, pos.x + dir.x * 0.3, pos.y + dir.y * 0.3, pos.z + dir.z * 0.3, dir.x * 20, dir.y * 20, dir.z * 20, 0.5, 0.04, 2.4, 1.6, 0.8, 1, 1);
+      this.audio.mg(pos, true);
+    }
+  }
+
+  /** What the drone's camera sees (cone of view + line of sight) is reported to the crew. */
+  private droneSpotting(dt: number): void {
+    const d = this.drone;
+    this.droneSpotT -= dt;
+    if (!d.alive || this.droneSpotT > 0) return;
+    this.droneSpotT = 0.25;
+    const fwd = d.cameraDir(_fwd);
+    const check = (pos: THREE.Vector3, range: number): boolean => {
+      const to = _v.subVectors(pos, d.pos);
+      const dist = to.length();
+      if (dist > range) return false;
+      if (to.dot(fwd) / dist < Math.cos(0.62)) return false;
+      return this.world.lineOfSight(d.pos.x, d.pos.y, d.pos.z, pos.x, pos.y, pos.z);
+    };
+    let newly = 0;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      if (check(e.centre(_v2).clone().setY(e.pos.y + 2.2), 1400)) {
+        if ((this.droneSpotted.get(e) ?? 0) < this.time) newly++;
+        this.droneSpotted.set(e, this.time + 25);
+      }
+    }
+    for (const s of this.infantry.soldiers) {
+      if (!s.alive) continue;
+      if (check(_v2.copy(s.pos).setY(s.pos.y + 1.2), 650)) {
+        if (s.spottedUntil < this.time) newly++;
+        s.spottedUntil = this.time + 25;
+      }
+    }
+    if (newly) this.audio.uiBeep(1700, 0.03);
+  }
+
+  /** Enemy tanks engage the drone with their roof machine guns (12.7 mm), green tracers. */
+  private antiDroneFire(dt: number): void {
+    const d = this.drone;
+    if (!d.alive) return;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      let st = this.aa.get(e);
+      if (!st) this.aa.set(e, (st = { t: 1 + Math.random() * 2, burst: 0 }));
+      st.t -= dt;
+      if (st.t > 0) continue;
+      e.model.roofMg.updateWorldMatrix(true, false);
+      const pos = _v.setFromMatrixPosition(e.model.roofMg.matrixWorld);
+      const dist = pos.distanceTo(d.pos);
+      if (dist > 650 || !this.world.lineOfSight(pos.x, pos.y, pos.z, d.pos.x, d.pos.y, d.pos.z)) {
+        st.t = 0.8;
+        st.burst = 0;
+        continue;
+      }
+      if (st.burst <= 0) st.burst = 6 + Math.floor(Math.random() * 5);
+      const tof = dist / HMG_127.v0;
+      const aim = _v2.copy(d.pos).addScaledVector(d.vel, tof * 0.9);
+      aim.y += (9.81 * tof * tof) / 2;
+      const dir = aim.sub(pos).normalize();
+      // the crew has to find and track the drone first: poor accuracy at range
+      const disp = 0.009 + dist * 0.000012;
+      dir.x += this.rng.gauss() * disp;
+      dir.y += this.rng.gauss() * disp;
+      dir.z += this.rng.gauss() * disp;
+      this.bullets.fire(HMG_127, 'enemy', pos, dir.normalize(), st.burst % 3 === 0, e);
+      this.audio.mg(pos, false);
+      st.burst--;
+      st.t = st.burst > 0 ? 0.1 : 1.6 + Math.random() * 1.8;
     }
   }
 
@@ -514,7 +726,17 @@ export class Game {
   private onImpact(e: ImpactEvent): void {
     const sh = e.shell;
     const ammo = sh.ammo;
-    const byPlayer = sh.owner === this.player;
+    const byPlayer = sh.team === 'player';
+    // shrapnel and blast against infantry
+    const blastR = ammo.id === 'HE' ? 9 : ammo.id === 'HEAT' ? 4 : ammo.id === 'RPG' ? 3 : 1.5;
+    this.infantry.blast(e.point, blastR);
+    if (this.drone.alive && this.drone.pos.distanceTo(e.point) < blastR * 1.5) this.drone.shootDown();
+    if (e.kind === 'soft' && e.soft) {
+      e.soft.onBullet(e.point, e.dir, 1000, sh.team);
+      if (ammo.blastRadius > 0) this.effects.explosionCore(e.point.x, e.point.y, e.point.z, ammo.id === 'HE' ? 1 : 0.5);
+      this.audio.explosion(e.point, 0.6);
+      return;
+    }
     if (e.kind === 'tank' && e.tank && e.hit) {
       const t = e.tank;
       const rep = t.takeHit(e.hit, e.dir, ammo, sh.flown, sh.owner);
@@ -534,7 +756,7 @@ export class Game {
       }
       if (t === this.player) {
         this.hitAge = 0;
-        this.lastHitFrom.copy(sh.owner.pos);
+        this.lastHitFrom.copy(sh.owner ? sh.owner.pos : sh.origin);
         this.effects.shake = Math.max(this.effects.shake, pen ? 1 : 0.5);
         const txt = rep.outcome === 'ricochet' ? 'Rykoszet od pancerza' : rep.outcome === 'nopen' ? 'Trafienie — pancerz wytrzymał' : rep.outcome === 'track' ? 'Zerwana gąsienica!' : 'PRZEBICIE!';
         const mods = rep.modules.length ? ` · ${rep.modules.map((m) => MOD_PL[m]).join(', ')}` : '';
@@ -582,8 +804,15 @@ export class Game {
     const inSight = this.sight && p.alive;
     p.model.gun.visible = !inSight;
     for (const c of p.model.turret.children) if (c !== p.model.gun && (c as THREE.Mesh).isMesh) c.visible = !inSight;
+    this.drone.model.visible = this.drone.airborne && !this.droneView;
     // camera
-    if (this.sight && p.alive) {
+    if (this.droneView && this.drone.alive) {
+      const d = this.drone;
+      cam.fov = 70;
+      cam.position.copy(d.model.position).y -= 0.08;
+      cam.up.set(0, 1, 0);
+      cam.lookAt(_v.copy(cam.position).add(d.cameraDir(_fwd)));
+    } else if (this.sight && p.alive) {
       const zoom = this.zooms[this.zoomIdx]!;
       cam.fov = (2 * Math.atan(Math.tan((60 * Math.PI) / 360) / zoom) * 180) / Math.PI;
       p.sightPosition(cam.position);
@@ -622,8 +851,9 @@ export class Game {
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
 
-    // aim point
+    // aim point (the turret holds its last aim while the crew flies the drone)
     const origin = this.sight ? p.sightPosition(_v) : cam.position;
+    if (!this.droneView) {
     const dir = this.sight ? this.sightDir(_v2) : cam.getWorldDirection(_v2);
     if (this.sight) {
       const range = this.lasedRange ?? 1000;
@@ -643,9 +873,10 @@ export class Game {
       p.muzzlePosition(_proj);
       this.autoRange = this.aimPoint.distanceTo(_proj);
     }
+    }
 
     // lighting follows the action
-    this.lighting.follow(this.sight ? this.aimPoint.clone().lerp(p.pos, 0.85) : p.pos);
+    this.lighting.follow(this.droneView ? cam.position.clone().addScaledVector(this.drone.cameraDir(_v), 60) : this.sight ? this.aimPoint.clone().lerp(p.pos, 0.85) : p.pos);
     const hl = this.headlightsOn && p.alive;
     p.model.headlightMat.emissiveIntensity = hl ? Math.min(2e4, 3000 * this.lighting.exposure) : 0;
     this.headlight.intensity = hl ? Math.min(1e5, 15000 * this.lighting.exposure) : 0;
@@ -657,6 +888,9 @@ export class Game {
     }
 
     this.world.update(dt, cam.position);
+    this.infantry.render(cam.position);
+    if (!this.rotor && this.audio.ready) this.rotor = this.audio.createRotor();
+    if (this.rotor) this.audio.updateRotor(this.rotor, this.drone.pos, Math.min(1, this.drone.vel.length() / DRONE.maxSpeed), this.drone.alive);
     this.water.update(this.pipeline.renderer, this.time, cam.position);
     this.effects.update(dt, cam.position, this.quality.wreckShadow);
     this.effects.setWind(G.uWind.value);
@@ -681,8 +915,17 @@ export class Game {
         e.centre(_v2);
         const d = _v.distanceTo(_v2);
         const seen = e.alive && d < 2500 && this.world.lineOfSight(_v.x, _v.y, _v.z, _v2.x, _v2.y + 0.5, _v2.z);
-        if (seen || (e.alive && this.time - e.lastShotTime < 4 && d < 1800)) this.spotted.add(e);
+        const byDrone = (this.droneSpotted.get(e) ?? 0) > this.time;
+        if (seen || byDrone || (e.alive && this.time - e.lastShotTime < 4 && d < 1800)) this.spotted.add(e);
         else if (!e.alive || d > 2600) this.spotted.delete(e);
+      }
+      for (const s of this.infantry.soldiers) {
+        if (!s.alive) continue;
+        const d = s.pos.distanceTo(p.pos);
+        const firing = s.state === 'aim' && s.timer < 0.3;
+        if ((d < 120 || (firing && d < 600)) && this.world.lineOfSight(_v.x, _v.y, _v.z, s.pos.x, s.pos.y + 1.2, s.pos.z)) {
+          s.spottedUntil = Math.max(s.spottedUntil, this.time + 8);
+        }
       }
     }
 
@@ -700,7 +943,7 @@ export class Game {
     const p = this.player;
     p.muzzlePosition(_m);
     p.gunDirection(_v);
-    const ammo = p.ammoSpec;
+    const ammo = this.mgHeld ? MG_AIM : p.ammoSpec;
     const s = { x: _m.x, y: _m.y, z: _m.z, vx: _v.x * ammo.v0, vy: _v.y * ammo.v0, vz: _v.z * ammo.v0 };
     for (let i = 0; i < 300; i++) {
       const ax = s.x;
@@ -755,7 +998,33 @@ export class Game {
       const c = Math.atan2(_v.x, _v.z);
       hitDir = -(a - c);
     }
+    // spotted units: red chevrons over tanks, small diamonds over infantry
+    const spots: { x: number; y: number; kind: 'tank' | 'inf' }[] = [];
+    for (const e of this.enemies) {
+      if (!e.alive || !this.spotted.has(e)) continue;
+      const sc = this.toScreen(e.centre(_v).setY(e.pos.y + 4));
+      if (sc) spots.push({ ...sc, kind: 'tank' });
+    }
+    for (const s of this.infantry.spotted(this.time)) {
+      const sc = this.toScreen(_v.copy(s.pos).setY(s.pos.y + 2.1));
+      if (sc) spots.push({ ...sc, kind: 'inf' });
+    }
+    const d = this.drone;
+    const drone = this.droneView && d.alive
+      ? {
+        alt: d.pos.y - this.world.hf.heightAt(d.pos.x, d.pos.z),
+        dist: Math.hypot(d.pos.x - p.pos.x, d.pos.z - p.pos.z),
+        battery: d.battery / DRONE.battery,
+        speed: d.vel.length(),
+        spares: d.spares,
+        warning: d.warning,
+        returning: d.state === 'returning',
+      }
+      : null;
     return {
+      drone,
+      spots,
+      mg: { held: this.mgHeld, ammo: p.mgAmmo, heat: p.mgHeat },
       sight: this.sight,
       zoom: this.zooms[this.zoomIdx]!,
       thermal: this.thermal,
@@ -771,6 +1040,19 @@ export class Game {
 
   get rangeInfo(): { range: number | null; lased: boolean } {
     return this.sight ? { range: this.lasedRange, lased: true } : { range: this.autoRange, lased: this.lasedRange !== null && this.lockTarget !== null };
+  }
+
+  get droneMap(): { x: number; z: number; yaw: number; state: string } | null {
+    const d = this.drone;
+    return d.airborne ? { x: d.pos.x, z: d.pos.z, yaw: d.camYaw, state: d.state } : null;
+  }
+
+  get droneStatus(): { state: string; spares: number; rearm: number } {
+    return { state: this.drone.state, spares: this.drone.spares, rearm: this.drone.rearmT };
+  }
+
+  get spottedInfantry(): Soldier[] {
+    return this.infantry.spotted(this.time);
   }
 
   get spottedSet(): Set<Tank> {

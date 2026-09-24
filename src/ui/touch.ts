@@ -32,7 +32,12 @@ export class TouchControls {
       <button class="tbtn" data-key="KeyN" id="t-thermal" aria-label="Termowizja">TERMO</button>
       <button class="tbtn" data-key="Space" data-hold="1" id="t-brake" aria-label="Hamulec">STOP</button>
       <button class="tbtn small" data-key="KeyF" id="t-ext" aria-label="Gaśnica">GAŚ</button>
-      <button class="tbtn small" id="t-pause" aria-label="Pauza">II</button>`;
+      <button class="tbtn small" id="t-pause" aria-label="Pauza">II</button>
+      <button class="tbtn" data-key="KeyM" data-hold="1" id="t-mg" aria-label="Karabin maszynowy">KM</button>
+      <button class="tbtn small" data-key="KeyB" id="t-drone" aria-label="Dron">DRON</button>
+      <button class="tbtn dronly" data-key="KeyE" data-hold="1" id="t-up" aria-label="W górę">▲</button>
+      <button class="tbtn dronly" data-key="KeyQ" data-hold="1" id="t-down" aria-label="W dół">▼</button>
+      <button class="tbtn dronly" data-key="KeyG" id="t-back" aria-label="Powrót drona">WRÓĆ</button>`;
     document.body.append(root);
     this.root = root;
     this.stick = root.querySelector('#stick') as HTMLDivElement;

@@ -3,12 +3,17 @@ import type { AmmoSpec } from '../config';
 import type { World } from '../world/world';
 import { type ShellState, stepShell } from './ballistics';
 import type { Effects } from './effects';
-import type { HitInfo, Tank } from './tank';
+import type { SoftTarget } from './bullets';
+import type { HitInfo, Tank, Team } from './tank';
+import { PKind } from './effects';
 
 export interface Shell {
   s: ShellState;
   ammo: AmmoSpec;
-  owner: Tank;
+  /** firing tank, or null for infantry rockets */
+  owner: Tank | null;
+  team: Team;
+  origin: THREE.Vector3;
   flown: number;
   age: number;
   tracer: THREE.Mesh | null;
@@ -24,8 +29,9 @@ export interface ImpactEvent {
   shell: Shell;
   point: THREE.Vector3;
   dir: THREE.Vector3;
-  kind: 'terrain' | 'building' | 'tank' | 'water';
+  kind: 'terrain' | 'building' | 'tank' | 'water' | 'soft';
   tank: Tank | null;
+  soft?: SoftTarget;
   hit: HitInfo | null;
 }
 
@@ -48,7 +54,7 @@ export class Projectiles {
     const v = owner.velocity;
     const s: Shell = {
       s: { x: pos.x, y: pos.y, z: pos.z, vx: dir.x * ammo.v0 + v.x, vy: dir.y * ammo.v0, vz: dir.z * ammo.v0 + v.z },
-      ammo, owner, flown: 0, age: 0, tracer: this.effects.spawnTracer(), ignore: owner, ignoreT: 0.25, cracked: false, ricochets: 0, bounce: false,
+      ammo, owner, team: owner.team, origin: pos.clone(), flown: 0, age: 0, tracer: this.effects.spawnTracer(), ignore: owner, ignoreT: 0.25, cracked: false, ricochets: 0, bounce: false,
     };
     if (s.tracer) {
       const c = ammo.tracer;
@@ -59,12 +65,27 @@ export class Projectiles {
     return s;
   }
 
+  /** Unguided infantry rocket: bright motor, smoke trail. */
+  fireRocket(ammo: AmmoSpec, pos: THREE.Vector3, dir: THREE.Vector3): Shell {
+    const s: Shell = {
+      s: { x: pos.x, y: pos.y, z: pos.z, vx: dir.x * ammo.v0, vy: dir.y * ammo.v0, vz: dir.z * ammo.v0 },
+      ammo, owner: null, team: 'enemy', origin: pos.clone(), flown: 0, age: 0, tracer: this.effects.spawnTracer(), ignore: null, ignoreT: 0,
+      cracked: false, ricochets: 3, bounce: false,
+    };
+    if (s.tracer) {
+      (s.tracer.material as THREE.MeshBasicMaterial).color.setRGB(40, 20, 6);
+      s.tracer.scale.set(2.2, 2.2, 1);
+    }
+    this.shells.push(s);
+    return s;
+  }
+
   clear(): void {
     for (const s of this.shells) if (s.tracer) this.effects.releaseTracer(s.tracer);
     this.shells.length = 0;
   }
 
-  update(dt: number, world: World, tanks: Tank[], listener: THREE.Vector3, onImpact: (e: ImpactEvent) => void, onCrack: (p: THREE.Vector3) => void): void {
+  update(dt: number, world: World, tanks: Tank[], soft: SoftTarget[], listener: THREE.Vector3, onImpact: (e: ImpactEvent) => void, onCrack: (p: THREE.Vector3) => void): void {
     for (let i = this.shells.length - 1; i >= 0; i--) {
       const sh = this.shells[i]!;
       sh.age += dt;
@@ -90,6 +111,23 @@ export class Projectiles {
           _best.point.copy(h.point);
         }
       }
+      let softHit: SoftTarget | null = null;
+      for (const t of soft) {
+        if (!t.alive || t.team === sh.team) continue;
+        const tt = t.hitTest(_a, _b);
+        if (tt >= 0 && tt < bestT) {
+          bestT = tt;
+          softHit = t;
+          bestTank = null;
+        }
+      }
+      if (sh.ammo.id === 'RPG') {
+        // rocket motor smoke
+        for (let k = 0; k < 3; k++) {
+          const f = Math.random();
+          this.effects.emit(PKind.Smoke, _a.x + (_b.x - _a.x) * f, _a.y + (_b.y - _a.y) * f, _a.z + (_b.z - _a.z) * f, (Math.random() - 0.5) * 0.6, 0.3, (Math.random() - 0.5) * 0.6, 0.5, 2.2 + Math.random(), 0.7, 0.68, 0.65, 0.4, 3.5);
+        }
+      }
       world.raycast(_a.x, _a.y, _a.z, _b.x, _b.y, _b.z, _ray, 4);
       const groundT = _ray.kind === 'none' ? 2 : _ray.t;
       // water surface
@@ -97,7 +135,10 @@ export class Projectiles {
       if (_a.y > 0 && _b.y <= 0) waterT = _a.y / (_a.y - _b.y);
 
       let done = false;
-      if (bestTank && bestT <= groundT && bestT <= waterT) {
+      if (softHit && bestT <= groundT && bestT <= waterT && bestT <= 1) {
+        onImpact({ shell: sh, point: _a.clone().lerp(_b, bestT), dir: _dir.clone(), kind: 'soft', tank: null, soft: softHit, hit: null });
+        done = true;
+      } else if (bestTank && bestT <= groundT && bestT <= waterT) {
         onImpact({ shell: sh, point: _best.point.clone(), dir: _dir.clone(), kind: 'tank', tank: bestTank, hit: { ..._best, localNormal: _best.localNormal.clone(), point: _best.point.clone() } });
         done = !sh.bounce;
         if (sh.bounce) {
@@ -119,7 +160,7 @@ export class Projectiles {
       if (!done) sh.flown += segLen;
 
       // supersonic crack for shells passing close to the listener
-      if (!sh.cracked && sh.owner.team !== 'player') {
+      if (!sh.cracked && sh.team !== 'player') {
         const d = distPointSegment(listener, _a, _b);
         if (d < 25) {
           sh.cracked = true;

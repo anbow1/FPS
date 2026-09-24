@@ -217,6 +217,104 @@ export class Audio {
     }
   }
 
+  /** Short gunshot: a noise crack through a band-pass, pitched by calibre. */
+  private shot(pos: THREE.Vector3, local: boolean, freq: number, gain: number, len: number): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const { input, start } = this.route(pos, local);
+    const n = this.noiseSrc();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = freq;
+    bp.Q.value = 0.9;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(gain, start);
+    g.gain.exponentialRampToValueAtTime(0.001, start + len);
+    n.connect(bp).connect(g).connect(input);
+    n.start(start);
+    n.stop(start + len + 0.02);
+  }
+
+  /** Coax 7.62 mm. */
+  mg(pos: THREE.Vector3, local: boolean): void {
+    this.shot(pos, local, 900, local ? 0.55 : 0.9, 0.09);
+  }
+
+  /** 5.56 mm rifle. */
+  rifle(pos: THREE.Vector3): void {
+    this.shot(pos, false, 1600, 0.7, 0.07);
+  }
+
+  /** Bullet glancing off armour. */
+  ping(pos: THREE.Vector3): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const { input, start } = this.route(pos, false);
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(2600 + Math.random() * 1500, start);
+    o.frequency.exponentialRampToValueAtTime(900, start + 0.18);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.12, start);
+    g.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
+    o.connect(g).connect(input);
+    o.start(start);
+    o.stop(start + 0.22);
+  }
+
+  /** RPG: launch pop, then the motor roar. */
+  rocketLaunch(pos: THREE.Vector3): void {
+    if (!this.ctx) return;
+    this.shot(pos, false, 400, 1.6, 0.35);
+    const ctx = this.ctx;
+    const { input, start } = this.route(pos, false);
+    const n = this.noiseSrc();
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(0.9, start + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, start + 1.4);
+    n.connect(lp).connect(g).connect(input);
+    n.start(start);
+    n.stop(start + 1.5);
+  }
+
+  /** Quadcopter hum: four slightly detuned rotors. */
+  createRotor(): { gain: GainNode; oscs: OscillatorNode[]; panner: PannerNode } | null {
+    if (!this.ctx) return null;
+    const ctx = this.ctx;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    const panner = this.panner(this.listenerPos);
+    panner.refDistance = 4;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2500;
+    const oscs: OscillatorNode[] = [];
+    for (let i = 0; i < 4; i++) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = 180 + i * 7;
+      o.connect(lp);
+      o.start();
+      oscs.push(o);
+    }
+    lp.connect(gain).connect(panner).connect(this.sfx);
+    return { gain, oscs, panner };
+  }
+
+  updateRotor(r: { gain: GainNode; oscs: OscillatorNode[]; panner: PannerNode }, pos: THREE.Vector3, load: number, on: boolean): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    r.gain.gain.setTargetAtTime(on ? 0.05 + load * 0.04 : 0, t, 0.1);
+    r.oscs.forEach((o, i) => o.frequency.setTargetAtTime(170 + load * 70 + i * 7, t, 0.1));
+    r.panner.positionX.setTargetAtTime(pos.x, t, 0.05);
+    r.panner.positionY.setTargetAtTime(pos.y, t, 0.05);
+    r.panner.positionZ.setTargetAtTime(pos.z, t, 0.05);
+  }
+
   /** Shell passing close by: a supersonic crack. */
   crack(pos: THREE.Vector3): void {
     if (!this.ctx) return;

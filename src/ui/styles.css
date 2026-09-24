@@ -522,3 +522,92 @@ body:not(.touch) .help .touchhelp {
 body.touch #hud {
   font-size: calc(var(--u) * 1.45);
 }
+
+/* ---------------------------------------------------------------- drone, spots, MG */
+#spots path {
+  stroke-width: 2.2;
+}
+#spots path.tank {
+  stroke: #ff5a3c;
+}
+#spots path.inf {
+  stroke: #ffb03c;
+  fill: rgba(255, 176, 60, 0.35);
+}
+#drone-cross {
+  stroke: #bfe6ff;
+}
+#drone-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  text-align: center;
+  color: #bfe6ff;
+  min-width: calc(var(--u) * 30);
+}
+#drone-hud .dh-title {
+  letter-spacing: 0.12em;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+#drone-hud .dh-bat {
+  margin: 4px auto;
+  width: calc(var(--u) * 16);
+  height: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 3px;
+  overflow: hidden;
+}
+#drone-bat {
+  height: 100%;
+}
+#drone-warn {
+  color: #ff9a6c;
+  font-weight: 700;
+  min-height: 1.2em;
+}
+#drone-hud .dh-help {
+  font-size: 0.72em;
+  opacity: 0.7;
+}
+body.touch #drone-hud .dh-help {
+  display: none;
+}
+#drone-line {
+  font-size: 0.8em;
+  color: #bfe6ff;
+  margin-top: 2px;
+}
+#mg {
+  font-size: 0.85em;
+  margin-top: 2px;
+  opacity: 0.7;
+}
+#mg.sel {
+  opacity: 1;
+  color: #ffe2a8;
+}
+body.drone #tr,
+body.drone #br {
+  opacity: 0.45;
+}
+
+#t-mg { right: calc(4vw + 27vmin + env(safe-area-inset-right)); bottom: calc(6vh + 36vmin); }
+#t-drone { right: calc(1.5vw + env(safe-area-inset-right)); top: calc(2vh + 12vmin); }
+#t-up { right: calc(5vw + env(safe-area-inset-right)); bottom: calc(8vh + 34vmin); }
+#t-down { right: calc(5vw + env(safe-area-inset-right)); bottom: calc(6vh + 14vmin); }
+#t-back { right: calc(5vw + 22vmin + env(safe-area-inset-right)); bottom: 6vh; }
+.tbtn.dronly,
+body.drone #t-fire,
+body.drone #t-sight,
+body.drone #t-zoom,
+body.drone #t-ammo,
+body.drone #t-brake,
+body.drone #t-mg,
+body.drone #t-ext {
+  display: none;
+}
+body.drone .tbtn.dronly {
+  display: block;
+}

@@ -83,6 +83,8 @@ export class Tank {
   deadTime = 0;
   kills = 0;
   shotsFired = 0;
+  mgAmmo = 2000;
+  mgHeat = 0;
   lastHitBy: Tank | null = null;
   lastShotTime = -99;
   // track animation

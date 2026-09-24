@@ -16,12 +16,16 @@ npm run build      # typecheck + build produkcyjny do dist/
 | --- | --- |
 | W S A D | jazda (A/D obrót kadłuba), Shift – wolno, Spacja – hamulec |
 | Mysz | celowanie (wieża nadąża z realną prędkością obrotu) |
-| LPM | strzał |
-| PPM / V | celownik działonowego (3× / 8× / 12×, kółko myszy) |
+| LPM | strzał z armaty |
+| PPM / M (przytrzymaj) | karabin maszynowy sprzężony 7,62 mm (800 strz./min, co 4. smugacz) |
+| V | celownik działonowego (3× / 8× / 12×, kółko myszy) |
 | R | dalmierz laserowy – mierzy odległość i namierza czołg (znacznik wyprzedzenia) |
 | N | kanał termowizyjny (white-hot) |
 | 1 / 2 / 3 | APFSDS / HEAT-FS / HE-FRAG |
 | F | gaśnica, L – reflektory, C – wolne rozglądanie |
+| B | dron rozpoznawczy: start / przełączenie widoku dron ↔ czołg |
+| G | dron wraca do czołgu |
+| Dron: W S A D, E/Spacja, Q/C, Shift, mysz | lot, wznoszenie, opadanie, szybko, kamera; LPM/R oznacza cel, N termowizja |
 | T | pora dnia, O – jakość, F3 – licznik wydajności, Esc – pauza |
 
 ## Co jest „realistyczne”
@@ -56,9 +60,21 @@ koła i gąsienice, ślady gąsienic, łamanie drzew, brodzenie.
 **AI** – linia wzroku po terenie, słyszy strzały, wyprzedzenie celu z tym samym solverem co
 gracz, strzał z krótkiego postoju, ustawienie kadłuba pod kątem, „strzel i zmień pozycję”.
 
+**Dron rozpoznawczy** – kwadrokopter startujący z czołgu (3 sztuki w zapasie, 40 s
+przygotowania kolejnego). Bateria ~160 s, zasięg łącza 1,7 km, pułap 220 m nad terenem, omija
+korony drzew. Wszystko, co widzi kamera (stożek + linia wzroku), trafia na minimapę i jako znaczniki
+na ekran na 25 s. Wrogie czołgi strzelają do niego z wkm 12,7 mm (zielone smugacze), a strzelcy
+piechoty z karabinków – można go zestrzelić. Automatyczny powrót przy słabym sygnale lub baterii.
+
+**Piechota w zasadzkach** – od pierwszej fali drużyny (granatnik RPG + strzelcy) chowają się w
+lesie i przy budynkach między graczem a wrogiem. Granatnik celuje 2–3 s z wyprzedzeniem, rakieta
+ma własną balistykę i głowicę kumulacyjną; strzelcy prowadzą ogień seriami do czołgu i drona.
+Piechota ucieka przed czołgiem, ginie od karabinu sprzężonego, odłamków HE i gąsienic.
+Wypatrzyć ją najłatwiej dronem albo w termowizji.
+
 **HUD** – strefy wg arkusza (16:9, title-safe 90 %, w centralnym okręgu tylko symbole):
 wskaźnik wieża/kadłub, dalmierz · amunicja · przeładowanie, siatka + znacznik wyprzedzenia,
-minimapa ze stożkiem wieży, stan modułów kadłuba. Na ekranach 21:9 / 32:9 HUD trzyma się
+minimapa ze stożkiem wieży, dronem i wykrytą piechotą, stan modułów kadłuba. Na ekranach 21:9 / 32:9 HUD trzyma się
 środkowego obszaru 16:9.
 
 **Wydajność** – budżety z arkusza: presety Wysoka / Niska (cienie 4096/2048, GTAO, gęstość

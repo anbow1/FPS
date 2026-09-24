@@ -14,7 +14,26 @@ const MODULE_LABEL: Record<ModuleId, string> = {
   engine: 'silnik', trackL: 'gąsienica L', trackR: 'gąsienica P', gun: 'działo', turretDrive: 'napęd wieży', ammo: 'amunicja', fuel: 'paliwo',
 };
 
+export interface DroneHud {
+  alt: number;
+  dist: number;
+  battery: number;
+  speed: number;
+  spares: number;
+  warning: string;
+  returning: boolean;
+}
+
+export interface MinimapExtras {
+  drone: { x: number; z: number; yaw: number; state: string } | null;
+  infantry: { pos: { x: number; z: number } }[];
+  droneStatus: { state: string; spares: number; rearm: number };
+}
+
 export interface MarkerState {
+  drone: DroneHud | null;
+  spots: { x: number; y: number; kind: 'tank' | 'inf' }[];
+  mg: { held: boolean; ammo: number; heat: number };
   sight: boolean;
   zoom: number;
   thermal: boolean;
@@ -54,6 +73,15 @@ export class Hud {
   private sightMask = $('sight-mask');
   private sightInfo = $('sight-info');
   private minimap = $('minimap') as HTMLCanvasElement;
+  private droneHud = $('drone-hud');
+  private droneTxt = $('drone-txt');
+  private droneBat = $('drone-bat');
+  private droneWarn = $('drone-warn');
+  private droneLine = $('drone-line');
+  private mgEl = $('mg');
+  private spotsG = $('spots') as unknown as SVGGElement;
+  private spotPool: SVGPathElement[] = [];
+  private extras: MinimapExtras | null = null;
   private mmCtx: CanvasRenderingContext2D;
   private mmBase: HTMLCanvasElement | null = null;
   private msgs: { el: HTMLElement; t: number }[] = [];
@@ -161,6 +189,10 @@ export class Hud {
     this.waveEl.textContent = text;
   }
 
+  setExtras(e: MinimapExtras): void {
+    this.extras = e;
+  }
+
   update(dt: number, p: Tank, range: number | null, rangeLased: boolean, enemies: Tank[], spotted: Set<Tank>, fps: number, cpuMs: number, info: { calls: number; triangles: number }, quality: 'high' | 'low', m: MarkerState): void {
     for (let i = this.msgs.length - 1; i >= 0; i--) {
       const q = this.msgs[i]!;
@@ -172,6 +204,13 @@ export class Hud {
       }
     }
     this.markers(m);
+    this.spots(m.spots);
+    document.body.classList.toggle('drone', !!m.drone);
+    this.droneHud.style.display = m.drone ? '' : 'none';
+    if (m.drone) {
+      this.droneBat.style.width = `${Math.max(0, m.drone.battery) * 100}%`;
+      this.droneBat.style.background = m.drone.battery > 0.3 ? '#9fcf7f' : m.drone.battery > 0.15 ? '#e8c35a' : '#e0604a';
+    }
     this.turretInd.setAttribute('transform', 'rotate(0 50 50)');
     this.hullInd.setAttribute('transform', `rotate(${(p.turretYaw * 180) / Math.PI} 50 50)`);
 
@@ -183,6 +222,17 @@ export class Hud {
     this.slow -= dt;
     if (this.slow > 0) return;
     this.slow = 1 / 12;
+    if (m.drone) {
+      this.droneTxt.textContent = `WYS ${m.drone.alt.toFixed(0)} m · ODL ${m.drone.dist.toFixed(0)} m · ${(m.drone.speed * 3.6).toFixed(0)} km/h`;
+      this.droneWarn.textContent = m.drone.returning ? 'POWRÓT DO CZOŁGU' : m.drone.warning;
+    }
+    const ds = this.extras?.droneStatus;
+    if (ds) {
+      this.droneLine.textContent =
+        ds.state === 'stowed' ? `DRON gotowy ×${ds.spares} (B)` : ds.state === 'rearming' ? (ds.spares > 0 ? `DRON ${Math.ceil(ds.rearm)} s` : 'DRON brak') : ds.state === 'returning' ? 'DRON wraca' : ds.state === 'falling' ? 'DRON zestrzelony' : 'DRON w powietrzu (B/G)';
+    }
+    this.mgEl.textContent = `KM ${m.mg.ammo}${m.mg.heat > 0.6 ? ' · gorąca lufa' : ''}`;
+    this.mgEl.classList.toggle('sel', m.mg.held);
     this.speedEl.textContent = `${Math.round(Math.abs(p.speed) * 3.6)} km/h${p.speed < -0.3 ? ' R' : ''}`;
     this.rangeEl.textContent = range === null ? '----' : `${Math.round(range / 5) * 5}`;
     this.rangeEl.classList.toggle('lased', rangeLased);
@@ -249,6 +299,34 @@ export class Hud {
         ctx.fill();
       }
     }
+    const ex = this.extras;
+    if (ex) {
+      ctx.fillStyle = '#ffb03c';
+      for (const s of ex.infantry) {
+        const x = toPx(s.pos.x);
+        const y = toPx(s.pos.z);
+        ctx.fillRect(x - 1.8, y - 1.8, 3.6, 3.6);
+      }
+      if (ex.drone) {
+        const x = toPx(ex.drone.x);
+        const y = toPx(ex.drone.z);
+        // camera cone and airframe
+        ctx.fillStyle = 'rgba(140,210,255,0.18)';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        for (const a of [-0.6, 0.6]) ctx.lineTo(x + Math.sin(ex.drone.yaw + a) * 28, y + Math.cos(ex.drone.yaw + a) * 28);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = ex.drone.state === 'falling' ? '#e0604a' : '#8cd2ff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 3.5, y - 3.5);
+        ctx.lineTo(x + 3.5, y + 3.5);
+        ctx.moveTo(x + 3.5, y - 3.5);
+        ctx.lineTo(x - 3.5, y + 3.5);
+        ctx.stroke();
+      }
+    }
     const px = toPx(p.pos.x);
     const py = toPx(p.pos.z);
     // turret cone
@@ -274,6 +352,25 @@ export class Hud {
     ctx.restore();
   }
 
+  private spots(list: MarkerState['spots']): void {
+    while (this.spotPool.length < list.length) {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      this.spotsG.append(el);
+      this.spotPool.push(el);
+    }
+    this.spotPool.forEach((el, i) => {
+      const sp = list[i];
+      if (!sp) {
+        el.setAttribute('visibility', 'hidden');
+        return;
+      }
+      el.setAttribute('visibility', 'visible');
+      el.setAttribute('class', sp.kind);
+      el.setAttribute('transform', `translate(${sp.x.toFixed(1)} ${sp.y.toFixed(1)})`);
+      el.setAttribute('d', sp.kind === 'tank' ? 'M-8 -10 L0 -2 L8 -10' : 'M0 -9 L4 -5 L0 -1 L-4 -5 Z');
+    });
+  }
+
   private markers(m: MarkerState): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -285,7 +382,8 @@ export class Hud {
       for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
     };
     const s = Math.max(0.8, Math.min(1.4, w / 1600));
-    set('reticle', { transform: `translate(${cx} ${cy}) scale(${s})`, visibility: m.sight ? 'hidden' : 'visible' });
+    set('reticle', { transform: `translate(${cx} ${cy}) scale(${s})`, visibility: m.sight || m.drone ? 'hidden' : 'visible' });
+    set('drone-cross', { transform: `translate(${cx} ${cy}) scale(${s})`, visibility: m.drone ? 'visible' : 'hidden' });
     if (m.gun) set('gun-marker', { transform: `translate(${m.gun.x} ${m.gun.y}) scale(${s})`, visibility: 'visible', class: m.gunReady ? 'ready' : 'reloading' });
     else set('gun-marker', { visibility: 'hidden' });
     if (m.lead) set('lead-mark', { transform: `translate(${m.lead.x} ${m.lead.y}) scale(${s})`, visibility: 'visible' });

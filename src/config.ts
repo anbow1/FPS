@@ -13,9 +13,11 @@ export const PLAY_HALF = 860;
 export const WATER_LEVEL = 0;
 
 export type AmmoId = 'APFSDS' | 'HEAT' | 'HE';
+/** Everything that flies: tank rounds plus the infantry rocket. */
+export type ProjectileId = AmmoId | 'RPG';
 
 export interface AmmoSpec {
-  id: AmmoId;
+  id: ProjectileId;
   label: string;
   /** muzzle velocity m/s */
   v0: number;
@@ -48,6 +50,38 @@ export const AMMO: Record<AmmoId, AmmoSpec> = {
     id: 'HE', label: 'HE-FRAG', v0: 880, k: 2.4e-4, pen0: 60, penLossPerKm: 0,
     damage: 0.18, ricochetDeg: 80, blastRadius: 9, tracer: [1.0, 0.4, 0.15],
   },
+};
+
+/** RPG-7 type rocket with a tandem-less HEAT warhead (~500 mm RHA), unguided, 295 m/s sustained. */
+export const RPG_ROCKET: AmmoSpec = {
+  id: 'RPG', label: 'RPG', v0: 295, k: 3.5e-4, pen0: 500, penLossPerKm: 0,
+  damage: 0.26, ricochetDeg: 70, blastRadius: 2.5, tracer: [1.0, 0.55, 0.2],
+};
+
+/** Small-arms rounds (projectile sheet): 7.62 mm 838 m/s → 0.78 s @500 m; 5.56 mm 920 m/s → 0.77 s @500 m. */
+export interface BulletSpec {
+  v0: number;
+  k: number;
+  damage: number;
+}
+export const MG_762: BulletSpec = { v0: 838, k: 1.045e-3, damage: 70 };
+export const RIFLE_556: BulletSpec = { v0: 920, k: 1.38e-3, damage: 55 };
+export const HMG_127: BulletSpec = { v0: 890, k: 5.5e-4, damage: 140 };
+/** The coax laid with its own ballistics (FCS "MG" mode). */
+export const MG_AIM: AmmoSpec = {
+  id: 'HE', label: 'KM 7,62', v0: MG_762.v0, k: MG_762.k, pen0: 0, penLossPerKm: 0, damage: 0, ricochetDeg: 0, blastRadius: 0, tracer: [1, 0.3, 0.2],
+};
+
+export const DRONE = {
+  maxSpeed: 17, // m/s horizontal
+  climb: 6, // m/s
+  accel: 9,
+  battery: 160, // s
+  range: 1700, // m radio range from the tank
+  ceiling: 220, // m above ground
+  hp: 30,
+  spares: 3,
+  rearm: 40, // s to prepare the next airframe
 };
 
 /** The gun sight is zeroed at 1000 m (0 mil holdover at 1000 m, as on the reference sheet). */

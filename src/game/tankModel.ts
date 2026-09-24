@@ -18,6 +18,9 @@ export interface TankModel {
   turret: THREE.Group;
   gun: THREE.Group;
   muzzle: THREE.Object3D;
+  /** coaxial MG muzzle (gun frame) and the roof MG (turret frame) */
+  coax: THREE.Object3D;
+  roofMg: THREE.Object3D;
   sight: THREE.Object3D;
   /** rest-pose pivots in the hull frame */
   turretPivot: THREE.Vector3;
@@ -507,10 +510,16 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
   const muzzle = new THREE.Object3D();
   muzzle.position.set(0, 0, start + gunLen + 0.05);
   gun.add(muzzle);
+  const coax = new THREE.Object3D();
+  coax.position.set(west ? 0.3 : -0.28, 0.02, west ? 0.75 : 0.6);
+  gun.add(coax);
+  const roofMg = new THREE.Object3D();
+  roofMg.position.set(west ? -0.72 : 0.55, west ? 1.1 : 1.02, west ? 0.3 : 1.0);
+  turret.add(roofMg);
 
   const materials: THREE.Material[] = [paint, dark, rubber, steel, glass, headlightMat, tl.mat, tr.mat];
   const model: TankModel = {
-    root, hull, turret, gun, muzzle, sight, turretPivot, gunPivot, uniforms, materials,
+    root, hull, turret, gun, muzzle, coax, roofMg, sight, turretPivot, gunPivot, uniforms, materials,
     trackMats: [tl.mat, tr.mat], trackTex: [tl.tex, tr.tex], wheels, wheelSpecs: layout.roadWheels,
     sprockets, idlers, trackX: layout.trackX, linkPitch, hullBox, turretBox, gunLength: start + gunLen,
     exhaust, headlights, headlightMat,
