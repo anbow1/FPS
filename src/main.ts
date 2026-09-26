@@ -256,7 +256,7 @@ if (params.has('autostart')) {
   s.preset = pick<LightingPresetId>('light', s.preset);
   s.quality = params.get('q') === 'low' ? 'low' : 'high';
   s.wet = params.has('wet');
-  s.showStats = true;
+  s.showStats = !params.has('nostats');
   app.debug.intent = () => {};
   void app.start(s).then(() => {
     document.querySelector<HTMLElement>('.hint')?.style.setProperty('display', 'none');

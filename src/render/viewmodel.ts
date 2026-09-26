@@ -16,6 +16,8 @@ import { buildAmmoPouch, buildFrag, buildHand, buildMedKit, buildPistol, buildRi
 // in the weapon system and moves the camera.
 
 export const VM_SCALE = 0.25;
+// Bolt handle at rest angles down beside the stock; it lifts ~75° to unlock.
+const BOLT_DOWN_RAD = -0.75;
 export const VIEWMODEL_LAYER = 1;
 
 interface Pose {
@@ -169,7 +171,7 @@ export class ViewModel {
     const mag = this.shown === 'rifle' ? this.rifle.magazine : this.shown === 'sniper' ? this.sniper.magazine : this.pistol.magazine;
     mag.visible = true;
     mag.position.y = this.shown === 'rifle' ? -0.142 : this.shown === 'sniper' ? -0.125 : -0.11;
-    this.sniper.bolt.rotation.z = 0;
+    this.sniper.bolt.rotation.z = BOLT_DOWN_RAD;
     this.sniper.bolt.position.z = 0.13;
     this.frag.visible = false;
     this.medKit.visible = false;
@@ -188,7 +190,8 @@ export class ViewModel {
     } else if (a.kind === 'bolt') {
       // Up, back, forward, down.
       const b = this.sniper.bolt;
-      b.rotation.z = t < 0.2 ? (t / 0.2) * 1.2 : t < 0.8 ? 1.2 : ((1 - t) / 0.2) * 1.2;
+      const lift = t < 0.2 ? t / 0.2 : t < 0.8 ? 1 : (1 - t) / 0.2;
+      b.rotation.z = BOLT_DOWN_RAD + lift * 1.3;
       b.position.z = 0.13 + (t < 0.2 ? 0 : t < 0.5 ? ((t - 0.2) / 0.3) * 0.08 : t < 0.8 ? ((0.8 - t) / 0.3) * 0.08 : 0);
       rot.z += 0.08 * Math.sin(Math.PI * t);
     } else if (a.kind === 'switch') {
