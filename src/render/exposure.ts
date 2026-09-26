@@ -63,7 +63,6 @@ export class AutoExposure {
         .readRenderTargetPixelsAsync(this.target, 0, 0, EXPOSURE.histogramWidth, EXPOSURE.histogramHeight)
         .then((data) => {
           this.meteredEv = meterEv(data, preExposure);
-          (globalThis as unknown as { __metered: number }).__metered = this.meteredEv;
         })
         .catch((err: unknown) => {
           console.warn('exposure readback failed; holding the last value:', err);

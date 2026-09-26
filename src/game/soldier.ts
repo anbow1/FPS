@@ -425,8 +425,10 @@ export class Soldier {
     let desiredZ = 0;
     if (this.hasMoveTarget && !this.atMoveTarget() && this.blindSeconds <= 0) {
       this.repathSeconds -= dt;
-      if (!this.path || this.repathSeconds <= 0 || this.pathGoal.distanceToXZ(this.moveTarget) > 1.5) {
-        this.path = ctx.nav.findPath(this.body.position, this.moveTarget, 12000);
+      const wantsPath = !this.path || this.repathSeconds <= 0 || this.pathGoal.distanceToXZ(this.moveTarget) > 1.5;
+      // The nav grid rations searches per step; without one, keep the old path and ask next step.
+      if (wantsPath && ctx.nav.reserveSearch()) {
+        this.path = ctx.nav.findPath(this.body.position, this.moveTarget, 6000);
         this.pathIndex = 0;
         this.pathGoal.copy(this.moveTarget);
         this.repathSeconds = 4;

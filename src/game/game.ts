@@ -169,6 +169,7 @@ export class Game {
   step(intent: GameIntent, dt: number): void {
     this.timeSeconds += dt;
     this.aiContext.timeSeconds = this.timeSeconds;
+    this.nav.beginStep();
     const p = this.player;
     this.flashAmount = Math.max(0, this.flashAmount - dt / GRENADES.flashBlindSeconds);
     this.rangeFinderAgeSeconds += dt;

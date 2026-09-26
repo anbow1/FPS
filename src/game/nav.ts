@@ -7,6 +7,12 @@ import type { BoxCollider, CollisionWorld } from './collision.ts';
 const BODY_LOW_M = 0.45; // anything below this is a step
 const BODY_HIGH_M = 1.7;
 const MAX_SLOPE_RISE_PER_CELL = 0.9; // tuned by hand: blocks cliffs, allows the ridge path
+// A* searches allowed per 60 Hz step across all soldiers. One search can cost
+// several ms on a 400 × 400 grid; when a squad changes state together, the rest
+// queue for a few steps (a few tens of ms) instead of spiking one frame.
+// Measured with scripts/bench.ts (city skirmish, 30 s): step p99 13.5 ms and max 55 ms
+// before; with this ration and a 6000-expansion cap, p99 3.2 ms and max 6.1 ms.
+const SEARCHES_PER_STEP = 1;
 
 export class NavGrid {
   readonly cells: Uint8Array; // 1 = walkable
@@ -16,6 +22,7 @@ export class NavGrid {
   private readonly closedStamp: Uint32Array;
   private readonly openStamp: Uint32Array;
   private stamp = 1;
+  private searchesLeft = SEARCHES_PER_STEP;
   private readonly heap: number[] = [];
   private readonly heapF: number[] = [];
 
@@ -71,6 +78,18 @@ export class NavGrid {
         this.cells[iz * this.size + ix] = ok ? 1 : 0;
       }
     }
+  }
+
+  /** Called once at the start of every logic step. */
+  beginStep(): void {
+    this.searchesLeft = SEARCHES_PER_STEP;
+  }
+
+  /** Claims this step's search budget. False means: ask again next step. */
+  reserveSearch(): boolean {
+    if (this.searchesLeft <= 0) return false;
+    this.searchesLeft--;
+    return true;
   }
 
   cellX(ix: number): number {
@@ -181,14 +200,19 @@ export class NavGrid {
     return this.smooth(from, raw);
   }
 
+  /**
+   * String-pulling: from each anchor, walk forward while the straight line
+   * stays walkable, then anchor at the last visible waypoint. O(n · L) — the
+   * old back-to-front scan was O(n² · L) and cost up to 16 ms on long city paths.
+   */
   private smooth(from: Vec3, raw: Vec3[]): Vec3[] {
     const out: Vec3[] = [];
     let anchorX = from.x;
     let anchorZ = from.z;
     let i = 0;
     while (i < raw.length) {
-      let j = raw.length - 1;
-      while (j > i && !this.lineWalkable(anchorX, anchorZ, (raw[j] as Vec3).x, (raw[j] as Vec3).z)) j--;
+      let j = i;
+      while (j + 1 < raw.length && this.lineWalkable(anchorX, anchorZ, (raw[j + 1] as Vec3).x, (raw[j + 1] as Vec3).z)) j++;
       const p = raw[j] as Vec3;
       out.push(p);
       anchorX = p.x;
