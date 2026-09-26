@@ -1,6 +1,6 @@
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { attribute, positionLocal, sin, time, uniform, vec3 } from 'three/tsl';
-import { BufferAttribute, type BufferGeometry, CylinderGeometry, Group, InstancedMesh, Matrix4, MeshStandardNodeMaterial, PlaneGeometry, Quaternion, Vector3 } from 'three/webgpu';
+import { BufferAttribute, BufferGeometry, CylinderGeometry, Group, InstancedMesh, Matrix4, MeshStandardNodeMaterial, PlaneGeometry, Quaternion, Vector3 } from 'three/webgpu';
 import type { TreeInstance } from '../maps/types.ts';
 import type { MaterialLibrary } from './materials.ts';
 
@@ -15,24 +15,58 @@ const CHUNK_M = 100;
 export const windVector = uniform(new Vector3());
 
 /**
- * Pine of unit height, crown from 35 % up: stacked open cones (double-sided
- * needle cards), radius about 0.2 × height at the base of the crown.
+ * Pine of unit height: whorls of drooping branch cards from 35 % up, each
+ * card a needle-textured quad radiating from the trunk, shorter toward the
+ * top. Normals are bent outward from the crown's axis so the crown shades as
+ * a volume rather than as flat cards (a standard foliage-normal trick).
  */
 function pineCrown(): BufferGeometry {
-  const layers: BufferGeometry[] = [];
-  const count = 7;
-  for (let i = 0; i < count; i++) {
-    const t = i / (count - 1);
-    const y = 0.35 + t * 0.58;
-    const radius = 0.2 * (1 - t * 0.82);
-    const h = 0.16 - t * 0.05;
-    const cone = new CylinderGeometry(0.004, radius, h, 11, 1, true);
-    cone.rotateY(i * 0.9);
-    cone.translate(0, y, 0);
-    layers.push(cone);
+  const whorls = 10;
+  const perWhorl = 7;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (let w = 0; w < whorls; w++) {
+    const t = w / (whorls - 1);
+    const y = 0.33 + t * 0.62;
+    const length = 0.21 * (1 - t * 0.85) + 0.012;
+    const width = length * 0.75;
+    const droop = 0.35 + (1 - t) * 0.25; // lower branches hang more
+    for (let k = 0; k < perWhorl; k++) {
+      const a = (k / perWhorl) * Math.PI * 2 + w * 1.3;
+      const dx = Math.cos(a);
+      const dz = Math.sin(a);
+      // Card spans from the trunk out and down; its width lies across the branch.
+      const tipX = dx * length * Math.cos(droop);
+      const tipY = -length * Math.sin(droop);
+      const tipZ = dz * length * Math.cos(droop);
+      const sx = -dz * width * 0.5;
+      const sz = dx * width * 0.5;
+      const base = positions.length / 3;
+      const corners: [number, number, number, number, number][] = [
+        [sx, 0.02, sz, 0, 0],
+        [-sx, 0.02, -sz, 1, 0],
+        [tipX - sx * 0.5, tipY, tipZ - sz * 0.5, 1, 1],
+        [tipX + sx * 0.5, tipY, tipZ + sz * 0.5, 0, 1],
+      ];
+      for (const [cx, cy, cz, u, v] of corners) {
+        positions.push(cx, y + cy, cz);
+        const nx = cx;
+        const ny = cy + 0.08;
+        const nz = cz;
+        const len = Math.hypot(nx, ny, nz) || 1;
+        normals.push(nx / len, ny / len, nz / len);
+        uvs.push(u, v);
+      }
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
   }
-  const g = mergeGeometries(layers, false);
-  if (!g) throw new Error('pine crown merge failed');
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  g.setIndex(indices);
   addSway(g);
   return g;
 }

@@ -254,20 +254,35 @@ export function bark(): TexelSampler {
 }
 
 /**
- * Pine needle cards: dense needle clusters with gaps, for alpha-clip foliage.
- * Sheet pine foliage #3C4A2E rough 0.85.
+ * Pine branch card: a twig along V (base at v = 0, tip at v = 1) with needle
+ * strands angled off it, the outline tapering toward the tip, and side shoots.
+ * For alpha-clip foliage. Sheet pine foliage #3C4A2E rough 0.85.
  */
 export function pineNeedles(): TexelSampler {
   const c = hex(0x3c4a2e);
+  const twig = hex(0x4a3b30);
   return (u, v, t) => {
-    const clump = tileFbm(u * 5, v * 5, 5, 3, 121);
-    const needle = tileNoise(u * 180, v * 22, 180, 122);
-    const edge = Math.min(v, 1 - v) * 2; // cards fade toward their top and bottom edge
-    const dense = clump * 1.35 + edge * 0.35 - 0.35;
-    t.alpha = needle * 0.55 + dense > 0.62 ? 1 : 0;
-    put(t, c, 0.75 + needle * 0.45);
-    t.height = needle;
+    const across = Math.abs(u - 0.5) * 2; // 0 on the twig, 1 at the card edge
+    const halfWidth = 0.95 - v * 0.55; // feather outline, narrower at the tip
+    if (across < 0.035 && v < 0.97) {
+      put(t, twig, 1);
+      t.alpha = 1;
+      t.height = 1;
+      t.rough = 0.9;
+      return;
+    }
+    // Needles: thin strands leaving the twig at ~45° toward the tip, one every ~1/40 of the card.
+    const phase = v * 40 - across * 22; // mirrored about the twig because `across` is |u − ½|
+    const strand = Math.abs((((phase % 1) + 1) % 1) - 0.5) < 0.17;
+    const gaps = tileFbm(u * 5, v * 5, 5, 3, 121); // clumps and holes so light passes
+    const inside = across < halfWidth * (0.7 + gaps * 0.5);
+    t.alpha = inside && strand && gaps > 0.3 ? 1 : 0;
+    // Needles darken toward the twig (self-shadowing inside the branch).
+    const tone = tileNoise(u * 64, v * 64, 64, 122);
+    put(t, c, 0.7 + tone * 0.3 + across * 0.2);
+    t.height = strand ? 1 : 0;
     t.rough = 0.85;
+    t.ao = 0.6 + across * 0.4;
   };
 }
 
