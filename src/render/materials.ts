@@ -1,6 +1,7 @@
 import { float, mix, texture, uniform } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import type { BoxLook } from '../maps/types.ts';
+import { skyVisibilityNode } from './interior.ts';
 import * as P from './patterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
 
@@ -31,14 +32,17 @@ function set(key: string, size: number, sampler: () => TexelSampler, normalStren
 }
 
 function standard(ts: TextureSet, name: string, normalScale = 1): MeshStandardNodeMaterial {
-  const m = new MeshStandardNodeMaterial({ name, map: ts.map, normalMap: ts.normalMap, roughnessMap: ts.ormMap, metalnessMap: ts.ormMap, aoMap: ts.ormMap, roughness: 1, metalness: 1 });
+  const m = new MeshStandardNodeMaterial({ name, map: ts.map, normalMap: ts.normalMap, roughnessMap: ts.ormMap, metalnessMap: ts.ormMap, roughness: 1, metalness: 1 });
   m.normalScale.set(normalScale, normalScale);
+  // AO (R channel) × sky visibility: indirect light only, dimmed inside buildings.
+  m.aoNode = texture(ts.ormMap).r.mul(skyVisibilityNode());
   return m;
 }
 
 /** Wet-capable material: the same texture set driven by the wetness uniform (rules §3.1). */
 function wettable(ts: TextureSet, name: string): MeshPhysicalNodeMaterial {
-  const m = new MeshPhysicalNodeMaterial({ name, normalMap: ts.normalMap, aoMap: ts.ormMap, metalness: 0 });
+  const m = new MeshPhysicalNodeMaterial({ name, normalMap: ts.normalMap, metalness: 0 });
+  m.aoNode = texture(ts.ormMap).r.mul(skyVisibilityNode());
   // Sheet: dry asphalt #3A3A3C L 0.043 → wet #2A2B2E L 0.024, so ×0.56 in linear.
   m.colorNode = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness));
   m.roughnessNode = mix(texture(ts.ormMap).g, float(0.35), wetness);

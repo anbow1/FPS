@@ -14,7 +14,11 @@ export class FixedLoop {
   private running = false;
   private rafId = 0;
 
-  constructor(private readonly callbacks: LoopCallbacks) {}
+  /** `maxStepsPerFrame` defaults to the config value; tests on a slow software GPU raise it to keep game time moving. */
+  constructor(
+    private readonly callbacks: LoopCallbacks,
+    private readonly maxStepsPerFrame: number = PHYSICS.maxStepsPerFrame,
+  ) {}
 
   start(): void {
     if (this.running) return;
@@ -32,16 +36,16 @@ export class FixedLoop {
     if (!this.running) return;
     this.rafId = requestAnimationFrame(this.frame);
     // First frame: no elapsed time yet, so no step, but still render.
-    const frameSeconds = this.lastMs < 0 ? 0 : Math.min((nowMs - this.lastMs) / 1000, 0.25);
+    const frameSeconds = this.lastMs < 0 ? 0 : Math.min((nowMs - this.lastMs) / 1000, 0.25 * (this.maxStepsPerFrame / PHYSICS.maxStepsPerFrame));
     this.lastMs = nowMs;
     this.accumulatorSeconds += frameSeconds;
     let steps = 0;
-    while (this.accumulatorSeconds >= PHYSICS.stepSeconds && steps < PHYSICS.maxStepsPerFrame) {
+    while (this.accumulatorSeconds >= PHYSICS.stepSeconds && steps < this.maxStepsPerFrame) {
       this.callbacks.step(PHYSICS.stepSeconds);
       this.accumulatorSeconds -= PHYSICS.stepSeconds;
       steps++;
     }
-    if (steps === PHYSICS.maxStepsPerFrame) this.accumulatorSeconds = 0;
+    if (steps === this.maxStepsPerFrame) this.accumulatorSeconds = 0;
     this.callbacks.render(this.accumulatorSeconds / PHYSICS.stepSeconds, frameSeconds);
   };
 }

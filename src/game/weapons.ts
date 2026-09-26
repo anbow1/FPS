@@ -102,7 +102,8 @@ export class WeaponSystem {
     const canAim = !blocked && !player.isSprinting && (this.action.kind === 'idle' || this.action.kind === 'bolt');
     const adsTarget = intent.aimHeld && canAim ? 1 : 0;
     const adsRate = dt / st.spec.adsSeconds;
-    this.adsBlend = adsTarget > this.adsBlend ? Math.min(1, this.adsBlend + adsRate) : Math.max(0, this.adsBlend - adsRate * 1.3);
+    // Compare with the target, not the current blend: at 1 a '>' test would start lowering the sights.
+    this.adsBlend = adsTarget === 1 ? Math.min(1, this.adsBlend + adsRate) : Math.max(0, this.adsBlend - adsRate * 1.3);
 
     const triggerWants = st.autoMode ? intent.fireHeld : intent.firePressed;
     if (!blocked && this.action.kind === 'idle' && !player.isSprinting && triggerWants && this.cooldownSeconds <= 0) {

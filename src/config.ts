@@ -441,7 +441,9 @@ export const LOCAL_LIGHTS = {
 
 export const CAMERA = {
   verticalFovDeg: 70, // rules §6: 60–75°
-  nearM: 0.04, // scope ocular sits 8.5 cm from the eye
+  // The viewmodel is drawn at 1/4 scale about the eye (render/viewmodel.ts), which puts the
+  // scope ocular 2.1 cm away; a reversed depth buffer keeps 1 cm → 2.6 km precise.
+  nearM: 0.01,
   farM: 2600,
   mouseRadPerPixel: 0.0022,
   shakeIntensity: 1, // player-adjustable global scale
