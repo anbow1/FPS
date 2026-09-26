@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { atmosphereUniforms, GLSL_CLOUDS } from '../render/atmosphere';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import type { Lighting } from '../render/lighting';
 import { OceanFFT } from '../render/ocean';
@@ -7,6 +8,7 @@ import { G } from '../render/shaderPatch';
 import type { NoiseSet } from '../render/textures';
 import type { Heightfield } from './heightfield';
 import { LAKES } from './layout';
+import { hyp2 } from '../core/mathx';
 
 /**
  * Lake water in the spirit of "Clearwater" (Aurélien, MIT): FFT wind waves, exact dielectric
@@ -46,6 +48,7 @@ export class Water {
       defines: { CAUSTICS: detail === 'high' ? 1 : 0 },
       uniforms: THREE.UniformsUtils.merge([
         THREE.UniformsLib.fog,
+        atmosphereUniforms(),
         {
           uSurf: { value: null },
           uL: { value: this.ocean.size },
@@ -76,6 +79,7 @@ export class Water {
         precision highp float;
         #include <common>
         #include <fog_pars_fragment>
+        ${GLSL_CLOUDS}
         in vec3 vWPos;
         uniform sampler2D uSurf, tHeight, tNoise;
         uniform float uL, uWater, uTime, uThermal, uHaze;
@@ -133,6 +137,8 @@ export class Water {
 
         void main() {
           vec3 P = vWPos;
+          // drifting cloud shadows dim the glint and the sunlit bed
+          vec3 sunB = uSunBeam * tk_cloudShadow(P);
           vec3 toCam = cameraPosition - P;
           float dist = length(toCam);
           vec3 V = toCam / dist;
@@ -159,7 +165,7 @@ export class Water {
           vec3 rr = reflect(wd, n); rr.y = abs(rr.y);
           vec3 refl = skyCol(rr);
           float shore = smoothstep(0.1, 0.012, rr.y);
-          refl = mix(refl, cShore * (uAmb * 1.3 + uSunBeam * 0.08), shore * 0.85);
+          refl = mix(refl, cShore * (uAmb * 1.3 + sunB * 0.08), shore * 0.85);
 
           // ---- sun glint: Beckmann, roughness widened by slope variance
           float a2 = 0.00025 + 1.1 * var;
@@ -168,7 +174,7 @@ export class Water {
           float c2 = max(nh * nh, 1e-4);
           float D = exp(-((1.0 - c2) / c2) / a2) / (PI * a2 * c2 * c2);
           float Vis = 0.5 / (nl * sqrt(nv * nv * (1.0 - a2) + a2) + nv * sqrt(nl * nl * (1.0 - a2) + a2) + 1e-5);
-          vec3 spec = uSunBeam * min(D * Vis * fres(max(dot(h, V), 0.0), IOR) * nl, 14.0);
+          vec3 spec = sunB * min(D * Vis * fres(max(dot(h, V), 0.0), IOR) * nl, 14.0);
 
           // ---- refraction: march the transmitted ray to the terrain under the lake
           vec3 tr = refract(wd, n, 1.0 / IOR);
@@ -197,14 +203,14 @@ export class Water {
             caus = clamp(1.0 / (1.0 + 0.55 * bedDepth * div), 0.25, 6.0);
             caus = pow(caus, 1.6);
           #endif
-          vec3 Esun = uSunBeam * Ts * exp(-uSigT * bedDepth / max(-sunT.y, 0.1)) * max(-sunT.y, 0.0) * caus;
+          vec3 Esun = sunB * Ts * exp(-uSigT * bedDepth / max(-sunT.y, 0.1)) * max(-sunT.y, 0.0) * caus;
           vec3 Esky = uAmb * PI * exp(-(uSigT - 0.6 * uSigS) * bedDepth * 1.2);
           vec3 Lbed = alb / PI * (Esun + Esky);
           vec3 Tv = exp(-uSigT * s);
           float cosS = dot(sunT, -tr);
           float g = 0.75;
           float ph = (1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * cosS, 1.5));
-          vec3 Lmid = uSunBeam * Ts * exp(-uSigT * bedDepth * 0.5 / max(-sunT.y, 0.1)) * (ph + 0.08) + uAmb * 0.8;
+          vec3 Lmid = sunB * Ts * exp(-uSigT * bedDepth * 0.5 / max(-sunT.y, 0.1)) * (ph + 0.08) + uAmb * 0.8;
           vec3 Lin = uSigS / uSigT * Lmid * (1.0 - Tv) * 1.4;
           vec3 under = Lbed * Tv + Lin;
 
@@ -212,7 +218,7 @@ export class Water {
           // shoreline foam, lit like a rough white diffuse layer
           float fp = max(length(fwidth(P.xz)), 1e-3);
           float foam = shoreFoam(P.xz, max(depthHere, 0.0), fp, uTime);
-          vec3 foamCol = 0.75 * (uSunBeam * max(uSun.y, 0.0) + uAmb * PI) / PI;
+          vec3 foamCol = 0.75 * (sunB * max(uSun.y, 0.0) + uAmb * PI) / PI;
           col = mix(col, foamCol, foam);
           // fade into the terrain mesh at the waterline
           float alpha = max(smoothstep(0.0, 0.25, depthHere), foam * 0.9);
@@ -239,10 +245,15 @@ export class Water {
     }
   }
 
+  /** Run the FFT once at load so its programs and targets exist before the first lake comes near. */
+  warmup(renderer: THREE.WebGLRenderer): void {
+    this.ocean.update(renderer, 0);
+  }
+
   update(renderer: THREE.WebGLRenderer, time: number, camera: THREE.Vector3): void {
     // no need to run the FFT when no lake is anywhere near the view
     let near = false;
-    for (const l of LAKES) if (Math.hypot(camera.x - l.x, camera.z - l.z) < l.r + 900) near = true;
+    for (const l of LAKES) if (hyp2(camera.x - l.x, camera.z - l.z) < l.r + 900) near = true;
     if (near) this.ocean.update(renderer, time);
   }
 }

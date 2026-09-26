@@ -1,4 +1,5 @@
 import { type AmmoSpec, GRAVITY, SIGHT_ZERO_M } from '../config';
+import { hyp2, hyp3 } from '../core/mathx';
 
 /**
  * Point-mass shell model: gravity plus quadratic drag a = -k|v|v.
@@ -11,14 +12,14 @@ export interface ShellState {
 }
 
 export function stepShell(s: ShellState, k: number, dt: number): void {
-  const sp = Math.hypot(s.vx, s.vy, s.vz);
+  const sp = hyp3(s.vx, s.vy, s.vz);
   const ax = -k * sp * s.vx;
   const ay = -k * sp * s.vy - GRAVITY;
   const az = -k * sp * s.vz;
   const mvx = s.vx + ax * dt * 0.5;
   const mvy = s.vy + ay * dt * 0.5;
   const mvz = s.vz + az * dt * 0.5;
-  const msp = Math.hypot(mvx, mvy, mvz);
+  const msp = hyp3(mvx, mvy, mvz);
   const bx = -k * msp * mvx;
   const by = -k * msp * mvy - GRAVITY;
   const bz = -k * msp * mvz;
@@ -55,7 +56,7 @@ export function flyTo(ammo: AmmoSpec, angle: number, range: number, out: FlightS
   while (tmp.x < range && t < 30) {
     px = tmp.x;
     py = tmp.y;
-    pv = Math.hypot(tmp.vx, tmp.vy);
+    pv = hyp2(tmp.vx, tmp.vy);
     stepShell(tmp, ammo.k, SOLVER_DT);
     t += SOLVER_DT;
     if (tmp.vx <= 1) break;
@@ -64,7 +65,7 @@ export function flyTo(ammo: AmmoSpec, angle: number, range: number, out: FlightS
   const f = seg > 1e-6 ? (range - px) / seg : 1;
   out.t = t - SOLVER_DT * (1 - f);
   out.y = py + (tmp.y - py) * f;
-  out.v = pv + (Math.hypot(tmp.vx, tmp.vy) - pv) * f;
+  out.v = pv + (hyp2(tmp.vx, tmp.vy) - pv) * f;
   return out;
 }
 
@@ -120,7 +121,7 @@ export function aimDirection(
 ): number {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
-  const range = Math.max(1, Math.hypot(dx, dz));
+  const range = Math.max(1, hyp2(dx, dz));
   const el = solveElevation(ammo, range, to.y - from.y);
   const c = Math.cos(el);
   out.x = (dx / range) * c;

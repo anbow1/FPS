@@ -4,6 +4,9 @@ import { Rng } from '../core/rng';
 import type { World } from '../world/world';
 import { aimDirection, timeOfFlight } from './ballistics';
 import type { Tank } from './tank';
+import { hyp2 } from '../core/mathx';
+
+const PROBE_OFFSETS = [0, -0.45, 0.45, -0.9, 0.9, -1.4, 1.4];
 
 type State = 'patrol' | 'engage' | 'search' | 'reposition' | 'unstick';
 
@@ -30,6 +33,10 @@ export class TankAI {
   private errDir = new THREE.Vector2();
   private shotsHere = 0;
   private stuckT = 0;
+  /** heading probes are re-run at 10 Hz; steering uses the last result in between */
+  private probeT = 0;
+  private probeYaw = 0;
+  private probeWant = Number.NaN;
   private unstickT = 0;
   private haltT = 0;
   private hpAtThink: number;
@@ -135,7 +142,7 @@ export class TankAI {
     switch (this.state) {
       case 'patrol':
         if (this.visible || time - this.lastSeenT < 1) this.state = this.visible ? 'engage' : 'search';
-        else if (Math.hypot(this.goal.x - t.pos.x, this.goal.y - t.pos.z) < 25) this.pickPatrolGoal();
+        else if (hyp2(this.goal.x - t.pos.x, this.goal.y - t.pos.z) < 25) this.pickPatrolGoal();
         break;
       case 'search':
         this.goal.set(this.lastSeen.x, this.lastSeen.z);
@@ -154,7 +161,7 @@ export class TankAI {
         }
         break;
       case 'reposition':
-        if (Math.hypot(this.goal.x - t.pos.x, this.goal.y - t.pos.z) < 12 || this.haltT < -12) {
+        if (hyp2(this.goal.x - t.pos.x, this.goal.y - t.pos.z) < 12 || this.haltT < -12) {
           this.state = this.visible ? 'engage' : 'search';
           this.shotsHere = 0;
         }
@@ -168,7 +175,7 @@ export class TankAI {
     const t = this.tank;
     const dx = t.pos.x - target.pos.x;
     const dz = t.pos.z - target.pos.z;
-    const d = Math.hypot(dx, dz) || 1;
+    const d = hyp2(dx, dz) || 1;
     const side = this.rng.next() < 0.5 ? -1 : 1;
     const lat = this.rng.range(40, 90) * side;
     const back = this.rng.range(-10, 40);
@@ -178,6 +185,47 @@ export class TankAI {
   }
 
   /** Steering with slope/water/building/tank avoidance probes. */
+  /** Scores a fan of headings 16 m ahead: slopes, water, map edge, buildings and rocks. */
+  private probe(wantYaw: number, world: World): number {
+    const t = this.tank;
+    let best = wantYaw;
+    let bestScore = -Infinity;
+    const h0 = world.hf.heightAt(t.pos.x, t.pos.z);
+    const buildings = world.buildings;
+    const rocks = world.vegetation.rocks;
+    for (let k = 0; k < PROBE_OFFSETS.length; k++) {
+      const off = PROBE_OFFSETS[k]!;
+      const yaw = wantYaw + off;
+      const px = t.pos.x + Math.sin(yaw) * 16;
+      const pz = t.pos.z + Math.cos(yaw) * 16;
+      const h = world.hf.heightAt(px, pz);
+      let score = -Math.abs(off) * 1.2;
+      const slope = Math.abs(h - h0) / 16;
+      if (slope > 0.4) score -= 6;
+      if (WATER_LEVEL - h > 0.9) score -= 8;
+      if (Math.abs(px) > PLAY_HALF || Math.abs(pz) > PLAY_HALF) score -= 10;
+      for (let i = 0; i < buildings.length; i++) {
+        const b = buildings[i]!;
+        const r = Math.max(b.hw, b.hd) + 6;
+        const dx = b.x - px;
+        const dz = b.z - pz;
+        if (dx * dx + dz * dz < r * r) score -= 5;
+      }
+      for (let i = 0; i < rocks.length; i++) {
+        const r = rocks[i]!;
+        const dx = r.x - px;
+        const dz = r.z - pz;
+        const rr = r.r + 4;
+        if (dx * dx + dz * dz < rr * rr) score -= 3;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = yaw;
+      }
+    }
+    return best;
+  }
+
   private drive(dt: number, world: World): void {
     const t = this.tank;
     if (this.state === 'unstick') {
@@ -189,7 +237,7 @@ export class TankAI {
     }
     const gx = this.goal.x - t.pos.x;
     const gz = this.goal.y - t.pos.z;
-    const gd = Math.hypot(gx, gz);
+    const gd = hyp2(gx, gz);
     let wantYaw = Math.atan2(gx, gz);
     let throttle = this.state === 'patrol' ? 0.55 : 0.9;
     if (this.state === 'engage') {
@@ -202,31 +250,14 @@ export class TankAI {
       }
     }
     if (gd < 8 && this.state !== 'engage') throttle = 0;
-    // probe candidate headings
-    let best = wantYaw;
-    let bestScore = -Infinity;
-    const h0 = world.hf.heightAt(t.pos.x, t.pos.z);
-    for (const off of [0, -0.45, 0.45, -0.9, 0.9, -1.4, 1.4]) {
-      const yaw = wantYaw + off;
-      const px = t.pos.x + Math.sin(yaw) * 16;
-      const pz = t.pos.z + Math.cos(yaw) * 16;
-      const h = world.hf.heightAt(px, pz);
-      let score = -Math.abs(off) * 1.2;
-      const slope = Math.abs(h - h0) / 16;
-      if (slope > 0.4) score -= 6;
-      if (WATER_LEVEL - h > 0.9) score -= 8;
-      if (Math.abs(px) > PLAY_HALF || Math.abs(pz) > PLAY_HALF) score -= 10;
-      for (const b of world.buildings) {
-        if (Math.hypot(b.x - px, b.z - pz) < Math.max(b.hw, b.hd) + 6) score -= 5;
-      }
-      for (const r of world.vegetation.rocks) {
-        if (Math.hypot(r.x - px, r.z - pz) < r.r + 4) score -= 3;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        best = yaw;
-      }
+    // probe candidate headings (10 Hz, or at once when the wanted heading swings)
+    this.probeT -= dt;
+    if (this.probeT <= 0 || !(Math.abs(wantYaw - this.probeWant) < 0.3)) {
+      this.probeT = 0.1;
+      this.probeWant = wantYaw;
+      this.probeYaw = this.probe(wantYaw, world);
     }
+    const best = this.probeYaw;
     let d = best - t.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     t.steer = Math.max(-1, Math.min(1, -d * 2.2));

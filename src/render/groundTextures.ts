@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { tileableFbm } from '../core/noise';
 import { Rng } from '../core/rng';
+import { hyp2, hyp3 } from '../core/mathx';
 
 /**
  * Close-range ground layers, generated once at load (tileable, 512²):
@@ -49,7 +50,7 @@ function worley(cells: number, seed: number): { f1: Float32Array; f2: Float32Arr
           const k = wy * cells + wx;
           const px = (gx + pts[k * 2]!) * cs;
           const py = (gy + pts[k * 2 + 1]!) * cs;
-          const d = Math.hypot(px - x, py - y);
+          const d = hyp2(px - x, py - y);
           if (d < d1) {
             d2 = d1;
             d1 = d;
@@ -241,7 +242,7 @@ export function makeGroundLayers(seed: number): GroundLayers {
         const hy = L.h[wrap(y + 1) * S + x]! - L.h[wrap(y - 1) * S + x]!;
         const nx = -hx * strength[li]!;
         const ny = -hy * strength[li]!;
-        const l = Math.hypot(nx, ny, 1);
+        const l = hyp3(nx, ny, 1);
         nrm[o] = Math.round((nx / l * 0.5 + 0.5) * 255);
         nrm[o + 1] = Math.round((ny / l * 0.5 + 0.5) * 255);
         // cavity AO from local height

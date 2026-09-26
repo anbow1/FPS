@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ATMO, atmosphereUniforms, GLSL_CLOUDS } from './atmosphere';
 import { G } from './shaderPatch';
 
 /**
@@ -22,6 +23,8 @@ export interface LightPreset {
   keyK: number;
   skyK: number;
   haze: number; // 0 clear .. 1 overcast
+  /** fair-weather cumulus coverage 0..1 (drawn in the sky, shadows drift over the ground) */
+  clouds: number;
   fogDensity: number;
   shadowSoftness: number;
   stars: number;
@@ -30,14 +33,14 @@ export interface LightPreset {
 }
 
 export const PRESETS: LightPreset[] = [
-  { id: 'noon', label: 'Czyste południe', ev100: 15.3, evBias: 0, sunLux: 90000, skyLux: 18500, sunElevDeg: 65, sunAzDeg: 150, keyK: 5500, skyK: 10000, haze: 0.12, fogDensity: 0.00032, shadowSoftness: 1.2, stars: 0, headlights: false, note: 'sun elev 60-75°' },
-  { id: 'hazy', label: 'Mglisty dzień', ev100: 14.0, evBias: 0, sunLux: 30000, skyLux: 13000, sunElevDeg: 58, sunAzDeg: 165, keyK: 5500, skyK: 7000, haze: 0.55, fogDensity: 0.0006, shadowSoftness: 5, stars: 0, headlights: false, note: 'soft shadow edges' },
-  { id: 'overcast', label: 'Pochmurno', ev100: 11.6, evBias: 0, sunLux: 0, skyLux: 8000, sunElevDeg: 50, sunAzDeg: 170, keyK: 6500, skyK: 7000, haze: 1, fogDensity: 0.0009, shadowSoftness: 8, stars: 0, headlights: false, note: 'sky is the key light' },
-  { id: 'golden', label: 'Złota godzina', ev100: 12.2, evBias: 0, sunLux: 40000, skyLux: 6400, sunElevDeg: 8, sunAzDeg: 255, keyK: 3200, skyK: 9000, haze: 0.3, fogDensity: 0.0004, shadowSoftness: 2, stars: 0, headlights: false, note: 'long shadows, warm rim' },
-  { id: 'sunset', label: 'Zachód słońca', ev100: 7.3, evBias: 0.3, sunLux: 4000, skyLux: 330, sunElevDeg: 1.2, sunAzDeg: 265, keyK: 2000, skyK: 12000, haze: 0.35, fogDensity: 0.00045, shadowSoftness: 3, stars: 0, headlights: false, note: 'cold ambient, warm horizon' },
-  { id: 'twilight', label: 'Zmierzch cywilny', ev100: 2.0, evBias: 1.0, sunLux: 0, skyLux: 10, sunElevDeg: -4, sunAzDeg: 270, keyK: 2000, skyK: 14000, haze: 0.3, fogDensity: 0.0004, shadowSoftness: 6, stars: 0.3, headlights: true, note: 'headlights start to read' },
-  { id: 'moon', label: 'Pełnia księżyca', ev100: -3.3, evBias: 2.0, sunLux: 0.2, skyLux: 0.12, sunElevDeg: 40, sunAzDeg: 200, keyK: 4100, skyK: 7800, haze: 0.15, fogDensity: 0.0003, shadowSoftness: 2, stars: 1, headlights: true, note: 'moon 4100 K, render slightly blue' },
-  { id: 'night', label: 'Pochmurna noc', ev100: -10.3, evBias: 7.0, sunLux: 0, skyLux: 0.002, sunElevDeg: 30, sunAzDeg: 200, keyK: 4000, skyK: 4000, haze: 1, fogDensity: 0.0007, shadowSoftness: 8, stars: 0, headlights: true, note: 'almost black, use NV / thermal' },
+  { id: 'noon', label: 'Czyste południe', ev100: 15.3, evBias: 0, sunLux: 90000, skyLux: 18500, sunElevDeg: 65, sunAzDeg: 150, keyK: 5500, skyK: 10000, haze: 0.12, clouds: 0.42, fogDensity: 0.00032, shadowSoftness: 1.2, stars: 0, headlights: false, note: 'sun elev 60-75°' },
+  { id: 'hazy', label: 'Mglisty dzień', ev100: 14.0, evBias: 0, sunLux: 30000, skyLux: 13000, sunElevDeg: 58, sunAzDeg: 165, keyK: 5500, skyK: 7000, haze: 0.55, clouds: 0.5, fogDensity: 0.0006, shadowSoftness: 5, stars: 0, headlights: false, note: 'soft shadow edges' },
+  { id: 'overcast', label: 'Pochmurno', ev100: 11.6, evBias: 0, sunLux: 0, skyLux: 8000, sunElevDeg: 50, sunAzDeg: 170, keyK: 6500, skyK: 7000, haze: 1, clouds: 0, fogDensity: 0.0009, shadowSoftness: 8, stars: 0, headlights: false, note: 'sky is the key light' },
+  { id: 'golden', label: 'Złota godzina', ev100: 12.2, evBias: 0, sunLux: 40000, skyLux: 6400, sunElevDeg: 8, sunAzDeg: 255, keyK: 3200, skyK: 9000, haze: 0.3, clouds: 0.36, fogDensity: 0.0004, shadowSoftness: 2, stars: 0, headlights: false, note: 'long shadows, warm rim' },
+  { id: 'sunset', label: 'Zachód słońca', ev100: 7.3, evBias: 0.3, sunLux: 4000, skyLux: 330, sunElevDeg: 1.2, sunAzDeg: 265, keyK: 2000, skyK: 12000, haze: 0.35, clouds: 0.34, fogDensity: 0.00045, shadowSoftness: 3, stars: 0, headlights: false, note: 'cold ambient, warm horizon' },
+  { id: 'twilight', label: 'Zmierzch cywilny', ev100: 2.0, evBias: 1.0, sunLux: 0, skyLux: 10, sunElevDeg: -4, sunAzDeg: 270, keyK: 2000, skyK: 14000, haze: 0.3, clouds: 0.3, fogDensity: 0.0004, shadowSoftness: 6, stars: 0.3, headlights: true, note: 'headlights start to read' },
+  { id: 'moon', label: 'Pełnia księżyca', ev100: -3.3, evBias: 2.0, sunLux: 0.2, skyLux: 0.12, sunElevDeg: 40, sunAzDeg: 200, keyK: 4100, skyK: 7800, haze: 0.15, clouds: 0.25, fogDensity: 0.0003, shadowSoftness: 2, stars: 1, headlights: true, note: 'moon 4100 K, render slightly blue' },
+  { id: 'night', label: 'Pochmurna noc', ev100: -10.3, evBias: 7.0, sunLux: 0, skyLux: 0.002, sunElevDeg: 30, sunAzDeg: 200, keyK: 4000, skyK: 4000, haze: 1, clouds: 0, fogDensity: 0.0007, shadowSoftness: 8, stars: 0, headlights: true, note: 'almost black, use NV / thermal' },
 ];
 
 export function exposureFor(p: LightPreset): number {
@@ -78,7 +81,16 @@ const SKY_FRAG = /* glsl */ `
 uniform vec3 uSun; uniform vec3 uZenith; uniform vec3 uHorizon; uniform vec3 uGround;
 uniform vec3 uSunDisk; uniform vec3 uGlow; uniform float uHaze; uniform float uStars; uniform float uDisk;
 uniform float uThermal; uniform vec3 uThermalSky;
+uniform float uCloudOn; uniform vec3 uCloudLit; uniform vec3 uCloudDark;
 varying vec3 vDir;
+${GLSL_CLOUDS}
+// the sky gets two extra octaves on top of the shadow field, so outlines stay crisp
+float tk_cloudSky(vec2 p) {
+  p = (p + tkCloud.xy) * tkCloudP.w;
+  float n = 0.5714 * tk_n2(p) + 0.2857 * tk_n2(p * 2.03 + 5.1) + 0.1429 * tk_n2(p * 4.07 + 1.7);
+  n += (tk_n2(p * 8.3 + 9.2) - 0.5) * 0.1 + (tk_n2(p * 17.1 + 3.3) - 0.5) * 0.05;
+  return smoothstep(1.0 - tkCloud.z, 1.18 - tkCloud.z, n);
+}
 float h13(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 void main() {
   vec3 d = normalize(vDir);
@@ -91,12 +103,26 @@ void main() {
   float mie = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.08;
   float horizonBand = exp(-abs(h) * mix(9.0, 3.0, uHaze));
   col += uGlow * mie * (0.35 + horizonBand);
+  float cloud = 0.0;
+  if (uCloudOn > 0.5 && h > 0.0 && tkCloud.z > 0.0) {
+    // intersect the view ray with the cloud deck; the ground shadows use the same field
+    float t = (tkCloudP.z - cameraPosition.y) / max(h, 0.015);
+    vec2 cp = cameraPosition.xz + d.xz * t;
+    cloud = tk_cloudSky(cp) * smoothstep(0.0, 0.1, h) * exp(-t / 30000.0);
+    if (cloud > 0.0) {
+      // thicker cloud towards the sun reads as a darker base; thin edges catch a silver lining
+      float toward = tk_cloudSky(cp + uSun.xz / max(uSun.y, 0.12) * 140.0);
+      vec3 cc = mix(uCloudLit, uCloudDark, toward * 0.75);
+      cc += uGlow * mie * 2.5 * (1.0 - toward);
+      col = mix(col, cc, cloud * 0.96);
+    }
+  }
   float disk = smoothstep(0.99992, 0.99996, mu) * uDisk;
-  col += uSunDisk * disk * step(-0.01, h);
+  col += uSunDisk * disk * step(-0.01, h) * (1.0 - cloud);
   if (uStars > 0.0 && h > 0.0) {
     vec3 cell = floor(d * 420.0);
     float s = h13(cell);
-    float star = step(0.9965, s) * smoothstep(0.0, 0.25, h) * (0.4 + 0.6 * h13(cell + 7.0));
+    float star = step(0.9965, s) * smoothstep(0.0, 0.25, h) * (0.4 + 0.6 * h13(cell + 7.0)) * (1.0 - cloud);
     col += vec3(0.85, 0.9, 1.0) * star * uStars;
   }
   col = mix(col, uThermalSky, uThermal);
@@ -157,6 +183,10 @@ export class Lighting {
         uDisk: { value: 1 },
         uThermal: G.uThermal,
         uThermalSky: { value: new THREE.Color(0.012, 0.012, 0.012) },
+        uCloudOn: { value: 1 },
+        uCloudLit: { value: new THREE.Color() },
+        uCloudDark: { value: new THREE.Color() },
+        ...atmosphereUniforms(),
       },
       side: THREE.BackSide,
       depthWrite: false,
@@ -174,6 +204,8 @@ export class Lighting {
     envMat.uniforms.uThermal = { value: 0 };
     envMat.uniforms.uDisk = { value: 0 };
     envMat.uniforms.uStars = { value: 0 };
+    // the environment map stays cloud-free: it is only rebuilt when the preset changes
+    envMat.uniforms.uCloudOn = { value: 0 };
     this.envSky = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), envMat);
     this.envSky.scale.setScalar(100);
     this.skyScene.add(this.envSky);
@@ -214,7 +246,10 @@ export class Lighting {
     this.sun.color.copy(key);
     this.sun.intensity = beam;
     this.sun.visible = true;
-    this.sun.castShadow = beam > 1e-4;
+    // castShadow stays on: toggling it changes every lit shader's defines and would recompile
+    // them all mid-game. With no direct sun the (unused) shadow map simply stops updating.
+    this.sun.castShadow = true;
+    this.sun.shadow.autoUpdate = beam > 1e-4;
     this.sun.shadow.radius = p.shadowSoftness;
     this.sunColor.copy(key).multiplyScalar(beam);
     G.uSunIrr.value.copy(key).multiplyScalar(beam * Math.max(0, Math.sin(el)));
@@ -254,6 +289,23 @@ export class Lighting {
     if (p.id === 'moon') {
       (su.uSunDisk!.value as THREE.Color).copy(kelvinToLinear(4100)).multiplyScalar(2.5);
     }
+
+    // cloud deck: sunlit tops ~albedo/π of the beam, shaded bases lit by the sky
+    const sinEl = Math.max(Math.sin(el), 0);
+    const cloudLit = key.clone().multiplyScalar(beam * 0.24 * (0.3 + 0.7 * sinEl)).add(zenith.clone().multiplyScalar(0.9)).add(horizon.clone().multiplyScalar(0.25));
+    const cloudDark = zenith.clone().multiplyScalar(0.55).add(horizon.clone().multiplyScalar(0.35)).add(key.clone().multiplyScalar(beam * 0.02));
+    if (p.sunLux <= 0) cloudLit.copy(horizon).multiplyScalar(0.9).add(glow.clone().multiplyScalar(0.8));
+    if (p.sunLux <= 0) cloudDark.copy(horizon).multiplyScalar(0.5);
+    (su.uCloudLit!.value as THREE.Color).copy(cloudLit);
+    (su.uCloudDark!.value as THREE.Color).copy(cloudDark);
+    ATMO.cloud[2] = p.clouds;
+    // ground shadows only under a real sun
+    ATMO.cloud[3] = p.sunLux > 1000 ? 0.72 * (1 - 0.5 * p.haze) * Math.min(1, sinEl * 4) : 0;
+    const sy = Math.max(this.sunDir.y, 0.12);
+    ATMO.cloudP[0] = this.sunDir.x / sy;
+    ATMO.cloudP[1] = this.sunDir.z / sy;
+    ATMO.sunDir.set([this.sunDir.x, this.sunDir.y, this.sunDir.z, 0]);
+    ATMO.fogSun.set([glow.r, glow.g, glow.b, 0.76 + (0.6 - 0.76) * p.haze]);
 
     this.fogColor.copy(horizon).lerp(zenith, 0.15);
     this.ambient.copy(zenith).lerp(horizon, 0.5);

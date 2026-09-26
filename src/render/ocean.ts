@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { Rng } from '../core/rng';
+import { hyp2 } from '../core/mathx';
 
 /**
  * Tessendorf FFT wave field on the GPU (after Aurélien's "Clearwater", MIT):
@@ -158,7 +159,7 @@ function buildH0(p: OceanParams): THREE.DataTexture {
   };
   const kp = (2 * Math.PI) / p.peakWavelength;
   const kcut = (2 * Math.PI) / (L / N * 2.2);
-  const wl = Math.hypot(p.wind[0], p.wind[1]) || 1;
+  const wl = hyp2(p.wind[0], p.wind[1]) || 1;
   const wd = [p.wind[0] / wl, p.wind[1] / wl];
   const re = new Float32Array(N * N);
   const im = new Float32Array(N * N);
@@ -169,7 +170,7 @@ function buildH0(p: OceanParams): THREE.DataTexture {
       const nz = m < N / 2 ? m : m - N;
       const kx = (2 * Math.PI * nx) / L;
       const kz = (2 * Math.PI * nz) / L;
-      const k = Math.hypot(kx, kz);
+      const k = hyp2(kx, kz);
       let P = 0;
       if (k > 1e-6) {
         const lk = Math.log(k / kp);

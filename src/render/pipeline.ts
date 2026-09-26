@@ -7,6 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { QualityPreset } from '../config';
+import { SunShaftsPass } from './sunShafts';
 
 /** Sight overlay for the thermal channel: sensor noise, slight blur of the edges, vignette. */
 const ThermalShader = {
@@ -45,10 +46,15 @@ export class Pipeline {
   private output: OutputPass;
   private smaa: SMAAPass;
   private thermal: ShaderPass;
+  readonly shafts: SunShaftsPass;
   private quality!: QualityPreset;
   private scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   thermalOn = false;
+  /** 0..1 fraction of the preset's pixel ratio, set by the frame-time governor */
+  renderScale = 1;
+  /** governor may switch ambient occlusion off before touching resolution */
+  aoAllowed = true;
 
   constructor(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
     this.scene = scene;
@@ -63,6 +69,8 @@ export class Pipeline {
     this.renderer = r;
 
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 0 });
+    // scene depth as a texture: the sun-shaft pass reads the sky mask from it
+    rt.depthTexture = new THREE.DepthTexture(1, 1);
     this.composer = new EffectComposer(r, rt);
     this.renderPass = new RenderPass(scene, camera);
     this.gtao = new GTAOPass(scene, camera, 1, 1);
@@ -94,7 +102,10 @@ export class Pipeline {
     this.output = new OutputPass();
     this.smaa = new SMAAPass();
     this.thermal = new ShaderPass(ThermalShader);
+    this.shafts = new SunShaftsPass(() => this.camera);
     this.composer.addPass(this.renderPass);
+    // must follow the render pass directly: it reads the scene's depth from the input buffer
+    this.composer.addPass(this.shafts);
     this.composer.addPass(this.gtao);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.output);
@@ -104,9 +115,21 @@ export class Pipeline {
 
   setQuality(q: QualityPreset): void {
     this.quality = q;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatioCap));
-    this.composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatioCap));
     this.gtao.enabled = q.ao;
+    this.applyPixelRatio();
+  }
+
+  /** Changes the render resolution (reallocates the post-processing targets: call sparingly). */
+  setRenderScale(scale: number): void {
+    if (Math.abs(scale - this.renderScale) < 1e-3) return;
+    this.renderScale = scale;
+    this.applyPixelRatio();
+  }
+
+  private applyPixelRatio(): void {
+    const pr = Math.min(window.devicePixelRatio || 1, this.quality.pixelRatioCap) * this.renderScale;
+    this.renderer.setPixelRatio(pr);
+    this.composer.setPixelRatio(pr);
     this.resize();
   }
 
@@ -134,9 +157,10 @@ export class Pipeline {
     this.renderer.info.reset();
     this.renderPass.camera = this.camera;
     (this.gtao as unknown as { camera: THREE.Camera }).camera = this.camera;
-    this.gtao.enabled = this.quality.ao && !this.thermalOn;
+    this.gtao.enabled = this.quality.ao && this.aoAllowed && !this.thermalOn;
     this.bloom.enabled = this.quality.bloom && !this.thermalOn;
     this.thermal.enabled = this.thermalOn;
+    this.shafts.prepare(!this.thermalOn);
     this.thermal.uniforms.uTime!.value = time;
     this.thermal.uniforms.uAmount!.value = this.thermalOn ? 1 : 0;
     this.composer.render();

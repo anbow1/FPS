@@ -37,6 +37,13 @@ w kelwinach, ACES filmic (z przełącznikiem AgX do porównania). Lokalne świat
 błysk wylotowy 2400 K, płonący wrak ~12 000 cd / 1900 K z migotaniem 4–9 Hz i cieniem,
 reflektory ~15 000 cd. Mapa środowiska (IBL) z tego samego nieba, mgła = kolor horyzontu.
 
+**Atmosfera** – mgła wysokościowa (gęstsza w dolinach, grzbiety i niebo czyste) z rozpraszaniem
+Mie w stronę słońca, tym samym co halo nieba, więc odległy teren płynnie przechodzi w horyzont.
+Chmury kłębiaste na niebie (pokrycie zależne od pory) dryfują z wiatrem i rzucają na ziemię i wodę
+ruchome cienie z tego samego pola gęstości. Promienie słońca (smugi światła przez drzewa) liczone
+w ćwierć rozdzielczości z bufora głębi, wyłączane gdy słońce jest za kamerą. Wszystko wstrzyknięte
+we wspólne fragmenty shaderów three.js – bez dodatkowych przebiegów sceny ani draw calli.
+
 **Materiały PBR** – kolory bazowe i chropowatość z arkusza (NATO green #4B5340 / rough 0,76,
 khaki #5C5B3E, guma gąsienic, stal, sadza, rdza, trawa, gleba, skała, błoto, woda, cegła…).
 Farba, fosforan, rdza i guma mają metalness 0. Kamuflaż NATO, kurz na dolnych partiach i
@@ -82,6 +89,14 @@ trawy, liczba cząsteczek), stała liczba świateł (bez rekompilacji shaderów)
 skał i kół, geometria łączona per materiał, LOD terenu w kawałkach 128 m. F3 pokazuje draw calls
 i trójkąty względem limitów (Wysoka 2500 / 12 M, Niska 1500 / 4 M). Fizyka w stałym kroku 60 Hz
 z interpolacją renderu.
+
+**Płynność** – gra pilnuje 60 kl./s kosztem obrazu, nigdy rozgrywki: regulator czasu klatki
+(percentyle z okna 1 s, odporny na pojedyncze przycięcia) najpierw wyłącza AO, potem obniża
+rozdzielczość renderu w krokach 100 → 58 %, a wraca w górę ostrożnie i bez oscylacji (F3 pokazuje
+bieżący poziom). Wszystkie shadery – efekty, smugacze, dron, termowizja, FFT wody, promienie słońca
+– kompilują się przy ładowaniu, a zmiana pory dnia (T) nie wymusza rekompilacji. Trawa dobudowuje
+się porcjami po ~1300 źdźbeł na klatkę i wysyła do GPU tylko użyte wierzchołki; AI sprawdza
+kierunki jazdy 10 razy na sekundę; gorące pętle alokują ~3× mniej pamięci niż wcześniej (rzadsze GC).
 
 ## Struktura
 

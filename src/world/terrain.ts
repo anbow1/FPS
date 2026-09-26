@@ -6,6 +6,7 @@ import type { GroundLayers } from '../render/groundTextures';
 import type { NoiseSet } from '../render/textures';
 import { makeRoadTexture } from '../render/textures';
 import type { Heightfield } from './heightfield';
+import { hyp2, hyp3 } from '../core/mathx';
 
 const CHUNK_CELLS = 64; // 128 m chunks
 const LOD_STEPS = [1, 2, 4, 8, 16];
@@ -200,7 +201,7 @@ export class Terrain {
         const nx = -hx;
         const ny = 2 * HEIGHT_CELL;
         const nz = -hz;
-        const l = Math.hypot(nx, ny, nz);
+        const l = hyp3(nx, ny, nz);
         const k = (j * n + i) * 3;
         out[k] = nx / l;
         out[k + 1] = ny / l;
@@ -295,10 +296,10 @@ export class Terrain {
   }
 
   /** Pick LOD per chunk from camera distance; builds at most `budget` new geometries per call. */
-  update(cam: THREE.Vector3, budget = 3): void {
+  update(cam: THREE.Vector3, budget = 1): void {
     let built = 0;
     for (const ch of this.chunks) {
-      const d = Math.max(0, Math.hypot(ch.cx - cam.x, ch.cz - cam.z) - CHUNK_CELLS * HEIGHT_CELL * 0.7);
+      const d = Math.max(0, hyp2(ch.cx - cam.x, ch.cz - cam.z) - CHUNK_CELLS * HEIGHT_CELL * 0.7);
       let lod = LOD_DIST.length;
       for (let k = 0; k < LOD_DIST.length; k++) {
         if (d < LOD_DIST[k]!) {

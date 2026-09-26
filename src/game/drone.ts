@@ -5,6 +5,7 @@ import type { World } from '../world/world';
 import type { SoftTarget } from './bullets';
 import { type Effects, PKind } from './effects';
 import type { Tank, Team } from './tank';
+import { hyp2 } from '../core/mathx';
 
 export type DroneState = 'stowed' | 'flying' | 'returning' | 'falling' | 'rearming';
 
@@ -166,7 +167,7 @@ export class Drone implements SoftTarget {
     }
 
     // battery and radio link
-    const dist = Math.hypot(this.pos.x - tank.pos.x, this.pos.z - tank.pos.z);
+    const dist = hyp2(this.pos.x - tank.pos.x, this.pos.z - tank.pos.z);
     const speed = this.vel.length();
     this.battery -= dt * (1 + speed / DRONE.maxSpeed * 0.4);
     if (!tank.alive) this.warning = 'BRAK STACJI';
@@ -182,7 +183,7 @@ export class Drone implements SoftTarget {
     if (this.state === 'returning') {
       const home = tank.pos.clone().setY(tank.pos.y + 3.2);
       const d = home.clone().sub(this.pos);
-      const flat = Math.hypot(d.x, d.z);
+      const flat = hyp2(d.x, d.z);
       const cruise = Math.max(ground + 25, home.y + 12);
       const targetY = flat > 25 ? cruise : home.y;
       want.set(d.x, 0, d.z).normalize().multiplyScalar(Math.min(DRONE.maxSpeed * 1.1, flat * 0.8));

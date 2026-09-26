@@ -6,6 +6,7 @@ import { stdMat } from '../render/palette';
 import { addThermalConst } from '../render/shaderPatch';
 import type { Heightfield } from './heightfield';
 import { SITES } from './layout';
+import { hyp2 } from '../core/mathx';
 
 /** Oriented box collider on the ground (buildings, walls). */
 export interface Obb {
@@ -69,7 +70,7 @@ export function buildBuildings(hf: Heightfield, seed: number): { group: THREE.Gr
   const parts = new PartSet();
   const colliders: Obb[] = [];
   const place = (x: number, z: number, w: number, d: number, h: number, rot: number, kind: 'house' | 'barn') => {
-    for (const c of colliders) if (Math.hypot(c.x - x, c.z - z) < Math.max(c.hw, c.hd) + Math.max(w, d) / 2 + 4) return false;
+    for (const c of colliders) if (hyp2(c.x - x, c.z - z) < Math.max(c.hw, c.hd) + Math.max(w, d) / 2 + 4) return false;
     const corners = [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]] as const;
     for (const [cx, cz] of [...corners, [0, 0] as const]) {
       const px = x + cx * Math.cos(rot) + cz * Math.sin(rot);
@@ -190,7 +191,7 @@ export function pushOutObb(c: Obb, p: { x: number; z: number }, r: number): bool
   const qz = Math.max(-c.hd, Math.min(c.hd, lz));
   let ex = lx - qx;
   let ez = lz - qz;
-  let d = Math.hypot(ex, ez);
+  let d = hyp2(ex, ez);
   if (d >= r) return false;
   if (d < 1e-6) {
     // centre inside: push out along the shallow axis
@@ -220,31 +221,43 @@ export function pushOutObb(c: Obb, p: { x: number; z: number }, r: number): bool
 
 /** Segment vs OBB (ray-cast for shells and line of sight). Returns t in [0,1] or -1. */
 export function segmentObb(c: Obb, ax: number, ay: number, az: number, bx: number, by: number, bz: number): number {
+  // quick reject: segment vs. the footprint's bounding circle (most rays pass far away)
+  const sx = bx - ax;
+  const sz = bz - az;
+  const l2 = sx * sx + sz * sz;
+  const tc = l2 > 1e-9 ? Math.max(0, Math.min(1, ((c.x - ax) * sx + (c.z - az) * sz) / l2)) : 0;
+  const ex = ax + sx * tc - c.x;
+  const ez = az + sz * tc - c.z;
+  const br = c.hw + c.hd;
+  if (ex * ex + ez * ez > br * br) return -1;
+  // slab test in the box frame, scalar only (runs for every ray against every building)
   const cos = Math.cos(c.rot);
   const sin = Math.sin(c.rot);
-  const tl = (x: number, z: number): [number, number] => {
-    const dx = x - c.x;
-    const dz = z - c.z;
-    return [dx * cos - dz * sin, dx * sin + dz * cos];
-  };
-  const [alx, alz] = tl(ax, az);
-  const [blx, blz] = tl(bx, bz);
-  const o = [alx, ay - (c.y0 + c.y1) / 2, alz];
-  const d = [blx - alx, by - ay, blz - alz];
-  const h = [c.hw, (c.y1 - c.y0) / 2, c.hd];
-  let tmin = 0;
-  let tmax = 1;
-  for (let i = 0; i < 3; i++) {
-    if (Math.abs(d[i]!) < 1e-9) {
-      if (Math.abs(o[i]!) > h[i]!) return -1;
-      continue;
-    }
-    let t0 = (-h[i]! - o[i]!) / d[i]!;
-    let t1 = (h[i]! - o[i]!) / d[i]!;
-    if (t0 > t1) [t0, t1] = [t1, t0];
-    tmin = Math.max(tmin, t0);
-    tmax = Math.min(tmax, t1);
-    if (tmin > tmax) return -1;
+  const adx = ax - c.x;
+  const adz = az - c.z;
+  const bdx = bx - c.x;
+  const bdz = bz - c.z;
+  const alx = adx * cos - adz * sin;
+  const alz = adx * sin + adz * cos;
+  const blx = bdx * cos - bdz * sin;
+  const blz = bdx * sin + bdz * cos;
+  const range = { tmin: 0, tmax: 1 };
+  if (!slab(alx, blx - alx, c.hw, range)) return -1;
+  if (!slab(ay - (c.y0 + c.y1) / 2, by - ay, (c.y1 - c.y0) / 2, range)) return -1;
+  if (!slab(alz, blz - alz, c.hd, range)) return -1;
+  return range.tmin;
+}
+
+function slab(o: number, d: number, h: number, r: { tmin: number; tmax: number }): boolean {
+  if (Math.abs(d) < 1e-9) return Math.abs(o) <= h;
+  let t0 = (-h - o) / d;
+  let t1 = (h - o) / d;
+  if (t0 > t1) {
+    const t = t0;
+    t0 = t1;
+    t1 = t;
   }
-  return tmin;
+  if (t0 > r.tmin) r.tmin = t0;
+  if (t1 < r.tmax) r.tmax = t1;
+  return r.tmin <= r.tmax;
 }

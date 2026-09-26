@@ -132,7 +132,7 @@ export function translucencyPatch(strength: number): Patch {
         `{
           vec3 Lv = normalize((viewMatrix * vec4(uSunDirT, 0.0)).xyz);
           float back = pow(max(dot(-geometryViewDir, Lv), 0.0), 3.0);
-          reflectedLight.directDiffuse += diffuseColor.rgb * uSunIrr * RECIPROCAL_PI * uTransl * (0.25 + 1.5 * back);
+          reflectedLight.directDiffuse += diffuseColor.rgb * uSunIrr * RECIPROCAL_PI * uTransl * (0.25 + 1.5 * back) * tkCloudSh;
         }`,
         'after',
       );

@@ -1,4 +1,5 @@
 import type { Input } from '../core/input';
+import { hyp2 } from '../core/mathx';
 
 /**
  * On-screen controls for phones and tablets. A floating joystick on the left drives the hull,
@@ -119,7 +120,7 @@ export class TouchControls {
       const r = this.stickRadius();
       let dx = e.clientX - this.stickOrigin.x;
       let dy = e.clientY - this.stickOrigin.y;
-      const d = Math.hypot(dx, dy);
+      const d = hyp2(dx, dy);
       if (d > r) {
         dx = (dx / d) * r;
         dy = (dy / d) * r;

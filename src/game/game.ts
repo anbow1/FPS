@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { DRONE, ENEMY_TANK, HMG_127, MG_762, MG_AIM, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
 import type { Input } from '../core/input';
 import { Rng } from '../core/rng';
+import { ATMO } from '../render/atmosphere';
 import { Lighting, PRESETS } from '../render/lighting';
 import type { Pipeline } from '../render/pipeline';
 import { G } from '../render/shaderPatch';
@@ -18,6 +19,7 @@ import { Effects, PKind } from './effects';
 import { Infantry, type Soldier } from './infantry';
 import { type ImpactEvent, Projectiles } from './projectiles';
 import { type HitInfo, Tank } from './tank';
+import { hyp2 } from '../core/mathx';
 
 export type GameState = 'menu' | 'playing' | 'paused' | 'dead' | 'intermission';
 
@@ -136,8 +138,17 @@ export class Game {
     this.presetIndex = (i + PRESETS.length) % PRESETS.length;
     const p = PRESETS[this.presetIndex]!;
     this.lighting.apply(p);
+    // crepuscular rays only under a real sun; stronger in hazy air
+    this.pipeline.shafts.sunDir.copy(this.lighting.sunDir);
+    if (p.sunLux > 1000 && p.sunElevDeg > 0) this.pipeline.shafts.color.copy(this.lighting.sunColor).multiplyScalar(0.07 * (1 + p.haze));
+    else this.pipeline.shafts.color.setRGB(0, 0, 0);
     this.applyFog();
     this.headlightsOn = p.headlights;
+  }
+
+  /** particle sizes are in pixels: refresh after the render resolution changes */
+  refreshPixelScale(): void {
+    this.applyFog();
   }
 
   private applyFog(): void {
@@ -150,6 +161,9 @@ export class Game {
       fog.color.copy(this.lighting.fogColor);
       fog.density = p.fogDensity;
     }
+    // height fog: denser in the valleys, thinner on the ridges (see render/atmosphere.ts)
+    ATMO.fog[0] = fog.density * 1.12;
+    ATMO.fog[3] = this.thermal ? 0 : 1;
     const pr = this.pipeline.renderer.getPixelRatio();
     this.effects.setLighting(this.lighting.exposure, this.lighting.ambient, this.lighting.sunColor, fog.color, fog.density, (window.innerHeight * pr) / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
   }
@@ -174,6 +188,7 @@ export class Game {
     this.score = 0;
     this.time = 0;
     this.world.terrain.warm(this.player.pos);
+    this.world.grass.warm(this.player.pos);
     this.nextWave();
     this.setState('playing');
   }
@@ -199,6 +214,51 @@ export class Game {
   private setState(s: GameState): void {
     this.state = s;
     this.onStateChange(s);
+  }
+
+  /**
+   * Compile every shader the battle can need before it starts. Effects, tracers, the drone and
+   * wreck fires are hidden until first used; a hidden object is skipped by the renderer, so its
+   * program (and its shadow-pass variant) would otherwise compile mid-fight and stall a frame.
+   * Everything is shown for two real frames (normal and thermal channel), then restored.
+   */
+  warmup(): void {
+    const shown: THREE.Object3D[] = [];
+    const counts: [THREE.InstancedMesh, number][] = [];
+    this.scene.traverse((o) => {
+      if (!o.visible) {
+        shown.push(o);
+        o.visible = true;
+      }
+      const im = o as THREE.InstancedMesh;
+      if (im.isInstancedMesh && im.count === 0) {
+        counts.push([im, 0]);
+        im.count = 1;
+      }
+    });
+    const lights: [THREE.DirectionalLight, number][] = [];
+    this.scene.traverse((o) => {
+      const l = o as THREE.DirectionalLight;
+      if (l.isLight && l.castShadow && l.shadow) {
+        lights.push([l, l.shadow.autoUpdate ? 1 : 0]);
+        l.shadow.autoUpdate = true;
+      }
+    });
+    const r = this.pipeline.renderer;
+    this.water.warmup(r);
+    r.compile(this.scene, this.camera);
+    this.pipeline.shafts.force = true;
+    this.pipeline.render(this.now);
+    this.pipeline.shafts.force = false;
+    const th = this.pipeline.thermalOn;
+    this.pipeline.thermalOn = true;
+    G.uThermal.value = 1;
+    this.pipeline.render(this.now);
+    this.pipeline.thermalOn = th;
+    G.uThermal.value = th ? 1 : 0;
+    for (const o of shown) o.visible = false;
+    for (const [im, c] of counts) im.count = c;
+    for (const [l, a] of lights) l.shadow.autoUpdate = a === 1;
   }
 
   pause(on: boolean): void {
@@ -231,8 +291,8 @@ export class Game {
         z = p.pos.z + Math.sin(ang) * d;
         if (Math.abs(x) > PLAY_HALF - 60 || Math.abs(z) > PLAY_HALF - 60) continue;
         if (this.world.hf.heightAt(x, z) < WATER_LEVEL + 1.5) continue;
-        if (this.world.buildings.some((b) => Math.hypot(b.x - x, b.z - z) < 25)) continue;
-        if (this.tanks.some((t) => Math.hypot(t.pos.x - x, t.pos.z - z) < 40)) continue;
+        if (this.world.buildings.some((b) => hyp2(b.x - x, b.z - z) < 25)) continue;
+        if (this.tanks.some((t) => hyp2(t.pos.x - x, t.pos.z - z) < 40)) continue;
         break;
       }
       const e = new Tank(ENEMY_TANK, 'enemy', 'east', 100 + this.wave * 10 + i);
@@ -641,7 +701,7 @@ export class Game {
             const bz = b.pos.z + Math.cos(b.yaw) * ob;
             const ddx = bx - ax;
             const ddz = bz - az;
-            const d = Math.hypot(ddx, ddz);
+            const d = hyp2(ddx, ddz);
             const r = (a.spec.width + b.spec.width) / 2;
             if (d < r && d > 1e-4) {
               const push = (r - d) / 2;
@@ -799,6 +859,9 @@ export class Game {
     const p = this.player;
     const cam = this.camera;
     this.hitAge += dt;
+    // cloud field drifts with the wind (~9 m/s); wrapped so float precision never degrades
+    ATMO.cloud[0] = (ATMO.cloud[0]! + G.uWind.value.x * dt * 8.5) % 90000;
+    ATMO.cloud[1] = (ATMO.cloud[1]! + G.uWind.value.y * dt * 8.5) % 90000;
     for (const t of this.tanks) t.interpolate(alpha);
     // own gun and turret would fill the gunner's view: hide them in the sight (shadows too, acceptable)
     const inSight = this.sight && p.alive;
@@ -1013,7 +1076,7 @@ export class Game {
     const drone = this.droneView && d.alive
       ? {
         alt: d.pos.y - this.world.hf.heightAt(d.pos.x, d.pos.z),
-        dist: Math.hypot(d.pos.x - p.pos.x, d.pos.z - p.pos.z),
+        dist: hyp2(d.pos.x - p.pos.x, d.pos.z - p.pos.z),
         battery: d.battery / DRONE.battery,
         speed: d.vel.length(),
         spares: d.spares,

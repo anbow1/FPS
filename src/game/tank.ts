@@ -5,6 +5,7 @@ import type { World } from '../world/world';
 import { type ArmourResult, MODULES, type ModuleDef, type ModuleId, moduleLayout, resolveArmour, segmentBox } from './damage';
 import type { EngineVoice } from './audio';
 import { buildTank, type TankModel, type TankStyle, updateWheels } from './tankModel';
+import { hyp2, hyp3 } from '../core/mathx';
 
 export type Team = 'player' | 'enemy';
 
@@ -309,7 +310,7 @@ export class Tank {
       for (const rk of world.vegetation.rocks) {
         const dx = c.x - rk.x;
         const dz = c.z - rk.z;
-        const d = Math.hypot(dx, dz);
+        const d = hyp2(dx, dz);
         const rr = r + rk.r;
         if (d < rr && d > 1e-4) {
           c.x = rk.x + (dx / d) * rr;
@@ -384,7 +385,7 @@ export class Tank {
     _q.copy(this.model.root.quaternion).invert();
     _v.copy(this.aimDir).applyQuaternion(_q);
     const wantYaw = Math.atan2(_v.x, _v.z);
-    const wantPitch = Math.atan2(_v.y, Math.hypot(_v.x, _v.z));
+    const wantPitch = Math.atan2(_v.y, hyp2(_v.x, _v.z));
     const drive = this.modules.turretDrive <= 0 ? 0.12 : this.modules.turretDrive < 0.5 ? 0.5 : 1;
     let d = wantYaw - this.turretYaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -672,5 +673,5 @@ function distPointSegment(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3):
   const aby = b.y - a.y;
   const abz = b.z - a.z;
   const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / (abx * abx + aby * aby + abz * abz)));
-  return Math.hypot(a.x + abx * t - p.x, a.y + aby * t - p.y, a.z + abz * t - p.z);
+  return hyp3(a.x + abx * t - p.x, a.y + aby * t - p.y, a.z + abz * t - p.z);
 }

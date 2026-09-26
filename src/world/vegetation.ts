@@ -10,6 +10,7 @@ import { NOISE_SIZE } from '../render/textures';
 import type { Heightfield } from './heightfield';
 import { SITES } from './layout';
 import { broadleafGeometry, coniferGeometry, makeBarkTexture, makeLeafTexture, makeNeedleTexture } from './treeModels';
+import { hyp2 } from '../core/mathx';
 
 export interface Tree {
   x: number;
@@ -137,7 +138,7 @@ export class Vegetation {
       hf.normalAt(x, z, nrm);
       if (nrm.y < 0.82) continue;
       if (hf.roadAt(x, z) > 0.02) continue;
-      if (SITES.some((s) => Math.hypot(x - s.x, z - s.z) < s.r * 0.9)) continue;
+      if (SITES.some((s) => hyp2(x - s.x, z - s.z) < s.r * 0.9)) continue;
       if (mid(x, z) > 0.8) continue;
       const variant = rng.next() < 0.22 ? 2 : rng.next() < 0.5 ? 0 : 1;
       const t: Tree = { x, z, y: y - 0.2, s: rng.range(0.75, 1.3), rot: rng.next() * Math.PI * 2, variant, fall: 0, fallDir: 0, falling: false };
@@ -187,7 +188,7 @@ export class Vegetation {
       const p = 0.03 + smooth(0.12, 0.3, steep) * 0.6;
       if (rng.next() > p) continue;
       if (hf.roadAt(x, z) > 0.02 || y < WATER_LEVEL - 1) continue;
-      if (SITES.some((s) => Math.hypot(x - s.x, z - s.z) < s.r * 0.8)) continue;
+      if (SITES.some((s) => hyp2(x - s.x, z - s.z) < s.r * 0.8)) continue;
       const big = rng.next() < 0.12;
       const r = big ? rng.range(1.6, 3.2) : rng.range(0.25, 0.9);
       const m = new THREE.Matrix4().compose(

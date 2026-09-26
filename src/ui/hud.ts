@@ -193,7 +193,7 @@ export class Hud {
     this.extras = e;
   }
 
-  update(dt: number, p: Tank, range: number | null, rangeLased: boolean, enemies: Tank[], spotted: Set<Tank>, fps: number, cpuMs: number, info: { calls: number; triangles: number }, quality: 'high' | 'low', m: MarkerState): void {
+  update(dt: number, p: Tank, range: number | null, rangeLased: boolean, enemies: Tank[], spotted: Set<Tank>, fps: number, cpuMs: number, info: { calls: number; triangles: number; scale?: string }, quality: 'high' | 'low', m: MarkerState): void {
     for (let i = this.msgs.length - 1; i >= 0; i--) {
       const q = this.msgs[i]!;
       q.t += dt;
@@ -263,6 +263,7 @@ export class Hud {
       const warn = (v: number, lim: number) => (v > lim ? ' class="over"' : '');
       this.perfEl.innerHTML =
         `<div>${fps.toFixed(0)} fps · CPU ${cpuMs.toFixed(1)} ms</div>` +
+        `<div>rozdzielczość ${info.scale ?? '100 %'}</div>` +
         `<div${warn(info.calls, b.drawCalls)}>draw calls ${info.calls} / ${b.drawCalls}</div>` +
         `<div${warn(info.triangles / 1e6, b.trianglesM)}>tris ${(info.triangles / 1e6).toFixed(2)} M / ${b.trianglesM}</div>`;
     }

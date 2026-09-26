@@ -6,6 +6,7 @@ import type { Effects } from './effects';
 import type { SoftTarget } from './bullets';
 import type { HitInfo, Tank, Team } from './tank';
 import { PKind } from './effects';
+import { hyp3 } from '../core/mathx';
 
 export interface Shell {
   s: ShellState;
@@ -204,5 +205,5 @@ function distPointSegment(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3):
   const abz = b.z - a.z;
   const l2 = abx * abx + aby * aby + abz * abz;
   const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / l2)) : 0;
-  return Math.hypot(a.x + abx * t - p.x, a.y + aby * t - p.y, a.z + abz * t - p.z);
+  return hyp3(a.x + abx * t - p.x, a.y + aby * t - p.y, a.z + abz * t - p.z);
 }

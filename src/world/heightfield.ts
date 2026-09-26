@@ -1,6 +1,7 @@
 import { HEIGHT_CELL, PLAY_HALF, WATER_LEVEL, WORLD_SIZE } from '../config';
 import { Simplex2 } from '../core/noise';
 import { LAKES, ROADS, SITES } from './layout';
+import { hyp2, hyp3 } from '../core/mathx';
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -68,7 +69,7 @@ export class Heightfield {
     // soft floor so only the authored lakes hold water
     h = 3 + Math.log1p(Math.exp((h - 3) * 0.5)) / 0.5;
     for (const l of LAKES) {
-      const d = Math.hypot(x - l.x, z - l.z) / l.r;
+      const d = hyp2(x - l.x, z - l.z) / l.r;
       if (d < 1.6) {
         const w = 1 - smoothstep(0.25, 1.35, d + this.sy.noise(x / 90, z / 90) * 0.12);
         h = h + (WATER_LEVEL - l.depth - h) * w;
@@ -76,7 +77,7 @@ export class Heightfield {
     }
     for (let k = 0; k < SITES.length; k++) {
       const st = SITES[k]!;
-      const d = Math.hypot(x - st.x, z - st.z);
+      const d = hyp2(x - st.x, z - st.z);
       const w = 1 - smoothstep(st.r * 0.75, st.r * 1.5, d);
       if (w > 0) h = h + ((this.siteH[k] ?? h) - h) * w * 0.92;
     }
@@ -91,7 +92,7 @@ export class Heightfield {
     const s = this.sy;
     let small = s.fbm(x / 95, z / 95, 3) * 2.0 + s.noise(x / 26, z / 26) * 0.45;
     for (const st of SITES) {
-      const d = Math.hypot(x - st.x, z - st.z);
+      const d = hyp2(x - st.x, z - st.z);
       small *= smoothstep(st.r * 0.6, st.r * 1.2, d) * 0.85 + 0.15;
     }
     return big + small;
@@ -127,7 +128,7 @@ export class Heightfield {
             // gentle meander so roads are not ruler-straight
             const wob = this.sx.noise(x / 60, z / 60) * 3.5;
             const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2));
-            const d = Math.hypot(x - (ax + dx * t), z - (az + dz * t)) + wob;
+            const d = hyp2(x - (ax + dx * t), z - (az + dz * t)) + wob;
             const v = 1 - smoothstep(width * 0.5, width * 0.5 + 2.5, Math.abs(d));
             const idx = j * n + i;
             if (v > this.road[idx]!) this.road[idx] = v;
@@ -186,7 +187,7 @@ export class Heightfield {
     const nx = -hx;
     const ny = 2 * e;
     const nz = -hz;
-    const l = Math.hypot(nx, ny, nz);
+    const l = hyp3(nx, ny, nz);
     out.x = nx / l;
     out.y = ny / l;
     out.z = nz / l;
@@ -202,7 +203,7 @@ export class Heightfield {
     const dx = bx - ax;
     const dy = by - ay;
     const dz = bz - az;
-    const len = Math.hypot(dx, dz);
+    const len = hyp2(dx, dz);
     const steps = Math.max(2, Math.ceil(len / step));
     for (let k = 1; k < steps; k++) {
       const t = k / steps;

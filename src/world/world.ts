@@ -8,6 +8,7 @@ import { Grass } from './grass';
 import { Heightfield } from './heightfield';
 import { Terrain } from './terrain';
 import { Vegetation } from './vegetation';
+import { hyp3 } from '../core/mathx';
 
 export interface RayHit {
   t: number;
@@ -47,7 +48,7 @@ export class World {
   raycast(ax: number, ay: number, az: number, bx: number, by: number, bz: number, out: RayHit, step = 3): RayHit {
     out.kind = 'none';
     out.t = 1;
-    const len = Math.hypot(bx - ax, by - ay, bz - az);
+    const len = hyp3(bx - ax, by - ay, bz - az);
     const n = Math.max(1, Math.ceil(len / step));
     let prevT = 0;
     for (let k = 1; k <= n; k++) {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { box, convexHull2, cyl, latheX, mergeParts, prismX, prismY, sphereCap } from '../render/geom';
 import { makeTrackTexture } from '../render/textures';
 import { makeVehicleUniforms, vehicleMaterial, type VehicleUniforms } from '../render/vehicleMaterial';
+import { hyp2 } from '../core/mathx';
 
 export type TankStyle = 'west' | 'east';
 
@@ -78,7 +79,7 @@ function buildTrackGeometry(l: Layout, side: -1 | 1, pitch: number): THREE.Buffe
   for (let i = 0; i < hull.length; i++) {
     const a = hull[i]!;
     const b = hull[(i + 1) % hull.length]!;
-    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const d = hyp2(b[0] - a[0], b[1] - a[1]);
     segLen.push(d);
     total += d;
   }
@@ -107,7 +108,7 @@ function buildTrackGeometry(l: Layout, side: -1 | 1, pitch: number): THREE.Buffe
     const q = path[(k + 1) % N]!;
     const dz = q[0] - p[0];
     const dy = q[1] - p[1];
-    const len = Math.hypot(dz, dy);
+    const len = hyp2(dz, dy);
     return [dy / len, -dz / len];
   };
   const quad = (
@@ -127,7 +128,7 @@ function buildTrackGeometry(l: Layout, side: -1 | 1, pitch: number): THREE.Buffe
     const q = path[kn]!;
     const [nz0, ny0] = normalAt(k);
     const [nz1, ny1] = normalAt(kn);
-    const vNext = v + Math.hypot(q[0] - p[0], q[1] - p[1]) / pitch;
+    const vNext = v + hyp2(q[0] - p[0], q[1] - p[1]) / pitch;
     const o0 = V(0, p[1] + ny0 * halfT, p[0] + nz0 * halfT);
     const o1 = V(0, q[1] + ny1 * halfT, q[0] + nz1 * halfT);
     const i0 = V(0, p[1] - ny0 * halfT, p[0] - nz0 * halfT);

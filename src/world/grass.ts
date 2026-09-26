@@ -8,6 +8,7 @@ import type { NoiseSet } from '../render/textures';
 import { NOISE_SIZE } from '../render/textures';
 import type { Heightfield } from './heightfield';
 import { SITES } from './layout';
+import { hyp2 } from '../core/mathx';
 
 const CHUNK = 24;
 const MAX_PUSHERS = 10;
@@ -26,6 +27,7 @@ export class Grass {
   private perChunk: number;
   private radius: number;
   private blade: { pos: Float32Array; tip: Float32Array };
+  private job: GrassJob | null = null;
 
   constructor(
     private readonly hf: Heightfield,
@@ -85,6 +87,8 @@ export class Grass {
     this.radius = radius;
     for (const [, m] of this.chunks) this.release(m);
     this.chunks.clear();
+    if (this.job) this.pool.push(this.job.g);
+    this.job = null;
   }
 
   /** Vehicles flatten grass: xyz = position, w = radius. */
@@ -92,36 +96,80 @@ export class Grass {
     if (i < MAX_PUSHERS) this.pushers[i]!.set(x, y, z, r);
   }
 
-  update(cam: THREE.Vector3, budget = 2): void {
+  /**
+   * Streams chunks in around the camera. A chunk is filled a slice of blades per frame (never a
+   * whole chunk at once), nearest missing chunk first, and shown when complete.
+   */
+  update(cam: THREE.Vector3, bladesPerFrame = BLADES_PER_FRAME): void {
     const r = this.radius;
-    const ci0 = Math.floor((cam.x - r) / CHUNK);
-    const ci1 = Math.floor((cam.x + r) / CHUNK);
-    const cj0 = Math.floor((cam.z - r) / CHUNK);
-    const cj1 = Math.floor((cam.z + r) / CHUNK);
     for (const [key, m] of this.chunks) {
       const ci = Math.floor(key / 4096) - 2048;
       const cj = (key % 4096) - 2048;
       const cx = (ci + 0.5) * CHUNK;
       const cz = (cj + 0.5) * CHUNK;
-      if (Math.hypot(cx - cam.x, cz - cam.z) > r + CHUNK) {
+      if (hyp2(cx - cam.x, cz - cam.z) > r + CHUNK) {
         this.release(m);
         this.chunks.delete(key);
       }
     }
-    let built = 0;
-    for (let ci = ci0; ci <= ci1; ci++) {
-      for (let cj = cj0; cj <= cj1; cj++) {
-        const cx = (ci + 0.5) * CHUNK;
-        const cz = (cj + 0.5) * CHUNK;
-        if (Math.hypot(cx - cam.x, cz - cam.z) > r) continue;
-        const key = (ci + 2048) * 4096 + (cj + 2048);
-        if (this.chunks.has(key)) continue;
-        if (built++ >= budget) return;
-        const m = this.build(ci, cj);
-        this.chunks.set(key, m);
+    const job = this.job;
+    if (job && hyp2((job.ci + 0.5) * CHUNK - cam.x, (job.cj + 0.5) * CHUNK - cam.z) > r + CHUNK) {
+      this.pool.push(job.g);
+      this.job = null;
+    }
+    // from the drone's altitude blades are sub-pixel: keep what exists, build nothing new
+    if (cam.y - this.hf.heightAt(cam.x, cam.z) > 45) return;
+    let left = bladesPerFrame;
+    while (left > 0) {
+      if (!this.job && !this.startNearest(cam)) return;
+      left = this.fill(this.job!, left);
+      if (this.job!.b >= this.perChunk) {
+        const j = this.job!;
+        this.job = null;
+        const m = this.finish(j);
+        this.chunks.set(j.key, m);
         this.group.add(m);
       }
     }
+  }
+
+  /** Fill everything around a point at once (spawn, before the first frame is shown). */
+  warm(cam: THREE.Vector3): void {
+    this.update(cam, 1e9);
+  }
+
+  private startNearest(cam: THREE.Vector3): boolean {
+    const r = this.radius;
+    const ci0 = Math.floor((cam.x - r) / CHUNK);
+    const ci1 = Math.floor((cam.x + r) / CHUNK);
+    const cj0 = Math.floor((cam.z - r) / CHUNK);
+    const cj1 = Math.floor((cam.z + r) / CHUNK);
+    let best = Infinity;
+    let bi = 0;
+    let bj = 0;
+    for (let ci = ci0; ci <= ci1; ci++) {
+      for (let cj = cj0; cj <= cj1; cj++) {
+        const d = hyp2((ci + 0.5) * CHUNK - cam.x, (cj + 0.5) * CHUNK - cam.z);
+        if (d > r || d >= best) continue;
+        if (this.chunks.has((ci + 2048) * 4096 + (cj + 2048))) continue;
+        best = d;
+        bi = ci;
+        bj = cj;
+      }
+    }
+    if (best === Infinity) return false;
+    this.job = {
+      key: (bi + 2048) * 4096 + (bj + 2048),
+      ci: bi,
+      cj: bj,
+      g: this.geometry(),
+      rng: new Rng(Math.floor(hash2(bi, bj, 5) * 1e9)),
+      b: 0,
+      used: 0,
+      minY: Infinity,
+      maxY: -Infinity,
+    };
+    return true;
   }
 
   private release(m: THREE.Mesh): void {
@@ -129,7 +177,7 @@ export class Grass {
     this.pool.push(m.geometry);
   }
 
-  private build(ci: number, cj: number): THREE.Mesh {
+  private geometry(): THREE.BufferGeometry {
     const bladeV = this.blade.pos.length / 3;
     const n = this.perChunk;
     let g = this.pool.pop();
@@ -143,16 +191,21 @@ export class Grass {
       for (let b = 0; b < n; b++) tipA.set(this.blade.tip, b * bladeV);
       g.setAttribute('tip', new THREE.BufferAttribute(tipA, 1));
     }
-    const pos = g.getAttribute('position') as THREE.BufferAttribute;
-    const nrm = g.getAttribute('normal') as THREE.BufferAttribute;
-    const col = g.getAttribute('color') as THREE.BufferAttribute;
-    const P = pos.array as Float32Array;
-    const N = nrm.array as Float32Array;
-    const C = col.array as Float32Array;
-    const rng = new Rng(Math.floor(hash2(ci, cj, 5) * 1e9));
-    const tn = { x: 0, y: 1, z: 0 };
-    let used = 0;
-    for (let b = 0; b < n; b++) {
+    return g;
+  }
+
+  /** Place up to `budget` blades of the job; returns the budget left over. */
+  private fill(job: GrassJob, budget: number): number {
+    const bladeV = this.blade.pos.length / 3;
+    const n = this.perChunk;
+    const { ci, cj, rng, g } = job;
+    const P = (g.getAttribute('position') as THREE.BufferAttribute).array as Float32Array;
+    const N = (g.getAttribute('normal') as THREE.BufferAttribute).array as Float32Array;
+    const C = (g.getAttribute('color') as THREE.BufferAttribute).array as Float32Array;
+    const tn = _tn;
+    const end = Math.min(n, job.b + budget);
+    const spent = end - job.b;
+    for (let b = job.b; b < end; b++) {
       const x = (ci + rng.next()) * CHUNK;
       const z = (cj + rng.next()) * CHUNK;
       const macro = sampleWrap(this.noise.r, NOISE_SIZE, x / 1100, z / 1100);
@@ -162,11 +215,14 @@ export class Grass {
       const dry = smooth(0.4, 0.66, macro * 0.7 + macro2 * 0.3 + (mid - 0.5) * 0.3);
       const soil = smooth(0.74, 0.86, mid + (fine - 0.5) * 0.4 + dry * 0.06);
       const y = this.hf.heightAt(x, z);
+      if (y < WATER_LEVEL + 0.8 || soil > 0.999) {
+        rng.next();
+        continue;
+      }
       this.hf.normalAt(x, z, tn);
       const road = this.hf.roadAt(x, z);
       let keep = (1 - soil) * (1 - smooth(0.2, 0.33, 1 - tn.y)) * (1 - smooth(0.02, 0.2, road));
-      if (y < WATER_LEVEL + 0.8) keep = 0;
-      for (const s of SITES) if (Math.hypot(x - s.x, z - s.z) < s.r * 0.35) keep *= 0.3;
+      for (const s of SITES) if (hyp2(x - s.x, z - s.z) < s.r * 0.35) keep *= 0.3;
       if (rng.next() > keep * (0.55 + 0.45 * fine)) continue;
       const h = (0.35 + rng.next() * 0.45) * (1 - dry * 0.25) * (0.7 + fine * 0.6);
       const w = 0.05 + rng.next() * 0.04;
@@ -175,12 +231,10 @@ export class Grass {
       const c = Math.cos(rot);
       const s = Math.sin(rot);
       // colour: same palette as the terrain, lighter tips come from `tip` below
-      const g0 = PBR.grassFresh.color;
-      const g1 = PBR.grassDry.color;
-      _c0.set(g0).lerp(_c1.set(g1), Math.min(1, dry + rng.next() * 0.25));
+      _c0.copy(GRASS_FRESH).lerp(GRASS_DRY, Math.min(1, dry + rng.next() * 0.25));
       _c0.multiplyScalar(0.8 + 0.35 * macro2 + rng.next() * 0.12);
       const bp = this.blade.pos;
-      const base = used * bladeV;
+      const base = job.used * bladeV;
       for (let k = 0; k < bladeV; k++) {
         const bx = bp[k * 3]! * w;
         const by = bp[k * 3 + 1]! * h;
@@ -198,17 +252,53 @@ export class Grass {
         C[i + 1] = _c0.g * shade;
         C[i + 2] = _c0.b * shade;
       }
-      used++;
+      if (y < job.minY) job.minY = y;
+      if (y + h > job.maxY) job.maxY = y + h;
+      job.used++;
     }
+    job.b = end;
+    return budget - spent;
+  }
+
+  private finish(job: GrassJob): THREE.Mesh {
+    const bladeV = this.blade.pos.length / 3;
+    const { g, ci, cj, used } = job;
     g.setDrawRange(0, used * bladeV);
-    pos.needsUpdate = nrm.needsUpdate = col.needsUpdate = true;
-    g.computeBoundingSphere();
+    // upload only the blades that were kept (a full chunk is ~3 MB of vertex data)
+    for (const name of ['position', 'normal', 'color']) {
+      const a = g.getAttribute(name) as THREE.BufferAttribute;
+      a.clearUpdateRanges();
+      a.addUpdateRange(0, Math.max(3, used * bladeV * 3));
+      a.needsUpdate = true;
+    }
+    // analytic bound instead of scanning every vertex
+    if (!g.boundingSphere) g.boundingSphere = new THREE.Sphere();
+    const cy = used ? (job.minY + job.maxY) / 2 : this.hf.heightAt((ci + 0.5) * CHUNK, (cj + 0.5) * CHUNK);
+    g.boundingSphere.center.set((ci + 0.5) * CHUNK, cy, (cj + 0.5) * CHUNK);
+    g.boundingSphere.radius = CHUNK * 0.75 + (used ? (job.maxY - job.minY) / 2 : 0) + 1;
     const m = new THREE.Mesh(g, this.material);
     m.receiveShadow = true;
     m.castShadow = false;
     return m;
   }
 }
+
+interface GrassJob {
+  key: number;
+  ci: number;
+  cj: number;
+  g: THREE.BufferGeometry;
+  rng: Rng;
+  /** next blade index to place, blades kept so far */
+  b: number;
+  used: number;
+  minY: number;
+  maxY: number;
+}
+
+/** ~1-2 ms on a phone: a 5200-blade chunk streams in over four frames */
+const BLADES_PER_FRAME = 1300;
+const _tn = { x: 0, y: 1, z: 0 };
 
 /** One tapered blade as a 3-segment triangle strip, unrolled to a triangle list. */
 function makeBlade(): { pos: Float32Array; tip: Float32Array } {
@@ -236,7 +326,9 @@ function makeBlade(): { pos: Float32Array; tip: Float32Array } {
 }
 
 const _c0 = linear(0);
-const _c1 = linear(0);
+// palette colours converted to linear once, not per blade
+const GRASS_FRESH = linear(PBR.grassFresh.color);
+const GRASS_DRY = linear(PBR.grassDry.color);
 
 function smooth(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));

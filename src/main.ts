@@ -3,11 +3,15 @@ import { PHYS_DT, QUALITY } from './config';
 import { Input } from './core/input';
 import { Audio } from './game/audio';
 import { Game, type GameState } from './game/game';
+import { ATMO, installAtmosphere } from './render/atmosphere';
+import { FrameGovernor } from './render/governor';
 import { PRESETS } from './render/lighting';
 import { Pipeline } from './render/pipeline';
 import { Hud } from './ui/hud';
 import { isTouchDevice, TouchControls } from './ui/touch';
 import { World } from './world/world';
+
+installAtmosphere();
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -76,15 +80,19 @@ async function boot(): Promise<void> {
   // pre-compile every material against the current lights so the first shot does not hitch
   game.start();
   game.pause(true);
-  pipeline.renderer.compile(game.scene, game.camera);
+  game.warmup();
   status.textContent = `Gotowe (${((performance.now() - t0) / 1000).toFixed(1)} s)`;
   playBtn.disabled = false;
   playBtn.textContent = 'Graj';
+
+  const governor = new FrameGovernor(pipeline, () => game.refreshPixelScale());
 
   qualitySel.onchange = () => {
     settings.quality = qualitySel.value;
     save();
     game.setQuality(QUALITY[qualitySel.value === 'low' ? 'low' : 'high']);
+    game.warmup();
+    governor.reset();
   };
   lightSel.onchange = () => {
     settings.light = lightSel.value;
@@ -167,9 +175,11 @@ async function boot(): Promise<void> {
   const loop = (now: number) => {
     requestAnimationFrame(loop);
     const frameStart = performance.now();
-    const dt = Math.min(0.1, (now - last) / 1000);
+    const rawDt = (now - last) / 1000;
+    const dt = Math.min(0.1, rawDt);
     last = now;
     fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+    if (game.state === 'playing' && !document.hidden) governor.update(rawDt);
     game.handleInput(dt);
     const running = game.state === 'playing' || game.state === 'dead' || game.state === 'intermission';
     if (running) {
@@ -186,12 +196,13 @@ async function boot(): Promise<void> {
     pipeline.render(game.now);
     const info = pipeline.info.render;
     hud.setExtras({ drone: game.droneMap, infantry: game.spottedInfantry, droneStatus: game.droneStatus });
-    hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.calls, triangles: info.triangles }, game.quality.id, markers);
+    hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.calls, triangles: info.triangles, scale: governor.label }, game.quality.id, markers);
     input.endFrame();
     cpuMs += (performance.now() - frameStart - cpuMs) * 0.05;
   };
   requestAnimationFrame(loop);
-  (window as unknown as { __game: Game }).__game = game;
+  (window as unknown as { __game: Game; __atmo: typeof ATMO }).__game = game;
+  (window as unknown as { __atmo: typeof ATMO }).__atmo = ATMO;
 }
 
 function nextFrame(): Promise<void> {

@@ -10,6 +10,7 @@ import type { Effects } from './effects';
 import { PKind } from './effects';
 import type { Projectiles } from './projectiles';
 import type { Tank, Team } from './tank';
+import { hyp2 } from '../core/mathx';
 
 type Role = 'rpg' | 'rifle';
 type State = 'hidden' | 'aim' | 'reload' | 'flee' | 'dead';
@@ -167,16 +168,16 @@ export class Infantry {
       const side = rng.range(-220, 220);
       const dx = towards.x - from.x;
       const dz = towards.z - from.z;
-      const d = Math.hypot(dx, dz) || 1;
+      const d = hyp2(dx, dz) || 1;
       const x = from.x + dx * t + (-dz / d) * side;
       const z = from.z + dz * t + (dx / d) * side;
       if (Math.abs(x) > PLAY_HALF - 40 || Math.abs(z) > PLAY_HALF - 40) continue;
       const y = world.hf.heightAt(x, z);
       if (y < WATER_LEVEL + 1) continue;
-      if (Math.hypot(x - from.x, z - from.z) < 280) continue;
+      if (hyp2(x - from.x, z - from.z) < 280) continue;
       // cover: trees or a building nearby, road in view
       const trees = world.vegetation.query(x, z, 14, []).length;
-      const house = world.buildings.some((b) => Math.hypot(b.x - x, b.z - z) < 22);
+      const house = world.buildings.some((b) => hyp2(b.x - x, b.z - z) < 22);
       const road = world.hf.roadAt(x, z) > 0.1 ? -3 : 0;
       const score = Math.min(trees, 5) + (house ? 4 : 0) + road + rng.next();
       if (score > bestScore) {
@@ -233,7 +234,7 @@ export class Infantry {
       // tanks crush anybody who does not get out of the way
       const dxp = s.pos.x - player.pos.x;
       const dzp = s.pos.z - player.pos.z;
-      const dist = Math.hypot(dxp, dzp);
+      const dist = hyp2(dxp, dzp);
       if (player.alive && dist < 2.4 && Math.abs(player.speed) > 0.5) {
         s.die(player.yaw, 'crushed');
         continue;
