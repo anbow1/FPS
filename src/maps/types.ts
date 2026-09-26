@@ -67,13 +67,6 @@ export interface TreeInstance {
   seed: number;
 }
 
-export interface CoverPoint {
-  pos: Vec3; // where to stand (feet)
-  facingRad: number; // yaw of the direction the cover protects against
-  low: boolean; // true = crouch behind, lean over; false = stand and lean around
-  leanSide: -1 | 1;
-}
-
 export interface InteriorVolume {
   min: Vec3;
   max: Vec3;
@@ -114,7 +107,6 @@ export interface MapData {
   playerSpawn: { pos: Vec3; yawRad: number };
   squadSpawns: SquadSpawn[];
   reinforcementSpawns: Vec3[];
-  coverPoints: CoverPoint[];
   interiors: InteriorVolume[];
   bulbs: Bulb[];
   pickups: Pickup[];
