@@ -72,14 +72,21 @@ export class AutoExposure {
         });
     }
     if (this.meteredEv === null) return;
-    const lo = presetEv - EXPOSURE.minEvBelowPreset;
-    const hi = presetEv + EXPOSURE.maxEvAbovePreset;
-    const target = Math.min(hi, Math.max(lo, this.meteredEv));
-    const brighter = target > this.adaptedEv; // scene got brighter → EV rises, fast
-    const tau = brighter ? EXPOSURE.adaptBrightenSeconds : EXPOSURE.adaptDarkenSeconds;
-    // tau is the time to cover most of the gap: 1 − e^(−3) ≈ 95 % in `tau` seconds.
-    this.adaptedEv += (target - this.adaptedEv) * (1 - Math.exp((-3 * dtSeconds) / tau));
+    this.adaptedEv = adaptEv(this.adaptedEv, this.meteredEv, presetEv, dtSeconds);
   }
+}
+
+/**
+ * One frame of eye adaptation toward a metered EV100, clamped per preset.
+ * Brighter scenes (EV rising) adapt fast, darker ones slowly; each time
+ * constant is the time to cover ~95 % of the gap (1 − e^−3).
+ */
+export function adaptEv(currentEv: number, meteredEv: number, presetEv: number, dtSeconds: number): number {
+  const lo = presetEv - EXPOSURE.minEvBelowPreset;
+  const hi = presetEv + EXPOSURE.maxEvAbovePreset;
+  const target = Math.min(hi, Math.max(lo, meteredEv));
+  const tau = target > currentEv ? EXPOSURE.adaptBrightenSeconds : EXPOSURE.adaptDarkenSeconds;
+  return currentEv + (target - currentEv) * (1 - Math.exp((-3 * dtSeconds) / tau));
 }
 
 /** Histogram mean of log2 luminance within the percentile band → EV100 (K = 12.5). */
