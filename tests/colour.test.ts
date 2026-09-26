@@ -28,3 +28,20 @@ describe('colour helpers', () => {
     expect(luminanceOf(hexToLinear(0x8a4b3a))).toBeCloseTo(0.107, 2);
   });
 });
+
+describe('light colour (white-balanced to D65)', () => {
+  it('D65 itself renders white', async () => {
+    const { lightColour } = await import('../src/render/colour.ts');
+    const c = lightColour(6504);
+    for (const v of [c.r, c.g, c.b]) expect(v).toBeCloseTo(1, 3);
+  });
+
+  it('noon sun (5500 K) is mildly warm, golden hour (3200 K) clearly warm', async () => {
+    const { lightColour } = await import('../src/render/colour.ts');
+    const noon = lightColour(5500);
+    const golden = lightColour(3200);
+    expect(noon.b).toBeGreaterThan(0.7); // photographic daylight: slightly warm of D65
+    expect(noon.g).toBeGreaterThan(0.88); // but not magenta: green stays close to red
+    expect(golden.b).toBeLessThan(0.5);
+  });
+});

@@ -3,7 +3,7 @@ import { AdditiveBlending, BoxGeometry, Color, InstancedMesh, Matrix4, MeshBasic
 import { LOCAL_LIGHTS, type SurfaceKind } from '../config.ts';
 import type { GameEvent } from '../game/events.ts';
 import type { Game } from '../game/game.ts';
-import { kelvinToLinearRgb } from './colour.ts';
+import { lightColour } from './colour.ts';
 import { ParticlePool, spawnDefaults } from './particles.ts';
 
 // Short-lived combat effects: muzzle flashes (a point light for 1–2 frames and
@@ -82,9 +82,9 @@ export class Effects {
       scene.add(light);
       this.flashes.push({ light, ttl: 0 });
     }
-    const k = kelvinToLinearRgb(LOCAL_LIGHTS.muzzleFlashK);
+    const k = lightColour(LOCAL_LIGHTS.muzzleFlashK);
     this.flashColour.setRGB(k.r, k.g, k.b);
-    const e = kelvinToLinearRgb(2200);
+    const e = lightColour(2200);
     this.explosionColour.setRGB(e.r, e.g, e.b);
     scene.add(this.dust.mesh, this.sparks.mesh, this.decals, this.tracers);
   }

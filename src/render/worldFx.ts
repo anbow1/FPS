@@ -3,7 +3,7 @@ import { BoxGeometry, CapsuleGeometry, Color, InstancedMesh, Matrix4, MeshBasicN
 import { LOCAL_LIGHTS } from '../config.ts';
 import type { Game } from '../game/game.ts';
 import type { MapData } from '../maps/types.ts';
-import { kelvinToLinearRgb } from './colour.ts';
+import { lightColour } from './colour.ts';
 import { softSprites } from './particles.ts';
 
 // Persistent world effects read from game state every frame: smoke clouds,
@@ -53,7 +53,7 @@ export class WorldFx {
     this.preview = new InstancedMesh(new SphereGeometry(0.03, 6, 4), previewMat, 90);
     this.preview.frustumCulled = false;
     this.preview.count = 0;
-    const k = kelvinToLinearRgb(LOCAL_LIGHTS.interiorBulbK);
+    const k = lightColour(LOCAL_LIGHTS.interiorBulbK);
     this.bulbColour.setRGB(k.r, k.g, k.b);
     for (let i = 0; i < BULB_LIGHTS && i < map.bulbs.length; i++) {
       const l = new PointLight(this.bulbColour, 0, 14, 2);

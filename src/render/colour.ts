@@ -32,6 +32,25 @@ export function kelvinToLinearRgb(kelvin: number): LinearRgb {
   return { r: r / m, g: g / m, b: b / m };
 }
 
+const D65_KELVIN = 6504;
+let d65: LinearRgb | null = null;
+
+/**
+ * Colour of a light source for rendering: its Planckian colour white-balanced
+ * to D65, the white point of sRGB. Without this a 5500 K noon sun renders pink,
+ * where an eye or camera adapted to daylight sees it as white; with it, golden
+ * hour (3200 K) stays warm and a 10000 K sky stays blue. Largest channel = 1.
+ */
+export function lightColour(kelvin: number): LinearRgb {
+  d65 ??= kelvinToLinearRgb(D65_KELVIN);
+  const c = kelvinToLinearRgb(kelvin);
+  const r = c.r / d65.r;
+  const g = c.g / d65.g;
+  const b = c.b / d65.b;
+  const m = Math.max(r, g, b);
+  return { r: r / m, g: g / m, b: b / m };
+}
+
 /** sRGB hex (as on the PBR sheet) → linear channel values 0..1. */
 export function hexToLinear(hex: number): LinearRgb {
   const toLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
