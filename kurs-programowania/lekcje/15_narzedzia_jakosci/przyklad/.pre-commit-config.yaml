@@ -1,8 +1,0 @@
-# pip install pre-commit && pre-commit install  → ruff sprawdza każdy commit.
-repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.9
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format

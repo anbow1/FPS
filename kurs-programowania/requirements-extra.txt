@@ -1,5 +1,0 @@
-# Opcjonalne — do przykładów z prawdziwym API Claude'a (lekcja 09) i oficjalnym SDK MCP (lekcja 13).
-# Ćwiczenia i testy NIE potrzebują tych pakietów ani klucza API.
--r requirements.txt
-anthropic
-mcp

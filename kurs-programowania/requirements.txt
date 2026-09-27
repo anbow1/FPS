@@ -1,2 +1,0 @@
-# Wymagane tylko w lekcji 07 (pandas). Reszta kursu działa na samej bibliotece standardowej.
-pandas>=2.0

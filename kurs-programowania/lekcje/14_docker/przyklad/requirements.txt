@@ -1,1 +1,0 @@
-# Aplikacja używa tylko biblioteki standardowej. Plik zostaje, bo Dockerfile pokazuje wzorzec instalacji zależności.

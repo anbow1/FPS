@@ -1,8 +1,0 @@
-# Twój postęp w kursie — lokalny, nie trafia do gita.
-.postep.json
-__pycache__/
-*.pyc
-.venv/
-venv/
-.env
-*.db

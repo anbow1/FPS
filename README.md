@@ -14,11 +14,8 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-Also here: [`kurs-programowania/`](kurs-programowania/) — an interactive
-programming course in Polish (Python, CLI, git, JSON, SQL, pandas, HTTP APIs,
-tool calling, loops and graphs, embeddings, RAG, MCP, Docker and venv, code
-quality tooling and evals for AI apps), with
-auto-checked exercises and quizzes. Start with `python kurs.py` inside that folder.
+The interactive programming course that briefly lived here has moved to its
+own repository: [anbow1/kurs-programowania](https://github.com/anbow1/kurs-programowania).
 
 Shared by both, at the root: the coding rules (`AGENT.md`,
 `games-ts-threejs.md`) and the reference sheets in `references/`.
