@@ -187,6 +187,10 @@ export class GameView {
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
+    // Sun shafts through the canopy: strongest with a low sun, none under a full overcast.
+    const preset = this.lighting.preset;
+    const lowSun = 1 - Math.min(1, Math.max(0, preset.sunElevationRad - 0.05) / 0.6);
+    this.stage.aimShafts(this.lighting.sunVector, (1 - preset.cloudCover * 0.9) * (0.35 + lowSun * 0.5));
 
     // Scope second view, only while the sniper is up and after the main view has
     // compiled once (the sun's cascades bind to the first camera that renders).

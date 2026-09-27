@@ -1,5 +1,5 @@
-import { float, mix, texture, uniform } from 'three/tsl';
-import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
+import { float, mix, texture, uniform, vec3 } from 'three/tsl';
+import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import type { BoxLook } from '../maps/types.ts';
 import { skyVisibilityNode } from './interior.ts';
 import * as P from './patterns.ts';
@@ -37,6 +37,36 @@ function standard(ts: TextureSet, name: string, normalScale = 1): MeshStandardNo
   // AO (R channel) × sky visibility: indirect light only, dimmed inside buildings.
   m.aoNode = texture(ts.ormMap).r.mul(skyVisibilityNode());
   return m;
+}
+
+/**
+ * Foliage with a thin-translucency term (rules §3.1): MeshSSSNodeMaterial adds
+ * it inside the direct-light loop, multiplied by the shadowed light colour, so
+ * only leaves the sun actually reaches glow from behind — the golden-hour win
+ * in the forest. Same texture set and AO as `standard`.
+ */
+function translucentLeaf(ts: TextureSet, name: string): MeshSSSNodeMaterial {
+  const m = new MeshSSSNodeMaterial({ name, map: ts.map, normalMap: ts.normalMap, roughnessMap: ts.ormMap, metalnessMap: ts.ormMap, roughness: 1, metalness: 1 });
+  m.aoNode = texture(ts.ormMap).r.mul(skyVisibilityNode());
+  // Light through a leaf is yellower and more saturated than the leaf in reflection. Tuned by eye at golden hour.
+  m.thicknessColorNode = texture(ts.map).rgb.mul(vec3(1.1, 1.2, 0.6));
+  m.thicknessDistortionNode = float(0.25);
+  m.thicknessAmbientNode = float(0);
+  m.thicknessAttenuationNode = float(0.6);
+  m.thicknessPowerNode = float(2.5);
+  m.thicknessScaleNode = float(2.2);
+  return m;
+}
+
+/** `Material.clone()` does not carry the SSS nodes over; foliage clones its base material, so copy them. */
+export function copyTranslucency(from: Material, to: Material): void {
+  if (!(from instanceof MeshSSSNodeMaterial) || !(to instanceof MeshSSSNodeMaterial)) return;
+  to.thicknessColorNode = from.thicknessColorNode;
+  to.thicknessDistortionNode = from.thicknessDistortionNode;
+  to.thicknessAmbientNode = from.thicknessAmbientNode;
+  to.thicknessAttenuationNode = from.thicknessAttenuationNode;
+  to.thicknessPowerNode = from.thicknessPowerNode;
+  to.thicknessScaleNode = from.thicknessScaleNode;
 }
 
 /** Wet-capable material: the same texture set driven by the wetness uniform (rules §3.1). */
@@ -165,7 +195,7 @@ export class MaterialLibrary {
         return standard(set('bark', 256, P.bark, 5), name);
       case 'needles': {
         const ts = set('needles', 256, P.pineNeedles, 2, true);
-        const m = standard(ts, name);
+        const m = translucentLeaf(ts, name);
         m.alphaTest = 0.5;
         m.alphaToCoverage = true;
         m.side = DoubleSide;
@@ -173,7 +203,7 @@ export class MaterialLibrary {
       }
       case 'leaves': {
         const ts = set('leaves', 256, P.leaves, 2, true);
-        const m = standard(ts, name);
+        const m = translucentLeaf(ts, name);
         m.alphaTest = 0.5;
         m.alphaToCoverage = true;
         m.side = DoubleSide;

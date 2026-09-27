@@ -2,7 +2,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { attribute, positionLocal, sin, time, uniform, vec3 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, CylinderGeometry, Group, InstancedMesh, Matrix4, MeshStandardNodeMaterial, PlaneGeometry, Quaternion, Vector3 } from 'three/webgpu';
 import type { TreeInstance } from '../maps/types.ts';
-import type { MaterialLibrary } from './materials.ts';
+import { copyTranslucency, type MaterialLibrary } from './materials.ts';
 
 // Instanced pines and undergrowth, split into spatial chunks so frustum culling
 // drops what is behind the camera. The crown sways with the same wind vector
@@ -100,6 +100,7 @@ function addSway(g: BufferGeometry): void {
 /** Wind-driven vertex offset, applied after instancing (positionLocal is world here). */
 function swayingMaterial(base: MeshStandardNodeMaterial, amplitudePerMs: number): MeshStandardNodeMaterial {
   const m = base.clone();
+  copyTranslucency(base, m);
   const w = attribute('sway', 'float');
   const p = positionLocal;
   const phase = p.x.mul(0.07).add(p.z.mul(0.05));

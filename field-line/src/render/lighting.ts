@@ -1,7 +1,7 @@
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { cameraPosition, exp, float, fog, max, positionWorld, pow, uniform, vec4 } from 'three/tsl';
-import { DirectionalLight, FloatType, PerspectiveCamera, PMREMGenerator, RenderTarget, Scene, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
+import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, PMREMGenerator, RenderTarget, Scene, SphereGeometry, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '../config.ts';
 import { lightColour, preExposureFor } from './colour.ts';
 
@@ -18,6 +18,7 @@ const CALIBRATION_PX = 32;
 const CALIBRATION_FOV_DEG = 150; // an upward view out to 75° from the zenith
 // Sun cascades: split to the real play distance (rules §2.3), not the default.
 const CSM_MAX_FAR_M = { high: 450, low: 220 } as const;
+const GROUND_ALBEDO = 0.2;
 
 export class Lighting {
   readonly sun = new DirectionalLight(0xffffff, 1);
@@ -32,6 +33,8 @@ export class Lighting {
   private readonly sunGlowColour = uniform(new Vector3());
   private readonly sunDirection = uniform(new Vector3(0, 1, 0));
   private readonly fogDensity = uniform(0);
+  /** Pre-exposed radiance of the ground as the probe sees it from above. */
+  private readonly groundRadiance = uniform(new Vector3());
   private readonly fogFalloff = uniform(0.005);
   private readonly fogBaseY = uniform(0);
   preset: LightingPreset = LIGHTING.noon;
@@ -73,6 +76,12 @@ export class Lighting {
     scene.add(this.sky);
     // The probe scene renders the same sky: the clone shares the material, so it shares the uniforms.
     this.skyScene.add(this.sky.clone());
+    // Below the horizon the probe sees the sunlit ground, not more sky: the bounce light that
+    // lifts shaded walls, trunks and soldiers. Radius 50 m keeps it inside the bake camera's
+    // 100 m far plane; the calibration view (≥ 15° elevation) never sees it.
+    const groundMat = new MeshBasicNodeMaterial({ side: BackSide, fog: false });
+    groundMat.colorNode = vec4(this.groundRadiance, 1);
+    this.skyScene.add(new Mesh(new SphereGeometry(50, 32, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), groundMat));
 
     scene.fogNode = fog(this.fogColourNode(), this.fogFactorNode());
   }
@@ -138,6 +147,11 @@ export class Lighting {
     this.fogFalloff.value = p.fogHeightFalloffPerM;
     this.fogBaseY.value = groundY;
 
+    // Ground bounce: a mean ground albedo (turf, soil, concrete ≈ 0.2 on the PBR sheet) lit by sun and sky.
+    const groundE = (p.sunIlluminanceLux * Math.max(0, Math.sin(p.sunElevationRad)) + p.skyIlluminanceLux) * this.preExposure;
+    const bounce = (GROUND_ALBEDO / Math.PI) * groundE;
+    this.groundRadiance.value.set(bounce * 1.02, bounce, bounce * 0.9);
+
     // Outdoor ambient: the sky itself, filtered into an environment probe. The sun
     // disc stays out of the probe: the directional light already carries the sun.
     u.showSunDisc.value = 0;
@@ -200,6 +214,11 @@ export class Lighting {
     // The square view reaches past 75° in its corners and short of it at the edges; treat it as the 75° cap.
     const capShare = Math.sin(halfFov) ** 2;
     return { r: er / capShare, g: eg / capShare, b: eb / capShare };
+  }
+
+  /** Unit vector toward the sun for the current preset. */
+  get sunVector(): Vector3 {
+    return this.sunDir;
   }
 
   /** The sky dome and the shadow cascades follow the camera. */

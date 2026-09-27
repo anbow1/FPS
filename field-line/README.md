@@ -58,6 +58,11 @@ game state once per display frame and interpolates between steps.
 ## Where it stands
 
 See the latest commit messages for what each step added and what was measured.
+Ported from Castaway Lagoon: shadow-aware thin translucency on pine needles
+and leaves, screen-space sun shafts through the canopy, ground-bounce light
+in the sky probe (lifts shaded walls, trunks and soldiers), and a light
+saturation and vignette grade.
+
 The open items are listed at the end of the last report: GTAO, SSR, motion
 blur, a colour-grade LUT, volumetric light and contact shadows are not in the
 post chain yet; characters and weapons are procedural stand-ins, not scanned
