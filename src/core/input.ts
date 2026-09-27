@@ -1,5 +1,6 @@
 // Rebindable input layer. Gameplay asks for actions ("fire", "reload"), never
-// for event.code (rules §10). Bindings persist in localStorage.
+// for event.code (rules §10). Bindings persist in localStorage. Each game
+// passes its own action set and default bindings; `Action` is the FPS's.
 
 export type Action =
   | 'forward'
@@ -57,20 +58,24 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   pause: ['Escape', 'KeyP'],
 };
 
-const STORAGE_KEY = 'fps.bindings.v1';
+export const FPS_BINDINGS_KEY = 'fps.bindings.v1';
 
-export class Input {
+export class Input<A extends string = Action> {
   private readonly heldCodes = new Set<string>();
   private readonly pressedCodes = new Set<string>();
   private readonly releasedCodes = new Set<string>();
-  private bindings: Record<Action, readonly string[]>;
+  private bindings: Record<A, readonly string[]>;
   private mouseDxPx = 0;
   private mouseDyPx = 0;
   locked = false;
   onLockChange: ((locked: boolean) => void) | null = null;
 
-  constructor(private readonly target: HTMLElement) {
-    this.bindings = loadBindings();
+  constructor(
+    private readonly target: HTMLElement,
+    private readonly defaults: Readonly<Record<A, readonly string[]>>,
+    private readonly storageKey: string,
+  ) {
+    this.bindings = loadBindings(defaults, storageKey);
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.down(e.code);
@@ -117,17 +122,17 @@ export class Input {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
-  held(action: Action): boolean {
+  held(action: A): boolean {
     for (const code of this.bindings[action]) if (this.heldCodes.has(code)) return true;
     return false;
   }
 
-  pressed(action: Action): boolean {
+  pressed(action: A): boolean {
     for (const code of this.bindings[action]) if (this.pressedCodes.has(code)) return true;
     return false;
   }
 
-  released(action: Action): boolean {
+  released(action: A): boolean {
     for (const code of this.bindings[action]) if (this.releasedCodes.has(code)) return true;
     return false;
   }
@@ -146,18 +151,18 @@ export class Input {
     this.releasedCodes.clear();
   }
 
-  getBindings(): Readonly<Record<Action, readonly string[]>> {
+  getBindings(): Readonly<Record<A, readonly string[]>> {
     return this.bindings;
   }
 
-  rebind(action: Action, code: string): void {
+  rebind(action: A, code: string): void {
     this.bindings = { ...this.bindings, [action]: [code] };
-    saveBindings(this.bindings);
+    saveBindings(this.bindings, this.storageKey);
   }
 
   resetBindings(): void {
-    this.bindings = { ...DEFAULT_BINDINGS };
-    saveBindings(this.bindings);
+    this.bindings = { ...this.defaults };
+    saveBindings(this.bindings, this.storageKey);
   }
 
   private down(code: string): void {
@@ -176,27 +181,27 @@ export class Input {
   }
 }
 
-function loadBindings(): Record<Action, readonly string[]> {
+function loadBindings<A extends string>(defaults: Readonly<Record<A, readonly string[]>>, storageKey: string): Record<A, readonly string[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_BINDINGS };
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return { ...defaults };
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return { ...DEFAULT_BINDINGS };
-    const result: Record<Action, readonly string[]> = { ...DEFAULT_BINDINGS };
-    for (const action of Object.keys(DEFAULT_BINDINGS) as Action[]) {
+    if (typeof parsed !== 'object' || parsed === null) return { ...defaults };
+    const result: Record<A, readonly string[]> = { ...defaults };
+    for (const action of Object.keys(defaults) as A[]) {
       const value = (parsed as Record<string, unknown>)[action];
       if (Array.isArray(value) && value.every((v): v is string => typeof v === 'string')) result[action] = value;
     }
     return result;
   } catch (err) {
     console.warn('stored key bindings unreadable, using defaults:', err);
-    return { ...DEFAULT_BINDINGS };
+    return { ...defaults };
   }
 }
 
-function saveBindings(bindings: Record<Action, readonly string[]>): void {
+function saveBindings<A extends string>(bindings: Record<A, readonly string[]>, storageKey: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bindings));
+    localStorage.setItem(storageKey, JSON.stringify(bindings));
   } catch (err) {
     console.warn('could not save key bindings:', err);
   }

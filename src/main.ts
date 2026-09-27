@@ -2,7 +2,7 @@ import { Controls } from './app/controls.ts';
 import { loadSettings, type Settings, saveSettings } from './app/settings.ts';
 import { Audio, type Listener } from './audio/audio.ts';
 import type { LightingPresetId } from './config.ts';
-import { Input } from './core/input.ts';
+import { DEFAULT_BINDINGS, FPS_BINDINGS_KEY, Input } from './core/input.ts';
 import { FixedLoop } from './core/loop.ts';
 import { directionFromYawPitch, Vec3 } from './core/vec.ts';
 import { Game, type GameIntent } from './game/game.ts';
@@ -48,7 +48,7 @@ class App {
 
   constructor() {
     this.canvas = byId<HTMLCanvasElement>('view');
-    this.input = new Input(document.body);
+    this.input = new Input(document.body, DEFAULT_BINDINGS, FPS_BINDINGS_KEY);
     this.controls = new Controls(this.input);
     this.settings = loadSettings();
     this.hud = new Hud(byId('hud'));
