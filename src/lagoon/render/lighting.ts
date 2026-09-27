@@ -131,7 +131,8 @@ export class LagoonLighting {
   /** Re-bakes the sky probe when the sky has visibly changed; between bakes, scales it by the pre-exposure ratio. */
   private updateProbe(env: Environment, dtSeconds: number): void {
     this.probeAge += dtSeconds;
-    if (this.envTexture) this.scene.environmentIntensity = this.preExposure / this.bakedPreExposure;
+    // A lightning flash lights the whole storm-dark scene through the probe for a moment.
+    if (this.envTexture) this.scene.environmentIntensity = (this.preExposure / this.bakedPreExposure) * (1 + env.lightningFlash * 6);
     if (this.baking || this.probeAge < PROBE_MIN_INTERVAL_S) return;
     const d = env.daylight;
     const b = this.lastBake;

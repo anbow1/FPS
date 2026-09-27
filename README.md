@@ -61,3 +61,51 @@ The open items are listed at the end of the last report: GTAO, SSR, motion
 blur, a colour-grade LUT, volumetric light and contact shadows are not in the
 post chain yet; characters and weapons are procedural stand-ins, not scanned
 or authored assets; textures are generated at load, not KTX2.
+
+---
+
+# Castaway Lagoon — tropical first-person exploration
+
+A second game in the same repo: a small, dense tropical bay with a survival
+outpost beside the beach, inspired by the Far Cry 3 island look. Open
+`http://localhost:5173/lagoon.html` after `npm run dev`.
+
+Things to do there: pick up stones on the beach and throw them into the
+lagoon (hold the mouse to wind up; flat, fast throws skip), take the AK-47
+from the cot and the knife from the table, open the supply crate, harvest
+herbs, hibiscus and aloe, read the journal and the map, knock the tin cans
+off the driftwood log, and change the weather (T) and time of day (N).
+
+| | |
+|---|---|
+| Move / sprint / jump | WASD · Shift · Space |
+| Interact / pick up / harvest / examine | E |
+| Shoot · slash · throw (hold to wind up) | Mouse 1 |
+| Aim the rifle | Mouse 2 |
+| Reload | R |
+| AK-47 / knife / stone / empty hands | 1 · 2 · 3 · H |
+| Inventory | I |
+| Weather · time of day | T · N |
+| Pause and settings (time, weather, graphics, mouse, volume) | Esc |
+| Stats overlay | F3 |
+
+`lagoon.html?autostart&time=sunset&weather=storm` starts without the title and
+without pointer lock (for screenshots); `q=low` picks the Low preset.
+
+## Layout
+
+```
+src/lagoon/config.ts   every tunable (player, stone, rifle, knife, weather, daylight, waves), SI units
+src/lagoon/game/       logic only, no THREE: terrain height function, world layout, collision,
+                       player, bodies (stones, shells, cans), bullets, equipment, inventory,
+                       time of day and weather, and the fixed step order in game.ts
+src/lagoon/render/     stage and post chain, sky, lighting and exposure, ground, water,
+                       palms, jungle, undergrowth, rocks, outpost, props, arms, viewmodel,
+                       particles, effects, rain, ambient life
+src/lagoon/audio/      synthesised positional audio (no samples)
+src/lagoon/ui/         HUD, menus, inventory, icons
+tests/lagoon.test.ts   headless logic tests
+```
+
+Everything is procedural: textures are generated at load, models are built
+from primitives, and every sound is synthesised with Web Audio.
