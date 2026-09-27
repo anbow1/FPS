@@ -1,6 +1,7 @@
 import type { LightingPresetId } from '../config.ts';
 import type { ModeId } from '../game/modes.ts';
 import type { MapId } from '../maps/types.ts';
+import { isTouchDevice } from '../core/input.ts';
 import type { Quality, ToneMap } from '../render/stage.ts';
 
 // Player settings. Stored per viewer in localStorage as a convenience only:
@@ -25,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   modeId: 'range',
   preset: 'noon',
   wet: false,
-  quality: 'high',
+  quality: isTouchDevice() ? 'low' : 'high', // phones and tablets start on the Low preset
   renderScale: 1,
   toneMap: 'aces',
   minimalHud: false,

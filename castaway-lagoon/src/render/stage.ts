@@ -5,6 +5,7 @@ import { float, Fn, length, Loop, mrt, output, pass, pow, saturation, smoothstep
 import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PCFShadowMap, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { setMaxAnisotropy } from './textureSet.ts';
 import { LAGOON_CAMERA } from '../config.ts';
+import { isTouchDevice } from '../core/input.ts';
 
 // Renderer and post chain for the lagoon (rules §2.1, §2.5): HDR half-float
 // scene pass with a velocity MRT → TRAA (High) → screen-space sun shafts, the
@@ -125,7 +126,10 @@ export class LagoonStage {
   resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    this.renderer.setPixelRatio(window.devicePixelRatio * this.settings.renderScale);
+    // Phones report a device pixel ratio of 3 or more: rendering that many pixels would halve the
+    // frame rate for detail a 6-inch screen cannot show. Touch screens are capped at 1.25.
+    const maxRatio = isTouchDevice() ? 1.25 : 4;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio) * this.settings.renderScale);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();

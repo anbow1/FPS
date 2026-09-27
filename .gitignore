@@ -4,3 +4,9 @@ dist/
 .env
 .env.*
 shots/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/*/assets/game/
+android/out/
+android/local.properties

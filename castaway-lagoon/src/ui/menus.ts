@@ -1,6 +1,7 @@
 import { TIME_OF_DAY, type TimeOfDayId, TIME_ORDER, WEATHER, WEATHER_ORDER, type WeatherId } from '../config.ts';
 import type { Inventory } from '../game/inventory.ts';
 import { ITEMS } from '../game/items.ts';
+import { isTouchDevice } from '../core/input.ts';
 import { escapeHtml } from './hud.ts';
 import { ITEM_ICONS, TIME_ICONS, WEATHER_ICONS } from './icons.ts';
 
@@ -17,7 +18,8 @@ export interface LagoonSettings {
 }
 
 const KEY = 'lagoon.settings.v1';
-const DEFAULTS: LagoonSettings = { quality: 'high', sensitivity: 1, invertY: false, volume: 0.8, toneMap: 'aces' };
+// Phones and tablets start on Low: the High jungle is sized for a desktop GPU.
+const DEFAULTS: LagoonSettings = { quality: isTouchDevice() ? 'low' : 'high', sensitivity: 1, invertY: false, volume: 0.8, toneMap: 'aces' };
 
 export function loadSettings(): LagoonSettings {
   try {
@@ -87,7 +89,7 @@ export class Menus {
     this.title.innerHTML = `
       <div class="brand"><h1>CASTAWAY LAGOON</h1><p>A hidden bay. A shelter by the beach. Nobody else.</p></div>
       <div class="loading"><div class="bar"><i></i></div><span>Preparing</span></div>
-      <div class="start hidden">Click to begin</div>
+      <div class="start hidden">${isTouchDevice() ? 'Tap' : 'Click'} to begin</div>
       <div class="keys">${controlsTable()}</div>`;
   }
 

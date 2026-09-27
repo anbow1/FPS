@@ -6,6 +6,7 @@ import { emptyIntent, LagoonGame, type LagoonIntent } from './game/game.ts';
 import { LagoonView, type Progress } from './render/view.ts';
 import { Hud } from './ui/hud.ts';
 import { type LagoonSettings, loadSettings, Menus } from './ui/menus.ts';
+import { TouchControls } from './ui/touch.ts';
 
 // Entry point: title → loading → play ⇄ pause / inventory. The fixed update
 // order lives in LagoonGame.step; this file wires input, logic, render, HUD
@@ -38,6 +39,7 @@ class App {
   private pendingTime: TimeOfDayId | null = null;
   private pendingWeather: WeatherId | null = null;
   private readonly stats: HTMLElement;
+  private touch: TouchControls | null = null;
   private fpsAvg = 60;
   readonly debug: DebugHooks = { game: null, view: null, stats: {}, freeze: false, frames: 0, script: [] };
   scripted = false;
@@ -61,6 +63,25 @@ class App {
       onSettings: (s) => this.applySettings(s),
     });
     this.loop = new FixedLoop({ step: (dt) => this.step(dt), render: (alpha, frame) => this.render(alpha, frame) });
+    if (this.controls.input.touch) {
+      this.touch = new TouchControls(this.controls.input, {
+        stick: { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft' },
+        lookScale: 1.4,
+        buttons: [
+          { code: 'Mouse0', label: 'FIRE', col: 0, row: 0, big: true },
+          { code: 'KeyE', label: 'USE', col: 0, row: 1.45, mode: 'tap' },
+          { code: 'Mouse2', label: 'AIM', col: 1.45, row: 0, mode: 'toggle' },
+          { code: 'Space', label: 'JUMP', col: 1.45, row: 1.45, mode: 'tap' },
+          { code: 'KeyR', label: 'R', col: 2.45, row: 0, mode: 'tap' },
+          { code: 'KeyI', label: 'BAG', col: 3.45, row: 0, mode: 'tap' },
+          { code: 'Digit1', label: 'AK', col: 0, row: 3.2, mode: 'tap' },
+          { code: 'Digit2', label: 'KNIFE', col: 1, row: 3.2, mode: 'tap' },
+          { code: 'Digit3', label: 'STONE', col: 2, row: 3.2, mode: 'tap' },
+          { code: 'KeyT', label: 'WX', col: 3.2, row: 3.2, mode: 'tap' },
+          { code: 'KeyN', label: 'TIME', col: 4.2, row: 3.2, mode: 'tap' },
+        ],
+      });
+    }
     this.controls.input.onLockChange = (locked) => {
       if (locked && (this.state === 'ready' || this.state === 'paused')) this.play();
       else if (!locked && this.state === 'playing') this.pause();
@@ -176,6 +197,7 @@ class App {
     view.stage.renderer.info.reset();
     view.render(game, alpha, frameSeconds, this.controls.pendingYawRad, this.controls.pendingPitchRad);
     this.hud.update(game, frameSeconds);
+    this.touch?.update();
     const cam = view.stage.camera;
     const fwd = { x: -Math.sin(cam.rotation.y) * Math.cos(cam.rotation.x), y: Math.sin(cam.rotation.x), z: -Math.cos(cam.rotation.y) * Math.cos(cam.rotation.x) };
     this.audio?.update(game, cam.position, fwd, frameSeconds);

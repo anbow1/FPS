@@ -12,6 +12,7 @@ import type { MapId } from './maps/types.ts';
 import { GameView } from './render/view.ts';
 import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
+import { TouchControls } from './ui/touch.ts';
 
 // Entry point: menu → loading → play ⇄ pause → results. One fixed update order
 // lives in Game.step; this file only wires input, logic, render, HUD and audio.
@@ -40,6 +41,7 @@ class App {
   private canvas: HTMLCanvasElement;
   private readonly statsEl = document.createElement('div');
   private readonly hintEl = document.createElement('div');
+  private touch: TouchControls | null = null;
   private overTimer = 0;
   private stepMsAvg = 0;
   private frameMsAvg = 0;
@@ -63,6 +65,26 @@ class App {
     this.hintEl.className = 'hint';
     this.hintEl.style.display = 'none';
     document.body.append(this.statsEl, this.hintEl);
+    if (this.input.touch) {
+      this.touch = new TouchControls(this.input, {
+        stick: { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft' },
+        lookScale: 1.4,
+        buttons: [
+          { code: 'Mouse0', label: 'FIRE', col: 0, row: 0, big: true },
+          { code: 'Mouse2', label: 'AIM', col: 1.45, row: 0, mode: 'toggle' },
+          { code: 'Space', label: 'JUMP', col: 0, row: 1.45, mode: 'tap' },
+          { code: 'KeyC', label: 'CROUCH', col: 1.45, row: 1.45, mode: 'tap' },
+          { code: 'KeyR', label: 'R', col: 2.45, row: 0, mode: 'tap' },
+          { code: 'KeyG', label: 'NADE', col: 2.45, row: 1, },
+          { code: 'KeyH', label: 'MED', col: 3.45, row: 0, mode: 'tap' },
+          { code: 'KeyB', label: 'MODE', col: 3.45, row: 1, mode: 'tap' },
+          { code: 'Digit1', label: 'RIFLE', col: 0, row: 3.2, mode: 'tap' },
+          { code: 'Digit2', label: 'SNIPE', col: 1, row: 3.2, mode: 'tap' },
+          { code: 'Digit3', label: 'PISTOL', col: 2, row: 3.2, mode: 'tap' },
+          { code: 'KeyV', label: 'ZOOM', col: 3, row: 3.2, mode: 'tap' },
+        ],
+      });
+    }
     const maxSteps = Number(new URLSearchParams(location.search).get('maxSteps') ?? 0) || undefined;
     this.loop = new FixedLoop({ step: (dt) => this.step(dt), render: (alpha, frame) => this.render(alpha, frame) }, maxSteps);
     this.input.onLockChange = (locked) => {
@@ -197,6 +219,7 @@ class App {
     view.stage.renderer.info.reset();
     view.render(game, alpha, frameSeconds, this.controls.pendingYawRad, this.controls.pendingPitchRad);
     this.hud.update(game, frameSeconds, window.innerHeight);
+    this.touch?.update();
     const cam = view.stage.camera;
     this.listener.position = cam.position;
     directionFromYawPitch(game.weapons.viewYaw(game.player), game.weapons.viewPitch(game.player), _fwd);

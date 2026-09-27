@@ -68,6 +68,12 @@ export class Input {
   private mouseDyPx = 0;
   locked = false;
   onLockChange: ((locked: boolean) => void) | null = null;
+  /**
+   * Phones and tablets have no pointer lock and no keyboard: the game "locks"
+   * virtually, and the on-screen controls (ui/touch.ts) feed key codes and
+   * look deltas through press / release / addLook.
+   */
+  readonly touch = isTouchDevice();
 
   constructor(private readonly target: HTMLElement) {
     this.bindings = loadBindings();
@@ -79,6 +85,8 @@ export class Input {
     window.addEventListener('keyup', (e) => this.up(e.code));
     window.addEventListener('blur', () => this.releaseAll());
     target.addEventListener('mousedown', (e) => {
+      // A tap on a touch screen also fires a synthetic mousedown: the on-screen fire button owns Mouse0.
+      if (this.touch) return;
       this.down(`Mouse${e.button}`);
       e.preventDefault();
     });
@@ -105,6 +113,10 @@ export class Input {
   }
 
   requestLock(): void {
+    if (this.touch) {
+      this.setVirtualLock(true);
+      return;
+    }
     const result: unknown = this.target.requestPointerLock();
     if (result instanceof Promise) {
       result.catch((err: unknown) => {
@@ -114,6 +126,10 @@ export class Input {
   }
 
   exitLock(): void {
+    if (this.touch) {
+      this.setVirtualLock(false);
+      return;
+    }
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
@@ -160,6 +176,30 @@ export class Input {
     saveBindings(this.bindings);
   }
 
+  /** On-screen control pressed (touch mode). */
+  press(code: string): void {
+    this.down(code);
+  }
+
+  /** On-screen control released (touch mode). */
+  release(code: string): void {
+    this.up(code);
+  }
+
+  /** Look input from a touch drag, in the same pixel units as mouse movement. */
+  addLook(dxPx: number, dyPx: number): void {
+    if (!this.locked) return;
+    this.mouseDxPx += dxPx;
+    this.mouseDyPx += dyPx;
+  }
+
+  private setVirtualLock(on: boolean): void {
+    if (this.locked === on) return;
+    this.locked = on;
+    if (!on) this.releaseAll();
+    this.onLockChange?.(on);
+  }
+
   private down(code: string): void {
     if (!this.heldCodes.has(code)) this.pressedCodes.add(code);
     this.heldCodes.add(code);
@@ -200,4 +240,11 @@ function saveBindings(bindings: Record<Action, readonly string[]>): void {
   } catch (err) {
     console.warn('could not save key bindings:', err);
   }
+}
+
+/** A coarse pointer with touch points (phone, tablet, the Android app), or `?touch` for testing. */
+export function isTouchDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (new URLSearchParams(window.location.search).has('touch')) return true;
+  return navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches;
 }
