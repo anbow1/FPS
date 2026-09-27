@@ -86,7 +86,8 @@ export function leafMaterial(kind: LeafKind, translucent = true, dead = false): 
   m.map = ts.map;
   m.normalMap = ts.normalMap;
   m.alphaTest = 0.5;
-  m.alphaToCoverage = true;
+  // No alphaToCoverage: it needs MSAA, and the renderer anti-aliases with TRAA instead.
+  // With it on and no samples, three skips the alpha-test discard and cards draw solid.
   const tex = texture(ts.map);
   // Dead fronds: the same card, dried to straw brown.
   const base = dead ? vec3(tex.r.add(tex.g).add(tex.b).mul(0.36)).mul(vec3(1.25, 0.95, 0.55)) : tex.rgb;

@@ -197,7 +197,8 @@ export class MaterialLibrary {
         const ts = set('needles', 256, P.pineNeedles, 2, true);
         const m = translucentLeaf(ts, name);
         m.alphaTest = 0.5;
-        m.alphaToCoverage = true;
+        // No alphaToCoverage: it needs MSAA, and the renderer anti-aliases with TRAA instead.
+        // With it on and no samples, three skips the alpha-test discard and cards draw solid.
         m.side = DoubleSide;
         return m;
       }
@@ -205,7 +206,8 @@ export class MaterialLibrary {
         const ts = set('leaves', 256, P.leaves, 2, true);
         const m = translucentLeaf(ts, name);
         m.alphaTest = 0.5;
-        m.alphaToCoverage = true;
+        // No alphaToCoverage: it needs MSAA, and the renderer anti-aliases with TRAA instead.
+        // With it on and no samples, three skips the alpha-test discard and cards draw solid.
         m.side = DoubleSide;
         return m;
       }
