@@ -296,7 +296,7 @@ function groundMaterial(): MeshStandardNodeMaterial {
   const canopyColour = mix(vec3(0.018, 0.04, 0.012), vec3(0.07, 0.13, 0.03), crowns).mul(float(0.8).add(macro.mul(0.4)));
   albedo = mix(albedo, canopyColour, extra.z);
   // Algae tint and darkening on the lagoon floor.
-  const under = smoothstep(0.0, -1.5, p.y);
+  const under = float(1).sub(smoothstep(-1.5, 0.0, p.y));
   albedo = albedo.mul(mix(vec3(1), vec3(0.8, 0.9, 0.84), under));
 
   // Wetness: a band that follows the lapping waves, everything under water, and rain.

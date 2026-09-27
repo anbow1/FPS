@@ -1,4 +1,4 @@
-import { attribute, cameraPosition, cross, Discard, float, Fn, If, max, mod, normalize, positionWorld, smoothstep, uniform, vec3, vec4 } from 'three/tsl';
+import { attribute, Discard, float, Fn, If, max, mod, normalize, positionWorld, smoothstep, uniform, vec3, vec4 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, type Camera, Mesh, MeshBasicNodeMaterial, Vector3 } from 'three/webgpu';
 import { GRAPHICS } from '../config.ts';
 import type { LagoonGame } from '../game/game.ts';
@@ -18,8 +18,8 @@ const BOX_M = 26;
 const HEIGHT_M = 20;
 const FALL_MS = 9; // terminal velocity of a ~2 mm raindrop (Gunn & Kinzer 1949)
 // Streaks are drawn wider than a real 2 mm drop so they survive TAA at 1080p (tuned by eye).
-const STREAK_M = 1.0;
-const WIDTH_M = 0.03;
+const STREAK_M = 0.6;
+const WIDTH_M = 0.02;
 
 export class Rain {
   readonly mesh: Mesh;
@@ -57,13 +57,15 @@ export class Rain {
     const fall = U.time.mul(FALL_MS).mul(float(0.85).add(s.w.mul(0.3)));
     const y = mod(s.y.mul(HEIGHT_M).sub(fall), HEIGHT_M).add(cam.y).sub(HEIGHT_M * 0.45);
     // World-anchored wrap: a drop's column is fixed in the world, re-used as the camera moves.
-    const drift = y.mul(-1).div(FALL_MS).mul(0.6);
+    const drift = y.mul(-1).div(FALL_MS).mul(0.3);
     const x = mod(s.x.mul(BOX_M).sub(cam.x), BOX_M).add(cam.x).sub(BOX_M / 2).add(wind.x.mul(drift));
     const z = mod(s.z.mul(BOX_M).sub(cam.z), BOX_M).add(cam.z).sub(BOX_M / 2).add(wind.y.mul(drift));
     const base = vec3(x, y, z);
-    const slant = normalize(vec3(wind.x.mul(0.6), -FALL_MS, wind.y.mul(0.6)));
-    const toCam = normalize(cameraPosition.sub(base));
-    const across = normalize(cross(slant, toCam));
+    // Falling direction (unit length within a few %: the wind share is small) and a horizontal
+    // billboard axis facing the camera; streaks are near-vertical, so that is all they need.
+    const slant = vec3(wind.x.mul(0.3 / FALL_MS), -1, wind.y.mul(0.3 / FALL_MS));
+    const toCam = cam.sub(base);
+    const across = normalize(vec3(toCam.z, 0, toCam.x.negate()).add(vec3(1e-4, 0, 0)));
     m.positionNode = base.add(across.mul(c.x.mul(WIDTH_M))).sub(slant.mul(c.y.mul(STREAK_M)));
     const outpostC = vec3(OUTPOST.x, OUTPOST.groundY, OUTPOST.z);
     m.colorNode = Fn(() => {
@@ -82,9 +84,11 @@ export class Rain {
         Discard();
       });
       const light = U.skyIrradiance.add(U.sunIrradiance.mul(0.2)).add(U.cloudLit.mul(U.lightning.mul(8))).div(Math.PI);
-      const fade = smoothstep(0.0, 0.2, c.y).mul(smoothstep(1.0, 0.6, c.y));
-      // A falling drop is a motion-blurred highlight: brighter than the grey air behind it.
-      return vec4(light.mul(5), fade.mul(0.4).mul(max(U.rain, 0.35)));
+      const fade = smoothstep(0.0, 0.2, c.y).mul(float(1).sub(smoothstep(0.6, 1.0, c.y)));
+      // A falling drop is a motion-blurred highlight, a little brighter than the grey air behind it.
+      // Drops within a metre or two would fill the screen: fade them out.
+      const near = smoothstep(1.5, 4.0, p.sub(cam).length());
+      return vec4(light.mul(2.6), fade.mul(near).mul(0.22).mul(max(U.rain, 0.35)));
     })();
     this.mesh = new Mesh(g, m);
     this.mesh.frustumCulled = false;

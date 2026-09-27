@@ -73,7 +73,7 @@ export const skyGradient = Fn(([dir]: [N3]) => {
   const dirFlat = normalize(vec3(dir.x, 0.0001, dir.z));
   const band = U.sunGlowRadiance.mul(pow(max(dot(dirFlat, sunFlat), 0), 3).mul(exp(up.mul(-7))).mul(0.55));
   // Below the horizon the probe sees the lit ground: the bounce light that fills beach shadows.
-  const below = smoothstep(0.0, -0.12, y);
+  const below = float(1).sub(smoothstep(-0.12, 0.0, y)); // GLSL smoothstep needs edge0 < edge1
   return mix(base.add(glow).add(band), U.groundRadiance, below);
 });
 

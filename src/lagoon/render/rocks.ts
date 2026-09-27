@@ -81,7 +81,7 @@ export function rockMaterial(): MeshStandardNodeMaterial {
   const wet = max(surf, U.wetness.mul(0.9));
   let albedo = mix(colour, mossColour, mossMask);
   albedo = albedo.mul(mix(float(1), float(0.55), wet));
-  albedo = mix(albedo, albedo.mul(vec3(0.7, 0.85, 0.7)), smoothstep(0.1, -0.6, p.y));
+  albedo = mix(albedo, albedo.mul(vec3(0.7, 0.85, 0.7)), float(1).sub(smoothstep(-0.6, 0.1, p.y)));
   m.colorNode = albedo;
   m.roughnessNode = mix(mix(height.g, float(0.95), mossMask), float(0.25), wet.mul(float(1).sub(mossMask.mul(0.6))));
   m.normalNode = bumpMap(height.a.add(mossMask.mul(0.3)), float(0.9));

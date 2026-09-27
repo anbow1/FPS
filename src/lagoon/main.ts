@@ -128,7 +128,7 @@ class App {
   private step(dt: number): void {
     const game = this.game;
     const view = this.view;
-    if (!game || !view) return;
+    if (!game || !view || this.debug.freeze) return;
     const playing = this.state === 'playing';
     if (!playing && !this.scripted && this.pendingTime === null && this.pendingWeather === null) return;
     const inventory = this.menus.inventoryOpen;
