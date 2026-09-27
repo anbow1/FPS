@@ -27,9 +27,28 @@ const woodSet = makeTextureSet(
   1.5,
 );
 
+// Phosphated steel, worn to bright metal along edges and where hands rub (ORM metal = 1 there).
+const receiverSet = makeTextureSet(
+  256,
+  (u, v, t) => {
+    const n = tileFbm(u * 6, v * 6, 6, 4, 411);
+    const edge = Math.min(u, 1 - u, v, 1 - v);
+    const rub = tileFbm(u * 3, v * 3, 3, 3, 413);
+    const worn = edge < 0.035 + rub * 0.03 || (rub > 0.7 && n > 0.55);
+    const k = worn ? 0.72 : 0.19 + n * 0.05;
+    t.r = k;
+    t.g = k;
+    t.b = k * (worn ? 1 : 1.06);
+    t.metal = worn ? 1 : 0;
+    t.rough = worn ? 0.3 : 0.45 + n * 0.12;
+    t.height = worn ? 0.3 : 0.5 + n * 0.1;
+  },
+  1,
+);
+
 export const WEAPON_MATERIALS = {
   // Blued / phosphated steel: a dark dielectric finish (PBR sheet: paint and phosphate are metal 0).
-  receiver: new MeshStandardNodeMaterial({ name: 'ak receiver', color: 0x34363a, roughness: 0.4, metalness: 0 }),
+  receiver: new MeshStandardNodeMaterial({ name: 'ak receiver', map: receiverSet.map, normalMap: receiverSet.normalMap, roughnessMap: receiverSet.ormMap, metalnessMap: receiverSet.ormMap, roughness: 1, metalness: 1 }),
   // Where the finish has worn through on the edges and the bolt carrier: bare steel.
   bare: new MeshStandardNodeMaterial({ name: 'ak bare steel', color: 0xb9b9b9, roughness: 0.3, metalness: 1 }),
   wood: new MeshStandardNodeMaterial({ name: 'ak wood', map: woodSet.map, normalMap: woodSet.normalMap, roughnessMap: woodSet.ormMap, roughness: 1, metalness: 0 }),
