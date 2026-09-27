@@ -11,7 +11,7 @@ from silnik.generator import oczekiwane_cwiczenia, wygeneruj_cwiczenia
 from silnik.lekcje import Lekcja, sekcja_readme, wszystkie_lekcje, znajdz_lekcje
 from silnik.sprawdzanie import BLAD, DO_ZROBIENIA, OK, POMINIETY, sprawdz_lekcje
 
-LICZBA_LEKCJI = 14
+LICZBA_LEKCJI = 16
 
 
 class TestStrukturyKursu(unittest.TestCase):

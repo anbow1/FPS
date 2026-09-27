@@ -16,7 +16,8 @@ npm run dev          # http://localhost:5173
 
 Also here: [`kurs-programowania/`](kurs-programowania/) — an interactive
 programming course in Polish (Python, CLI, git, JSON, SQL, pandas, HTTP APIs,
-tool calling, loops and graphs, embeddings, RAG, MCP, Docker and venv), with
+tool calling, loops and graphs, embeddings, RAG, MCP, Docker and venv, code
+quality tooling and evals for AI apps), with
 auto-checked exercises and quizzes. Start with `python kurs.py` inside that folder.
 
 Shared by both, at the root: the coding rules (`AGENT.md`,

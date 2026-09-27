@@ -1,7 +1,8 @@
 # Interaktywny kurs programowania
 
 Od podstaw Pythona do agentów AI: terminal, git, JSON, SQL, pandas, API,
-tool calling, pętle i grafy, embeddingi, RAG, MCP, Docker i venv.
+tool calling, pętle i grafy, embeddingi, RAG, MCP, Docker i venv — a na koniec
+narzędzia jakości (testy, lint, typy, CI) i ewaluacja aplikacji AI.
 Każda lekcja to krótka teoria, ćwiczenia sprawdzane automatycznie testami,
 podpowiedzi i quiz. Całość działa na Windows, macOS i Linuksie, a poza jedną
 lekcją (pandas) — na samej bibliotece standardowej Pythona.
@@ -76,9 +77,12 @@ próbie — porównanie z inną wersją to świetna nauka.
 | 12 | [RAG](lekcje/12_rag/README.md) | chunking, indeks, wyszukiwanie, prompt z cytowaniami, recall@k |
 | 13 | [MCP](lekcje/13_mcp/README.md) | JSON-RPC, cykl życia sesji, własny serwer MCP, podłączenie do Claude Code |
 | 14 | [Docker](lekcje/14_docker/README.md) | obraz i kontener, Dockerfile, warstwy, wolumeny, Compose, własny linter |
+| 15 | [Narzędzia jakości](lekcje/15_narzedzia_jakosci/README.md) | uv, pytest, pokrycie i testy mutacyjne, ruff, typy, pre-commit, GitHub Actions |
+| 16 | [Ewaluacja AI](lekcje/16_ewaluacja_ai/README.md) | zestawy ewaluacyjne, oceniacze, model jako sędzia, regresje, przedziały ufności |
 
 Lekcje 09–13 budują jedna na drugiej: narzędzia → pętla agenta → graf stanów,
-embeddingi → RAG, narzędzia → MCP. Klucz API **nie jest potrzebny** — model
+embeddingi → RAG, narzędzia → MCP. Lekcje 15–16 domykają całość: jak sprawdzać,
+że kod — i aplikacja z modelem AI — naprawdę działa. Klucz API **nie jest potrzebny** — model
 w ćwiczeniach udaje atrapa zwracająca odpowiedzi w dokładnie takim kształcie
 jak prawdziwe API. Przykłady z prawdziwym Claude'em (`przyklad_claude.py`,
 `demo_rag.py --claude`) są opcjonalne: `python -m pip install -r requirements-extra.txt`
