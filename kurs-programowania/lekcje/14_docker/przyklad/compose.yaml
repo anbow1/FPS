@@ -1,0 +1,13 @@
+# docker compose up --build   → http://localhost:8000
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"          # host:kontener
+    environment:
+      POWITANIE: ${POWITANIE:-Cześć z Compose!}
+    volumes:
+      - dane:/dane           # nazwany wolumen: licznik przetrwa usunięcie kontenera
+
+volumes:
+  dane:

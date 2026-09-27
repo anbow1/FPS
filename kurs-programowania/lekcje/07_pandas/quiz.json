@@ -1,0 +1,26 @@
+[
+  {
+    "pytanie": "Jak wybrać wiersze, gdzie region to 'Północ' I sztuki > 5?",
+    "odpowiedzi": ["df[df.region == 'Północ' and df.sztuki > 5]", "df[(df['region'] == 'Północ') & (df['sztuki'] > 5)]", "df.where('Północ', 5)", "df.filter(region='Północ', sztuki=5)"],
+    "poprawna": 1,
+    "wyjasnienie": "W maskach pandas używamy & | ~, a każdy warunek w nawiasach (priorytet operatorów)."
+  },
+  {
+    "pytanie": "Co zwraca df.groupby('region')['przychod'].sum()?",
+    "odpowiedzi": ["Jedną liczbę", "Series z sumą przychodu dla każdego regionu", "Listę regionów", "DataFrame bez zmian"],
+    "poprawna": 1,
+    "wyjasnienie": "Podziel według regionu, zsumuj przychód w każdej grupie, sklej w Series indeksowaną regionem."
+  },
+  {
+    "pytanie": "Dlaczego kolumna sztuk po wczytaniu CSV z pustym polem ma typ float?",
+    "odpowiedzi": ["Bo pandas zawsze używa float", "Bo NaN jest wartością float i nie mieści się w zwykłym int", "Bo CSV nie ma liczb całkowitych", "To błąd pandas"],
+    "poprawna": 1,
+    "wyjasnienie": "NaN to specjalna wartość zmiennoprzecinkowa. Po fillna można wrócić do int przez astype(int)."
+  },
+  {
+    "pytanie": "Który odpowiednik SQL ma df.merge(inny, on='region', how='left')?",
+    "odpowiedzi": ["GROUP BY", "LEFT JOIN", "UNION", "WHERE"],
+    "poprawna": 1,
+    "wyjasnienie": "merge to JOIN; how='left' zachowuje wszystkie wiersze z lewej tabeli."
+  }
+]

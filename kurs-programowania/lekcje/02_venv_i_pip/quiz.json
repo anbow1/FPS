@@ -1,0 +1,26 @@
+[
+  {
+    "pytanie": "Po co tworzyć osobne środowisko wirtualne dla każdego projektu?",
+    "odpowiedzi": ["Żeby Python działał szybciej", "Żeby zależności projektów sobie nie przeszkadzały", "Bo bez venv nie da się używać pip", "Żeby kod był bezpieczniejszy przed wirusami"],
+    "poprawna": 1,
+    "wyjasnienie": "Każdy venv ma własny zestaw pakietów w konkretnych wersjach — projekty się nie gryzą."
+  },
+  {
+    "pytanie": "Jak aktywować venv `.venv` w PowerShellu?",
+    "odpowiedzi": ["source .venv/bin/activate", ".venv\\Scripts\\Activate.ps1", "python activate .venv", "pip activate"],
+    "poprawna": 1,
+    "wyjasnienie": "Na Windows skrypty aktywacji są w Scripts; w bash/zsh: source .venv/bin/activate."
+  },
+  {
+    "pytanie": "Która wersja jest nowsza: 1.10.0 czy 1.9.2?",
+    "odpowiedzi": ["1.9.2, bo '9' > '1' w porównaniu tekstowym", "1.10.0, bo segmenty porównuje się jako liczby", "Są równe", "Nie da się stwierdzić"],
+    "poprawna": 1,
+    "wyjasnienie": "Wersje porównuje się segment po segmencie jako liczby: 10 > 9."
+  },
+  {
+    "pytanie": "Czy katalog .venv powinien trafić do repozytorium git?",
+    "odpowiedzi": ["Tak, żeby inni mieli te same pakiety", "Nie — commitujesz requirements.txt, a venv każdy tworzy u siebie", "Tak, ale tylko na Windows", "Tylko folder Scripts"],
+    "poprawna": 1,
+    "wyjasnienie": "venv zawiera binaria zależne od systemu. Do gita idzie lista zależności, z której venv się odtwarza."
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "pytanie": "Który tekst to poprawny JSON?",
+    "odpowiedzi": ["{'a': 1}", "{\"a\": 1,}", "{\"a\": true}", "{a: 1}"],
+    "poprawna": 2,
+    "wyjasnienie": "Klucze w podwójnych cudzysłowach, bez przecinka na końcu, true małymi literami."
+  },
+  {
+    "pytanie": "Co zwróci json.loads('[1, null, false]')?",
+    "odpowiedzi": ["[1, 'null', 'false']", "[1, None, False]", "(1, None, False)", "Błąd"],
+    "poprawna": 1,
+    "wyjasnienie": "array → list, null → None, false → False."
+  },
+  {
+    "pytanie": "Po co ensure_ascii=False w json.dumps?",
+    "odpowiedzi": ["Żeby JSON był krótszy o spacje", "Żeby polskie znaki zapisały się wprost, a nie jako \\u0105", "Żeby akceptował daty", "Żeby sortował klucze"],
+    "poprawna": 1,
+    "wyjasnienie": "Domyślnie znaki spoza ASCII są zamieniane na sekwencje \\uXXXX. To nadal poprawny JSON, ale nieczytelny."
+  },
+  {
+    "pytanie": "Ile to isinstance(True, int)?",
+    "odpowiedzi": ["False", "True", "Błąd TypeError", "None"],
+    "poprawna": 1,
+    "wyjasnienie": "bool jest podklasą int. Walidując pole liczbowe, trzeba osobno odrzucić True/False."
+  }
+]

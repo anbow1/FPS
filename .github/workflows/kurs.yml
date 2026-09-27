@@ -1,0 +1,49 @@
+# Kurs programowania: rozwiązania wzorcowe przechodzą testy, szkielety ćwiczeń
+# są zgodne z rozwiązaniami, a silnik kursu działa — na Linuksie i Windows.
+
+name: Kurs programowania
+
+on:
+  push:
+    paths:
+      - 'kurs-programowania/**'
+      - '.github/workflows/kurs.yml'
+  pull_request:
+    paths:
+      - 'kurs-programowania/**'
+      - '.github/workflows/kurs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.13']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: kurs-programowania
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Zależności
+        run: python -m pip install -r requirements.txt
+
+      - name: Ćwiczenia zgodne z rozwiązaniami
+        run: python -m silnik.generator --sprawdz
+
+      - name: Rozwiązania przechodzą testy lekcji
+        run: python kurs.py sprawdz --wszystkie --rozwiazania
+
+      - name: Testy silnika kursu
+        run: python -m unittest discover -s testy_kursu -t .

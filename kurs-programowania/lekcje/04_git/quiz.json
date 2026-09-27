@@ -1,0 +1,26 @@
+[
+  {
+    "pytanie": "Co robi `git add plik.py`?",
+    "odpowiedzi": ["Wysyła plik na GitHuba", "Tworzy commit z plikiem", "Dodaje bieżącą wersję pliku do poczekalni (następnego commita)", "Zaczyna śledzić plik na zawsze, bez commitów"],
+    "poprawna": 2,
+    "wyjasnienie": "add przenosi zmiany do poczekalni (index). Commit zapisuje to, co w poczekalni. Push wysyła commity na serwer."
+  },
+  {
+    "pytanie": "Czym jest gałąź w gicie?",
+    "odpowiedzi": ["Kopią wszystkich plików projektu", "Ruchomą etykietą wskazującą na commit", "Osobnym repozytorium", "Katalogiem w .git z plikami"],
+    "poprawna": 1,
+    "wyjasnienie": "Gałąź to tylko wskaźnik na commit — dlatego tworzenie gałęzi jest natychmiastowe i tanie."
+  },
+  {
+    "pytanie": "Commit z błędem jest już na serwerze i inni go pobrali. Jak go bezpiecznie cofnąć?",
+    "odpowiedzi": ["git reset --hard HEAD~1 && git push --force", "git revert <hash>", "Usunąć repozytorium i założyć nowe", "git commit --amend"],
+    "poprawna": 1,
+    "wyjasnienie": "revert dodaje nowy commit odwracający zmiany — historia się nie przepisuje, więc nikomu nic się nie psuje."
+  },
+  {
+    "pytanie": "Linia `?? notatki.txt` w `git status --porcelain` oznacza…",
+    "odpowiedzi": ["Plik ma konflikt", "Plik jest nieśledzony (git go nie zna)", "Plik jest usunięty", "Plik jest w poczekalni"],
+    "poprawna": 1,
+    "wyjasnienie": "?? = untracked. Jeśli nie chcesz go nigdy w repo, dopisz go do .gitignore."
+  }
+]
