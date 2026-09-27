@@ -158,8 +158,8 @@ export class ParticlePool {
 const spec = (s: Partial<ParticleSpec> & Pick<ParticleSpec, 'colour' | 'sizeM' | 'lifeS'>): ParticleSpec => ({ growPerS: 0, drag: 0.5, gravity: 1, stretch: 0, bounce: false, opacity: 1, ...s });
 
 export const SPECS = {
-  spray: spec({ colour: [0.8, 0.86, 0.88], sizeM: 0.06, lifeS: 1.0, drag: 0.3, stretch: 0.08, opacity: 0.9 }),
-  mist: spec({ colour: [0.85, 0.9, 0.92], sizeM: 0.35, growPerS: 1.2, lifeS: 1.1, drag: 3, gravity: 0.05, opacity: 0.45 }),
+  spray: spec({ colour: [0.8, 0.86, 0.88], sizeM: 0.085, lifeS: 1.0, drag: 0.3, stretch: 0.08, opacity: 0.9 }),
+  mist: spec({ colour: [0.85, 0.9, 0.92], sizeM: 0.5, growPerS: 1.2, lifeS: 1.1, drag: 3, gravity: 0.05, opacity: 0.45 }),
   sand: spec({ colour: [0.6, 0.52, 0.38], sizeM: 0.12, growPerS: 0.5, lifeS: 1.1, drag: 3.5, gravity: 0.15, opacity: 0.6 }),
   grit: spec({ colour: [0.55, 0.47, 0.33], sizeM: 0.012, lifeS: 0.7, drag: 0.4, bounce: true }),
   dust: spec({ colour: [0.45, 0.43, 0.4], sizeM: 0.1, growPerS: 0.45, lifeS: 1.0, drag: 3, gravity: 0.08, opacity: 0.55 }),
