@@ -273,10 +273,12 @@ export function pineNeedles(): TexelSampler {
     }
     // Needles: thin strands leaving the twig at ~45° toward the tip, one every ~1/40 of the card.
     const phase = v * 40 - across * 22; // mirrored about the twig because `across` is |u − ½|
-    const strand = Math.abs((((phase % 1) + 1) % 1) - 0.5) < 0.17;
+    // Strands fill about 70 % of their period: with the alpha clip actually applied (see
+    // materials.ts cloneMaterial) a thinner strand left the crowns see-through at range.
+    const strand = Math.abs((((phase % 1) + 1) % 1) - 0.5) < 0.35;
     const gaps = tileFbm(u * 5, v * 5, 5, 3, 121); // clumps and holes so light passes
-    const inside = across < halfWidth * (0.7 + gaps * 0.5);
-    t.alpha = inside && strand && gaps > 0.3 ? 1 : 0;
+    const inside = across < halfWidth * (0.8 + gaps * 0.4);
+    t.alpha = inside && strand && gaps > 0.22 ? 1 : 0;
     // Needles darken toward the twig (self-shadowing inside the branch).
     const tone = tileNoise(u * 64, v * 64, 64, 122);
     put(t, c, 0.7 + tone * 0.3 + across * 0.2);
