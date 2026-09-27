@@ -58,15 +58,15 @@ function translucentLeaf(ts: TextureSet, name: string): MeshSSSNodeMaterial {
   return m;
 }
 
-/** `Material.clone()` does not carry the SSS nodes over; foliage clones its base material, so copy them. */
-export function copyTranslucency(from: Material, to: Material): void {
-  if (!(from instanceof MeshSSSNodeMaterial) || !(to instanceof MeshSSSNodeMaterial)) return;
-  to.thicknessColorNode = from.thicknessColorNode;
-  to.thicknessDistortionNode = from.thicknessDistortionNode;
-  to.thicknessAmbientNode = from.thicknessAmbientNode;
-  to.thicknessAttenuationNode = from.thicknessAttenuationNode;
-  to.thicknessPowerNode = from.thicknessPowerNode;
-  to.thicknessScaleNode = from.thicknessScaleNode;
+/**
+ * NodeMaterial.copy() (three r186) never calls Material.copy(), so a clone
+ * loses `alphaTest` (held in a private field behind a base-class accessor):
+ * cloned foliage then draws every card as a solid quad. Restore it.
+ */
+export function cloneMaterial<T extends Material>(source: T): T {
+  const m = source.clone() as T;
+  m.alphaTest = source.alphaTest;
+  return m;
 }
 
 /** Wet-capable material: the same texture set driven by the wetness uniform (rules §3.1). */
