@@ -17,7 +17,16 @@ export interface PalmInstance {
   leanRad: number;
   leanDirRad: number; // yaw the trunk leans toward
   seed: number;
+  variant: number; // index into PALM_VARIANTS: the render model this palm is scaled from
 }
+
+/** Modelled palm shapes: height and trunk lean. Instances scale these uniformly. */
+export const PALM_VARIANTS: readonly { heightM: number; leanRad: number }[] = [
+  { heightM: 11, leanRad: 0.07 },
+  { heightM: 9, leanRad: 0.2 },
+  { heightM: 10.5, leanRad: 0.32 },
+  { heightM: 12.5, leanRad: 0.42 },
+];
 
 export interface TreeInstance {
   x: number;
@@ -115,14 +124,17 @@ export function buildWorld(seed: number): LagoonWorld {
   const placePalm = (x: number, z: number, lagoonward: boolean): void => {
     const y = heightAt(x, z);
     const toWaterRad = Math.atan2(LAGOON_CENTRE.x - x, LAGOON_CENTRE.z - z);
+    const variant = lagoonward ? rng.int(1, 3) : rng.int(0, 1);
+    const shape = PALM_VARIANTS[variant] as (typeof PALM_VARIANTS)[number];
     const palm: PalmInstance = {
       x,
       y,
       z,
-      heightM: rng.range(7, 13.5),
-      leanRad: lagoonward ? rng.range(0.12, 0.42) : rng.range(0.02, 0.15),
+      heightM: shape.heightM * rng.range(0.8, 1.12),
+      leanRad: shape.leanRad,
       leanDirRad: lagoonward ? toWaterRad + rng.range(-0.5, 0.5) : rng.range(0, Math.PI * 2),
       seed: rng.int(0, 1e6),
+      variant,
     };
     palms.push(palm);
     occupied.push({ x, z, r: 1.2 });
@@ -153,14 +165,14 @@ export function buildWorld(seed: number): LagoonWorld {
 
   // Broadleaf jungle behind the beach and up the hills.
   const trees: TreeInstance[] = [];
-  for (let tries = 0; tries < 9000 && trees.length < 420; tries++) {
+  for (let tries = 0; tries < 24000 && trees.length < 1100; tries++) {
     const x = rng.range(-190, 190);
     const z = rng.range(-240, 110);
     const d = shoreDistance(x, z);
     if (d < beachWidth(x, z) + 3 || Math.hypot(x - LAGOON_CENTRE.x, z - LAGOON_CENTRE.z) > 230) continue;
     const n = { x: 0, y: 1, z: 0 };
     normalAt(x, z, n);
-    if (n.y < 0.62 || !free(x, z, 3.2)) continue;
+    if (n.y < 0.58 || !free(x, z, 2.2)) continue;
     const y = heightAt(x, z);
     const tree: TreeInstance = { x, y, z, heightM: rng.range(9, 22), yawRad: rng.range(0, Math.PI * 2), seed: rng.int(0, 1e6) };
     trees.push(tree);

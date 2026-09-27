@@ -11,6 +11,14 @@ import { EXPOSURE } from '../config.ts';
 
 const METER_EVERY_FRAMES = 3;
 
+/** How far the eye may adapt below / above the anchor EV, in stops. */
+export interface EvLimits {
+  belowStops: number;
+  aboveStops: number;
+}
+
+const DEFAULT_LIMITS: EvLimits = { belowStops: EXPOSURE.minEvBelowPreset, aboveStops: EXPOSURE.maxEvAbovePreset };
+
 export class AutoExposure {
   private readonly target: RenderTarget;
   private readonly quad: QuadMesh;
@@ -25,6 +33,7 @@ export class AutoExposure {
   constructor(
     private readonly renderer: WebGPURenderer,
     presetEv: number,
+    private readonly limits: EvLimits = DEFAULT_LIMITS,
   ) {
     this.adaptedEv = presetEv;
     this.target = new RenderTarget(EXPOSURE.histogramWidth, EXPOSURE.histogramHeight, { type: FloatType, depthBuffer: false });
@@ -49,9 +58,10 @@ export class AutoExposure {
 
   /**
    * Call after the frame has rendered. `preExposure` converts the pass's
-   * values back to physical luminance (cd/m²).
+   * values back to physical luminance (cd/m²). `meterBiasEv` shifts what the
+   * eye aims for (the lagoon keeps night about two stops under a grey card).
    */
-  update(source: Texture | null, preExposure: number, presetEv: number, dtSeconds: number): void {
+  update(source: Texture | null, preExposure: number, presetEv: number, dtSeconds: number, meterBiasEv = 0): void {
     if (source && !this.pending && this.frame++ % METER_EVERY_FRAMES === 0) {
       this.bind(source);
       const prev = this.renderer.getRenderTarget();
@@ -72,7 +82,7 @@ export class AutoExposure {
         });
     }
     if (this.meteredEv === null) return;
-    this.adaptedEv = adaptEv(this.adaptedEv, this.meteredEv, presetEv, dtSeconds);
+    this.adaptedEv = adaptEv(this.adaptedEv, this.meteredEv + meterBiasEv, presetEv, dtSeconds, this.limits);
   }
 }
 
@@ -81,9 +91,9 @@ export class AutoExposure {
  * Brighter scenes (EV rising) adapt fast, darker ones slowly; each time
  * constant is the time to cover ~95 % of the gap (1 − e^−3).
  */
-export function adaptEv(currentEv: number, meteredEv: number, presetEv: number, dtSeconds: number): number {
-  const lo = presetEv - EXPOSURE.minEvBelowPreset;
-  const hi = presetEv + EXPOSURE.maxEvAbovePreset;
+export function adaptEv(currentEv: number, meteredEv: number, presetEv: number, dtSeconds: number, limits: EvLimits = DEFAULT_LIMITS): number {
+  const lo = presetEv - limits.belowStops;
+  const hi = presetEv + limits.aboveStops;
   const target = Math.min(hi, Math.max(lo, meteredEv));
   const tau = target > currentEv ? EXPOSURE.adaptBrightenSeconds : EXPOSURE.adaptDarkenSeconds;
   return currentEv + (target - currentEv) * (1 - Math.exp((-3 * dtSeconds) / tau));

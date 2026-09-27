@@ -31,7 +31,8 @@ export function setMaxAnisotropy(value: number): void {
   maxAnisotropy = value;
 }
 
-export function makeTextureSet(size: number, sample: TexelSampler, normalStrength: number, alphaCoverage = false): TextureSet {
+/** `heightInOrmAlpha` stores the height field in the ORM map's alpha, for height-blended splatting. */
+export function makeTextureSet(size: number, sample: TexelSampler, normalStrength: number, alphaCoverage = false, heightInOrmAlpha = false): TextureSet {
   if (!Number.isInteger(Math.log2(size))) throw new Error(`texture size ${size} must be a power of two for mips`);
   const n = size * size;
   const base = new Uint8Array(n * 4);
@@ -52,7 +53,7 @@ export function makeTextureSet(size: number, sample: TexelSampler, normalStrengt
       orm[i * 4] = to8(t.ao);
       orm[i * 4 + 1] = to8(t.rough);
       orm[i * 4 + 2] = to8(t.metal);
-      orm[i * 4 + 3] = 255;
+      orm[i * 4 + 3] = heightInOrmAlpha ? to8(t.height) : 255;
       heights[i] = t.height;
     }
   }

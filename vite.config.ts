@@ -9,6 +9,8 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 2500,
+    // Two games, two pages: the FPS (index.html) and the tropical lagoon (lagoon.html).
+    rollupOptions: { input: { main: 'index.html', lagoon: 'lagoon.html' } },
   },
   test: {
     environment: 'node',
