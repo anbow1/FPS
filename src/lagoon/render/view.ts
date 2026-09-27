@@ -72,12 +72,14 @@ export class LagoonView {
     await stage.init();
     await progress('Shaping the island', 0.1);
     stage.scene.add(buildGround(game.world));
+    // `?bare` (a debug switch for viewmodel work) skips the vegetation, which dominates load and frame time.
+    const bare = new URLSearchParams(location.search).has('bare');
     await progress('Growing palms', 0.18);
-    stage.scene.add(buildPalms(game.world.palms));
+    if (!bare) stage.scene.add(buildPalms(game.world.palms));
     await progress('Growing the jungle', 0.28);
-    stage.scene.add(buildJungle(game.world.trees, stage.quality));
+    if (!bare) stage.scene.add(buildJungle(game.world.trees, stage.quality));
     await progress('Undergrowth', 0.4);
-    stage.scene.add(buildUndergrowth(game.world, stage.quality));
+    if (!bare) stage.scene.add(buildUndergrowth(game.world, stage.quality));
     await progress('Rocks', 0.44);
     stage.scene.add(buildRocks(game.world.rocks));
     await progress('Building the shelter', 0.47);

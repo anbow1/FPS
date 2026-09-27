@@ -40,7 +40,7 @@ const REST_R: Key = [0, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25];
 const REST_L: Key = [0, -0.235, -0.345, -0.37, 0.25, -0.25, 1.25];
 const STONE_HOLD: Key = [0, 0.2, -0.25, -0.37, 0.55, 0.15, -2.5];
 const KNIFE_HOLD: Key = [0, 0.19, -0.24, -0.33, 0.35, 0.1, -1.35];
-const RIFLE_HIP = { pos: new Vector3(0.105, -0.118, -0.19), rot: new Euler(0.01, 0.075, -0.03) };
+const RIFLE_HIP = { pos: new Vector3(0.12, -0.135, -0.3), rot: new Euler(0.0, 0.05, -0.04) };
 const RIFLE_SPRINT = { pos: new Vector3(0.1, -0.24, -0.24), rot: new Euler(-0.45, 0.75, 0.3) };
 
 const THROW: readonly Key[] = [
