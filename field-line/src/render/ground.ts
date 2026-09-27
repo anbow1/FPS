@@ -1,12 +1,12 @@
-import { attribute, cameraPosition, float, length, mix, normalMap, positionWorld, smoothstep, texture, triplanarTexture, vec2, vec3, vec4 } from 'three/tsl';
-import { BufferAttribute, BufferGeometry, DataTexture, LinearFilter, LinearMipmapLinearFilter, Mesh, MeshStandardNodeMaterial, NoColorSpace, RepeatWrapping, RGBAFormat, UnsignedByteType } from 'three/webgpu';
+import { attribute, cameraPosition, float, int, length, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3, vec4 } from 'three/tsl';
+import { BufferAttribute, BufferGeometry, type DataArrayTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, Mesh, MeshStandardNodeMaterial, NoColorSpace, type Node, RepeatWrapping, RGBAFormat, UnsignedByteType } from 'three/webgpu';
 import { fbm2, tileFbm } from '../core/noise.ts';
 import type { Heightfield } from '../game/collision.ts';
 import type { MapData } from '../maps/types.ts';
 import { distanceToSegmentXZ, sampleHeight } from '../maps/terrain.ts';
 import type { MaterialLibrary } from './materials.ts';
 import * as P from './patterns.ts';
-import { makeTextureSet } from './textures.ts';
+import { makeTextureArray, makeTextureSet } from './textures.ts';
 
 // Terrain mesh and its splat material. Layers blend by per-vertex weights
 // (grass, soil, rock, track), sharpened by each layer's own height so soil
@@ -184,10 +184,20 @@ let splatMat: MeshStandardNodeMaterial | null = null;
 
 function splatMaterial(): MeshStandardNodeMaterial {
   if (splatMat) return splatMat;
-  const grass = makeTextureSet(512, P.grass(), 2);
-  const soil = makeTextureSet(512, P.soil(), 3);
-  const rock = makeTextureSet(512, P.rock(), 4);
-  const track = makeTextureSet(512, P.soil(0x5a4a3a), 3); // compacted, darker dirt on the track
+  // One array texture per map kind, one layer per ground type: 3 bindings instead of 12, so
+  // the shader stays inside the 16-texture limit of WebGPU and phone GPUs (shadow maps and the
+  // environment probe count too). At 19 textures the terrain failed to draw on WebGPU.
+  const layers = makeTextureArray([
+    makeTextureSet(512, P.grass(), 2),
+    makeTextureSet(512, P.soil(), 3),
+    makeTextureSet(512, P.rock(), 4),
+    makeTextureSet(512, P.soil(0x5a4a3a), 3), // compacted, darker dirt on the track
+  ]);
+  const GRASS = 0;
+  const SOIL = 1;
+  const ROCK = 2;
+  const TRACK = 3;
+  const at = (tex: DataArrayTexture, uv: Node<'vec2'>, layer: number): Node<'vec4'> => texture(tex, uv).depth(int(layer));
   const macro = macroVariation();
 
   const w = attribute('splat', 'vec4');
@@ -195,27 +205,35 @@ function splatMaterial(): MeshStandardNodeMaterial {
   const uvG = xz.div(LAYER_TILE_M.grass);
   const uvS = xz.div(LAYER_TILE_M.soil);
   const uvT = xz.div(LAYER_TILE_M.track);
+  // Rock is projected three ways so steep faces never stretch.
+  const tri = normalWorld.abs().pow(vec3(4));
+  const triW = tri.div(tri.x.add(tri.y).add(tri.z));
+  const pr = positionWorld.div(LAYER_TILE_M.rock);
+  const rockTri = (tex: DataArrayTexture): Node<'vec4'> => at(tex, pr.zy, ROCK).mul(triW.x).add(at(tex, pr.xz, ROCK).mul(triW.y)).add(at(tex, pr.xy, ROCK).mul(triW.z));
+  const ormG = at(layers.ormMap, uvG, GRASS);
+  const ormS = at(layers.ormMap, uvS, SOIL);
+  const ormT = at(layers.ormMap, uvT, TRACK);
   // Height-blend: each weight is lifted by that layer's height (its AO channel), then sharpened.
-  const hG = texture(grass.ormMap, uvG).r;
-  const hS = texture(soil.ormMap, uvS).r;
-  const hR = triplanarTexture(texture(rock.ormMap), null, null, float(1 / LAYER_TILE_M.rock), positionWorld).r;
-  const hT = texture(track.ormMap, uvT).r;
+  const hG = ormG.r;
+  const hS = ormS.r;
+  const hR = rockTri(layers.ormMap).r;
+  const hT = ormT.r;
   const lifted = vec4(w.x.mul(hG.add(0.3)), w.y.mul(hS.add(0.3)), w.z.mul(hR.add(0.3)), w.w.mul(hT.add(0.3)));
   const peak = lifted.x.max(lifted.y).max(lifted.z).max(lifted.w);
   const sharp = lifted.sub(peak.sub(0.18)).max(0);
   const k = sharp.div(sharp.x.add(sharp.y).add(sharp.z).add(sharp.w).max(1e-4));
 
-  const cG = texture(grass.map, uvG).rgb;
-  const cS = texture(soil.map, uvS).rgb;
-  const cR = triplanarTexture(texture(rock.map), null, null, float(1 / LAYER_TILE_M.rock), positionWorld).rgb;
-  const cT = texture(track.map, uvT).rgb;
+  const cG = at(layers.map, uvG, GRASS).rgb;
+  const cS = at(layers.map, uvS, SOIL).rgb;
+  const cR = rockTri(layers.map).rgb;
+  const cT = at(layers.map, uvT, TRACK).rgb;
   let colour = cG.mul(k.x).add(cS.mul(k.y)).add(cR.mul(k.z)).add(cT.mul(k.w));
 
   // Detail layer within ~10 m: a high-frequency copy of the dominant texture.
   const dist = length(positionWorld.sub(cameraPosition));
   const near = float(1).sub(smoothstep(DETAIL_FADE_M * 0.5, DETAIL_FADE_M, dist));
   const uvD = xz.div(DETAIL_TILE_M);
-  const detail = texture(soil.map, uvD).rgb.mul(k.y.add(k.w)).add(texture(grass.map, uvD).rgb.mul(k.x)).add(texture(rock.map, uvD).rgb.mul(k.z));
+  const detail = at(layers.map, uvD, SOIL).rgb.mul(k.y.add(k.w)).add(at(layers.map, uvD, GRASS).rgb.mul(k.x)).add(at(layers.map, uvD, ROCK).rgb.mul(k.z));
   const detailLum = detail.dot(vec3(0.2126, 0.7152, 0.0722));
   const baseLum = colour.dot(vec3(0.2126, 0.7152, 0.0722)).max(1e-3);
   colour = colour.mul(mix(float(1), detailLum.div(baseLum).clamp(0.6, 1.4), near.mul(0.6)));
@@ -225,15 +243,15 @@ function splatMaterial(): MeshStandardNodeMaterial {
   const macro2 = texture(macro, xz.div(MACRO_TILE_M * 0.37).add(vec2(0.31, 0.77))).r;
   colour = colour.mul(macro1.add(macro2).mul(0.24).add(0.76));
 
-  const nG = texture(grass.normalMap, uvG).xyz;
-  const nS = texture(soil.normalMap, uvS).xyz;
-  const nR = texture(rock.normalMap, uvG.mul(LAYER_TILE_M.grass / LAYER_TILE_M.rock)).xyz;
-  const nT = texture(track.normalMap, uvT).xyz;
+  const nG = at(layers.normalMap, uvG, GRASS).xyz;
+  const nS = at(layers.normalMap, uvS, SOIL).xyz;
+  const nR = at(layers.normalMap, uvG.mul(LAYER_TILE_M.grass / LAYER_TILE_M.rock), ROCK).xyz;
+  const nT = at(layers.normalMap, uvT, TRACK).xyz;
   const nBlend = nG.mul(k.x).add(nS.mul(k.y)).add(nR.mul(k.z)).add(nT.mul(k.w));
-  const nDetail = texture(soil.normalMap, uvD).xyz;
+  const nDetail = at(layers.normalMap, uvD, SOIL).xyz;
   const n = mix(nBlend, nBlend.add(nDetail).sub(0.5), near.mul(0.5));
 
-  const roughness = texture(grass.ormMap, uvG).g.mul(k.x).add(texture(soil.ormMap, uvS).g.mul(k.y)).add(float(0.85).mul(k.z)).add(texture(track.ormMap, uvT).g.mul(k.w));
+  const roughness = ormG.g.mul(k.x).add(ormS.g.mul(k.y)).add(float(0.85).mul(k.z)).add(ormT.g.mul(k.w));
 
   const m = new MeshStandardNodeMaterial({ name: 'terrainSplat', metalness: 0 });
   m.colorNode = colour;

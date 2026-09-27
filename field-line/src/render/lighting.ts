@@ -56,7 +56,7 @@ export class Lighting {
     this.calibCamera.lookAt(0, 1, 0);
     const s = this.sun;
     s.castShadow = true;
-    s.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024);
+    s.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024); // lighting sheet: 1024 is the Low budget
     s.shadow.bias = -0.0002;
     s.shadow.normalBias = 0.02;
     this.csm = new CSMShadowNode(s, { cascades: quality === 'high' ? 4 : 2, maxFar: CSM_MAX_FAR_M[quality], mode: 'practical', lightMargin: 120 });

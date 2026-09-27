@@ -9,6 +9,7 @@ import { Effects } from './effects.ts';
 import { buildGround } from './ground.ts';
 import { AmbientLife } from './life.ts';
 import { Rain } from './weatherFx.ts';
+import { FOLIAGE } from './foliageMaterials.ts';
 import { buildJungle } from './jungle.ts';
 import { buildOutpost, type OutpostView } from './outpost.ts';
 import { Props } from './props.ts';
@@ -74,6 +75,7 @@ export class LagoonView {
     stage.scene.add(buildGround(game.world));
     // `?bare` (a debug switch for viewmodel work) skips the vegetation, which dominates load and frame time.
     const bare = new URLSearchParams(location.search).has('bare');
+    FOLIAGE.translucent = stage.quality === 'high';
     await progress('Growing palms', 0.18);
     if (!bare) stage.scene.add(buildPalms(game.world.palms));
     await progress('Growing the jungle', 0.28);
@@ -103,7 +105,7 @@ export class LagoonView {
     await this.lighting.bakeNow(game.env, stage.camera);
     this.exposure = new AutoExposure(stage.renderer, game.env.daylight.anchorEv, { belowStops: LAGOON_EXPOSURE.minEvBelowAnchor, aboveStops: LAGOON_EXPOSURE.maxEvAboveAnchor });
     await progress('Compiling shaders', 0.92);
-    await stage.renderer.compileAsync(stage.scene, stage.camera);
+    await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
   }
 
   get depthMap() {
@@ -200,5 +202,29 @@ export class LagoonView {
 
   resize(): void {
     this.stage.resize();
+  }
+}
+
+const PRECOMPILE_TIMEOUT_MS = 20000;
+
+/**
+ * Shader pre-compilation behind the loading screen (rules §9). A phone GPU can
+ * take very long, or a single failing pipeline can reject the whole batch;
+ * neither may leave the player stuck on the loading screen, so after the
+ * timeout (or a failure) loading carries on and anything left compiles on
+ * first use.
+ */
+async function precompile(job: Promise<unknown>): Promise<void> {
+  let timer = 0;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = window.setTimeout(() => resolve('timeout'), PRECOMPILE_TIMEOUT_MS);
+  });
+  try {
+    const result = await Promise.race([job, timeout]);
+    if (result === 'timeout') console.warn(`shader pre-compilation still running after ${PRECOMPILE_TIMEOUT_MS / 1000} s; continuing, the rest compiles on first use`);
+  } catch (err) {
+    console.error('shader pre-compilation failed; continuing, the renderer reports the failing material:', err);
+  } finally {
+    window.clearTimeout(timer);
   }
 }

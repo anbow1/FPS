@@ -23,6 +23,13 @@ function textureSet(key: string, size: number, sampler: () => TexelSampler, norm
   return s;
 }
 
+/**
+ * Shadowed leaf translucency costs a second light evaluation per leaf pixel;
+ * with the heavy overdraw of alpha-cut foliage that is too much for a phone,
+ * so the Low preset turns it off (set by the view before building plants).
+ */
+export const FOLIAGE = { translucent: true };
+
 export type LeafKind = 'palm' | 'broadleaf' | 'broadleafDark' | 'fern' | 'grass' | 'banana' | 'hibiscus' | 'herb';
 
 function leafSet(kind: LeafKind): TextureSet {
@@ -82,7 +89,7 @@ function windPosition() {
 
 export function leafMaterial(kind: LeafKind, translucent = true, dead = false): MeshStandardNodeMaterial {
   const ts = leafSet(kind);
-  const m = translucent ? new MeshSSSNodeMaterial({ name: `leaf-${kind}${dead ? '-dead' : ''}`, side: DoubleSide }) : new MeshStandardNodeMaterial({ name: `leaf-${kind}`, side: DoubleSide });
+  const m = translucent && FOLIAGE.translucent ? new MeshSSSNodeMaterial({ name: `leaf-${kind}${dead ? '-dead' : ''}`, side: DoubleSide }) : new MeshStandardNodeMaterial({ name: `leaf-${kind}`, side: DoubleSide });
   m.map = ts.map;
   m.normalMap = ts.normalMap;
   m.alphaTest = 0.5;
@@ -98,7 +105,7 @@ export function leafMaterial(kind: LeafKind, translucent = true, dead = false): 
   m.metalnessNode = float(0);
   m.aoNode = texture(ts.ormMap).r;
   m.positionNode = windPosition();
-  if (m instanceof MeshSSSNodeMaterial) {
+  if (m instanceof MeshSSSNodeMaterial && FOLIAGE.translucent) {
     // Light through a leaf is yellower and more saturated than the leaf seen in reflection.
     m.thicknessColorNode = albedo.mul(vec3(1.1, 1.2, 0.6));
     m.thicknessDistortionNode = float(0.25);

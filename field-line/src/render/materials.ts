@@ -45,7 +45,11 @@ function standard(ts: TextureSet, name: string, normalScale = 1): MeshStandardNo
  * only leaves the sun actually reaches glow from behind — the golden-hour win
  * in the forest. Same texture set and AO as `standard`.
  */
-function translucentLeaf(ts: TextureSet, name: string): MeshSSSNodeMaterial {
+/** Leaf translucency is off on the Low preset (phones): see `translucentLeaf`. Set by the view before building. */
+export const FOLIAGE = { translucent: true };
+
+function translucentLeaf(ts: TextureSet, name: string): MeshStandardNodeMaterial {
+  if (!FOLIAGE.translucent) return standard(ts, name);
   const m = new MeshSSSNodeMaterial({ name, map: ts.map, normalMap: ts.normalMap, roughnessMap: ts.ormMap, metalnessMap: ts.ormMap, roughness: 1, metalness: 1 });
   m.aoNode = texture(ts.ormMap).r.mul(skyVisibilityNode());
   // Light through a leaf is yellower and more saturated than the leaf in reflection. Tuned by eye at golden hour.

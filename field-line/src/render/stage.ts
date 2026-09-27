@@ -28,7 +28,7 @@ export interface StageSettings {
   toneMap: ToneMap;
 }
 
-const SHAFT_SAMPLES = { high: 40, low: 20 } as const;
+const SHAFT_SAMPLES = { high: 40, low: 0 } as const; // low: no shafts (a full-screen 40-tap loop)
 
 export class Stage {
   /** Screen position of the sun (uv) and how strongly its shafts are drawn. */
@@ -109,7 +109,7 @@ export class Stage {
       });
       return vec4(sum.mul(strength.div(samples)), 0);
     })();
-    const lit = aa.add(shafts);
+    const lit = samples > 0 ? aa.add(shafts) : aa;
     // Physical bloom: no threshold, a small share of the blurred HDR image (lens glare), not a glow filter.
     const glare = bloom(lit, high ? 0.06 : 0.04, 0.35, 0);
     // Grade: a touch of saturation and a soft optical vignette, tuned by eye.
@@ -125,8 +125,8 @@ export class Stage {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     // Phones report a device pixel ratio of 3 or more: rendering that many pixels would halve the
-    // frame rate for detail a 6-inch screen cannot show. Touch screens are capped at 1.25.
-    const maxRatio = isTouchDevice() ? 1.25 : 4;
+    // frame rate for detail a 6-inch screen cannot show. Touch screens render at 1 pixel per CSS pixel.
+    const maxRatio = isTouchDevice() ? 1 : 4;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio) * this.settings.renderScale);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;

@@ -1,6 +1,6 @@
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RepeatWrapping, RGBAFormat, UnsignedByteType } from 'three/webgpu';
 import { tileFbm, tileNoise } from '../core/noise.ts';
-import { makeTextureSet, type TextureSet } from './textureSet.ts';
+import { makeTextureArray, makeTextureSet, type TextureArraySet, type TextureSet } from './textureSet.ts';
 import * as P from './patterns.ts';
 
 // Lazily generated texture sets for the lagoon, built once at load behind the
@@ -20,6 +20,14 @@ export function terrainSet(layer: TerrainLayer): TextureSet {
     sets.set(layer, s);
   }
   return s;
+}
+
+let groundArray: TextureArraySet | null = null;
+
+/** The ground's four layers — sand, grass, litter, rock, in that order — as array textures. */
+export function terrainArray(): TextureArraySet {
+  groundArray ??= makeTextureArray([terrainSet('sand'), terrainSet('grass'), terrainSet('litter'), terrainSet('rock')]);
+  return groundArray;
 }
 
 export function waterNormalMap(): DataTexture {

@@ -1,10 +1,10 @@
-import { attribute, float, max, min, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, triplanarTexture, vec2, vec3 } from 'three/tsl';
-import { BufferAttribute, BufferGeometry, Group, Mesh, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
+import { attribute, float, int, max, min, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3 } from 'three/tsl';
+import { BufferAttribute, BufferGeometry, type DataArrayTexture, Group, Mesh, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { fbm2 } from '../core/noise.ts';
 import { WATER_LEVEL_M } from '../config.ts';
 import { beachWidth, cliffiness, heightAt, LAGOON_CENTRE, shoreDistance } from '../game/terrain.ts';
 import type { LagoonWorld } from '../game/world.ts';
-import { causticFoamMap, noiseMap, terrainSet } from './textures.ts';
+import { causticFoamMap, noiseMap, terrainArray } from './textures.ts';
 import { U } from './uniforms.ts';
 
 // The ground: a dense near mesh over the playable bay (1.25 m cells, with a
@@ -244,10 +244,11 @@ function smooth(e0: number, e1: number, x: number): number {
 
 function groundMaterial(): MeshStandardNodeMaterial {
   const m = new MeshStandardNodeMaterial({ name: 'ground', roughness: 1, metalness: 0 });
-  const sandT = terrainSet('sand');
-  const grassT = terrainSet('grass');
-  const litterT = terrainSet('litter');
-  const rockT = terrainSet('rock');
+  // One array texture per map kind, one layer per ground type (sand, grass, litter, rock):
+  // 3 bindings instead of 12, so the shader stays inside the 16-texture limit of WebGPU and phones.
+  const layers = terrainArray();
+  const LAYER = { sand: 0, grass: 1, litter: 2, rock: 3 } as const;
+  const at = (tex: DataArrayTexture, uv: Node<'vec2'>, layer: number): Node<'vec4'> => texture(tex, uv).depth(int(layer));
   const noise = noiseMap();
   const cf = causticFoamMap();
   const p = positionWorld;
@@ -259,15 +260,15 @@ function groundMaterial(): MeshStandardNodeMaterial {
   const uvR = base.div(5.5);
   const w = attribute('splat', 'vec4');
   const extra = attribute('extra', 'vec3');
-  const hS = texture(sandT.ormMap, uvS).a;
-  const hG = texture(grassT.ormMap, uvG).a;
-  const hL = texture(litterT.ormMap, uvL).a;
-  const hR = texture(rockT.ormMap, uvR).a;
+  const ormS = at(layers.ormMap, uvS, LAYER.sand);
+  const ormG = at(layers.ormMap, uvG, LAYER.grass);
+  const ormL = at(layers.ormMap, uvL, LAYER.litter);
+  const ormR = at(layers.ormMap, uvR, LAYER.rock);
   // Height-blended splat: sand fills the gaps between leaves, rock pokes through turf.
-  const aS = w.x.add(hS.mul(0.45));
-  const aG = w.y.add(hG.mul(0.45));
-  const aL = w.z.add(hL.mul(0.45));
-  const aR = w.w.add(hR.mul(0.45));
+  const aS = w.x.add(ormS.a.mul(0.45));
+  const aG = w.y.add(ormG.a.mul(0.45));
+  const aL = w.z.add(ormL.a.mul(0.45));
+  const aR = w.w.add(ormR.a.mul(0.45));
   const top = max(max(aS, aG), max(aL, aR)).sub(0.22);
   const bS = max(aS.sub(top), 0);
   const bG = max(aG.sub(top), 0);
@@ -280,10 +281,13 @@ function groundMaterial(): MeshStandardNodeMaterial {
   const kR = bR.div(sum);
   const blend = (s: Node<'vec4'>, g: Node<'vec4'>, l: Node<'vec4'>, r: Node<'vec4'>): Node<'vec4'> => s.mul(kS).add(g.mul(kG)).add(l.mul(kL)).add(r.mul(kR));
   // Rock is projected three ways so cliffs do not smear; the other layers lie flat.
-  const rockColour = triplanarTexture(texture(rockT.map), null, null, float(1 / 5.5), positionWorld, normalWorld);
-  let albedo: Node<'vec3'> = blend(texture(sandT.map, uvS), texture(grassT.map, uvG), texture(litterT.map, uvL), rockColour).rgb;
-  const orm = blend(texture(sandT.ormMap, uvS), texture(grassT.ormMap, uvG), texture(litterT.ormMap, uvL), texture(rockT.ormMap, uvR));
-  let nTex: Node<'vec3'> = blend(texture(sandT.normalMap, uvS), texture(grassT.normalMap, uvG), texture(litterT.normalMap, uvL), texture(rockT.normalMap, uvR)).xyz;
+  const tri = normalWorld.abs().pow(vec3(4));
+  const triW = tri.div(tri.x.add(tri.y).add(tri.z));
+  const rs = float(1 / 5.5);
+  const rockColour = at(layers.map, p.zy.mul(rs), LAYER.rock).mul(triW.x).add(at(layers.map, p.xz.mul(rs), LAYER.rock).mul(triW.y)).add(at(layers.map, p.xy.mul(rs), LAYER.rock).mul(triW.z));
+  let albedo: Node<'vec3'> = blend(at(layers.map, uvS, LAYER.sand), at(layers.map, uvG, LAYER.grass), at(layers.map, uvL, LAYER.litter), rockColour).rgb;
+  const orm = blend(ormS, ormG, ormL, ormR);
+  let nTex: Node<'vec3'> = blend(at(layers.normalMap, uvS, LAYER.sand), at(layers.normalMap, uvG, LAYER.grass), at(layers.normalMap, uvL, LAYER.litter), at(layers.normalMap, uvR, LAYER.rock)).xyz;
 
   // Macro variation kills the tile grid from a distance.
   const macro = texture(noise, p.xz.div(90)).r;

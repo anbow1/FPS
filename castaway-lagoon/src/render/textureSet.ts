@@ -1,4 +1,4 @@
-import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RepeatWrapping, RGBAFormat, SRGBColorSpace, UnsignedByteType } from 'three/webgpu';
+import { DataArrayTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RepeatWrapping, RGBAFormat, SRGBColorSpace, UnsignedByteType } from 'three/webgpu';
 
 // Procedural texture sets, generated once at load. Every set is base colour
 // (sRGB), a tangent-space normal map in OpenGL convention (green = +Y) and an
@@ -166,4 +166,48 @@ function rescaleAlpha(data: Uint8Array, target: number, threshold: number): void
   }
   const k = (lo + hi) / 2;
   for (let i = 3; i < data.length; i += 4) data[i] = Math.min(255, Math.round((data[i] as number) * k));
+}
+
+export interface TextureArraySet {
+  map: DataArrayTexture;
+  normalMap: DataArrayTexture;
+  ormMap: DataArrayTexture;
+}
+
+/**
+ * Stacks same-sized texture sets into three array textures (one per map
+ * kind, one layer per set). A splat shader then binds 3 textures instead of
+ * 3 per layer: WebGPU's default limit, and most phone GPUs, allow only 16
+ * textures per shader, shadow maps and the environment probe included.
+ */
+export function makeTextureArray(sets: readonly TextureSet[]): TextureArraySet {
+  if (sets.length === 0) throw new Error('makeTextureArray needs at least one texture set');
+  const size = (sets[0] as TextureSet).map.image.width;
+  const stack = (pick: (s: TextureSet) => DataTexture): DataArrayTexture => {
+    const layerBytes = size * size * 4;
+    const data = new Uint8Array(layerBytes * sets.length);
+    sets.forEach((s, i) => {
+      const t = pick(s);
+      if (t.image.width !== size || t.image.height !== size) throw new Error(`texture array layer ${i} is ${t.image.width}×${t.image.height}; every layer must be ${size}×${size}`);
+      data.set(t.image.data as Uint8Array, i * layerBytes);
+    });
+    const tex = new DataArrayTexture(data, size, size, sets.length);
+    tex.format = RGBAFormat;
+    tex.type = UnsignedByteType;
+    tex.wrapS = RepeatWrapping;
+    tex.wrapT = RepeatWrapping;
+    tex.generateMipmaps = true;
+    tex.minFilter = LinearMipmapLinearFilter;
+    tex.magFilter = LinearFilter;
+    tex.anisotropy = maxAnisotropy;
+    tex.needsUpdate = true;
+    return tex;
+  };
+  const map = stack((s) => s.map);
+  map.colorSpace = SRGBColorSpace;
+  const normalMap = stack((s) => s.normalMap);
+  normalMap.colorSpace = NoColorSpace;
+  const ormMap = stack((s) => s.ormMap);
+  ormMap.colorSpace = NoColorSpace;
+  return { map, normalMap, ormMap };
 }

@@ -195,8 +195,8 @@ export const WAVES = {
 } as const;
 
 export const GRAPHICS = {
-  shadowMapPx: { high: 4096, low: 2048 },
+  shadowMapPx: { high: 4096, low: 1024 }, // low: phones and laptops (Mali / Adreno fill rate)
   shadowRangeM: { high: 90, low: 55 },
-  grassDensity: { high: 1, low: 0.4 },
+  grassDensity: { high: 1, low: 0.2 },
   rainDrops: { high: 14000, low: 5000 },
 } as const;

@@ -164,7 +164,11 @@ export class LagoonLighting {
   async bakeNow(env: Environment, camera: { position: Vector3 }): Promise<void> {
     this.update(env, camera, 0);
     // The probe's sky material must be compiled before the synchronous bake, or the bake draws nothing.
-    await this.renderer.compileAsync(this.probeScene, this.probeCamera);
+    try {
+      await this.renderer.compileAsync(this.probeScene, this.probeCamera);
+    } catch (err) {
+      console.error('sky probe shader pre-compilation failed; baking anyway:', err);
+    }
     await this.pmrem.compileCubemapShader();
     const rt = this.pmrem.fromScene(this.probeScene, 0, 0.1, 100);
     this.envTexture?.dispose();

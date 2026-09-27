@@ -121,10 +121,10 @@ export function buildJungle(trees: readonly TreeInstance[], quality: 'high' | 'l
   };
   VARIANT_HEIGHTS.forEach((H, v) => {
     const list = trees.filter((t) => nearestVariant(t.heightM) === v);
-    place(list, buildTree(H, 1000 + v * 77, quality === 'high' ? 130 : 80, 6), H, v % 2 === 0 ? leafA : leafB, true);
+    place(list, buildTree(H, 1000 + v * 77, quality === 'high' ? 130 : 45, 6), H, v % 2 === 0 ? leafA : leafB, true);
   });
   // The far canopy: cheap trees on the hills beyond the bay and the volcano's skirt.
-  const far = farTrees(quality === 'high' ? 2600 : 1200);
+  const far = farTrees(quality === 'high' ? 2600 : 450);
   place(far.filter((t) => t.seed % 2 === 0), buildTree(16, 5001, 30, 3, false), 16, leafA, false);
   place(far.filter((t) => t.seed % 2 === 1), buildTree(16, 5002, 30, 3, false), 16, leafB, false);
   return group;
