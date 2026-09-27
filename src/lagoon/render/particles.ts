@@ -164,12 +164,12 @@ export const SPECS = {
   chips: spec({ colour: [0.4, 0.38, 0.36], sizeM: 0.014, lifeS: 0.8, drag: 0.3, bounce: true }),
   splinter: spec({ colour: [0.42, 0.3, 0.19], sizeM: 0.016, lifeS: 1.0, drag: 0.6, stretch: 0.02, bounce: true }),
   leaf: spec({ colour: [0.12, 0.22, 0.05], sizeM: 0.05, lifeS: 2.6, drag: 2.5, gravity: 0.25 }),
-  smoke: spec({ colour: [0.35, 0.34, 0.33], sizeM: 0.5, growPerS: 0.45, lifeS: 4.5, drag: 0.4, gravity: -0.03, opacity: 0.22 }),
+  smoke: spec({ colour: [0.22, 0.21, 0.2], sizeM: 0.35, growPerS: 0.5, lifeS: 4.5, drag: 0.4, gravity: -0.03, opacity: 0.1 }),
   gunSmoke: spec({ colour: [0.6, 0.6, 0.6], sizeM: 0.12, growPerS: 0.5, lifeS: 1.2, drag: 2, gravity: -0.02, opacity: 0.18 }),
   rainSplash: spec({ colour: [0.75, 0.8, 0.85], sizeM: 0.03, lifeS: 0.25, drag: 0.5, stretch: 0.08, opacity: 0.6 }),
   // Glow pool (colour × luminance in cd/m² set per pool).
   spark: spec({ colour: [1, 0.55, 0.2], sizeM: 0.012, lifeS: 0.35, drag: 0.5, stretch: 0.05, bounce: true }),
   ember: spec({ colour: [1, 0.42, 0.12], sizeM: 0.018, lifeS: 2.2, drag: 0.9, gravity: -0.06 }),
-  flame: spec({ colour: [1, 0.5, 0.16], sizeM: 0.3, growPerS: -0.1, lifeS: 0.55, drag: 1.5, gravity: -0.25 }),
+  flame: spec({ colour: [1, 0.46, 0.12], sizeM: 0.085, growPerS: -0.06, lifeS: 0.45, drag: 1.2, gravity: -0.3, stretch: 1.4, opacity: 0.55 }),
 } as const;
 

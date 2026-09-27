@@ -29,7 +29,7 @@ const woodSet = makeTextureSet(
 
 export const WEAPON_MATERIALS = {
   // Blued / phosphated steel: a dark dielectric finish (PBR sheet: paint and phosphate are metal 0).
-  receiver: new MeshStandardNodeMaterial({ name: 'ak receiver', color: 0x2d2e30, roughness: 0.48, metalness: 0 }),
+  receiver: new MeshStandardNodeMaterial({ name: 'ak receiver', color: 0x34363a, roughness: 0.4, metalness: 0 }),
   // Where the finish has worn through on the edges and the bolt carrier: bare steel.
   bare: new MeshStandardNodeMaterial({ name: 'ak bare steel', color: 0xb9b9b9, roughness: 0.3, metalness: 1 }),
   wood: new MeshStandardNodeMaterial({ name: 'ak wood', map: woodSet.map, normalMap: woodSet.normalMap, roughnessMap: woodSet.ormMap, roughness: 1, metalness: 0 }),

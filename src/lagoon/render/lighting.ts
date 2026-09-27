@@ -1,6 +1,6 @@
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { cameraPosition, exp, float, fog, positionWorld } from 'three/tsl';
-import { DirectionalLight, PMREMGenerator, Scene, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
+import { DirectionalLight, PerspectiveCamera, PMREMGenerator, Scene, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { lightColour, type LinearRgb, preExposureFor } from '../../render/colour.ts';
 import { GRAPHICS } from '../config.ts';
 import type { Environment } from '../game/environment.ts';
@@ -30,8 +30,10 @@ export class LagoonLighting {
   anchorEv = 15;
   private readonly tmp = new Vector3();
 
+  private readonly probeCamera = new PerspectiveCamera(90, 1, 0.1, 100);
+
   constructor(
-    renderer: WebGPURenderer,
+    private readonly renderer: WebGPURenderer,
     private readonly scene: Scene,
     quality: 'high' | 'low',
   ) {
@@ -46,7 +48,10 @@ export class LagoonLighting {
     this.csm.fade = true;
     l.shadow.shadowNode = this.csm;
     scene.add(l, l.target, this.sky);
-    this.probeScene.add(buildSkyDome(false));
+    // The probe dome must sit inside the bake camera's 100 m far plane (PMREM fromScene near/far).
+    const probeDome = buildSkyDome(false);
+    probeDome.scale.setScalar(50);
+    this.probeScene.add(probeDome);
     scene.fogNode = fog(hazeColour(positionWorld.sub(cameraPosition).normalize()), heightFogFactor());
   }
 
@@ -137,7 +142,8 @@ export class LagoonLighting {
     const d = env.daylight;
     const b = this.lastBake;
     const changed = Math.abs(d.sunDir.y - b.sunY) > 0.01 || Math.abs(d.anchorEv - b.ev) > 0.25 || Math.abs(env.weather.cloudCover - b.cover) > 0.03 || Math.abs(d.night - b.night) > 0.03 || Math.abs(env.lightningFlash) > 0.2;
-    if (!changed && this.envTexture) return;
+    if (!changed && this.envTexture && this.forcedBakes <= 0) return;
+    this.forcedBakes--;
     this.baking = true;
     this.probeAge = 0;
     const pre = this.preExposure;
@@ -157,7 +163,9 @@ export class LagoonLighting {
   /** Waits for the first probe, so the loading screen covers it. */
   async bakeNow(env: Environment, camera: { position: Vector3 }): Promise<void> {
     this.update(env, camera, 0);
-    await this.pmrem.compileEquirectangularShader();
+    // The probe's sky material must be compiled before the synchronous bake, or the bake draws nothing.
+    await this.renderer.compileAsync(this.probeScene, this.probeCamera);
+    await this.pmrem.compileCubemapShader();
     const rt = this.pmrem.fromScene(this.probeScene, 0, 0.1, 100);
     this.envTexture?.dispose();
     this.envTexture = rt.texture;
@@ -165,7 +173,11 @@ export class LagoonLighting {
     this.scene.environment = rt.texture;
     this.scene.environmentIntensity = 1;
     this.lastBake = { sunY: env.daylight.sunDir.y, ev: env.daylight.anchorEv, cover: env.weather.cloudCover, night: env.daylight.night, rain: env.weather.rainRate };
+    // Re-bake a few more times as the first frames finish compiling everything.
+    this.forcedBakes = 3;
   }
+
+  private forcedBakes = 0;
 }
 
 /**

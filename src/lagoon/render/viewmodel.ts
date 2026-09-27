@@ -36,11 +36,11 @@ function sample(keys: readonly Key[], t: number, out: Target): Target {
 }
 
 // Wrist targets (camera space) and hand orientations for each hold.
-const REST_R: Key = [0, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25];
-const REST_L: Key = [0, -0.235, -0.345, -0.37, 0.25, -0.25, 1.25];
-const STONE_HOLD: Key = [0, 0.2, -0.25, -0.37, 0.55, 0.15, -2.5];
-const KNIFE_HOLD: Key = [0, 0.19, -0.24, -0.33, 0.35, 0.1, -1.35];
-const RIFLE_HIP = { pos: new Vector3(0.12, -0.135, -0.3), rot: new Euler(0.0, 0.05, -0.04) };
+const REST_R: Key = [0, 0.2, -0.27, -0.38, 0.35, 0.25, -1.25];
+const REST_L: Key = [0, -0.2, -0.28, -0.39, 0.35, -0.25, 1.25];
+const STONE_HOLD: Key = [0, 0.16, -0.2, -0.33, 0.75, 0.15, -2.6];
+const KNIFE_HOLD: Key = [0, 0.17, -0.2, -0.32, 0.55, 0.15, -1.35];
+const RIFLE_HIP = { pos: new Vector3(0.1, -0.095, -0.26), rot: new Euler(0.0, 0.04, -0.06) };
 const RIFLE_SPRINT = { pos: new Vector3(0.1, -0.24, -0.24), rot: new Euler(-0.45, 0.75, 0.3) };
 
 const THROW: readonly Key[] = [
@@ -64,29 +64,29 @@ const BACKHAND: readonly Key[] = [
   [1, 0.19, -0.24, -0.33, 0.35, 0.1, -1.35],
 ];
 const REACH_R: readonly Key[] = [
-  [0, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25],
+  [0, 0.2, -0.27, -0.38, 0.35, 0.25, -1.25],
   [0.5, 0.06, -0.52, -0.55, 1.2, 0.1, -1.3],
   [0.62, 0.06, -0.5, -0.53, 1.2, 0.1, -1.3],
-  [1, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25],
+  [1, 0.2, -0.27, -0.38, 0.35, 0.25, -1.25],
 ];
 const HARVEST_R: readonly Key[] = [
-  [0, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25],
+  [0, 0.2, -0.27, -0.38, 0.35, 0.25, -1.25],
   [0.45, 0.07, -0.54, -0.52, 1.3, 0.2, -1.1],
   [0.62, 0.07, -0.52, -0.5, 1.3, 0.2, -1.1],
   [0.78, 0.12, -0.36, -0.36, 0.8, 0.3, -1.4], // the tug
-  [1, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25],
+  [1, 0.2, -0.27, -0.38, 0.35, 0.25, -1.25],
 ];
 const HARVEST_L: readonly Key[] = [
-  [0, -0.235, -0.345, -0.37, 0.25, -0.25, 1.25],
+  [0, -0.2, -0.28, -0.39, 0.35, -0.25, 1.25],
   [0.45, -0.08, -0.55, -0.5, 1.2, -0.2, 1.1],
   [0.7, -0.1, -0.5, -0.46, 1.1, -0.2, 1.1],
-  [1, -0.235, -0.345, -0.37, 0.25, -0.25, 1.25],
+  [1, -0.2, -0.28, -0.39, 0.35, -0.25, 1.25],
 ];
 const CRATE_R: readonly Key[] = [
-  [0, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25],
+  [0, 0.2, -0.27, -0.38, 0.35, 0.25, -1.25],
   [0.3, 0.17, -0.42, -0.56, 1.35, 0.0, -0.1],
   [0.8, 0.16, -0.08, -0.62, -0.2, 0.0, -0.1],
-  [1, 0.235, -0.335, -0.36, 0.25, 0.25, -1.25],
+  [1, 0.2, -0.27, -0.38, 0.35, 0.25, -1.25],
 ];
 
 export class ViewModel {
@@ -280,7 +280,7 @@ export class ViewModel {
     const holding = this.away < 0.5;
     if (this.shown === 'stone' && holding) {
       sample([STONE_HOLD], 0, this.tR);
-      mixPose(POSES.cradle, POSES.cradle, 0, this.poseR);
+      mixPose(POSES.cradle, POSES.grip, 0.35, this.poseR);
       if (a.kind === 'windup') {
         // Arm draws back behind the shoulder as the throw charges; the free arm points at the target.
         const c = smoothstep(0, 1, Math.min(1, a.elapsedSeconds / 0.28)) ;
