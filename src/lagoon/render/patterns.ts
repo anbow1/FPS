@@ -30,8 +30,8 @@ export function hash2(x: number, y: number, seed: number): number {
 
 /** Coral sand: wind ripples, grains, shell fragments and dark mineral specks. */
 export function sand(): TexelSampler {
-  const base = hex(0xe2d7bd);
-  const warm = hex(0xd8c9a6);
+  const base = hex(0xd3c6a6);
+  const warm = hex(0xc9b791);
   const shell = hex(0xf0ebdf);
   const speck = hex(0x6e665c);
   return (u, v, t) => {

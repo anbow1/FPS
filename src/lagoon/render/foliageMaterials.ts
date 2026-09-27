@@ -99,12 +99,12 @@ export function leafMaterial(kind: LeafKind, translucent = true, dead = false): 
   m.positionNode = windPosition();
   if (m instanceof MeshSSSNodeMaterial) {
     // Light through a leaf is yellower and more saturated than the leaf seen in reflection.
-    m.thicknessColorNode = albedo.mul(vec3(1.25, 1.35, 0.55));
+    m.thicknessColorNode = albedo.mul(vec3(1.1, 1.2, 0.6));
     m.thicknessDistortionNode = float(0.25);
     m.thicknessAmbientNode = float(0);
     m.thicknessAttenuationNode = float(0.6);
     m.thicknessPowerNode = float(2.5);
-    m.thicknessScaleNode = float(3.5);
+    m.thicknessScaleNode = float(2.2);
   }
   return m;
 }

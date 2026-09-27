@@ -23,7 +23,7 @@ export interface HandPose {
 }
 
 export const POSES = {
-  relaxed: { curl: [0.35, 0.42, 0.5, 0.58], thumb: 0.25, spread: 0.2 },
+  relaxed: { curl: [0.5, 0.58, 0.64, 0.7], thumb: 0.35, spread: 0.1 },
   open: { curl: [0.08, 0.08, 0.1, 0.12], thumb: 0.05, spread: 0.7 },
   grip: { curl: [0.72, 0.85, 0.88, 0.9], thumb: 0.85, spread: 0.05 },
   trigger: { curl: [0.45, 0.85, 0.88, 0.9], thumb: 0.8, spread: 0.05 },

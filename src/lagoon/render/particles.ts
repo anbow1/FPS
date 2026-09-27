@@ -53,7 +53,9 @@ export class ParticlePool {
   constructor(
     capacity: number,
     readonly glow: boolean,
+    glowLuminance = 12000,
   ) {
+    this.glowLuminance = glowLuminance;
     const geo = new PlaneGeometry(1, 1);
     this.fade = new InstancedBufferAttribute(new Float32Array(capacity), 1);
     this.tint = new InstancedBufferAttribute(new Float32Array(capacity * 3), 3);

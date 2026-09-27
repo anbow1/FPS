@@ -21,7 +21,7 @@ const DECALS = 96;
 
 export class Effects {
   readonly lit = new ParticlePool(900, false);
-  readonly glow = new ParticlePool(500, true);
+  readonly glow = new ParticlePool(500, true, 3500);
   private readonly flashLight = new PointLight(0xffa050, 0, 12, 2);
   private readonly flashCard: Mesh;
   private flashTimer = 0;

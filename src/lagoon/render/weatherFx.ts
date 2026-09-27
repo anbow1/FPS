@@ -17,8 +17,9 @@ import { U } from './uniforms.ts';
 const BOX_M = 34;
 const HEIGHT_M = 20;
 const FALL_MS = 9; // terminal velocity of a ~2 mm raindrop (Gunn & Kinzer 1949)
-const STREAK_M = 0.55;
-const WIDTH_M = 0.011;
+// Streaks are drawn wider than a real 2 mm drop so they survive TAA at 1080p (tuned by eye).
+const STREAK_M = 0.8;
+const WIDTH_M = 0.022;
 
 export class Rain {
   readonly mesh: Mesh;
@@ -82,7 +83,7 @@ export class Rain {
       });
       const light = U.skyIrradiance.add(U.sunIrradiance.mul(0.2)).add(U.cloudLit.mul(U.lightning.mul(8))).div(Math.PI);
       const fade = smoothstep(0.0, 0.2, c.y).mul(smoothstep(1.0, 0.6, c.y));
-      return vec4(light.mul(1.4), fade.mul(0.28).mul(max(U.rain, 0.35)));
+      return vec4(light.mul(1.8), fade.mul(0.45).mul(max(U.rain, 0.35)));
     })();
     this.mesh = new Mesh(g, m);
     this.mesh.frustumCulled = false;

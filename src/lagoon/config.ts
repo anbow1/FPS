@@ -151,7 +151,7 @@ export const LAGOON_EXPOSURE = {
   adaptDarkenSeconds: 2.0, // rules §2.2
   adaptBrightenSeconds: 0.5,
   minEvBelowAnchor: 3.5, // step into the shelter: about three stops of opening up
-  maxEvAboveAnchor: 1.2,
+  maxEvAboveAnchor: 6, // at night the eye stops down hard for the camp fire and the lantern
   compensationEv: 0.6, // same named tuning as the FPS: ACES wants a slightly bright grey
 } as const;
 
