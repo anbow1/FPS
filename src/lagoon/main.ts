@@ -2,7 +2,7 @@ import { FixedLoop } from '../core/loop.ts';
 import { LagoonControls } from './app/controls.ts';
 import { LagoonAudio } from './audio/lagoonAudio.ts';
 import { TIME_ORDER, type TimeOfDayId, WEATHER_ORDER, type WeatherId } from './config.ts';
-import { emptyIntent, LagoonGame } from './game/game.ts';
+import { emptyIntent, LagoonGame, type LagoonIntent } from './game/game.ts';
 import { LagoonView, type Progress } from './render/view.ts';
 import { Hud } from './ui/hud.ts';
 import { type LagoonSettings, loadSettings, Menus } from './ui/menus.ts';
@@ -20,6 +20,8 @@ interface DebugHooks {
   /** Screenshot scripts freeze the picture once enough frames have settled (TAA, exposure). */
   freeze: boolean;
   frames: number;
+  /** Test scripts queue one intent editor per fixed step (only with ?autostart); `'freeze'` stops the picture there. */
+  script: (((i: LagoonIntent, game: LagoonGame) => void) | 'freeze')[];
 }
 
 class App {
@@ -37,7 +39,7 @@ class App {
   private pendingWeather: WeatherId | null = null;
   private readonly stats: HTMLElement;
   private fpsAvg = 60;
-  readonly debug: DebugHooks = { game: null, view: null, stats: {}, freeze: false, frames: 0 };
+  readonly debug: DebugHooks = { game: null, view: null, stats: {}, freeze: false, frames: 0, script: [] };
   scripted = false;
 
   constructor() {
@@ -135,6 +137,14 @@ class App {
     const input = this.controls.input;
     if (playing && input.pressed('inventory')) this.menus.toggleInventory(game.inventory);
     const intent = playing ? this.controls.buildIntent(!inventory) : emptyIntent();
+    if (this.scripted && this.debug.script.length > 0) {
+      const next = this.debug.script.shift();
+      if (next === 'freeze') {
+        this.debug.freeze = true;
+        return;
+      }
+      next?.(intent, game);
+    }
     intent.setTime = this.pendingTime;
     intent.setWeather = this.pendingWeather;
     this.pendingTime = null;
