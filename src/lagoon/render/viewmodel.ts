@@ -63,29 +63,32 @@ const BACKHAND: readonly Key[] = [
   [0.7, 0.34, -0.33, -0.36, 0.7, 0.8, -2.1],
   [1, 0.19, -0.24, -0.33, 0.35, 0.1, -1.35],
 ];
+// Interactions reach toward the middle of the view: the thing being used is under the crosshair.
+// Fingers forward (rx ≤ 0), palm down (rz ≈ −1.3 → 0 turns the palm from inward to down).
 const REACH_R: readonly Key[] = [
   [0, 0.19, -0.3, -0.36, -0.3, 0.1, -1.3],
-  [0.5, 0.06, -0.52, -0.55, 1.2, 0.1, -1.3],
-  [0.62, 0.06, -0.5, -0.53, 1.2, 0.1, -1.3],
+  [0.5, 0.05, -0.15, -0.5, -0.35, 0.15, -0.35],
+  [0.62, 0.05, -0.15, -0.48, -0.3, 0.15, -0.35],
   [1, 0.19, -0.3, -0.36, -0.3, 0.1, -1.3],
 ];
 const HARVEST_R: readonly Key[] = [
   [0, 0.19, -0.3, -0.36, -0.3, 0.1, -1.3],
-  [0.45, 0.07, -0.54, -0.52, 1.3, 0.2, -1.1],
-  [0.62, 0.07, -0.52, -0.5, 1.3, 0.2, -1.1],
-  [0.78, 0.12, -0.36, -0.36, 0.8, 0.3, -1.4], // the tug
+  [0.45, 0.07, -0.17, -0.5, -0.35, 0.2, -0.4],
+  [0.62, 0.07, -0.16, -0.48, -0.3, 0.2, -0.4],
+  [0.78, 0.12, -0.24, -0.36, 0.1, 0.3, -0.9], // the tug
   [1, 0.19, -0.3, -0.36, -0.3, 0.1, -1.3],
 ];
 const HARVEST_L: readonly Key[] = [
   [0, -0.19, -0.31, -0.37, -0.3, -0.1, 1.3],
-  [0.45, -0.08, -0.55, -0.5, 1.2, -0.2, 1.1],
-  [0.7, -0.1, -0.5, -0.46, 1.1, -0.2, 1.1],
+  [0.45, -0.07, -0.18, -0.49, -0.35, -0.2, 0.4],
+  [0.7, -0.09, -0.2, -0.44, -0.3, -0.2, 0.4],
   [1, -0.19, -0.31, -0.37, -0.3, -0.1, 1.3],
 ];
+// Crate: palms up under the lid's front edge, then lift and push it over.
 const CRATE_R: readonly Key[] = [
   [0, 0.19, -0.3, -0.36, -0.3, 0.1, -1.3],
-  [0.3, 0.17, -0.42, -0.56, 1.35, 0.0, -0.1],
-  [0.8, 0.16, -0.08, -0.62, -0.2, 0.0, -0.1],
+  [0.3, 0.12, -0.2, -0.5, 0.1, 0.0, -2.9],
+  [0.8, 0.12, 0.02, -0.56, 0.6, 0.0, -2.9],
   [1, 0.19, -0.3, -0.36, -0.3, 0.1, -1.3],
 ];
 
@@ -242,7 +245,7 @@ export class ViewModel {
     this.tR.pos.add(this.localDir(0.028, 0.012, 0.05));
     // Left hand under the handguard, or on the magazine / the charging handle during a reload.
     this.gripTarget(r.gripLeft, ViewModel.GRIP_L, this.tL);
-    this.tL.pos.add(this.localDir(-0.05, -0.032, 0));
+    this.tL.pos.add(this.localDir(-0.05, -0.022, 0));
     if (leftOnMag > 0) {
       const magAt = this.v.set(0, r.magazine.position.y - 0.12, -0.05).applyMatrix4(this.pivot.matrix);
       this.tL.pos.lerp(r.magazine.visible ? magAt : magAt.add(this.m.set(-0.1, -0.25, 0.1)), leftOnMag);

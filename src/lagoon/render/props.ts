@@ -51,7 +51,7 @@ export class Props {
     for (const it of game.interactables) {
       if (it.kind !== 'crate') continue;
       const lid = this.lids.get(it.id);
-      if (lid) lid.rotation.x = -it.open * 1.95;
+      if (lid) lid.rotation.x = it.open * 1.95; // hinge at the back: positive lifts the front edge
     }
     game.world.cans.forEach((c, i) => {
       const mesh = this.cans[i] as Mesh;
