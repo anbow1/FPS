@@ -109,3 +109,55 @@ tests/lagoon.test.ts   headless logic tests
 
 Everything is procedural: textures are generated at load, models are built
 from primitives, and every sound is synthesised with Web Audio.
+
+## How the lagoon is rendered
+
+- **Light in physical units.** Sun and sky illuminance come from the sun's
+  elevation (Kasten–Young air mass) and the cloud deck; every light, the sky
+  and every emissive is pre-exposed by the frame's EV100 anchor, and a
+  histogram auto-exposure adapts around it (night is held ~2 stops under a
+  grey card, and the eye can stop down for the camp fire).
+- **One analytic sky** (gradient, Mie glow, sunset band, sun and moon discs,
+  stars, wind-driven clouds) is used by the dome, the environment probe (with
+  ground bounce below the horizon), the height fog and the water reflection,
+  so horizon, haze and reflections agree at every time of day.
+- **Water:** Gerstner waves damped by depth, Beer–Lambert absorption over the
+  refracted lagoon floor (turquoise over sand, navy in the channel), Fresnel
+  sky reflection with sun and moon glitter, crest subsurface glow, shoreline
+  and storm foam, ring ripples from splashes and raindrops, caustics on the
+  floor.
+- **Ground:** height-blended sand / turf / leaf litter / rock splat, a wet
+  band that follows the lapping waves, rain wetness, puddles, trodden paths,
+  jungle canopy colour on the far hills.
+- **Foliage:** instanced palms, rainforest trees, ferns, shrubs, banana
+  plants, grass and vines; one wind field bends trunks and flutters leaves;
+  leaves use shadow-aware thin translucency (`MeshSSSNodeMaterial`).
+- **Post:** TRAA, screen-space sun shafts through the canopy, bloom, grade and
+  vignette, ACES (AgX switchable in the pause menu).
+- **Weather:** clear, cloudy, rain and heavy rain blend over ~7 s; rain
+  streaks (dry under the tarp), splashes, wet materials, puddles, denser fog,
+  lightning with delayed thunder. Time of day sweeps the clock over ~5 s.
+
+## Where it stands
+
+Checked by rendering in headless Chromium (SwiftShader, so the WebGL2
+fallback) at every time of day and weather, and by scripted play-throughs:
+pick up and throw a stone into the lagoon, open the crate, harvest a plant,
+take the rifle, fire, reload, aim, slash with the knife. `npm test` covers
+the logic (terrain, inventory, stones and skipping, rifle, crate, harvest,
+examine, wading limit, daylight and weather).
+
+Known gaps:
+
+- Not profiled on a real GPU. The High preset is heavy (≈1100 rainforest
+  trees with translucent leaves, 16 k grass tufts, 3 shadow cascades); Low
+  thins vegetation and drops TRAA. Budget numbers against
+  `performance-budget-reference.png` are still to be measured.
+- No GTAO or SSR: the water reflects the analytic sky (with clouds, sun and
+  moon) but not the islands; ambient occlusion is baked (canopy shade on the
+  ground, texture cavities).
+- Models are built from primitives in code (no glTF/KTX2 pipeline); textures
+  are generated at load.
+- The brief asked for an "AK-47" by name, so the UI uses that name; the model
+  is a generic AK-pattern shape with no markings (rules §11 otherwise prefer
+  invented names).
