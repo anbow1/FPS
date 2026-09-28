@@ -4,21 +4,21 @@ import type { TreeInstance } from '../maps/types.ts';
 import { cloneMaterial, type MaterialLibrary } from './materials.ts';
 import { card, indexed, merge, rand } from './meshkit.ts';
 
-// Instanced pines and undergrowth, split into 50 m chunks so frustum culling
+// Instanced pines and undergrowth, split into 100 m chunks so frustum culling
 // drops what is behind the camera and each chunk can pick a level of detail:
 // full crowns (two cards per branch, a dozen whorls) near the player, a light
 // crown of big cards beyond, which keeps the forest's triangle count, and its
 // shadow passes, inside a phone's budget. Every plant sways with the same
 // wind vector that drifts bullets (brief): one uniform, fed from game.wind.
 
-const CHUNK_M = 50;
+const CHUNK_M = 100;
 
 /** World wind in m/s, set by the view each frame from the game's wind. */
 export const windVector = uniform(new Vector3());
 
 /** Distances (m) at which crowns switch to the light version and small plants disappear, per quality. */
 export const FOLIAGE_LOD = {
-  nearCrownM: { high: 140, low: 70 },
+  nearCrownM: { high: 110, low: 60 },
   shrubM: { high: 220, low: 120 },
 } as const;
 
@@ -181,7 +181,7 @@ export class Foliage {
     this.shrubM = FOLIAGE_LOD.shrubM[quality];
     if (trees.length === 0 && bushes.length === 0) return;
     const nearCrown = pineCrown(12, 8, true, 1, 11);
-    const farCrown = pineCrown(6, 5, false, 1.1, 23);
+    const farCrown = pineCrown(4, 5, false, 1.15, 23);
     const trunk = pineTrunk();
     const shrubs = [shrubGeometry(5), shrubGeometry(17)];
     const needles = swayingMaterial(lib.get('needles'), 0.18);

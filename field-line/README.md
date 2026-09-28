@@ -65,7 +65,7 @@ saturation and vignette grade. Also from the lagoon's jungle floor: grass
 tufts and bracken scattered over the terrain (render only, sinking out of view
 near their draw distance), broadleaf shrubs for the concealing bushes, crown
 occlusion and needle litter baked into the ground under the pines, and mossy
-triplanar boulders. Pines have two levels of detail per 50 m chunk (full
+triplanar boulders. Pines have two levels of detail per 100 m chunk (full
 crowns near, light crowns beyond), each tree its own tint.
 
 The open items are listed at the end of the last report: GTAO, SSR, motion

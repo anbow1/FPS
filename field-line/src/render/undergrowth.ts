@@ -12,10 +12,10 @@ import { card, foldedStrip, merge, rand } from './meshkit.ts';
 // floor: grass tufts wherever the ground is grass, bracken in clumps under and
 // between the pines. It has no effect on play (concealment is the map's
 // bushes), so it can be dense near the player and simply end further out:
-// each 40 m chunk is dropped beyond its draw distance, and within the last
+// each 64 m chunk is dropped beyond its draw distance, and within the last
 // stretch the plants sink into the ground so they never pop out of view.
 
-const CHUNK_M = 40;
+const CHUNK_M = 64;
 const FIELD_CELL_M = 4;
 
 type Quality = 'high' | 'low';
@@ -127,7 +127,8 @@ export class Undergrowth {
     const lush = new Color(0.85, 1.0, 0.85);
     const tint = (t: number, c: Color): Color => c.copy(lush).lerp(dry, Math.min(1, Math.max(0, t * 1.6 + 0.45)));
     this.add(grass, [grassGeometry()], grassMat, GRASS.fade[quality][1], false, tint);
-    this.add(ferns, [fernGeometry(8, 1.0, 3), fernGeometry(10, 1.2, 8)], fernMat, FERN.fade[quality][1], quality === 'high', (t, c) => c.setScalar(0.85 + t * 0.3));
+    // No fern shadows: they would double the draw calls in every sun cascade for a few dark patches.
+    this.add(ferns, [fernGeometry(9, 1.1, 3)], fernMat, FERN.fade[quality][1], false, (t, c) => c.setScalar(0.85 + t * 0.3));
   }
 
   private add(list: readonly Placement[], variants: BufferGeometry[], mat: Material, maxM: number, shadows: boolean, tint: (t: number, c: Color) => Color): void {
