@@ -1,6 +1,6 @@
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { cameraPosition, exp, float, fog, positionWorld } from 'three/tsl';
-import { DirectionalLight, PerspectiveCamera, PMREMGenerator, Scene, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
+import { DirectionalLight, PerspectiveCamera, PMREMGenerator, type RenderTarget, Scene, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { lightColour, type LinearRgb, preExposureFor } from './colour.ts';
 import { GRAPHICS } from '../config.ts';
 import type { Environment } from '../game/environment.ts';
@@ -38,6 +38,7 @@ export class LagoonLighting {
     quality: 'high' | 'low',
   ) {
     this.pmrem = new PMREMGenerator(renderer);
+    this.probeSize = quality === 'high' ? 256 : 128;
     const l = this.light;
     l.castShadow = true;
     const px = GRAPHICS.shadowMapPx[quality];
@@ -80,7 +81,6 @@ export class LagoonLighting {
     this.tmp.set(dir.x, dir.y, dir.z);
     this.light.position.copy(camera.position).addScaledVector(this.tmp, 400);
     this.light.target.position.copy(camera.position);
-    this.light.castShadow = e * pre > 1e-4;
     U.sunDir.value.set(d.sunDir.x, d.sunDir.y, d.sunDir.z);
     U.sunIrradiance.value.set(col.r * e * pre, col.g * e * pre, col.b * e * pre);
     U.moonDir.value.set(d.moonDir.x, d.moonDir.y, d.moonDir.z);
@@ -149,11 +149,10 @@ export class LagoonLighting {
     const pre = this.preExposure;
     this.lastBake = { sunY: d.sunDir.y, ev: d.anchorEv, cover: env.weather.cloudCover, night: d.night, rain: env.weather.rainRate };
     try {
-      const rt = this.pmrem.fromScene(this.probeScene, 0, 0.1, 100);
-      this.envTexture?.dispose();
-      this.envTexture = rt.texture;
+      // Bake into the same render target: the environment texture object never changes, so no
+      // material has to rebuild its shader for a new probe (that was a hitch on every re-bake).
+      this.pmrem.fromScene(this.probeScene, 0, 0.1, 100, { size: this.probeSize, renderTarget: this.probeTarget });
       this.bakedPreExposure = pre;
-      this.scene.environment = rt.texture;
       this.scene.environmentIntensity = this.preExposure / pre;
     } finally {
       this.baking = false;
@@ -170,8 +169,8 @@ export class LagoonLighting {
       console.error('sky probe shader pre-compilation failed; baking anyway:', err);
     }
     await this.pmrem.compileCubemapShader();
-    const rt = this.pmrem.fromScene(this.probeScene, 0, 0.1, 100);
-    this.envTexture?.dispose();
+    const rt = this.pmrem.fromScene(this.probeScene, 0, 0.1, 100, { size: this.probeSize });
+    this.probeTarget = rt;
     this.envTexture = rt.texture;
     this.bakedPreExposure = this.preExposure;
     this.scene.environment = rt.texture;
@@ -182,6 +181,9 @@ export class LagoonLighting {
   }
 
   private forcedBakes = 0;
+  private probeTarget: RenderTarget | null = null;
+  /** Probe face size: a sky has no detail worth more, and on phones every re-bake is GPU time. */
+  private readonly probeSize: number;
 }
 
 /**

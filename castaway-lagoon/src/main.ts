@@ -123,7 +123,10 @@ class App {
     };
     this.view = await LagoonView.create(this.canvas, game, { quality: this.settings.quality, renderScale: 1, toneMap: this.settings.toneMap }, progress, async () => {});
     // Warm-up frames behind the title: the post chain and shadow passes compile on first use.
-    this.menus.showLoading('Warming up', 0.97);
+    this.menus.showLoading('Preparing shaders', 0.96);
+    await nextFrame();
+    this.view.warmUp(game);
+    this.menus.showLoading('Warming up', 0.98);
     for (let i = 0; i < 2; i++) {
       this.view.render(game, 1, 0, 0, 0);
       await nextFrame();

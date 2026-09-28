@@ -21,6 +21,7 @@ import { LagoonLighting } from './lighting.ts';
 import { LagoonStage, type StageSettings } from './stage.ts';
 import { U } from './uniforms.ts';
 import { buildWater, placeWater } from './water.ts';
+import { warmAllPipelines } from './warmup.ts';
 
 // The render system: reads game state once per display frame and writes
 // transforms and uniforms (rules §10 — logic never touches THREE). Owns the
@@ -195,6 +196,12 @@ export class LagoonView {
 
   /** 0..1: whether the lantern is lit (effects draw its flame). */
   lampOn = 0;
+
+  /** One frame of the real pipeline with every object forced visible: see warmup.ts. */
+  warmUp(game: LagoonGame): void {
+    this.render(game, 1, 0, 0, 0);
+    warmAllPipelines(this.stage.scene, () => this.stage.render());
+  }
 
   get adaptedEv(): number {
     return this.exposure.adaptedEv;

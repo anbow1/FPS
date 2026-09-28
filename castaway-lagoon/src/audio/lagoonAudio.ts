@@ -117,7 +117,8 @@ export class LagoonAudio {
     this.rainLeaves.gain.gain.setTargetAtTime(w.rainRate * 0.07 * (1 - this.underTarp * 0.6), now, 0.3);
     this.tarpDrum.gain.gain.setTargetAtTime(w.rainRate * 0.5 * this.underTarp, now, 0.2);
     if (w.rainRate > 0.05) {
-      this.patterAcc += dt * w.rainRate * 60;
+      // Individual drops on top of the hiss; kept sparse, each one is three new audio nodes.
+      this.patterAcc += dt * w.rainRate * 18;
       while (this.patterAcc > 1) {
         this.patterAcc -= 1;
         const { out, when } = s.voice(null, 0.05);
