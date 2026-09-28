@@ -18,7 +18,7 @@ import { Undergrowth } from './undergrowth.ts';
 import { VIEWMODEL_LAYER, VM_SCALE, ViewModel } from './viewmodel.ts';
 import { WorldFx } from './worldFx.ts';
 import { buildStaticWorld, type StaticWorld } from './worldMesh.ts';
-import { warmAllPipelines } from './warmup.ts';
+import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 
 // The render system: reads game state, writes transforms (rules §10 — logic
 // never touches THREE). Owns the stage, lighting, exposure and every visual
@@ -101,7 +101,20 @@ export class GameView {
     await progress('Compiling shaders', 0.75);
     // Pre-compile every material the first frames will need (rules §9): no stall on the first shot.
     this.stage.camera.position.set(map.playerSpawn.pos.x, map.playerSpawn.pos.y + 1.7, map.playerSpawn.pos.z);
-    await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
+    // Fill the streamed plant meshes first: an instanced mesh pre-compiled while it was empty
+    // (count 0) never drew in the main pass afterwards (three r186), though its shadows did.
+    this.foliage.update(this.stage.camera.position);
+    this.undergrowth.update(this.stage.camera.position);
+    // Compile with one object per shader build shown and at least one instance: an instanced mesh
+    // pre-compiled while empty (count 0) was left with a pipeline that never became ready, so it
+    // never drew in the main pass (three r186). compileAsync collects its objects synchronously,
+    // so everything can be put back as soon as it returns or times out.
+    const restore = revealOnePerPipeline(stage.scene);
+    try {
+      await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
+    } finally {
+      restore();
+    }
     await progress('Ready', 1);
   }
 

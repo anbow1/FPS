@@ -21,7 +21,7 @@ import { LagoonLighting } from './lighting.ts';
 import { LagoonStage, type StageSettings } from './stage.ts';
 import { U } from './uniforms.ts';
 import { buildWater, placeWater } from './water.ts';
-import { warmAllPipelines } from './warmup.ts';
+import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 
 // The render system: reads game state once per display frame and writes
 // transforms and uniforms (rules §10 — logic never touches THREE). Owns the
@@ -106,7 +106,16 @@ export class LagoonView {
     await this.lighting.bakeNow(game.env, stage.camera);
     this.exposure = new AutoExposure(stage.renderer, game.env.daylight.anchorEv, { belowStops: LAGOON_EXPOSURE.minEvBelowAnchor, aboveStops: LAGOON_EXPOSURE.maxEvAboveAnchor });
     await progress('Compiling shaders', 0.92);
-    await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
+    // Compile with one object per shader build shown and at least one instance: an instanced mesh
+    // pre-compiled while empty (count 0) was left with a pipeline that never became ready, so it
+    // never drew in the main pass (three r186). compileAsync collects its objects synchronously,
+    // so everything can be put back as soon as it returns or times out.
+    const restore = revealOnePerPipeline(stage.scene);
+    try {
+      await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
+    } finally {
+      restore();
+    }
   }
 
   get depthMap() {

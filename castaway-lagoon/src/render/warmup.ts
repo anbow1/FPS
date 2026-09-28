@@ -30,7 +30,11 @@ function pipelineKey(o: Object3D & { material?: Material | Material[]; geometry?
   return `${o.type}|${mats.map((m) => m.uuid).join('+')}|${attrs}|${o.receiveShadow}|${o.castShadow}|${own}`;
 }
 
-export function warmAllPipelines(scene: Object3D, render: () => void): void {
+/**
+ * Forces one object per shader build visible, un-culled and with at least one
+ * instance; returns the function that puts everything back.
+ */
+export function revealOnePerPipeline(scene: Object3D): () => void {
   const restore: (() => void)[] = [];
   const seen = new Set<string>();
   const reveal = (o: Object3D): void => {
@@ -61,10 +65,17 @@ export function warmAllPipelines(scene: Object3D, render: () => void): void {
     seen.add(key);
     reveal(o);
   });
+  // Undo in reverse, so an ancestor revealed for two objects ends hidden again.
+  return () => {
+    for (let i = restore.length - 1; i >= 0; i--) (restore[i] as () => void)();
+  };
+}
+
+export function warmAllPipelines(scene: Object3D, render: () => void): void {
+  const restore = revealOnePerPipeline(scene);
   try {
     render();
   } finally {
-    // Undo in reverse, so an ancestor revealed for two objects ends hidden again.
-    for (let i = restore.length - 1; i >= 0; i--) (restore[i] as () => void)();
+    restore();
   }
 }
