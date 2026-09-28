@@ -1,72 +1,95 @@
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { attribute, positionLocal, sin, time, uniform, vec3 } from 'three/tsl';
-import { BufferAttribute, BufferGeometry, CylinderGeometry, Group, InstancedMesh, Matrix4, MeshStandardNodeMaterial, PlaneGeometry, Quaternion, Vector3 } from 'three/webgpu';
+import { attribute, cameraPosition, positionLocal, sin, smoothstep, time, uniform, vec2, vec3 } from 'three/tsl';
+import { BufferAttribute, type BufferGeometry, Color, CylinderGeometry, Group, InstancedMesh, type Material, Matrix4, type MeshStandardNodeMaterial, Quaternion, Vector3 } from 'three/webgpu';
 import type { TreeInstance } from '../maps/types.ts';
 import { cloneMaterial, type MaterialLibrary } from './materials.ts';
+import { card, indexed, merge, rand } from './meshkit.ts';
 
-// Instanced pines and undergrowth, split into spatial chunks so frustum culling
-// drops what is behind the camera. The crown sways with the same wind vector
-// that drifts bullets (brief): one uniform, fed from game.wind every frame.
-// Foliage uses the alpha-clip needle material with coverage-preserving mips.
+// Instanced pines and undergrowth, split into 50 m chunks so frustum culling
+// drops what is behind the camera and each chunk can pick a level of detail:
+// full crowns (two cards per branch, a dozen whorls) near the player, a light
+// crown of big cards beyond, which keeps the forest's triangle count, and its
+// shadow passes, inside a phone's budget. Every plant sways with the same
+// wind vector that drifts bullets (brief): one uniform, fed from game.wind.
 
-const CHUNK_M = 100;
+const CHUNK_M = 50;
 
 /** World wind in m/s, set by the view each frame from the game's wind. */
 export const windVector = uniform(new Vector3());
 
+/** Distances (m) at which crowns switch to the light version and small plants disappear, per quality. */
+export const FOLIAGE_LOD = {
+  nearCrownM: { high: 140, low: 70 },
+  shrubM: { high: 220, low: 120 },
+} as const;
+
 /**
- * Pine of unit height: whorls of drooping branch cards from 35 % up, each
- * card a needle-textured quad radiating from the trunk, shorter toward the
- * top. Normals are bent outward from the crown's axis so the crown shades as
- * a volume rather than as flat cards (a standard foliage-normal trick).
+ * Crown of unit height. Branches leave the trunk in whorls, drooping more
+ * lower down and shortening toward the top; each is a needle-spray card, and
+ * in the full crown a second card rolled about the branch so the crown has
+ * volume from the side instead of stacking flat plates. Normals point away
+ * from the crown's axis (a standard foliage trick) so it shades as a cone.
  */
-function pineCrown(): BufferGeometry {
-  const whorls = 10;
-  const perWhorl = 7;
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const uvs: number[] = [];
-  const indices: number[] = [];
+function pineCrown(whorls: number, perWhorl: number, crossed: boolean, sizeK: number, seed: number): BufferGeometry {
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const along = new Vector3();
+  const across = new Vector3();
+  const up = new Vector3();
+  const corner = new Vector3();
+  const n = new Vector3();
+  const addCard = (y: number, dir: Vector3, lengthM: number, widthM: number, droop: number, roll: number): void => {
+    along.set(dir.x * Math.cos(droop), -Math.sin(droop), dir.z * Math.cos(droop));
+    // Across the branch, rolled about it by `roll`.
+    const flat = new Vector3(-dir.z, 0, dir.x);
+    up.crossVectors(flat, along).normalize();
+    across.copy(flat).multiplyScalar(Math.cos(roll)).addScaledVector(up, Math.sin(roll));
+    const base = pos.length / 3;
+    const corners: [number, number, number, number][] = [
+      [0, -0.5, 0, 0],
+      [0, 0.5, 1, 0],
+      [1, 0.35, 1, 1],
+      [1, -0.35, 0, 1],
+    ];
+    for (const [t, s, u, v] of corners) {
+      corner.set(0, y, 0).addScaledVector(along, lengthM * t).addScaledVector(across, widthM * s);
+      pos.push(corner.x, corner.y, corner.z);
+      n.set(corner.x, (corner.y - y) + 0.12, corner.z).normalize();
+      nor.push(n.x, n.y, n.z);
+      uv.push(u, v);
+    }
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  const dir = new Vector3();
   for (let w = 0; w < whorls; w++) {
     const t = w / (whorls - 1);
-    const y = 0.33 + t * 0.62;
-    const length = 0.21 * (1 - t * 0.85) + 0.012;
-    const width = length * 0.75;
-    const droop = 0.35 + (1 - t) * 0.25; // lower branches hang more
+    const y = 0.3 + t * 0.64;
+    const lengthM = (0.22 * (1 - t * 0.85) + 0.02) * sizeK;
+    const droop = 0.25 + (1 - t) * 0.35;
     for (let k = 0; k < perWhorl; k++) {
-      const a = (k / perWhorl) * Math.PI * 2 + w * 1.3;
-      const dx = Math.cos(a);
-      const dz = Math.sin(a);
-      // Card spans from the trunk out and down; its width lies across the branch.
-      const tipX = dx * length * Math.cos(droop);
-      const tipY = -length * Math.sin(droop);
-      const tipZ = dz * length * Math.cos(droop);
-      const sx = -dz * width * 0.5;
-      const sz = dx * width * 0.5;
-      const base = positions.length / 3;
-      const corners: [number, number, number, number, number][] = [
-        [sx, 0.02, sz, 0, 0],
-        [-sx, 0.02, -sz, 1, 0],
-        [tipX - sx * 0.5, tipY, tipZ - sz * 0.5, 1, 1],
-        [tipX + sx * 0.5, tipY, tipZ + sz * 0.5, 0, 1],
-      ];
-      for (const [cx, cy, cz, u, v] of corners) {
-        positions.push(cx, y + cy, cz);
-        const nx = cx;
-        const ny = cy + 0.08;
-        const nz = cz;
-        const len = Math.hypot(nx, ny, nz) || 1;
-        normals.push(nx / len, ny / len, nz / len);
-        uvs.push(u, v);
-      }
-      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      const a = ((k + rand(seed, w * 31 + k) * 0.5) / perWhorl) * Math.PI * 2 + w * 1.3;
+      dir.set(Math.cos(a), 0, Math.sin(a));
+      const l = lengthM * (0.85 + rand(seed + 1, w * 31 + k) * 0.3);
+      const yy = y + (rand(seed + 2, w * 31 + k) - 0.5) * 0.03;
+      addCard(yy, dir, l, l * 0.85, droop, (rand(seed + 3, w * 31 + k) - 0.5) * 0.4);
+      if (crossed) addCard(yy + 0.01, dir, l * 0.9, l * 0.55, droop + 0.1, 1.2);
     }
   }
-  const g = new BufferGeometry();
-  g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-  g.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
-  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
-  g.setIndex(indices);
+  // Leader: two crossed upright sprays at the top.
+  for (let i = 0; i < 2; i++) {
+    const g = card(0.06 * sizeK, 0.12).rotateY((i * Math.PI) / 2).translate(0, 0.88, 0);
+    const p = g.getAttribute('position');
+    const base = pos.length / 3;
+    for (let j = 0; j < p.count; j++) {
+      pos.push(p.getX(j), p.getY(j), p.getZ(j));
+      n.set(p.getX(j), 0.3, p.getZ(j)).normalize();
+      nor.push(n.x, n.y, n.z);
+    }
+    uv.push(0, 0, 1, 0, 1, 1, 0, 1);
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const g = indexed(pos, nor, uv, idx);
   addSway(g);
   return g;
 }
@@ -77,18 +100,35 @@ function pineTrunk(): BufferGeometry {
   return g;
 }
 
-/** Three crossed needle cards, unit size. */
-function bushGeometry(): BufferGeometry {
-  const cards: BufferGeometry[] = [];
-  for (let i = 0; i < 3; i++) cards.push(new PlaneGeometry(1.6, 1.0).translate(0, 0.45, 0).rotateY((i * Math.PI) / 3));
-  const g = mergeGeometries(cards, false);
-  if (!g) throw new Error('bush merge failed');
+/** Broadleaf shrub: leaf-spray cards arranged over a dome, facing outward. Unit ≈ 1.1 m tall. */
+function shrubGeometry(seed: number): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+  for (let c = 0; c < 14; c++) {
+    const theta = rand(seed, c) * Math.PI * 2;
+    const v = rand(seed, c + 30) * 1.3 - 0.3;
+    const phi = Math.acos(Math.max(-1, Math.min(1, v)));
+    const out = new Vector3(Math.sin(phi) * Math.cos(theta), Math.cos(phi), Math.sin(phi) * Math.sin(theta));
+    const g = card(1.1, 1.1);
+    g.rotateX(-Math.PI / 2 - out.y * 0.8 + 0.3);
+    g.rotateY(-theta - Math.PI / 2);
+    g.translate(out.x * 0.45, Math.max(0.1, 0.65 + out.y * 0.35), out.z * 0.45);
+    parts.push(g);
+  }
+  const g = merge(parts, 'shrub');
+  // Leaves point away from the dome's centre so the shrub shades as a mound.
+  const p = g.getAttribute('position');
+  const nrm = g.getAttribute('normal');
+  const d = new Vector3();
+  for (let i = 0; i < p.count; i++) {
+    d.set(p.getX(i), p.getY(i) - 0.45, p.getZ(i)).normalize();
+    nrm.setXYZ(i, d.x, d.y, d.z);
+  }
   addSway(g);
   return g;
 }
 
 /** Sway weight: 0 at the base, rising with the square of height. */
-function addSway(g: BufferGeometry): void {
+export function addSway(g: BufferGeometry): void {
   const pos = g.getAttribute('position');
   const sway = new Float32Array(pos.count);
   let maxY = 0;
@@ -97,9 +137,13 @@ function addSway(g: BufferGeometry): void {
   g.setAttribute('sway', new BufferAttribute(sway, 1));
 }
 
-/** Wind-driven vertex offset, applied after instancing (positionLocal is world here). */
-function swayingMaterial(base: MeshStandardNodeMaterial, amplitudePerMs: number): MeshStandardNodeMaterial {
-  const m = cloneMaterial(base);
+/**
+ * Wind-driven vertex offset, applied after instancing (positionLocal is world
+ * here). With `sinkBeyondM`, small plants also sink into the ground as they
+ * near the end of their draw distance, so they never pop out of view.
+ */
+export function swayingMaterial(base: Material, amplitudePerMs: number, sinkBeyondM?: [number, number, number]): MeshStandardNodeMaterial {
+  const m = cloneMaterial(base) as MeshStandardNodeMaterial;
   const w = attribute('sway', 'float');
   const p = positionLocal;
   const phase = p.x.mul(0.07).add(p.z.mul(0.05));
@@ -107,62 +151,113 @@ function swayingMaterial(base: MeshStandardNodeMaterial, amplitudePerMs: number)
   const push = sin(time.mul(0.9).add(phase)).mul(0.5).add(0.6);
   const flutter = sin(time.mul(3.1).add(phase.mul(3)));
   const across = vec3(windVector.z.negate(), 0, windVector.x);
-  m.positionNode = p.add(windVector.mul(push.mul(amplitudePerMs).mul(w))).add(across.mul(flutter.mul(amplitudePerMs * 0.3).mul(w)));
+  let out = p.add(windVector.mul(push.mul(amplitudePerMs).mul(w))).add(across.mul(flutter.mul(amplitudePerMs * 0.3).mul(w)));
+  if (sinkBeyondM) {
+    const [from, to, depthM] = sinkBeyondM;
+    const d = vec2(p.x, p.z).sub(vec2(cameraPosition.x, cameraPosition.z)).length();
+    out = out.sub(vec3(0, smoothstep(from, to, d).mul(depthM), 0));
+  }
+  m.positionNode = out;
   return m;
 }
 
-export function buildFoliage(trees: readonly TreeInstance[], bushes: readonly TreeInstance[], lib: MaterialLibrary): Group {
-  const group = new Group();
-  group.name = 'foliage';
-  if (trees.length === 0 && bushes.length === 0) return group;
-  const crown = pineCrown();
-  const trunk = pineTrunk();
-  const bush = bushGeometry();
-  const needles = swayingMaterial(lib.get('needles') as MeshStandardNodeMaterial, 0.18);
-  const bark = swayingMaterial(lib.get('bark') as MeshStandardNodeMaterial, 0.08);
-  const bushMat = swayingMaterial(lib.get('needles') as MeshStandardNodeMaterial, 0.05);
+interface Chunk {
+  x: number;
+  z: number;
+  near: InstancedMesh[];
+  far: InstancedMesh[];
+  shrubs: InstancedMesh[];
+}
 
-  const chunks = new Map<string, { trees: TreeInstance[]; bushes: TreeInstance[] }>();
-  const chunkOf = (t: TreeInstance): { trees: TreeInstance[]; bushes: TreeInstance[] } => {
-    const key = `${Math.floor(t.pos.x / CHUNK_M)},${Math.floor(t.pos.z / CHUNK_M)}`;
-    let c = chunks.get(key);
-    if (!c) {
-      c = { trees: [], bushes: [] };
-      chunks.set(key, c);
-    }
-    return c;
-  };
-  for (const t of trees) chunkOf(t).trees.push(t);
-  for (const b of bushes) chunkOf(b).bushes.push(b);
+export class Foliage {
+  readonly group = new Group();
+  private readonly chunks: Chunk[] = [];
+  private readonly nearM: number;
+  private readonly shrubM: number;
 
-  const m = new Matrix4();
-  const q = new Quaternion();
-  const up = new Vector3(0, 1, 0);
-  const fill = (mesh: InstancedMesh, list: readonly TreeInstance[], widthScale: number, sink: number): void => {
-    list.forEach((t, i) => {
-      q.setFromAxisAngle(up, t.yawRad);
-      const w = t.heightM * widthScale * (0.85 + ((t.seed % 97) / 97) * 0.3);
-      m.compose(new Vector3(t.pos.x, t.pos.y - sink, t.pos.z), q, new Vector3(w, t.heightM, w));
-      mesh.setMatrixAt(i, m);
-    });
-    mesh.computeBoundingSphere();
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-  };
-  for (const c of chunks.values()) {
-    if (c.trees.length > 0) {
-      const trunks = new InstancedMesh(trunk, bark, c.trees.length);
-      fill(trunks, c.trees, 1, 0.3);
-      const crowns = new InstancedMesh(crown, needles, c.trees.length);
-      fill(crowns, c.trees, 1, 0.3);
-      group.add(trunks, crowns);
+  constructor(trees: readonly TreeInstance[], bushes: readonly TreeInstance[], lib: MaterialLibrary, quality: 'high' | 'low') {
+    this.group.name = 'foliage';
+    this.nearM = FOLIAGE_LOD.nearCrownM[quality];
+    this.shrubM = FOLIAGE_LOD.shrubM[quality];
+    if (trees.length === 0 && bushes.length === 0) return;
+    const nearCrown = pineCrown(12, 8, true, 1, 11);
+    const farCrown = pineCrown(6, 5, false, 1.1, 23);
+    const trunk = pineTrunk();
+    const shrubs = [shrubGeometry(5), shrubGeometry(17)];
+    const needles = swayingMaterial(lib.get('needles'), 0.18);
+    const bark = swayingMaterial(lib.get('pineBark'), 0.08);
+    const shrubMats = [swayingMaterial(lib.get('hazel'), 0.06), swayingMaterial(lib.get('buckthorn'), 0.06)];
+
+    const byKey = new Map<string, { x: number; z: number; trees: TreeInstance[]; bushes: TreeInstance[] }>();
+    const chunkOf = (t: TreeInstance): { trees: TreeInstance[]; bushes: TreeInstance[] } => {
+      const cx = Math.floor(t.pos.x / CHUNK_M);
+      const cz = Math.floor(t.pos.z / CHUNK_M);
+      const key = `${cx},${cz}`;
+      let c = byKey.get(key);
+      if (!c) {
+        c = { x: (cx + 0.5) * CHUNK_M, z: (cz + 0.5) * CHUNK_M, trees: [], bushes: [] };
+        byKey.set(key, c);
+      }
+      return c;
+    };
+    for (const t of trees) chunkOf(t).trees.push(t);
+    for (const b of bushes) chunkOf(b).bushes.push(b);
+
+    const m = new Matrix4();
+    const q = new Quaternion();
+    const up = new Vector3(0, 1, 0);
+    const colour = new Color();
+    const fill = (mesh: InstancedMesh, list: readonly TreeInstance[], sink: number, tint: (seed: number) => Color): InstancedMesh => {
+      list.forEach((t, i) => {
+        q.setFromAxisAngle(up, t.yawRad);
+        const w = t.heightM * (0.85 + ((t.seed % 97) / 97) * 0.3);
+        m.compose(new Vector3(t.pos.x, t.pos.y - sink, t.pos.z), q, new Vector3(w, t.heightM, w));
+        mesh.setMatrixAt(i, m);
+        mesh.setColorAt(i, tint(t.seed));
+      });
+      mesh.computeBoundingSphere();
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      return mesh;
+    };
+    // Per-tree tint: some crowns yellower, some bluer, some darker, as in a real stand.
+    const crownTint = (seed: number): Color => {
+      const h = rand(seed, 1);
+      const k = 0.82 + rand(seed, 2) * 0.3;
+      return colour.setRGB((0.92 + h * 0.16) * k, k, (1.08 - h * 0.2) * k);
+    };
+    const barkTint = (seed: number): Color => colour.setScalar(0.8 + rand(seed, 3) * 0.35);
+    for (const c of byKey.values()) {
+      const chunk: Chunk = { x: c.x, z: c.z, near: [], far: [], shrubs: [] };
+      if (c.trees.length > 0) {
+        fill(new InstancedMesh(trunk, bark, c.trees.length), c.trees, 0.3, barkTint);
+        chunk.near.push(fill(new InstancedMesh(nearCrown, needles, c.trees.length), c.trees, 0.3, crownTint));
+        const far = fill(new InstancedMesh(farCrown, needles, c.trees.length), c.trees, 0.3, crownTint);
+        far.castShadow = quality === 'high';
+        chunk.far.push(far);
+      }
+      for (let v = 0; v < shrubs.length; v++) {
+        const list = c.bushes.filter((b) => b.seed % shrubs.length === v);
+        if (list.length === 0) continue;
+        const mesh = fill(new InstancedMesh(shrubs[v] as BufferGeometry, shrubMats[v] as Material, list.length), list, 0.08, (seed) => colour.setScalar(0.85 + rand(seed, 4) * 0.3));
+        mesh.castShadow = quality === 'high';
+        chunk.shrubs.push(mesh);
+      }
+      this.chunks.push(chunk);
     }
-    if (c.bushes.length > 0) {
-      const b = new InstancedMesh(bush, bushMat, c.bushes.length);
-      fill(b, c.bushes, 1, 0.05);
-      b.castShadow = false;
-      group.add(b);
+    this.update(new Vector3(0, 0, 0));
+  }
+
+  /** Picks each chunk's level of detail from its distance to the camera. Cheap: a few hundred chunks. */
+  update(camera: Vector3): void {
+    const half = CHUNK_M * 0.71;
+    for (const c of this.chunks) {
+      const d = Math.max(0, Math.hypot(c.x - camera.x, c.z - camera.z) - half);
+      const near = d < this.nearM;
+      for (const mesh of c.near) mesh.visible = near;
+      for (const mesh of c.far) mesh.visible = !near;
+      for (const mesh of c.shrubs) mesh.visible = d < this.shrubM;
     }
   }
-  return group;
 }

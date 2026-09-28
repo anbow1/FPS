@@ -9,7 +9,8 @@ import { EXPOSURE } from '../config.ts';
 // the eye adapts toward it: bright → dark slowly (~2 s), dark → bright fast (~0.5 s).
 // The EV100 is clamped per preset so an interior never becomes day.
 
-const METER_EVERY_FRAMES = 3;
+// Every 6th frame: the eye adapts over ~0.5–2 s, and each GPU→CPU readback costs a sync point on phones.
+const METER_EVERY_FRAMES = 6;
 
 export class AutoExposure {
   private readonly target: RenderTarget;

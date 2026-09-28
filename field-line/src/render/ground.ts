@@ -21,7 +21,11 @@ const DETAIL_FADE_M = 10;
 const MACRO_TILE_M = 220;
 
 export function buildTerrainMesh(map: MapData, lib: MaterialLibrary): Mesh {
-  const geometry = heightfieldGeometry(map.terrain, map.id === 'city' ? null : (x, z) => splatWeights(map, x, z));
+  const geometry = heightfieldGeometry(
+    map.terrain,
+    map.id === 'city' ? null : (x, z) => splatWeights(map, x, z),
+    (x, z) => 1 - Math.min(0.45, canopyAt(map, x, z) * 0.22),
+  );
   const material = map.id === 'city' ? lib.get('asphalt') : splatMaterial();
   const mesh = new Mesh(geometry, material);
   mesh.receiveShadow = true;
@@ -70,6 +74,7 @@ export function buildFarRing(map: MapData): Mesh {
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
   g.setAttribute('splat', new BufferAttribute(new Float32Array(splats), 4));
+  g.setAttribute('shade', new BufferAttribute(new Float32Array(splats.length / 4).fill(1), 1));
   g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
   g.setIndex(indices);
   g.computeVertexNormals();
@@ -79,13 +84,14 @@ export function buildFarRing(map: MapData): Mesh {
   return mesh;
 }
 
-function heightfieldGeometry(t: Heightfield, splatAt: ((x: number, z: number) => [number, number, number, number]) | null): BufferGeometry {
+function heightfieldGeometry(t: Heightfield, splatAt: ((x: number, z: number) => [number, number, number, number]) | null, shadeAt: ((x: number, z: number) => number) | null = null): BufferGeometry {
   const nx = t.samplesX;
   const nz = t.samplesZ;
   const positions = new Float32Array(nx * nz * 3);
   // UV = world XZ: the normal-map tangent frame follows the same axes the layers are sampled on.
   const uvs = new Float32Array(nx * nz * 2);
   const splat = splatAt ? new Float32Array(nx * nz * 4) : null;
+  const shade = splat ? new Float32Array(nx * nz).fill(1) : null;
   for (let iz = 0; iz < nz; iz++) {
     for (let ix = 0; ix < nx; ix++) {
       const i = iz * nx + ix;
@@ -97,6 +103,7 @@ function heightfieldGeometry(t: Heightfield, splatAt: ((x: number, z: number) =>
       uvs[i * 2] = x;
       uvs[i * 2 + 1] = z;
       if (splat && splatAt) splat.set(splatAt(x, z), i * 4);
+      if (shade && shadeAt) shade[i] = shadeAt(x, z);
     }
   }
   const indices = new Uint32Array((nx - 1) * (nz - 1) * 6);
@@ -119,6 +126,7 @@ function heightfieldGeometry(t: Heightfield, splatAt: ((x: number, z: number) =>
   g.setAttribute('position', new BufferAttribute(positions, 3));
   g.setAttribute('uv', new BufferAttribute(uvs, 2));
   if (splat) g.setAttribute('splat', new BufferAttribute(splat, 4));
+  if (shade) g.setAttribute('shade', new BufferAttribute(shade, 1));
   g.setIndex(new BufferAttribute(indices, 1));
   g.computeVertexNormals();
   g.computeBoundingSphere();
@@ -126,7 +134,7 @@ function heightfieldGeometry(t: Heightfield, splatAt: ((x: number, z: number) =>
 }
 
 /** Layer weights (grass, soil, rock, track) from slope, the track and a patch field. */
-function splatWeights(map: MapData, x: number, z: number): [number, number, number, number] {
+export function splatWeights(map: MapData, x: number, z: number): [number, number, number, number] {
   const t = map.terrain;
   const e = t.cellM;
   const slope = Math.hypot(sampleHeight(t, x + e, z) - sampleHeight(t, x - e, z), sampleHeight(t, x, z + e) - sampleHeight(t, x, z - e)) / (2 * e);
@@ -140,7 +148,9 @@ function splatWeights(map: MapData, x: number, z: number): [number, number, numb
   }
   if (map.id === 'range' && Math.abs(x) < 1.6 && z < 0) track = Math.max(track, 0.8); // worn walking line downrange
   const patch = fbm2(x / 35, z / 35, 3, 9) * 0.5 + 0.5;
-  const forestFloor = map.id === 'forest' ? smooth(0.45, 0.7, patch) : smooth(0.62, 0.8, patch) * 0.6;
+  // Under the pines the ground is needle litter, not lawn: canopy pushes grass out.
+  const canopy = Math.min(1, canopyAt(map, x, z) * 0.9);
+  const forestFloor = Math.max(canopy, map.id === 'forest' ? smooth(0.45, 0.7, patch) : smooth(0.62, 0.8, patch) * 0.6);
   let soil = forestFloor * (1 - rock);
   let grass = (1 - forestFloor) * (1 - rock);
   soil *= 1 - track;
@@ -148,6 +158,41 @@ function splatWeights(map: MapData, x: number, z: number): [number, number, numb
   const r = rock * (1 - track);
   const sum = grass + soil + r + track || 1;
   return [grass / sum, soil / sum, r / sum, track / sum];
+}
+
+type TreeBin = Map<number, { x: number; z: number; r2: number }[]>;
+const treeBins = new WeakMap<MapData, TreeBin>();
+
+/**
+ * Crown cover over a ground point: a sum of Gaussians, one per tree, as wide
+ * as its crown. ~1 under a single pine, 2–3 in a dense stand. Drives the
+ * needle litter in the splat and the baked occlusion under the canopy (as in
+ * the lagoon's jungle floor).
+ */
+function canopyAt(map: MapData, x: number, z: number): number {
+  let bin = treeBins.get(map);
+  if (!bin) {
+    bin = new Map();
+    for (const t of map.trees) {
+      const key = Math.floor(t.pos.x / 10) * 65536 + Math.floor(t.pos.z / 10);
+      const list = bin.get(key) ?? [];
+      const r = t.heightM * 0.17;
+      list.push({ x: t.pos.x, z: t.pos.z, r2: r * r });
+      bin.set(key, list);
+    }
+    treeBins.set(map, bin);
+  }
+  let occ = 0;
+  const cx = Math.floor(x / 10);
+  const cz = Math.floor(z / 10);
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const list = bin.get((cx + dx) * 65536 + cz + dz);
+      if (!list) continue;
+      for (const t of list) occ += Math.exp(-((x - t.x) ** 2 + (z - t.z) ** 2) / t.r2);
+    }
+  }
+  return occ;
 }
 
 function smooth(e0: number, e1: number, x: number): number {
@@ -257,7 +302,8 @@ function splatMaterial(): MeshStandardNodeMaterial {
   m.colorNode = colour;
   m.normalNode = normalMap(n);
   m.roughnessNode = roughness;
-  m.aoNode = mix(float(1), hG.mul(k.x).add(hS.mul(k.y)).add(hR.mul(k.z)).add(hT.mul(k.w)), 0.5);
+  // Texture occlusion × the canopy occlusion baked per vertex (indirect light only; the sun has real shadows).
+  m.aoNode = mix(float(1), hG.mul(k.x).add(hS.mul(k.y)).add(hR.mul(k.z)).add(hT.mul(k.w)), 0.5).mul(attribute('shade', 'float'));
   splatMat = m;
   return m;
 }

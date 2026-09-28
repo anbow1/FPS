@@ -200,6 +200,7 @@ export function buildForest(): MapData {
     rangeTargets: [],
     groundSurface: 'soil',
     wetDefault: false,
+    undergrowth: { bounds: [-HALF_M + 12, -HALF_M + 12, HALF_M - 12, HALF_M - 12], mown: [], ferns: true },
   };
 }
 

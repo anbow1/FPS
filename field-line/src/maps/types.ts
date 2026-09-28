@@ -114,4 +114,15 @@ export interface MapData {
   rangeTargets: RangeTarget[];
   groundSurface: SurfaceKind;
   wetDefault: boolean;
+  /** Where render-only undergrowth (grass tufts, bracken) grows; absent on maps without any. */
+  undergrowth?: UndergrowthArea;
+}
+
+/** Rectangles as [minX, minZ, maxX, maxZ] in metres. */
+export interface UndergrowthArea {
+  bounds: [number, number, number, number];
+  /** Kept short: firing lanes and yards, where tall grass would hide targets or look wrong. */
+  mown: [number, number, number, number][];
+  /** Bracken under and between the trees (forest only). */
+  ferns: boolean;
 }

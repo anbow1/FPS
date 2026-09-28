@@ -7,16 +7,18 @@ import type { MapData } from '../maps/types.ts';
 import { ActorView } from './actors.ts';
 import { Effects } from './effects.ts';
 import { AutoExposure } from './exposure.ts';
-import { buildFoliage, windVector } from './foliage.ts';
+import { Foliage, windVector } from './foliage.ts';
 import { buildFarRing, buildTerrainMesh } from './ground.ts';
 import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './interior.ts';
 import { Lighting } from './lighting.ts';
 import { FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
 import { buildProps } from './props.ts';
 import { Stage, type StageSettings } from './stage.ts';
+import { Undergrowth } from './undergrowth.ts';
 import { VIEWMODEL_LAYER, VM_SCALE, ViewModel } from './viewmodel.ts';
 import { WorldFx } from './worldFx.ts';
 import { buildStaticWorld, type StaticWorld } from './worldMesh.ts';
+import { warmAllPipelines } from './warmup.ts';
 
 // The render system: reads game state, writes transforms (rules §10 — logic
 // never touches THREE). Owns the stage, lighting, exposure and every visual
@@ -39,6 +41,8 @@ export class GameView {
   private viewModel!: ViewModel;
   private effects!: Effects;
   private worldFx!: WorldFx;
+  private foliage!: Foliage;
+  private undergrowth!: Undergrowth;
   private settings: ViewSettings;
   private shake = 0;
   private interiorK = 1;
@@ -77,7 +81,10 @@ export class GameView {
     this.world = buildStaticWorld(map, lib);
     stage.scene.add(this.world.group, buildProps(map.props, lib));
     await progress('Planting trees', 0.5);
-    stage.scene.add(buildFoliage(map.trees, map.bushes, lib), this.actors.group);
+    this.foliage = new Foliage(map.trees, map.bushes, lib, this.settings.quality);
+    await progress('Growing undergrowth', 0.55);
+    this.undergrowth = new Undergrowth(map, lib, this.settings.quality);
+    stage.scene.add(this.foliage.group, this.undergrowth.group, this.actors.group);
     await progress('Lighting', 0.6);
     this.lighting = new Lighting(stage.renderer, stage.scene, this.settings.quality);
     await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y);
@@ -188,6 +195,8 @@ export class GameView {
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
+    this.foliage.update(cam.position);
+    this.undergrowth.update(cam.position);
     // Sun shafts through the canopy: strongest with a low sun, none under a full overcast.
     const preset = this.lighting.preset;
     const lowSun = 1 - Math.min(1, Math.max(0, preset.sunElevationRad - 0.05) / 0.6);
@@ -202,6 +211,12 @@ export class GameView {
     this.scopeReady = true;
     this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.preset.ev100, frameSeconds);
     this.stage.setExposure(Lighting.exposureMultiplier(this.lighting.preset.ev100, this.exposure.adaptedEv));
+  }
+
+  /** One frame of the real pipeline with every object forced visible: see warmup.ts. */
+  warmUp(game: Game): void {
+    this.render(game, 1, 0, 0, 0);
+    warmAllPipelines(this.stage.scene, () => this.stage.render());
   }
 
   get adaptedEv(): number {

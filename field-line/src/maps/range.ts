@@ -86,5 +86,7 @@ export function buildRange(): MapData {
     rangeTargets,
     groundSurface: 'soil',
     wetDefault: false,
+    // Rough grass on the berms and beyond; the lane itself and the firing line are mown.
+    undergrowth: { bounds: [-220, BACKSTOP_Z_M - 20, 220, 160], mown: [[-LANE_HALF_M + 4, BACKSTOP_Z_M, LANE_HALF_M - 4, 60], [-16, -6, 16, 10]], ferns: false },
   };
 }

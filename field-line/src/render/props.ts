@@ -1,6 +1,7 @@
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   BoxGeometry,
+  BufferAttribute,
   type BufferGeometry,
   CanvasTexture,
   Color,
@@ -16,7 +17,7 @@ import {
   SRGBColorSpace,
   Vector3,
 } from 'three/webgpu';
-import { Rng } from '../core/rng.ts';
+import { fbm2 } from '../core/noise.ts';
 import type { MapProp, PropKind } from '../maps/types.ts';
 import type { MaterialLibrary } from './materials.ts';
 
@@ -99,7 +100,7 @@ function partsFor(kind: PropKind, lib: MaterialLibrary): Part[] {
     case 'trashBin':
       return [{ geometry: new CylinderGeometry(0.3, 0.27, 1.0, 12).translate(0, 0.5, 0), material: lib.look('metalDark').material }];
     case 'rock':
-      return [{ geometry: rockGeometry(), material: lib.get('rock') }];
+      return [{ geometry: rockGeometry(), material: lib.get('boulder') }];
     case 'hayBale':
       return [{ geometry: new CylinderGeometry(0.6, 0.6, 1.8, 14).rotateX(Math.PI / 2).translate(0, 0.6, 0), material: lib.get('hay') }];
     case 'beam':
@@ -121,23 +122,36 @@ function containerGeometry(): BufferGeometry {
   return merge(parts);
 }
 
-/** A lumpy boulder: an icosahedron with seeded vertex displacement, flattened at the base. */
+/**
+ * A weathered boulder: a finely subdivided sphere pushed out by layered noise
+ * with a flat facet or two, sunk flat where it sits in the ground. Welded
+ * before the normals are computed so it shades smoothly, not as facets.
+ */
 function rockGeometry(): BufferGeometry {
-  const g = new IcosahedronGeometry(1, 2);
-  const rng = new Rng(55);
-  const pos = g.getAttribute('position');
-  const seen = new Map<string, number>();
+  const seed = 5;
+  const g = new IcosahedronGeometry(1, 5);
+  g.deleteAttribute('normal');
+  g.deleteAttribute('uv');
+  const welded = mergeVertices(g);
+  const pos = welded.getAttribute('position');
+  const v = new Vector3();
+  const facetDir = new Vector3(Math.sin(seed), 0.4, Math.cos(seed)).normalize();
+  const uvs = new Float32Array(pos.count * 2);
   for (let i = 0; i < pos.count; i++) {
-    const key = `${pos.getX(i).toFixed(3)},${pos.getY(i).toFixed(3)},${pos.getZ(i).toFixed(3)}`;
-    let k = seen.get(key);
-    if (k === undefined) {
-      k = 0.75 + rng.next() * 0.45;
-      seen.set(key, k);
-    }
-    pos.setXYZ(i, pos.getX(i) * k * 1.2, Math.max(-0.3, pos.getY(i) * k * 0.8), pos.getZ(i) * k);
+    v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+    const a = fbm2(v.x * 1.6 + seed, v.z * 1.6 + v.y * 0.7, 5, seed);
+    const b = fbm2(v.y * 2.3 + seed * 0.3, v.x * 2.3 - v.z, 4, seed + 7);
+    let r = 1 + a * 0.28 + b * 0.12;
+    const facet = v.dot(facetDir);
+    if (facet > 0.55) r -= (facet - 0.55) * 0.9;
+    const y = v.y * r;
+    pos.setXYZ(i, v.x * r * 1.15, (y < -0.25 ? -0.25 + (y + 0.25) * 0.3 : y) * 0.8, v.z * r);
+    uvs[i * 2] = v.x;
+    uvs[i * 2 + 1] = v.z;
   }
-  g.computeVertexNormals();
-  return g.translate(0, 0.3, 0);
+  welded.setAttribute('uv', new BufferAttribute(uvs, 2));
+  welded.computeVertexNormals();
+  return welded.translate(0, 0.3, 0);
 }
 
 export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): Group {

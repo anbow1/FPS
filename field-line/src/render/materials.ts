@@ -1,8 +1,9 @@
-import { float, mix, texture, uniform, vec3 } from 'three/tsl';
+import { bumpMap, float, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, triplanarTexture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import type { BoxLook } from '../maps/types.ts';
 import { skyVisibilityNode } from './interior.ts';
 import * as P from './patterns.ts';
+import * as PL from './plantPatterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
 
 // One material per surface, values from pbr-material-reference.png. Standard
@@ -59,6 +60,55 @@ function translucentLeaf(ts: TextureSet, name: string): MeshStandardNodeMaterial
   m.thicknessAttenuationNode = float(0.6);
   m.thicknessPowerNode = float(2.5);
   m.thicknessScaleNode = float(2.2);
+  return m;
+}
+
+/**
+ * Alpha-clipped, double-sided plant card. No alphaToCoverage: it needs MSAA,
+ * and the renderer anti-aliases with TRAA instead; with it on and no samples,
+ * three skips the alpha-test discard and cards draw solid.
+ */
+function leafCard(ts: TextureSet, name: string, translucent: boolean): MeshStandardNodeMaterial {
+  const m = translucent ? translucentLeaf(ts, name) : standard(ts, name);
+  m.alphaTest = 0.5;
+  m.side = DoubleSide;
+  return m;
+}
+
+/**
+ * Pine bark tiled in world metres up the trunk: the trunk mesh is one unit
+ * cylinder scaled to each tree's height, so its own UVs would stretch one
+ * texture tile over 15–27 m of bark.
+ */
+function pineBark(ts: TextureSet): MeshStandardNodeMaterial {
+  const m = new MeshStandardNodeMaterial({ name: 'pineBark', metalness: 0 });
+  const buv = vec2(uv().x.mul(3), positionWorld.y.div(1.4));
+  const orm = texture(ts.ormMap, buv);
+  m.colorNode = texture(ts.map, buv).rgb;
+  m.normalNode = normalMap(texture(ts.normalMap, buv).xyz, vec2(1.2, 1.2));
+  m.roughnessNode = orm.g;
+  m.aoNode = orm.r.mul(skyVisibilityNode());
+  return m;
+}
+
+/**
+ * Granite boulder: triplanar so no face stretches, with moss on the upward
+ * faces broken up by a blotch pattern (as on the lagoon's jungle rocks), and
+ * bump detail from the texture's height.
+ */
+function boulder(rock: TextureSet, moss: TextureSet): MeshStandardNodeMaterial {
+  const m = new MeshStandardNodeMaterial({ name: 'boulder', metalness: 0 });
+  const p = positionWorld;
+  const n = normalWorld;
+  const colour = triplanarTexture(texture(rock.map), null, null, float(1 / 2.2), p, n).rgb;
+  const orm = triplanarTexture(texture(rock.ormMap), null, null, float(1 / 2.2), p, n);
+  const mossColour = triplanarTexture(texture(moss.map), null, null, float(1 / 0.9), p, n).rgb;
+  const blotch = texture(moss.ormMap, p.xz.div(3.1).add(p.y.mul(0.2))).r;
+  const mossMask = smoothstep(0.45, 0.8, n.y.add(blotch.sub(0.5).mul(1.1)));
+  m.colorNode = mix(colour, mossColour, mossMask).mul(mix(float(1), float(0.6), wetness));
+  m.roughnessNode = mix(mix(orm.g, float(0.95), mossMask), float(0.3), wetness);
+  m.normalNode = bumpMap(orm.r.add(mossMask.mul(0.3)), float(0.9));
+  m.aoNode = orm.r.mul(skyVisibilityNode());
   return m;
 }
 
@@ -193,28 +243,25 @@ export class MaterialLibrary {
         return standard(set('grass', 512, P.grass, 2), name);
       case 'soil':
         return standard(set('soil', 512, () => P.soil(), 3), name);
-      case 'rock':
-        return standard(set('rock', 512, () => P.rock(), 4), name);
       case 'bark':
         return standard(set('bark', 256, P.bark, 5), name);
-      case 'needles': {
-        const ts = set('needles', 256, P.pineNeedles, 2, true);
-        const m = translucentLeaf(ts, name);
-        m.alphaTest = 0.5;
-        // No alphaToCoverage: it needs MSAA, and the renderer anti-aliases with TRAA instead.
-        // With it on and no samples, three skips the alpha-test discard and cards draw solid.
-        m.side = DoubleSide;
-        return m;
-      }
-      case 'leaves': {
-        const ts = set('leaves', 256, P.leaves, 2, true);
-        const m = translucentLeaf(ts, name);
-        m.alphaTest = 0.5;
-        // No alphaToCoverage: it needs MSAA, and the renderer anti-aliases with TRAA instead.
-        // With it on and no samples, three skips the alpha-test discard and cards draw solid.
-        m.side = DoubleSide;
-        return m;
-      }
+      case 'needles':
+        return leafCard(set('needles', 512, PL.pineSpray, 2, true), name, true);
+      case 'leaves':
+        return leafCard(set('leaves', 512, () => PL.broadleafCluster(41, 0x3f6420, 0x5c7f2a), 2, true), name, true);
+      case 'hazel':
+        return leafCard(set('hazel', 512, () => PL.broadleafCluster(3, 0x3f5f22, 0x62812f), 2, true), name, true);
+      case 'buckthorn':
+        return leafCard(set('buckthorn', 512, () => PL.broadleafCluster(9, 0x2c4a1c, 0x4a6a2a), 2, true), name, true);
+      case 'fern':
+        return leafCard(set('fern', 256, PL.fernFrond, 2, true), name, true);
+      case 'grassTuft':
+        // No translucency: a blade is too thin to matter, and grass is the heaviest overdraw in the scene.
+        return leafCard(set('grassTuft', 256, PL.grassTuft, 1.5, true), name, false);
+      case 'pineBark':
+        return pineBark(set('bark', 256, P.bark, 5));
+      case 'boulder':
+        return boulder(set('rock', 512, () => P.rock(), 4), set('moss', 256, PL.moss, 2));
       case 'carPaint': {
         // Sheet: car paint #6E2A24 rough 0.40 + clearcoat 1, ccRough 0.03. Per-instance colour tints it.
         return new MeshPhysicalNodeMaterial({ name, color: 0xffffff, roughness: 0.4, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03 });

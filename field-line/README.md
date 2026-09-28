@@ -61,7 +61,12 @@ See the latest commit messages for what each step added and what was measured.
 Ported from Castaway Lagoon: shadow-aware thin translucency on pine needles
 and leaves, screen-space sun shafts through the canopy, ground-bounce light
 in the sky probe (lifts shaded walls, trunks and soldiers), and a light
-saturation and vignette grade.
+saturation and vignette grade. Also from the lagoon's jungle floor: grass
+tufts and bracken scattered over the terrain (render only, sinking out of view
+near their draw distance), broadleaf shrubs for the concealing bushes, crown
+occlusion and needle litter baked into the ground under the pines, and mossy
+triplanar boulders. Pines have two levels of detail per 50 m chunk (full
+crowns near, light crowns beyond), each tree its own tint.
 
 The open items are listed at the end of the last report: GTAO, SSR, motion
 blur, a colour-grade LUT, volumetric light and contact shadows are not in the

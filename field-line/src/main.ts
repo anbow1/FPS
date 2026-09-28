@@ -139,7 +139,10 @@ class App {
     this.view.stage.renderer.info.autoReset = false;
     // Two frames behind the loading screen: the post chain and shadow passes compile their
     // pipelines on first use, which compileAsync does not reach. No hitch on the first real frame.
-    this.menu.showLoading('Warming up', 0.95);
+    this.menu.showLoading('Preparing shaders', 0.93);
+    await nextFrame();
+    this.view.warmUp(game);
+    this.menu.showLoading('Warming up', 0.97);
     for (let i = 0; i < 2; i++) {
       this.view.render(game, 1, 0, 0, 0);
       await nextFrame();

@@ -47,6 +47,7 @@ export class TouchControls {
   private readonly stickHeld = new Set<string>();
   private readonly lookIds = new Map<number, { x: number; y: number }>();
   private readonly toggled = new Set<string>();
+  private readonly want = new Set<string>(); // reused on every pointer move: no garbage per event
 
   constructor(
     private readonly sink: TouchSink,
@@ -164,7 +165,8 @@ export class TouchControls {
       }
       this.knob.style.transform = `translate(${dx * STICK_RADIUS_PX}px, ${dy * STICK_RADIUS_PX}px)`;
       const s = this.layout.stick;
-      const want = new Set<string>();
+      const want = this.want;
+      want.clear();
       if (dy < -DEAD_ZONE) want.add(s.forward);
       if (dy > DEAD_ZONE) want.add(s.back);
       if (dx < -DEAD_ZONE) want.add(s.left);

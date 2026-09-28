@@ -254,54 +254,6 @@ export function bark(): TexelSampler {
 }
 
 /**
- * Pine branch card: a twig along V (base at v = 0, tip at v = 1) with needle
- * strands angled off it, the outline tapering toward the tip, and side shoots.
- * For alpha-clip foliage. Sheet pine foliage #3C4A2E rough 0.85.
- */
-export function pineNeedles(): TexelSampler {
-  const c = hex(0x3c4a2e);
-  const twig = hex(0x4a3b30);
-  return (u, v, t) => {
-    const across = Math.abs(u - 0.5) * 2; // 0 on the twig, 1 at the card edge
-    const halfWidth = 0.95 - v * 0.55; // feather outline, narrower at the tip
-    if (across < 0.035 && v < 0.97) {
-      put(t, twig, 1);
-      t.alpha = 1;
-      t.height = 1;
-      t.rough = 0.9;
-      return;
-    }
-    // Needles: thin strands leaving the twig at ~45° toward the tip, one every ~1/40 of the card.
-    const phase = v * 40 - across * 22; // mirrored about the twig because `across` is |u − ½|
-    // Strands fill about 70 % of their period: with the alpha clip actually applied (see
-    // materials.ts cloneMaterial) a thinner strand left the crowns see-through at range.
-    const strand = Math.abs((((phase % 1) + 1) % 1) - 0.5) < 0.35;
-    const gaps = tileFbm(u * 5, v * 5, 5, 3, 121); // clumps and holes so light passes
-    const inside = across < halfWidth * (0.8 + gaps * 0.4);
-    t.alpha = inside && strand && gaps > 0.22 ? 1 : 0;
-    // Needles darken toward the twig (self-shadowing inside the branch).
-    const tone = tileNoise(u * 64, v * 64, 64, 122);
-    put(t, c, 0.7 + tone * 0.3 + across * 0.2);
-    t.height = strand ? 1 : 0;
-    t.rough = 0.85;
-    t.ao = 0.6 + across * 0.4;
-  };
-}
-
-/** Broadleaf canopy cards for street trees. */
-export function leaves(): TexelSampler {
-  const c = hex(0x4a6030);
-  return (u, v, t) => {
-    const cell = tileNoise(u * 40, v * 40, 40, 131);
-    const clump = tileFbm(u * 4, v * 4, 4, 3, 132);
-    t.alpha = cell * 0.5 + clump * 0.9 > 0.72 ? 1 : 0;
-    put(t, c, 0.7 + cell * 0.5);
-    t.height = cell;
-    t.rough = 0.8;
-  };
-}
-
-/**
  * Façade bay: one window per tile (one bay by one storey), framed, over the
  * wall pattern. The glass is dark and glossy, so it reflects the sky probe.
  */
