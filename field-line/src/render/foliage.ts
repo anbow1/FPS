@@ -1,17 +1,16 @@
 import { attribute, cameraPosition, positionLocal, sin, smoothstep, time, uniform, vec2, vec3 } from 'three/tsl';
-import { BufferAttribute, type BufferGeometry, Color, CylinderGeometry, Group, InstancedMesh, type Material, Matrix4, type MeshStandardNodeMaterial, Quaternion, Vector3 } from 'three/webgpu';
+import { BufferAttribute, type BufferGeometry, Color, CylinderGeometry, Group, type Material, Matrix4, type MeshStandardNodeMaterial, Quaternion, Vector3 } from 'three/webgpu';
+import { InstanceStream, type StreamPlacement } from './instanceStream.ts';
 import type { TreeInstance } from '../maps/types.ts';
 import { cloneMaterial, type MaterialLibrary } from './materials.ts';
 import { card, indexed, merge, rand } from './meshkit.ts';
 
-// Instanced pines and undergrowth, split into 100 m chunks so frustum culling
-// drops what is behind the camera and each chunk can pick a level of detail:
+// Instanced pines and shrubs, one streamed mesh per part (see
+// instanceStream.ts) with two levels of detail:
 // full crowns (two cards per branch, a dozen whorls) near the player, a light
 // crown of big cards beyond, which keeps the forest's triangle count, and its
 // shadow passes, inside a phone's budget. Every plant sways with the same
 // wind vector that drifts bullets (brief): one uniform, fed from game.wind.
-
-const CHUNK_M = 100;
 
 /** World wind in m/s, set by the view each frame from the game's wind. */
 export const windVector = uniform(new Vector3());
@@ -161,25 +160,18 @@ export function swayingMaterial(base: Material, amplitudePerMs: number, sinkBeyo
   return m;
 }
 
-interface Chunk {
-  x: number;
-  z: number;
-  near: InstancedMesh[];
-  far: InstancedMesh[];
-  shrubs: InstancedMesh[];
-}
+/** Grid cell (m) the streamed tree and shrub meshes refill on. */
+const CELL_M = 32;
 
 export class Foliage {
   readonly group = new Group();
-  private readonly chunks: Chunk[] = [];
-  private readonly nearM: number;
-  private readonly shrubM: number;
+  private readonly streams: InstanceStream[] = [];
 
   constructor(trees: readonly TreeInstance[], bushes: readonly TreeInstance[], lib: MaterialLibrary, quality: 'high' | 'low') {
     this.group.name = 'foliage';
-    this.nearM = FOLIAGE_LOD.nearCrownM[quality];
-    this.shrubM = FOLIAGE_LOD.shrubM[quality];
     if (trees.length === 0 && bushes.length === 0) return;
+    const nearM = FOLIAGE_LOD.nearCrownM[quality];
+    const shrubM = FOLIAGE_LOD.shrubM[quality];
     const nearCrown = pineCrown(12, 8, true, 1, 11);
     const farCrown = pineCrown(4, 5, false, 1.15, 23);
     const trunk = pineTrunk();
@@ -188,76 +180,40 @@ export class Foliage {
     const bark = swayingMaterial(lib.get('pineBark'), 0.08);
     const shrubMats = [swayingMaterial(lib.get('hazel'), 0.06), swayingMaterial(lib.get('buckthorn'), 0.06)];
 
-    const byKey = new Map<string, { x: number; z: number; trees: TreeInstance[]; bushes: TreeInstance[] }>();
-    const chunkOf = (t: TreeInstance): { trees: TreeInstance[]; bushes: TreeInstance[] } => {
-      const cx = Math.floor(t.pos.x / CHUNK_M);
-      const cz = Math.floor(t.pos.z / CHUNK_M);
-      const key = `${cx},${cz}`;
-      let c = byKey.get(key);
-      if (!c) {
-        c = { x: (cx + 0.5) * CHUNK_M, z: (cz + 0.5) * CHUNK_M, trees: [], bushes: [] };
-        byKey.set(key, c);
-      }
-      return c;
-    };
-    for (const t of trees) chunkOf(t).trees.push(t);
-    for (const b of bushes) chunkOf(b).bushes.push(b);
-
-    const m = new Matrix4();
     const q = new Quaternion();
     const up = new Vector3(0, 1, 0);
-    const colour = new Color();
-    const fill = (mesh: InstancedMesh, list: readonly TreeInstance[], sink: number, tint: (seed: number) => Color): InstancedMesh => {
-      list.forEach((t, i) => {
+    const place = (list: readonly TreeInstance[], sink: number, tint: (seed: number) => Color): StreamPlacement[] =>
+      list.map((t) => {
         q.setFromAxisAngle(up, t.yawRad);
         const w = t.heightM * (0.85 + ((t.seed % 97) / 97) * 0.3);
-        m.compose(new Vector3(t.pos.x, t.pos.y - sink, t.pos.z), q, new Vector3(w, t.heightM, w));
-        mesh.setMatrixAt(i, m);
-        mesh.setColorAt(i, tint(t.seed));
+        return { matrix: new Matrix4().compose(new Vector3(t.pos.x, t.pos.y - sink, t.pos.z), q, new Vector3(w, t.heightM, w)), colour: tint(t.seed) };
       });
-      mesh.computeBoundingSphere();
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-      return mesh;
-    };
     // Per-tree tint: some crowns yellower, some bluer, some darker, as in a real stand.
     const crownTint = (seed: number): Color => {
       const h = rand(seed, 1);
       const k = 0.82 + rand(seed, 2) * 0.3;
-      return colour.setRGB((0.92 + h * 0.16) * k, k, (1.08 - h * 0.2) * k);
+      return new Color((0.92 + h * 0.16) * k, k, (1.08 - h * 0.2) * k);
     };
-    const barkTint = (seed: number): Color => colour.setScalar(0.8 + rand(seed, 3) * 0.35);
-    for (const c of byKey.values()) {
-      const chunk: Chunk = { x: c.x, z: c.z, near: [], far: [], shrubs: [] };
-      if (c.trees.length > 0) {
-        fill(new InstancedMesh(trunk, bark, c.trees.length), c.trees, 0.3, barkTint);
-        chunk.near.push(fill(new InstancedMesh(nearCrown, needles, c.trees.length), c.trees, 0.3, crownTint));
-        const far = fill(new InstancedMesh(farCrown, needles, c.trees.length), c.trees, 0.3, crownTint);
-        far.castShadow = quality === 'high';
-        chunk.far.push(far);
-      }
-      for (let v = 0; v < shrubs.length; v++) {
-        const list = c.bushes.filter((b) => b.seed % shrubs.length === v);
-        if (list.length === 0) continue;
-        const mesh = fill(new InstancedMesh(shrubs[v] as BufferGeometry, shrubMats[v] as Material, list.length), list, 0.08, (seed) => colour.setScalar(0.85 + rand(seed, 4) * 0.3));
-        mesh.castShadow = quality === 'high';
-        chunk.shrubs.push(mesh);
-      }
-      this.chunks.push(chunk);
+    const crowns = place(trees, 0.3, crownTint);
+    const add = (stream: InstanceStream): void => {
+      this.streams.push(stream);
+      this.group.add(stream.mesh);
+    };
+    if (trees.length > 0) {
+      add(new InstanceStream(trunk, bark, place(trees, 0.3, (seed) => new Color().setScalar(0.8 + rand(seed, 3) * 0.35)), { cellM: CELL_M, radiusM: Infinity, castShadow: true }));
+      add(new InstanceStream(nearCrown, needles, crowns, { cellM: CELL_M, radiusM: nearM, castShadow: true }));
+      add(new InstanceStream(farCrown, needles, crowns, { cellM: CELL_M, radiusM: nearM, outside: true, castShadow: quality === 'high' }));
     }
-    this.update(new Vector3(0, 0, 0));
+    for (let v = 0; v < shrubs.length; v++) {
+      const list = bushes.filter((b) => b.seed % shrubs.length === v);
+      if (list.length === 0) continue;
+      const placements = place(list, 0.08, (seed) => new Color().setScalar(0.85 + rand(seed, 4) * 0.3));
+      add(new InstanceStream(shrubs[v] as BufferGeometry, shrubMats[v] as Material, placements, { cellM: CELL_M, radiusM: shrubM, castShadow: quality === 'high' }));
+    }
   }
 
-  /** Picks each chunk's level of detail from its distance to the camera. Cheap: a few hundred chunks. */
+  /** Refills the near/far crown and shrub sets when the camera crosses into another cell. */
   update(camera: Vector3): void {
-    const half = CHUNK_M * 0.71;
-    for (const c of this.chunks) {
-      const d = Math.max(0, Math.hypot(c.x - camera.x, c.z - camera.z) - half);
-      const near = d < this.nearM;
-      for (const mesh of c.near) mesh.visible = near;
-      for (const mesh of c.far) mesh.visible = !near;
-      for (const mesh of c.shrubs) mesh.visible = d < this.shrubM;
-    }
+    for (const s of this.streams) s.update(camera);
   }
 }

@@ -1,4 +1,5 @@
-import { Color, type BufferGeometry, Group, InstancedMesh, type Material, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
+import { type BufferGeometry, Color, Group, type Material, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
+import { InstanceStream } from './instanceStream.ts';
 import { fbm2 } from '../core/noise.ts';
 import { Rng } from '../core/rng.ts';
 import { sampleHeight } from '../maps/terrain.ts';
@@ -12,10 +13,11 @@ import { card, foldedStrip, merge, rand } from './meshkit.ts';
 // floor: grass tufts wherever the ground is grass, bracken in clumps under and
 // between the pines. It has no effect on play (concealment is the map's
 // bushes), so it can be dense near the player and simply end further out:
-// each 64 m chunk is dropped beyond its draw distance, and within the last
-// stretch the plants sink into the ground so they never pop out of view.
+// one streamed mesh per plant (instanceStream.ts) holds the plants around the
+// camera, and within the last stretch they sink into the ground so they
+// never pop out of view.
 
-const CHUNK_M = 64;
+const CELL_M = 16;
 const FIELD_CELL_M = 4;
 
 type Quality = 'high' | 'low';
@@ -85,7 +87,7 @@ interface Placement {
 
 export class Undergrowth {
   readonly group = new Group();
-  private readonly chunks: { x: number; z: number; maxM: number; mesh: InstancedMesh }[] = [];
+  private readonly streams: InstanceStream[] = [];
 
   constructor(map: MapData, lib: MaterialLibrary, quality: Quality) {
     this.group.name = 'undergrowth';
@@ -132,40 +134,22 @@ export class Undergrowth {
   }
 
   private add(list: readonly Placement[], variants: BufferGeometry[], mat: Material, maxM: number, shadows: boolean, tint: (t: number, c: Color) => Color): void {
-    const bins = new Map<string, Placement[]>();
-    list.forEach((p, i) => {
-      const key = `${Math.floor(p.x / CHUNK_M)},${Math.floor(p.z / CHUNK_M)},${i % variants.length}`;
-      const b = bins.get(key) ?? [];
-      b.push(p);
-      bins.set(key, b);
-    });
-    const m = new Matrix4();
     const q = new Quaternion();
     const up = new Vector3(0, 1, 0);
-    const s = new Vector3();
-    const pos = new Vector3();
-    const c = new Color();
-    for (const [key, b] of bins) {
-      const [cx, cz, v] = key.split(',').map(Number) as [number, number, number];
-      const mesh = new InstancedMesh(variants[v] as BufferGeometry, mat, b.length);
-      b.forEach((p, i) => {
-        q.setFromAxisAngle(up, p.yawRad);
-        m.compose(pos.set(p.x, p.y, p.z), q, s.setScalar(p.scale));
-        mesh.setMatrixAt(i, m);
-        mesh.setColorAt(i, tint(p.tint, c));
-      });
-      mesh.computeBoundingSphere();
-      mesh.castShadow = shadows;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-      this.chunks.push({ x: (cx + 0.5) * CHUNK_M, z: (cz + 0.5) * CHUNK_M, maxM, mesh });
-    }
+    variants.forEach((geo, v) => {
+      const placements = list
+        .filter((_, i) => i % variants.length === v)
+        .map((p) => ({ matrix: new Matrix4().compose(new Vector3(p.x, p.y, p.z), q.setFromAxisAngle(up, p.yawRad), new Vector3().setScalar(p.scale)), colour: tint(p.tint, new Color()) }));
+      if (placements.length === 0) return;
+      const stream = new InstanceStream(geo, mat, placements, { cellM: CELL_M, radiusM: maxM, castShadow: shadows });
+      this.streams.push(stream);
+      this.group.add(stream.mesh);
+    });
   }
 
-  /** Drops chunks past their draw distance (the shader has sunk them by then). */
+  /** Refills the plant sets around the camera when it crosses into another cell (the shader has sunk the outer ring by then). */
   update(camera: Vector3): void {
-    const half = CHUNK_M * 0.71;
-    for (const c of this.chunks) c.mesh.visible = Math.hypot(c.x - camera.x, c.z - camera.z) - half < c.maxM;
+    for (const s of this.streams) s.update(camera);
   }
 }
 

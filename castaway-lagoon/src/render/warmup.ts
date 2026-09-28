@@ -9,17 +9,25 @@ import { InstancedMesh, type Material, type Object3D } from 'three/webgpu';
 // the first muzzle flash, the first enemy, rain, a scenery object behind the
 // spawn point, a distant level of detail — used to compile mid-game, which on
 // a phone is a visible stutter. Here the real pipeline renders one frame in
-// which one object per distinct pipeline (material × vertex layout × object
-// kind) is forced visible, un-culled and with at least one instance; then
-// everything is put back. One per pipeline, not every hidden object, keeps
-// that frame cheap in a scene with hundreds of hidden level-of-detail chunks.
+// which one object per distinct shader build (see pipelineKey) is forced
+// visible, un-culled and with at least one instance; then everything is put
+// back. One per build, not every hidden object, keeps that frame cheap.
 
-function pipelineKey(o: Object3D & { material?: Material | Material[]; geometry?: { attributes: Record<string, unknown> } }): string | null {
+/**
+ * Mirrors what three r186 builds a shader per (RenderObject.getMaterialCacheKey
+ * plus the pass): the material, the vertex layout, the shadow flags, and —
+ * for instanced meshes — the mesh itself, since each InstancedMesh gets its
+ * own build.
+ */
+function pipelineKey(o: Object3D & { material?: Material | Material[]; geometry?: { attributes: Record<string, { itemSize?: number; normalized?: boolean }> } }): string | null {
   if (!o.material || !o.geometry) return null;
   const mats = Array.isArray(o.material) ? o.material : [o.material];
-  const attrs = Object.keys(o.geometry.attributes).sort().join(',');
-  const instanced = o instanceof InstancedMesh ? `i${o.instanceColor ? 'c' : ''}` : '';
-  return `${o.type}|${mats.map((m) => m.uuid).join('+')}|${attrs}|${instanced}`;
+  const attrs = Object.entries(o.geometry.attributes)
+    .map(([name, a]) => `${name}${a.itemSize ?? ''}${a.normalized ? 'n' : ''}`)
+    .sort()
+    .join(',');
+  const own = o instanceof InstancedMesh || ((o as { count?: number }).count ?? 1) > 1 ? o.uuid : '';
+  return `${o.type}|${mats.map((m) => m.uuid).join('+')}|${attrs}|${o.receiveShadow}|${o.castShadow}|${own}`;
 }
 
 export function warmAllPipelines(scene: Object3D, render: () => void): void {

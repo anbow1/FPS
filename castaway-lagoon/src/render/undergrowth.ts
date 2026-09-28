@@ -10,10 +10,7 @@ import { card, foldedStrip, merge, rand, tube } from './meshkit.ts';
 
 // Everything under the canopy: ferns, broadleaf shrubs, banana plants, tall
 // grass, small plants sprouting from the beach sand, and vines hanging from
-// the trees at the jungle's edge. Instanced per 40 m chunk so frustum culling
-// drops what is behind the player.
-
-const CHUNK_M = 40;
+// the trees at the jungle's edge. One InstancedMesh per plant variant (see addAll).
 
 interface Placement {
   x: number;
@@ -200,7 +197,7 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
     const list = lists[kind];
     for (let v = 0; v < count; v++) {
       const subset = list.filter((_, i) => i % count === v);
-      for (const [geo, mat] of build(v * 31 + 7)) addChunked(group, geo, mat, subset, shadows);
+      for (const [geo, mat] of build(v * 31 + 7)) addAll(group, geo, mat, subset, shadows);
     }
   };
   variants('fern', 3, (s) => [[fernGeometry(9, 1.2, s), fernMat]], quality === 'high');
@@ -229,29 +226,28 @@ function shoreDistanceOk(x: number, z: number): boolean {
   return shoreDistance(x, z) > 2.5;
 }
 
-function addChunked(group: Group, geo: BufferGeometry, mat: Material, list: readonly Placement[], shadows: boolean): void {
-  const chunks = new Map<string, Placement[]>();
-  for (const p of list) {
-    const key = `${Math.floor(p.x / CHUNK_M)},${Math.floor(p.z / CHUNK_M)}`;
-    const c = chunks.get(key) ?? [];
-    c.push(p);
-    chunks.set(key, c);
-  }
+/**
+ * One InstancedMesh per plant variant over the whole bay. It used to be split
+ * into 40 m chunks for frustum culling, but three r186 builds a shader per
+ * InstancedMesh, so every chunk that first came into view mid-game compiled
+ * its own (a stutter), and each cost a draw call per shadow cascade. The bay
+ * is small enough to draw each plant kind in one call.
+ */
+function addAll(group: Group, geo: BufferGeometry, mat: Material, list: readonly Placement[], shadows: boolean): void {
+  if (list.length === 0) return;
   const m = new Matrix4();
   const q = new Quaternion();
   const up = new Vector3(0, 1, 0);
   const s = new Vector3();
   const pos = new Vector3();
-  for (const c of chunks.values()) {
-    const mesh = new InstancedMesh(geo, mat, c.length);
-    c.forEach((p, i) => {
-      q.setFromAxisAngle(up, p.yawRad);
-      m.compose(pos.set(p.x, p.y, p.z), q, s.setScalar(p.scale));
-      mesh.setMatrixAt(i, m);
-    });
-    mesh.computeBoundingSphere();
-    mesh.castShadow = shadows;
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  }
+  const mesh = new InstancedMesh(geo, mat, list.length);
+  list.forEach((p, i) => {
+    q.setFromAxisAngle(up, p.yawRad);
+    m.compose(pos.set(p.x, p.y, p.z), q, s.setScalar(p.scale));
+    mesh.setMatrixAt(i, m);
+  });
+  mesh.computeBoundingSphere();
+  mesh.castShadow = shadows;
+  mesh.receiveShadow = true;
+  group.add(mesh);
 }
