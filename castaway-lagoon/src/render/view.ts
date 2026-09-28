@@ -197,9 +197,16 @@ export class LagoonView {
   /** 0..1: whether the lantern is lit (effects draw its flame). */
   lampOn = 0;
 
-  /** One frame of the real pipeline with every object forced visible: see warmup.ts. */
-  warmUp(game: LagoonGame): void {
+  /**
+   * One frame of the real pipeline with every pipeline's object forced
+   * visible (see warmup.ts). It needs an animation frame of its own: three's
+   * scene pass renders at most once per frame (NodeFrame.frameId advances in
+   * the renderer's animation loop), so a second render in the same frame
+   * skipped the scene and compiled nothing.
+   */
+  async warmUp(game: LagoonGame): Promise<void> {
     this.render(game, 1, 0, 0, 0);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     warmAllPipelines(this.stage.scene, () => this.stage.render());
   }
 

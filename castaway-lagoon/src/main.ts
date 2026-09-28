@@ -126,7 +126,7 @@ class App {
     this.menus.showLoading('Preparing shaders', 0.96);
     this.debug.view = this.view; // test scripts can watch the warm-up itself
     await nextFrame();
-    this.view.warmUp(game);
+    await this.view.warmUp(game);
     this.menus.showLoading('Warming up', 0.98);
     for (let i = 0; i < 2; i++) {
       this.view.render(game, 1, 0, 0, 0);

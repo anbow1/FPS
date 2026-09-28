@@ -141,7 +141,7 @@ class App {
     // pipelines on first use, which compileAsync does not reach. No hitch on the first real frame.
     this.menu.showLoading('Preparing shaders', 0.93);
     await nextFrame();
-    this.view.warmUp(game);
+    await this.view.warmUp(game);
     this.menu.showLoading('Warming up', 0.97);
     for (let i = 0; i < 2; i++) {
       this.view.render(game, 1, 0, 0, 0);
