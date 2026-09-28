@@ -82,7 +82,7 @@ function leafCard(ts: TextureSet, name: string, translucent: boolean): MeshStand
  */
 function pineBark(ts: TextureSet): MeshStandardNodeMaterial {
   const m = new MeshStandardNodeMaterial({ name: 'pineBark', metalness: 0 });
-  const buv = vec2(uv().x.mul(3), positionWorld.y.div(1.4));
+  const buv = vec2(uv().x.mul(4), positionWorld.y.div(1.1));
   const orm = texture(ts.ormMap, buv);
   m.colorNode = texture(ts.map, buv).rgb;
   m.normalNode = normalMap(texture(ts.normalMap, buv).xyz, vec2(1.2, 1.2));
