@@ -19,6 +19,8 @@ export const windVector = uniform(new Vector3());
 export const FOLIAGE_LOD = {
   nearCrownM: { high: 110, low: 60 },
   shrubM: { high: 220, low: 120 },
+  /** Trunks within this distance cast shadows; beyond, the crowns' shadows are gone too. */
+  trunkShadowM: { high: 110, low: 60 },
 } as const;
 
 /**
@@ -200,9 +202,15 @@ export class Foliage {
       this.group.add(stream.mesh);
     };
     if (trees.length > 0) {
-      add(new InstanceStream(trunk, bark, place(trees, 0.3, (seed) => new Color().setScalar(0.8 + rand(seed, 3) * 0.35)), { cellM: CELL_M, radiusM: Infinity, castShadow: true }));
+      // One streamed mesh draws everything it holds in every pass (no per-chunk culling), so
+      // only the ring near the player casts shadows: far crowns and trunks would put every
+      // tree on the map into each sun cascade. The ground under them keeps its baked canopy shade.
+      const trunks = place(trees, 0.3, (seed) => new Color().setScalar(0.8 + rand(seed, 3) * 0.35));
+      const shadowM = FOLIAGE_LOD.trunkShadowM[quality];
+      add(new InstanceStream(trunk, bark, trunks, { cellM: CELL_M, radiusM: shadowM, castShadow: true }));
+      add(new InstanceStream(trunk, bark, trunks, { cellM: CELL_M, radiusM: shadowM, outside: true, castShadow: false }));
       add(new InstanceStream(nearCrown, needles, crowns, { cellM: CELL_M, radiusM: nearM, castShadow: true }));
-      add(new InstanceStream(farCrown, needles, crowns, { cellM: CELL_M, radiusM: nearM, outside: true, castShadow: quality === 'high' }));
+      add(new InstanceStream(farCrown, needles, crowns, { cellM: CELL_M, radiusM: nearM, outside: true, castShadow: false }));
     }
     for (let v = 0; v < shrubs.length; v++) {
       const list = bushes.filter((b) => b.seed % shrubs.length === v);
