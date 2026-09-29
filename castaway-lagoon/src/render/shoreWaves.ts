@@ -85,7 +85,7 @@ export function shoreState(m: Node<'float'>, along: Node<'float'>, exposure: Nod
   const shoaled = a0.mul(min(pow(float(REF_DEPTH_M).div(max(d, 0.15)), 0.25), 2.4));
   const cap = max(d, 0).mul(SHORE.breakerIndex * 0.5);
   const ratio = shoaled.div(max(cap, 1e-3));
-  return { amp: min(shoaled, cap), breaking: smoothstep(0.8, 1.15, ratio), k: wavenumber(d) };
+  return { amp: min(shoaled, cap), breaking: smoothstep(0.9, 1.25, ratio), k: wavenumber(d) };
 }
 
 export interface ShoreSurface {
@@ -167,7 +167,7 @@ export function surfFoam(xz: Node<'vec2'>, s: Node<'float'>, breaking: Node<'flo
   // The roller rides the crest and its front face (u slightly < 0).
   const roller = smoothstep(0.16, 0.0, abs(u.add(0.04))).mul(breaking);
   const trail = breaking.mul(exp(age.div(-SHORE.foamLifeS)));
-  const amount = max(roller, trail.mul(0.85));
+  const amount = max(roller, trail.mul(0.6));
   // The foam drifts shoreward with the bore, and every wave leaves its own pattern.
   const drift = xz.sub(dir.mul(age.mul(0.35)));
   return laceCover(drift, amount, lastWave);

@@ -187,7 +187,7 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
   // edge where the water meets the sand, wind whitecaps on the chop in a storm, and splashes.
   const foamTex = texture(cf, p.xz.div(2.2).add(flow.mul(0.01))).g;
   const surf = surfFoam(p.xz, vShoreS, vBreak, vShoreDir);
-  const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.01, 0.12, depth)).mul(0.55), float(0));
+  const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.01, 0.06, depth)).mul(0.3), float(0));
   const crestFoam = smoothstep(0.8, 1.6, vCrest).mul(smoothstep(1.3, 2.4, U.waveScale));
   const foam = clamp(max(surf, edgeLace).add(crestFoam.add(splash.z).mul(foamTex.mul(1.6))), 0, 1);
 

@@ -205,7 +205,7 @@ export const SHORE = {
   /** Direction the swell travels (+Z is south: from the sea into the lagoon). */
   swellDir: { x: 0.12, z: 1 },
   /** Offshore amplitude (m) before the channel's losses and shoaling; ×U.waveScale in a storm. */
-  amplitudeM: 0.16,
+  amplitudeM: 0.1,
   /** Waves break once height H = 2A exceeds γ × depth (depth-limited breaking, γ ≈ 0.78). */
   breakerIndex: 0.78,
   /** Energy lost per metre travelled per metre of depth: the long shallow channel calms the lagoon. */
@@ -217,8 +217,9 @@ export const SHORE = {
   swashDown: 0.55,
   /** Sand left by the swash dries over about this long (s). */
   dryTimeS: 28,
-  /** Foam left behind a breaking wave fades over this long (s). */
-  foamLifeS: 4.5,
+  /** Foam left behind a breaking wave fades over this long (s): well inside one period, so a calm
+   * lagoon's surf zone clears between waves instead of staying white. */
+  foamLifeS: 1.8,
   /** Field solve: depth range for the wave speed (m), resolution. */
   maxDepthM: 12,
   minDepthM: 0.25,
