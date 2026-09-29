@@ -1,4 +1,4 @@
-import { attribute, cameraPosition, clamp, dot, exp, float, length, max, mix, normalize, positionLocal, positionWorld, pow, screenUV, smoothstep, sqrt, transformNormalToView, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
+import { attribute, cameraPosition, clamp, dot, exp, float, length, max, mix, normalize, positionLocal, positionWorld, pow, reflect, screenUV, smoothstep, sqrt, transformNormalToView, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, Mesh, MeshPhysicalNodeMaterial } from 'three/webgpu';
 import { LAKE_WAVES } from '../config.ts';
 import { lakeRadius, type Lake } from '../maps/lake.ts';
@@ -93,7 +93,9 @@ function lakeMaterial(field: ShoreField): MeshPhysicalNodeMaterial {
   const toEye = cameraPosition.sub(p);
   const dist = length(toEye);
   const V = toEye.div(dist);
-  const detail = rippleSlope(p.xz.div(CAUSTIC_TILE_M), false).div(dist.mul(0.015).add(1));
+  // Detail ripples at half the strength the caustics splat them with: at full strength the
+  // surface glittered white all over.
+  const detail = rippleSlope(p.xz.div(CAUSTIC_TILE_M), false).mul(0.45).div(dist.mul(0.015).add(1));
   const N = normalize(vec3(vSlope.x.negate().add(detail.x), 1, vSlope.y.negate().sub(detail.y)));
   m.normalNode = transformNormalToView(N);
 
@@ -117,10 +119,17 @@ function lakeMaterial(field: ShoreField): MeshPhysicalNodeMaterial {
   const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.005, 0.04, depth)).mul(0.25), float(0));
   const foam = max(surf, edgeLace);
 
+  // The far shore: the environment probe holds only sky and ground, so a reflected ray leaving
+  // the water at a low angle would show bright sky where a real lake mirrors the tree line.
+  // Below ~9° of elevation (pines ~20 m tall across ~120 m of water) take the forest's colour.
+  const R = reflect(V.negate(), N);
+  const treeline = smoothstep(0.16, 0.05, R.y);
+  const forest = vec3(0.028, 0.045, 0.03).mul(W.skyIrradiance.add(W.sunIrradiance.mul(0.25)).div(Math.PI));
+
   m.colorNode = vec3(0.78, 0.8, 0.78).mul(foam);
   m.roughnessNode = mix(float(0.04), float(0.85), foam);
-  m.specularIntensityNode = float(1).sub(foam);
-  m.emissiveNode = transmitted.mul(float(1).sub(fresnel)).mul(float(1).sub(foam));
+  m.specularIntensityNode = float(1).sub(foam).mul(float(1).sub(treeline));
+  m.emissiveNode = transmitted.mul(float(1).sub(fresnel)).add(forest.mul(fresnel).mul(treeline)).mul(float(1).sub(foam));
   // The thin edge fades into the wet bank behind it.
   m.opacityNode = smoothstep(0.0, 0.035, vDepth);
   return m;

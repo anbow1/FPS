@@ -170,7 +170,7 @@ function swashFn(field: ShoreField) {
       sheet.assign(max(film, 0).mul(0.35).mul(aboveWater));
       const up = tau.lessThan(LAKE_WAVES.swashUp);
       const edge = smoothstep(0.0, 0.004, film).mul(float(1).sub(smoothstep(0.006, 0.02, film)));
-      foam.assign(laceCover(xz.add(dir.mul(tau.mul(0.4))), edge.mul(up.select(float(0.55), float(0.2))), ms, lod).mul(aboveWater));
+      foam.assign(laceCover(xz.add(dir.mul(tau.mul(0.4))), edge.mul(up.select(float(0.32), float(0.12))), ms, lod).mul(aboveWater));
       const w = float(0).toVar('wetMax');
       const noiseK = texture(laceMap(), xz.div(9.0)).level(lod.sub(1.4).max(0)).b.mul(0.7).add(0.65);
       Loop(6, ({ i }) => {
