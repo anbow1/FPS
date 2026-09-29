@@ -67,14 +67,23 @@ from primitives, and every sound is synthesised with Web Audio.
   stars, wind-driven clouds) is used by the dome, the environment probe (with
   ground bounce below the horizon), the height fog and the water reflection,
   so horizon, haze and reflections agree at every time of day.
-- **Water:** Gerstner waves damped by depth, Beer–Lambert absorption over the
-  refracted lagoon floor (turquoise over sand, navy in the channel), Fresnel
-  sky reflection with sun and moon glitter, crest subsurface glow, shoreline
-  and storm foam, ring ripples from splashes and raindrops, caustics on the
-  floor.
-- **Ground:** height-blended sand / turf / leaf litter / rock splat, a wet
-  band that follows the lapping waves, rain wetness, puddles, trodden paths,
-  jungle canopy colour on the far hills.
+- **Water:** the swell's phase comes from a travel-time field solved over the
+  real seabed at load (eikonal, fast marching — after Tidewater, MIT), so
+  crests slow, shorten and bend to the depth contours on their way in through
+  the channel, grow in the shallows (Green's law) and break where they get too
+  tall for the depth; every wave has its own height, so they peel along the
+  beach. Foam forms at each breaker and fades into lace behind it. Wind chop
+  on top; Beer–Lambert absorption over the refracted lagoon floor (turquoise
+  over sand, navy in the channel), Fresnel sky reflection with sun and moon
+  glitter, crest subsurface glow, ring ripples from splashes and raindrops, and
+  caustics photon-splatted every frame from the same ripples the surface shows.
+- **Ground:** height-blended sand / turf / leaf litter / rock splat; the swash
+  of each wave runs up the beach and drains back, and the sand stays wet where
+  the recent run-ups reached, drying over half a minute; rain wetness, puddles,
+  trodden paths, jungle canopy colour on the far hills.
+
+All of the techniques, step by step, are in
+[`../docs/graphics-playbook.md`](../docs/graphics-playbook.md).
 - **Foliage:** instanced palms, rainforest trees, ferns, shrubs, banana
   plants, grass and vines; one wind field bends trunks and flutters leaves;
   leaves use shadow-aware thin translucency (`MeshSSSNodeMaterial`).
