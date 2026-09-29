@@ -59,7 +59,9 @@ export class Scope {
     const radius = ocularRadiusM;
     // Lens-plane coordinates in ocular radii, from the undeformed disc geometry.
     const p = positionGeometry.xy.div(radius);
-    const uv = p.mul(0.5).add(0.5);
+    // Texel row 0 of a render target is the top of its image on both backends (three flips WebGL
+    // reads to match WebGPU), so v runs downward: v = 0.5 − y/2, or the picture is upside down.
+    const uv = vec2(p.x.mul(0.5).add(0.5), float(0.5).sub(p.y.mul(0.5)));
     const image = texture(this.target.texture, uv).rgb;
     const mils = p.mul(this.fovMrad.mul(0.5)); // x right, y up, in mrad
     const reticle = milDot(mils);
