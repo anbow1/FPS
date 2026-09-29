@@ -1,12 +1,14 @@
-import { cameraPosition, clamp, cos, dot, exp, float, length, max, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
+import { cameraPosition, clamp, cos, dot, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, DataTexture, DataUtils, HalfFloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, type Node, RedFormat, type Vector3 } from 'three/webgpu';
 import { hexToLinear } from './colour.ts';
-import { WATER_LEVEL_M, WAVES } from '../config.ts';
-import { heightAt } from '../game/terrain.ts';
+import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
+import { SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
 import { skyRadiance } from './sky.ts';
-import { causticFoamMap, noiseMap, waterNormalMap } from './textures.ts';
+import { causticFoamMap } from './textures.ts';
 import { U } from './uniforms.ts';
 import { rainRings, splashRipples } from './waterFx.ts';
+import { laceCover, shoreSurface, surfFoam } from './shoreWaves.ts';
+import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
 
 // The lagoon and the sea beyond it. A radial grid follows the camera; Gerstner
 // waves (GPU Gems 1, ch. 1) displace it, damped where the water is shallow.
@@ -21,7 +23,7 @@ import { rainRings, splashRipples } from './waterFx.ts';
 //               storm, and around splashes;
 //   ripples     from splashes and raindrops, perturbing the normal.
 
-const DEPTH_MAP = { x0: -300, z0: -470, sizeM: 620, px: 512 } as const;
+const DEPTH_MAP = { ...SHORE_DOMAIN, px: SHORE.res } as const;
 
 export function buildWater(): { mesh: Mesh; depthMap: DataTexture } {
   const depthMap = bakeDepthMap();
@@ -32,17 +34,12 @@ export function buildWater(): { mesh: Mesh; depthMap: DataTexture } {
   return { mesh, depthMap };
 }
 
-/** Floor height below sea level, baked once, half float, 1.2 m per texel. */
+/** Floor height below sea level, half float, 1.2 m per texel (the heights are shared with the wave field). */
 function bakeDepthMap(): DataTexture {
   const n = DEPTH_MAP.px;
+  const heights = seabedHeights();
   const data = new Uint16Array(n * n);
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const x = DEPTH_MAP.x0 + ((i + 0.5) / n) * DEPTH_MAP.sizeM;
-      const z = DEPTH_MAP.z0 + ((j + 0.5) / n) * DEPTH_MAP.sizeM;
-      data[j * n + i] = DataUtils.toHalfFloat(heightAt(x, z));
-    }
-  }
+  for (let k = 0; k < n * n; k++) data[k] = DataUtils.toHalfFloat(heights[k] as number);
   const t = new DataTexture(data, n, n, RedFormat, HalfFloatType);
   t.magFilter = LinearFilter;
   t.minFilter = LinearFilter;
@@ -90,8 +87,6 @@ export function placeWater(mesh: Mesh, eye: Vector3): void {
 
 function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
   const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true });
-  const waveNormal = waterNormalMap();
-  const noise = noiseMap();
   const cf = causticFoamMap();
 
   // ── Vertex: Gerstner displacement, damped in the shallows and at range.
@@ -101,7 +96,11 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
   const floorV = inMap.select(texture(depthMap, depthUv).level(float(0)).r, float(-40));
   const depthV = max(float(WATER_LEVEL_M).sub(floorV), 0);
   const range = length(positionLocal.xz);
-  const amp = U.waveScale.mul(smoothstep(0.05, 2.8, depthV)).mul(float(1).sub(smoothstep(250, 1400, range)));
+  // Short wind chop everywhere; the long swell only beyond the baked shore field, where the
+  // field's own depth-aware waves (shoreWaves.ts) do not reach. Their phases agree in deep water.
+  const edgeDist = min(min(depthUv.x, float(1).sub(depthUv.x)), min(depthUv.y, float(1).sub(depthUv.y)));
+  const outside = float(1).sub(smoothstep(0.0, 0.06, edgeDist));
+  const chopAmp = U.waveScale.mul(smoothstep(0.05, 2.8, depthV)).mul(float(1).sub(smoothstep(250, 1400, range)));
   let dx: Node<'float'> = float(0);
   let dy: Node<'float'> = float(0);
   let dz: Node<'float'> = float(0);
@@ -114,7 +113,8 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
     const a = (w.directionDeg * Math.PI) / 180;
     const d = vec2(Math.cos(a), Math.sin(a));
     const phase = dot(d, baseXZ).mul(k).sub(U.time.mul(omega));
-    const A = amp.mul(w.amplitudeM);
+    const swell = w.wavelengthM >= 8;
+    const A = chopAmp.mul(w.amplitudeM).mul(swell ? outside : float(1));
     const c = cos(phase);
     const s = sin(phase);
     dx = dx.add(A.mul(w.steepness).mul(d.x).mul(c));
@@ -124,9 +124,15 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
     nz = nz.add(A.mul(k).mul(d.y).mul(c));
     ny = ny.add(A.mul(k).mul(w.steepness).mul(s));
   }
-  m.positionNode = positionLocal.add(vec3(dx, dy, dz));
-  const vNormal = varying(normalize(vec3(nx.negate(), float(1).sub(ny), nz.negate())), 'vWaveNormal');
-  const vCrest = varying(dy.div(max(amp.mul(0.2), 0.01)), 'vCrest');
+  const shore = shoreSurface(baseXZ, depthV);
+  const shoreK = float(1).sub(outside);
+  m.positionNode = positionLocal.add(vec3(dx, dy, dz)).add(shore.disp.mul(shoreK));
+  const vNormal = varying(normalize(vec3(nx.negate().sub(shore.slope.x.mul(shoreK)), float(1).sub(ny), nz.negate().sub(shore.slope.y.mul(shoreK)))), 'vWaveNormal');
+  const vCrest = varying(max(dy.div(max(chopAmp.mul(0.2), 0.01)), shore.crest.mul(shoreK).mul(2)), 'vCrest');
+  // The continuous wave count (not its wrapped phase) is what interpolates cleanly across a triangle.
+  const vShoreS = varying(shore.s, 'vShoreS');
+  const vBreak = varying(shore.breaking.mul(shoreK), 'vBreak');
+  const vShoreDir = varying(shore.dir, 'vShoreDir');
 
   // ── Fragment.
   const p = positionWorld;
@@ -142,10 +148,8 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
   const wind = U.wind;
   const windLen = length(wind).max(0.1);
   const flow = wind.div(windLen).mul(U.time);
-  const d1 = texture(waveNormal, p.xz.div(9).add(flow.mul(0.018))).xy.sub(0.5);
-  const d2 = texture(waveNormal, p.xz.div(3.3).sub(flow.mul(0.031)).add(vec2(0.3, 0.7))).xy.sub(0.5);
-  const detailK = float(0.35).add(windLen.mul(0.05)).div(dist.mul(0.012).add(1));
-  const detail = d1.add(d2.mul(0.7)).mul(detailK);
+  // Detail ripples: two wind-driven layers, the same ones the caustics are splatted from.
+  const detail = rippleSlope(p.xz.div(CAUSTIC_TILE_M), false).div(dist.mul(0.012).add(1));
   const splash = splashRipples(p.xz);
   const rain = rainRings(p.xz).div(dist.mul(0.08).add(1));
   const slope = detail.add(splash.xy).add(rain);
@@ -176,15 +180,17 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
   const scatter = scatterTint.mul(ambient).mul(0.55).mul(float(1).sub(T.g));
   // Light through the backs of crests.
   const sss = vec3(sc.r, sc.g, sc.b).mul(U.sunIrradiance).mul(pow(max(dot(V, U.sunDir.negate().add(vec3(0, 0.3, 0)).normalize()), 0), 4)).mul(max(vCrest, 0)).mul(0.04);
-  const underwater = behind.mul(T).add(scatter).add(sss);
+  // Stirred-up sand makes the surf zone milkier.
+  const underwater = mix(behind.mul(T).add(scatter).add(sss), vec3(0.55, 0.56, 0.5).mul(ambient), vBreak.mul(0.35));
 
-  // Foam.
-  const lines = smoothstep(0.55, 1.0, sin(depth.mul(16).sub(U.time.mul(1.7)).add(texture(noise, p.xz.div(20)).r.mul(6))));
+  // Foam: whitewater and the lace it leaves behind breaking waves (shoreWaves.ts), a thin lacy
+  // edge where the water meets the sand, wind whitecaps on the chop in a storm, and splashes.
   const foamTex = texture(cf, p.xz.div(2.2).add(flow.mul(0.01))).g;
-  const shore = float(1).sub(smoothstep(0.02, 0.22, depth));
-  const shoreFoam = shore.mul(0.45).add(lines.mul(float(1).sub(smoothstep(0.05, 0.6, depth))).mul(0.3));
+  const surf = surfFoam(p.xz, vShoreS, vBreak, vShoreDir);
+  const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.01, 0.12, depth)).mul(0.55), float(0));
   const crestFoam = smoothstep(0.8, 1.6, vCrest).mul(smoothstep(1.3, 2.4, U.waveScale));
-  const foam = clamp(shoreFoam.add(crestFoam).add(splash.z).mul(foamTex.mul(1.6)), 0, 1);
+  const foam = clamp(max(surf, edgeLace).add(crestFoam.add(splash.z).mul(foamTex.mul(1.6))), 0, 1);
+
   const foamLight = U.sunIrradiance.mul(max(dot(N, U.sunDir), 0)).add(U.skyIrradiance).div(Math.PI).mul(0.8);
 
   const surface = mix(underwater, reflection, fresnel);

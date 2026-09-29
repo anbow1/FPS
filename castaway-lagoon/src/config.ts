@@ -194,6 +194,37 @@ export const WAVES = {
   rippleLifeSeconds: 4.5,
 } as const;
 
+/**
+ * Shoreline waves (render/shoreField.ts, render/shoreWaves.ts). The swell comes in from the open
+ * sea to the north through the channel; its phase comes from a travel-time field solved over the
+ * real seabed, so crests slow, shorten and bend to the depth contours, grow in the shallows
+ * (Green's law) and break where they get too tall for the depth, then run up the beach.
+ */
+export const SHORE = {
+  periodS: 3.6,
+  /** Direction the swell travels (+Z is south: from the sea into the lagoon). */
+  swellDir: { x: 0.12, z: 1 },
+  /** Offshore amplitude (m) before the channel's losses and shoaling; ×U.waveScale in a storm. */
+  amplitudeM: 0.16,
+  /** Waves break once height H = 2A exceeds γ × depth (depth-limited breaking, γ ≈ 0.78). */
+  breakerIndex: 0.78,
+  /** Energy lost per metre travelled per metre of depth: the long shallow channel calms the lagoon. */
+  channelLossPerM: 0.0055,
+  /** Vertical run-up ≈ runupK × A on this gentle beach. */
+  runupK: 2.1,
+  /** Fractions of the period spent running up, then draining back (the rest the sheet rests). */
+  swashUp: 0.4,
+  swashDown: 0.55,
+  /** Sand left by the swash dries over about this long (s). */
+  dryTimeS: 28,
+  /** Foam left behind a breaking wave fades over this long (s). */
+  foamLifeS: 4.5,
+  /** Field solve: depth range for the wave speed (m), resolution. */
+  maxDepthM: 12,
+  minDepthM: 0.25,
+  res: 512,
+} as const;
+
 export const GRAPHICS = {
   shadowMapPx: { high: 4096, low: 1024 }, // low: phones and laptops (Mali / Adreno fill rate)
   shadowRangeM: { high: 90, low: 55 },

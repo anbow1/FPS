@@ -70,6 +70,17 @@ export function causticFoamMap(): DataTexture {
   });
 }
 
+/** Surf-foam lace, one tile = 3.5 m (see P.laceValue). */
+export function laceMap(): DataTexture {
+  return dataMap('lace', 512, (u, v, d, i) => {
+    const [r, g, b, a] = P.laceValue(u, v);
+    d[i] = to8(r);
+    d[i + 1] = to8(g);
+    d[i + 2] = to8(b);
+    d[i + 3] = to8(a);
+  });
+}
+
 /** R: broad fbm, G: mid fbm, B: value noise, A: fine noise. Macro variation and puddle masks. */
 export function noiseMap(): DataTexture {
   return dataMap('noise', 256, (u, v, d, i) => {

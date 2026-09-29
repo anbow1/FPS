@@ -1,10 +1,12 @@
-import { attribute, float, int, max, min, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3 } from 'three/tsl';
+import { attribute, float, int, max, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, type DataArrayTexture, Group, Mesh, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { fbm2 } from '../core/noise.ts';
 import { WATER_LEVEL_M } from '../config.ts';
 import { beachWidth, cliffiness, heightAt, LAGOON_CENTRE, shoreDistance } from '../game/terrain.ts';
 import type { LagoonWorld } from '../game/world.ts';
-import { causticFoamMap, noiseMap, terrainArray } from './textures.ts';
+import { noiseMap, terrainArray } from './textures.ts';
+import { swash } from './shoreWaves.ts';
+import { type Caustics, causticAt } from './caustics.ts';
 import { U } from './uniforms.ts';
 
 // The ground: a dense near mesh over the playable bay (1.25 m cells, with a
@@ -41,8 +43,8 @@ export function pathWeight(x: number, z: number): number {
   return 1 - smooth(PATH_HALF_WIDTH_M * 0.5, PATH_HALF_WIDTH_M + wobble, best);
 }
 
-export function buildGround(world: LagoonWorld): Group {
-  const material = groundMaterial();
+export function buildGround(world: LagoonWorld, caustics: Caustics): Group {
+  const material = groundMaterial(caustics);
   const group = new Group();
   group.name = 'ground';
   const trees = [...world.palms.map((p) => ({ x: p.x, z: p.z, r: 2.2 })), ...world.trees.map((t) => ({ x: t.x, z: t.z, r: t.heightM * 0.28 }))];
@@ -242,7 +244,7 @@ function smooth(e0: number, e1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-function groundMaterial(): MeshStandardNodeMaterial {
+function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   const m = new MeshStandardNodeMaterial({ name: 'ground', roughness: 1, metalness: 0 });
   // One array texture per map kind, one layer per ground type (sand, grass, litter, rock):
   // 3 bindings instead of 12, so the shader stays inside the 16-texture limit of WebGPU and phones.
@@ -250,7 +252,6 @@ function groundMaterial(): MeshStandardNodeMaterial {
   const LAYER = { sand: 0, grass: 1, litter: 2, rock: 3 } as const;
   const at = (tex: DataArrayTexture, uv: Node<'vec2'>, layer: number): Node<'vec4'> => texture(tex, uv).depth(int(layer));
   const noise = noiseMap();
-  const cf = causticFoamMap();
   const p = positionWorld;
   // The tangent points +X and the bitangent −Z, so V runs along −Z.
   const base = vec2(p.x, p.z.negate());
@@ -303,17 +304,27 @@ function groundMaterial(): MeshStandardNodeMaterial {
   const under = float(1).sub(smoothstep(-1.5, 0.0, p.y));
   albedo = albedo.mul(mix(vec3(1), vec3(0.8, 0.9, 0.84), under));
 
-  // Wetness: a band that follows the lapping waves, everything under water, and rain.
-  const lap = texture(noise, p.xz.div(25).add(U.time.mul(0.01))).g.sub(0.5).mul(0.25).add(0.05);
-  const shoreWet = float(1).sub(smoothstep(0.0, 0.55, p.y.sub(lap))).mul(kS.add(kR.mul(0.6)));
+  // Wetness: the swash of the recent waves drying over half a minute (shoreWaves.ts), everything
+  // under water, and rain. Wet sand is darker, a little more saturated, smoother and glossier.
+  const sw = swash(p.xz, p.y.sub(WATER_LEVEL_M));
+  const shoreWet = sw.wet.mul(kS.add(kR.mul(0.6)));
   const wet = max(shoreWet, U.wetness.mul(0.95));
   const porous = kS.mul(0.5).add(kL.mul(0.45)).add(kG.mul(0.3)).add(kR.mul(0.3));
+  const lum = albedo.dot(vec3(0.2126, 0.7152, 0.0722));
+  albedo = mix(vec3(lum), albedo, float(1).add(wet.mul(porous).mul(0.6)));
   albedo = albedo.mul(float(1).sub(wet.mul(porous)));
   const puddleNoise = texture(noise, p.xz.div(11)).r.add(normalWorld.y.sub(1).mul(8));
   const puddle = smoothstep(0.6, 0.66, puddleNoise).mul(smoothstep(0.5, 0.95, U.wetness)).mul(float(1).sub(kS)).mul(smoothstep(0.1, 0.4, p.y));
   albedo = mix(albedo, albedo.mul(0.35), puddle);
-  const rough = mix(mix(mix(orm.g, float(0.9), extra.z), float(0.2), wet.mul(0.85)), float(0.03), puddle);
-  nTex = mix(nTex, vec3(0.5, 0.5, 1), max(puddle, wet.mul(0.4)));
+  // The swash sheet itself: a film of water a few centimetres thick, glassy and a touch
+  // green-blue over the sand, with foam at its leading edge and streaks as it drains.
+  const film = smoothstep(0.0, 0.012, sw.sheet);
+  albedo = mix(albedo, albedo.mul(vec3(0.7, 0.8, 0.8)), film.mul(0.6));
+  const foamy = sw.foam.mul(kS.add(kR));
+  albedo = mix(albedo, vec3(0.82, 0.84, 0.82), foamy);
+  let rough: Node<'float'> = mix(mix(mix(orm.g, float(0.9), extra.z), float(0.2), wet.mul(0.85)), float(0.03), max(puddle, film));
+  rough = mix(rough, float(0.75), foamy);
+  nTex = mix(nTex, vec3(0.5, 0.5, 1), max(max(puddle, film), wet.mul(0.4)));
 
   m.colorNode = albedo;
   m.roughnessNode = rough;
@@ -322,11 +333,12 @@ function groundMaterial(): MeshStandardNodeMaterial {
   // AO: texture cavities × baked canopy shade, indirect light only.
   m.aoNode = orm.r.mul(extra.y).mul(float(1).sub(extra.z.mul(0.4)));
 
-  // Caustics on the lagoon floor: two drifting webs, their minimum is the sharp bright network.
+  // Caustics on the lagoon floor, splatted from the water's own ripples (caustics.ts): the
+  // sun's direct light on the floor is scaled by the light concentration, fading with depth.
   const depth = max(float(WATER_LEVEL_M).sub(p.y), 0);
-  const c1 = texture(cf, p.xz.div(3.1).add(vec2(U.time.mul(0.021), U.time.mul(0.013)))).r;
-  const c2 = texture(cf, p.xz.div(2.3).add(vec2(U.time.mul(-0.017), U.time.mul(0.019))).add(0.37)).r;
-  const caustic = min(c1, c2).mul(3.2).mul(smoothstep(0.03, 0.3, depth)).mul(depth.mul(-0.22).exp()).mul(max(U.sunDir.y, 0));
-  m.emissiveNode = albedo.mul(U.sunIrradiance).mul(caustic.div(Math.PI));
+  const focus = causticAt(caustics, p, depth).sub(1);
+  const sunOnFloor = U.sunIrradiance.mul(max(normalWorld.dot(U.sunDir), 0)).mul(float(1).sub(U.cloudCover.mul(0.8)));
+  const caustic = focus.mul(smoothstep(0.03, 0.3, depth)).mul(depth.mul(-0.22).exp()).mul(0.9);
+  m.emissiveNode = albedo.mul(sunOnFloor).mul(caustic.div(Math.PI));
   return m;
 }

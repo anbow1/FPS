@@ -17,6 +17,13 @@ npm run dev          # http://localhost:5173
 Shared by both, at the root: the coding rules (`AGENT.md`,
 `games-ts-threejs.md`) and the reference sheets in `references/`.
 
+**[docs/graphics-playbook.md](docs/graphics-playbook.md)** — every graphics
+technique used in both games (renderer and light units, procedural textures,
+terrain, sky, vegetation and streaming, water, shore waves, swash, caustics),
+the phone budget and how to stop shader-compile stutter, how to verify it
+headless, and the three.js r186 pitfalls — written as step-by-step
+instructions another project or coding agent can follow.
+
 ## Android
 
 Both games also build as Android apps (`android/`): one Gradle project, one

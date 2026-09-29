@@ -197,3 +197,49 @@ export function foamValue(u: number, v: number): number {
   const bubbles = tileNoise(u * 64, v * 64, 64, 153);
   return Math.min(1, Math.max(0, streak * 1.3 - 0.25 + (bubbles > 0.7 ? 0.25 : 0) - cells * 0.15));
 }
+
+/** Tileable Worley F2 − F1 (distance to the nearest cell edge, in cell units) on a g × g grid. */
+function cellEdge(u: number, v: number, g: number, seed: number): number {
+  const cx = Math.floor(u * g);
+  const cy = Math.floor(v * g);
+  let f1 = 9;
+  let f2 = 9;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const ix = (((cx + dx) % g) + g) % g;
+      const iy = (((cy + dy) % g) + g) % g;
+      const px = (cx + dx + 0.15 + hash2(ix, iy, seed) * 0.7) / g;
+      const py = (cy + dy + 0.15 + hash2(ix, iy, seed + 1) * 0.7) / g;
+      const d = Math.hypot(u - px, v - py) * g;
+      if (d < f1) {
+        f2 = f1;
+        f1 = d;
+      } else if (d < f2) f2 = d;
+    }
+  }
+  return f2 - f1;
+}
+
+/**
+ * Surf-foam lace (after Tidewater's lace texture, Dan Greenheck, MIT), one
+ * tile = 3.5 m. Thresholding R by the foam amount gives a dense mat when the
+ * foam is fresh, a mat with holes as it thins, then lace, then single strands.
+ *   R  distance to the nearest bubble strand: 0 on a strand, 1 in a hole
+ *   G  small bubbles clustered along the strands
+ *   B  soft mottling (density variation)
+ *   A  a random value per cell (staggers when stranded foam pops)
+ */
+export function laceValue(u: number, v: number): [number, number, number, number] {
+  // Warped cells so strands curve like torn foam, not like a honeycomb.
+  const wu = u + (tileFbm(u * 4, v * 4, 4, 3, 161) - 0.5) * 0.08;
+  const wv = v + (tileFbm(u * 4 + 7, v * 4 + 3, 4, 3, 163) - 0.5) * 0.08;
+  const coarse = cellEdge(((wu % 1) + 1) % 1, ((wv % 1) + 1) % 1, 9, 171);
+  const fine = cellEdge(((wu * 2 % 1) + 1) % 1, ((wv * 2 % 1) + 1) % 1, 11, 173);
+  // Holes open inside the big cells first; the finer net subdivides them into lace.
+  const hole = Math.min(coarse * 1.6, fine * 1.1 + 0.25);
+  const r = Math.min(1, Math.max(0, hole));
+  const bubbles = tileNoise(u * 96, v * 96, 96, 175) > 0.72 && r < 0.35 ? 1 : 0;
+  const mottle = tileFbm(u * 3, v * 3, 3, 3, 177);
+  const cellRand = hash2(Math.floor(((u % 1) + 1) % 1 * 9), Math.floor(((v % 1) + 1) % 1 * 9), 179);
+  return [r, bubbles, mottle, cellRand];
+}

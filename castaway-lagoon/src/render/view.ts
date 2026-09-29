@@ -7,6 +7,7 @@ import type { LagoonEvent } from '../game/events.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { Effects } from './effects.ts';
 import { buildGround } from './ground.ts';
+import { Caustics } from './caustics.ts';
 import { AmbientLife } from './life.ts';
 import { Rain } from './weatherFx.ts';
 import { FOLIAGE } from './foliageMaterials.ts';
@@ -40,6 +41,7 @@ export class LagoonView {
   lighting!: LagoonLighting;
   private exposure!: AutoExposure;
   private water!: ReturnType<typeof buildWater>;
+  private caustics!: Caustics;
   outpost!: OutpostView;
   private props!: Props;
   viewModel!: ViewModel;
@@ -73,7 +75,8 @@ export class LagoonView {
     await progress('Starting renderer', 0.04);
     await stage.init();
     await progress('Shaping the island', 0.1);
-    stage.scene.add(buildGround(game.world));
+    this.caustics = new Caustics(stage.quality);
+    stage.scene.add(buildGround(game.world, this.caustics));
     // `?bare` (a debug switch for viewmodel work) skips the vegetation, which dominates load and frame time.
     const bare = new URLSearchParams(location.search).has('bare');
     FOLIAGE.translucent = stage.quality === 'high';
@@ -179,6 +182,7 @@ export class LagoonView {
     const lightDir = d.night > 0.5 ? d.moonDir : d.sunDir;
     const lowSun = 1 - Math.min(1, Math.max(0, d.sunDir.y - 0.05) / 0.6);
     this.stage.aimShafts(lightDir, (1 - env.weather.cloudCover * 0.9) * (0.35 + lowSun * 0.5) * (d.night > 0.5 ? 0.25 : 1));
+    this.caustics.render(this.stage.renderer);
     this.stage.render();
     // The eye aims for the anchor, so night stays about two stops under a grey card.
     this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.anchorEv, dt, -DAYLIGHT.nightExposureBiasEv * d.night);
