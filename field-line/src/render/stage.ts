@@ -5,6 +5,7 @@ import { float, Fn, length, Loop, mrt, output, pass, pow, saturation, smoothstep
 import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
+import { installWebGpuCompat } from './webgpuCompat.ts';
 import { isTouchDevice } from '../core/input.ts';
 
 // Renderer and post chain (rules §2.1, §2.5). One code path: WebGPURenderer
@@ -47,6 +48,7 @@ export class Stage {
     settings: StageSettings,
   ) {
     this.settings = { ...settings };
+    installWebGpuCompat();
     // Reversed depth: a 4 cm near plane and a 2.6 km far plane without z-fighting at range.
     this.renderer = new WebGPURenderer({ canvas, antialias: false, reversedDepthBuffer: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = SRGBColorSpace;

@@ -438,7 +438,10 @@ straight beach, the lagoon beach reached through the channel with less energy.
   G small bubbles, B mottling, A a per-cell random. `cover = smoothstep(R − 0.08,
   R + 0.08, amount)`: fresh foam is a dense mat, thinning foam opens holes, then
   lace, then single strands. Offset the lace per wave (hash of `m`) so no two
-  waves leave the same pattern.
+  waves leave the same pattern. **Multiply the result by `smoothstep(0.03, 0.12,
+  amount)`**: with any mottling offset in the threshold, zero foam otherwise still
+  draws the whole strand net over every beach and every square metre of water
+  (our first screenshot).
 - A thin lacy edge where the water meets the sand; storm whitecaps on the chop;
   splash foam; the surf zone scatters a little milkier (stirred sand).
 
@@ -454,15 +457,22 @@ beach band (the code runs inside a TSL `If` on the ground's height).
    (`sb = (τ − up)/down`, a backwash that starts slowly and accelerates), with
    `R_max ≈ 2.1 A` of the wave as it arrives, and a **lobed front** (three sines
    along the shore whose phases depend on the wave).
-3. **Sheet**: `R(τ) − y > 0` → a film of water: glossy, a touch green-blue,
-   normals flattened; **foam at the leading edge** while running up; **streaks**
-   along the flow while draining (lace stretched along the travel direction).
+3. **Sheet**: `R(τ) − y > 0` → a film of water: darker and a touch green-blue,
+   normals flattened, **roughness ≈ 0.14, not a mirror** (at 0.03 the whole run-up
+   band reflected the sky as a solid white strip); **foam at the leading edge**
+   while running up; **streaks** along the flow while draining (lace stretched
+   along the travel direction). Only **above the still waterline** (`y > 0`):
+   below it the water surface draws the waves, and swash foam on the seabed shows
+   through the water as a white blanket.
 4. **Wet history**: for each of the last six waves, when did its backwash uncover
    this height (invert the backwash curve), and `wet = max exp(−since / dryTime)`
    with `dryTime ≈ 28 s` × a noise factor so the dry line is ragged. The wet band
    follows the set's biggest run-ups and dries over half a minute.
 5. **Wet sand look**: darker (× (1 − wet × porosity)), a little more saturated,
-   roughness → 0.2, normals 40 % flatter; under the sheet roughness 0.03.
+   roughness → 0.2, normals 40 % flatter.
+6. It runs inside `If` in a TSL `Fn`, so every texture read in there needs an
+   explicit mip level (WGSL): take it from the camera distance,
+   `log2(dist × pixelAngle × texelsPerMetre)`.
 
 ### 7.6 Caustics by photon splatting (`render/caustics.ts`)
 
@@ -655,6 +665,8 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Test compared positions wrongly | buffers are float32 | compare `Math.fround` values |
 | `Cannot read properties of null (reading 'If')` at load, game never ready | `If` / `Loop` / `toVar` used outside a TSL `Fn` | build that code in `Fn(([a, b]) => …)` and return a vector |
 | WGSL compile error: sampling in non-uniform control flow | `texture()` with implicit LOD inside `If` (WebGL accepts it, WebGPU does not) | pass an explicit `.level()` computed outside the branch (e.g. from camera distance) |
+| WebGPU only: `Failed to execute 'createView' … 'swizzle' … not of type 'GPUTextureComponentSwizzle'`, never finishes loading | three r186 sets `swizzle: 'rgba'` on every texture view; older Chromium/WebView builds (e.g. 140) implement an older swizzle draft | shim `GPUTexture.prototype.createView` to retry without the (identity) swizzle (`render/webgpuCompat.ts`), installed before the renderer |
+| Headless tests only ever exercise WebGL2 | Playwright's headless shell has no WebGPU adapter | full Chromium with `--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader --use-webgpu-adapter=swiftshader --disable-vulkan-surface` gives a software WebGPU adapter: test WGSL there too |
 | Headless test hangs with an idle browser | a page error stopped loading; the script waits for "ready" | always log `pageerror` and console errors; time out early |
 
 ---

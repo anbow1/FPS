@@ -149,7 +149,8 @@ export function laceCover(xz: Node<'vec2'>, amount: Node<'float'>, salt: Node<'f
   const lace = level ? t.level(level) : t;
   const threshold = amount.mul(1.15).sub(lace.b.sub(0.5).mul(0.25));
   const cover = smoothstep(lace.r.sub(0.08), lace.r.add(0.08), threshold);
-  return clamp(cover.add(lace.g.mul(smoothstep(0.1, 0.4, amount)).mul(0.5)), 0, 1);
+  // No foam means no strands: the mottling offset alone must never draw the net.
+  return clamp(cover.add(lace.g.mul(smoothstep(0.1, 0.4, amount)).mul(0.5)), 0, 1).mul(smoothstep(0.03, 0.12, amount));
 }
 
 /**
@@ -225,8 +226,11 @@ const swashFn = Fn(([xzIn, yIn, lodIn]: [Node<'vec2'>, Node<'float'>, Node<'floa
     const lobes = (m: Node<'float'>): Node<'float'> => sin(along.mul(0.61).add(m.mul(2.3))).mul(0.5).add(sin(along.mul(1.73).add(m.mul(5.1))).mul(0.3)).add(sin(along.mul(4.3).add(m.mul(1.7))).mul(0.2));
     const a0 = arrive(ms);
     const rt = runupAt(a0, tau).add(lobes(ms).mul(a0.mul(0.25)));
+    // The sheet and its foam live on the sand above the still waterline; below it the
+    // water surface itself draws the waves.
+    const aboveSea = smoothstep(-0.03, 0.03, y);
     const film = rt.sub(y);
-    sheet.assign(max(film, 0).mul(0.35));
+    sheet.assign(max(film, 0).mul(0.35).mul(aboveSea));
     const up = tau.lessThan(SHORE.swashUp);
     uprush.assign(up.select(float(1), float(0)));
     // Leading-edge foam while running up; streaks along the flow while draining.
@@ -234,7 +238,7 @@ const swashFn = Fn(([xzIn, yIn, lodIn]: [Node<'vec2'>, Node<'float'>, Node<'floa
     const edgeFoam = laceCover(xz.add(dir.mul(tau.mul(0.8))), edge.mul(up.select(float(0.95), float(0.35))), ms, lod);
     const streakUv = vec2(xz.dot(dir).mul(0.25), along.mul(1.6));
     const streaks = laceCover(streakUv, smoothstep(0.0, 0.05, film).mul(up.select(float(0), float(0.45))).mul(sb(tau)), ms.add(17), lod);
-    foam.assign(max(edgeFoam, streaks));
+    foam.assign(max(edgeFoam, streaks).mul(aboveSea));
 
     // Wet sand: the most recent of the last six waves to have covered this height.
     const w = float(0).toVar('wetMax');

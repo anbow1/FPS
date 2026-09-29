@@ -4,6 +4,7 @@ import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { float, Fn, length, Loop, mrt, output, pass, pow, saturation, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
 import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PCFShadowMap, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { setMaxAnisotropy } from './textureSet.ts';
+import { installWebGpuCompat } from './webgpuCompat.ts';
 import { LAGOON_CAMERA } from '../config.ts';
 import { isTouchDevice } from '../core/input.ts';
 
@@ -43,6 +44,7 @@ export class LagoonStage {
     settings: StageSettings,
   ) {
     this.settings = { ...settings };
+    installWebGpuCompat();
     this.renderer = new WebGPURenderer({ canvas, antialias: false, reversedDepthBuffer: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;

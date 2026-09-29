@@ -316,13 +316,15 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   const puddleNoise = texture(noise, p.xz.div(11)).r.add(normalWorld.y.sub(1).mul(8));
   const puddle = smoothstep(0.6, 0.66, puddleNoise).mul(smoothstep(0.5, 0.95, U.wetness)).mul(float(1).sub(kS)).mul(smoothstep(0.1, 0.4, p.y));
   albedo = mix(albedo, albedo.mul(0.35), puddle);
-  // The swash sheet itself: a film of water a few centimetres thick, glassy and a touch
-  // green-blue over the sand, with foam at its leading edge and streaks as it drains.
-  const film = smoothstep(0.0, 0.012, sw.sheet);
-  albedo = mix(albedo, albedo.mul(vec3(0.7, 0.8, 0.8)), film.mul(0.6));
+  // The swash sheet itself: a film of water a few centimetres thick with foam at its
+  // leading edge and streaks as it drains. Not a mirror: the film is thin and rippled, so
+  // it stays fairly rough and the sand shows through, a little darker and greener.
+  const film = smoothstep(0.0, 0.02, sw.sheet);
+  albedo = mix(albedo, albedo.mul(vec3(0.72, 0.8, 0.78)), film.mul(0.7));
   const foamy = sw.foam.mul(kS.add(kR));
-  albedo = mix(albedo, vec3(0.82, 0.84, 0.82), foamy);
-  let rough: Node<'float'> = mix(mix(mix(orm.g, float(0.9), extra.z), float(0.2), wet.mul(0.85)), float(0.03), max(puddle, film));
+  albedo = mix(albedo, vec3(0.78, 0.8, 0.78), foamy);
+  let rough: Node<'float'> = mix(mix(mix(orm.g, float(0.9), extra.z), float(0.2), wet.mul(0.85)), float(0.03), puddle);
+  rough = mix(rough, float(0.14), film);
   rough = mix(rough, float(0.75), foamy);
   nTex = mix(nTex, vec3(0.5, 0.5, 1), max(max(puddle, film), wet.mul(0.4)));
 
