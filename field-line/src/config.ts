@@ -460,8 +460,8 @@ export const CAMERA = {
  */
 export const LAKE_WAVES = {
   periodS: 1.7,
-  /** Amplitude (m) per m/s of wind, at full fetch; the forest wind gives ~5 cm. */
-  amplitudePerWindMs: 0.012,
+  /** Amplitude (m) per m/s of wind, at full fetch; the forest wind gives ~4.5 cm. */
+  amplitudePerWindMs: 0.009,
   /** Fetch (m) at which the waves have grown to full height (height ∝ √fetch below it). */
   fullFetchM: 90,
   breakerIndex: 0.78,

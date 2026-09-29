@@ -123,7 +123,8 @@ function lakeMaterial(field: ShoreField): MeshPhysicalNodeMaterial {
   // the water at a low angle would show bright sky where a real lake mirrors the tree line.
   // Below ~9° of elevation (pines ~20 m tall across ~120 m of water) take the forest's colour.
   const R = reflect(V.negate(), N);
-  const treeline = smoothstep(0.16, 0.05, R.y);
+  // A wide transition: a sharp one turned every wave face into a dark stripe (corduroy).
+  const treeline = smoothstep(0.32, 0.02, R.y);
   const forest = vec3(0.028, 0.045, 0.03).mul(W.skyIrradiance.add(W.sunIrradiance.mul(0.25)).div(Math.PI));
 
   m.colorNode = vec3(0.78, 0.8, 0.78).mul(foam);

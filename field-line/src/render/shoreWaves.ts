@@ -125,7 +125,7 @@ export function surfFoam(xz: Node<'vec2'>, s: Node<'float'>, breaking: Node<'flo
   const age = fract(s).mul(P);
   const roller = smoothstep(0.16, 0.0, abs(u.add(0.04))).mul(breaking);
   const trail = breaking.mul(exp(age.div(-LAKE_WAVES.foamLifeS)));
-  return laceCover(xz.sub(dir.mul(age.mul(0.25))), max(roller, trail.mul(0.6)), floor(s));
+  return laceCover(xz.sub(dir.mul(age.mul(0.25))), max(roller.mul(0.7), trail.mul(0.35)), floor(s));
 }
 
 export interface Swash {
