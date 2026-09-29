@@ -403,6 +403,32 @@ Cost: ~0.4 s at 512² once the heights are shared (the heights themselves were
 1.5 s: share them). Unit tests: dispersion limits, fronts turning to meet a
 straight beach, the lagoon beach reached through the channel with less energy.
 
+### 7.2b An enclosed lake (FL `maps/lake.ts`, `render/shoreField.ts`, `render/water.ts`)
+
+The same machinery on a small lake in Field Line's forest, with four changes:
+
+1. **Carve the basin into the height function** (pure data: an ellipse with a
+   gentle bowl at most 1.3 m deep and banks that rise above the water out to 1.3
+   radii, then blend back to the terrain). The level is a little under the lowest
+   ground on the blend rim. Tests: the banks are above the water all round, and
+   no spawn, patrol, pickup, tree or track is in it. Logic reads the same data:
+   wading slows the player (half speed at 1 m) and forbids going prone.
+2. **Sources = the upwind shore** (water cells whose upwind neighbour is dry): a
+   lake has no open boundary to feed a plane wave in from. **Fetch** (distance
+   travelled over water) is accumulated along the same fast-marching paths and
+   sets the height, `A ∝ √(fetch / 90 m)` — short, fetch-limited wind waves
+   (period 1.7 s, ~5 cm in the forest's 5 m/s wind).
+3. **Water on a physical material** instead of hand shading: a
+   `MeshPhysicalNodeMaterial` with `ior 1.333` takes the environment reflection,
+   the sun's highlight and its shadows and the fog from the scene's own lights;
+   the refracted bed, absorption and scattering go in `emissiveNode × (1 −
+   Fresnel)`; foam is diffuse `colorNode` with its own roughness; the edge fades
+   out with `opacityNode` on the per-vertex depth. Wave normals go through
+   `transformNormalToView` (a material's `normalNode` is view space).
+4. The terrain's swash code runs only inside the lake's ellipse (elsewhere,
+   ground at the same height would get wet patches from the clamped field), and
+   reeds grow in clumps along the waterline.
+
 ### 7.3 Shore waves (`render/shoreWaves.ts`)
 
 1. **Phase**: `s = (t − T(x)) / P + wobble(along)` counts waves; the crest of
@@ -673,6 +699,7 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Vertex-shader texture read fails on WebGPU | implicit LOD in the vertex stage | `.level(0)` |
 | Render-target lookup mirrored | NDC y vs texel rows | write y inverted; texel row 0 = NDC +1 on both backends |
 | Test compared positions wrongly | buffers are float32 | compare `Math.fround` values |
+| A second camera's picture (scope, mirror) shows upside down | texel row 0 of a render target is the top of its image on both backends | sample it with `v = 0.5 − y/2`, not `0.5 + y/2` |
 | `Cannot read properties of null (reading 'If')` at load, game never ready | `If` / `Loop` / `toVar` used outside a TSL `Fn` | build that code in `Fn(([a, b]) => …)` and return a vector |
 | WGSL compile error: sampling in non-uniform control flow | `texture()` with implicit LOD inside `If` (WebGL accepts it, WebGPU does not) | pass an explicit `.level()` computed outside the branch (e.g. from camera distance) |
 | WebGPU only: `Failed to execute 'createView' … 'swizzle' … not of type 'GPUTextureComponentSwizzle'`, never finishes loading | three r186 sets `swizzle: 'rgba'` on every texture view; older Chromium/WebView builds (e.g. 140) implement an older swizzle draft | shim `GPUTexture.prototype.createView` to retry without the (identity) swizzle (`render/webgpuCompat.ts`), installed before the renderer |

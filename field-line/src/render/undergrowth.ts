@@ -3,6 +3,7 @@ import { InstanceStream } from './instanceStream.ts';
 import { fbm2 } from '../core/noise.ts';
 import { Rng } from '../core/rng.ts';
 import { sampleHeight } from '../maps/terrain.ts';
+import { lakeRadius } from '../maps/lake.ts';
 import type { MapData } from '../maps/types.ts';
 import { addSway, swayingMaterial } from './foliage.ts';
 import { splatWeights } from './ground.ts';
@@ -47,6 +48,22 @@ function grassGeometry(): BufferGeometry {
     d.set(p.getX(i) * 0.5, 1, p.getZ(i) * 0.5).normalize();
     n.setXYZ(i, d.x, d.y, d.z);
   }
+  addSway(g);
+  return g;
+}
+
+const REED: Kind = { densityPerM2: 0, fade: { high: [70, 95], low: [40, 55] }, sinkM: 2.2, scale: [0.8, 1.25] };
+
+/** A clump of reeds: tall narrow blade cards, splayed a little, ~1.7 m high. */
+function reedGeometry(): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+  for (let i = 0; i < 5; i++) {
+    const g = card(0.42, 1.7);
+    g.rotateX((rand(19, i) - 0.5) * 0.25);
+    g.rotateY((i / 5) * Math.PI + rand(23, i) * 0.4);
+    parts.push(g);
+  }
+  const g = merge(parts, 'reeds');
   addSway(g);
   return g;
 }
@@ -99,6 +116,9 @@ export class Undergrowth {
     const mown = (x: number, z: number): boolean => area.mown.some(([a, b, c, d]) => x > a && x < c && z > b && z < d);
     const densityK = quality === 'high' ? 1 : LOW_DENSITY;
     const rng = new Rng(9091);
+    // Nothing of this grows in the water or on the lake's pebbly shore (reeds do, below).
+    const lake = map.lake;
+    const inLake = (x: number, z: number): boolean => lake !== undefined && lakeRadius(lake, x, z) < 1.12;
 
     const scatter = (kind: Kind, weight: (x: number, z: number, w: readonly number[]) => number): Placement[] => {
       const out: Placement[] = [];
@@ -107,7 +127,7 @@ export class Undergrowth {
         const x = rng.range(minX, maxX);
         const z = rng.range(minZ, maxZ);
         const k = weight(x, z, field.at(x, z));
-        if (k <= 0 || rng.next() > k || mown(x, z) || blocked(x, z)) continue;
+        if (k <= 0 || rng.next() > k || mown(x, z) || blocked(x, z) || inLake(x, z)) continue;
         out.push({ x, y: sampleHeight(map.terrain, x, z) - 0.04, z, yawRad: rng.range(0, Math.PI * 2), scale: rng.range(kind.scale[0], kind.scale[1]), tint: fbm2(x / 23, z / 23, 2, 5) });
       }
       return out;
@@ -131,6 +151,25 @@ export class Undergrowth {
     this.add(grass, [grassGeometry()], grassMat, GRASS.fade[quality][1], false, tint);
     // No fern shadows: they would double the draw calls in every sun cascade for a few dark patches.
     this.add(ferns, [fernGeometry(9, 1.1, 3)], fernMat, FERN.fade[quality][1], false, (t, c) => c.setScalar(0.85 + t * 0.3));
+
+    // Reeds in clumps along the waterline, from the wet margin into ankle-deep water.
+    if (lake) {
+      const reeds: Placement[] = [];
+      const count = Math.round(lake.rx * lake.rz * 1.1 * densityK);
+      for (let i = 0; i < count; i++) {
+        const a = rng.range(0, Math.PI * 2);
+        const r = rng.range(0.9, 1.06);
+        const x = lake.cx + Math.cos(a) * lake.rx * r;
+        const z = lake.cz + Math.sin(a) * lake.rz * r;
+        const clump = fbm2(x / 9, z / 9, 3, 71) * 2.4 - 0.2;
+        const ground = sampleHeight(map.terrain, x, z);
+        const depth = lake.levelM - ground;
+        if (rng.next() > clump || depth > 0.35 || depth < -0.12) continue;
+        reeds.push({ x, y: ground - 0.05, z, yawRad: rng.range(0, Math.PI * 2), scale: rng.range(0.8, 1.25), tint: fbm2(x / 13, z / 13, 2, 73) });
+      }
+      const reedMat = swayingMaterial(lib.get('grassTuft'), 0.05, [...REED.fade[quality], REED.sinkM]);
+      this.add(reeds, [reedGeometry()], reedMat, REED.fade[quality][1], quality === 'high', (t, c) => c.setRGB(0.72 + t * 0.12, 0.86 + t * 0.1, 0.62));
+    }
   }
 
   private add(list: readonly Placement[], variants: BufferGeometry[], mat: Material, maxM: number, shadows: boolean, tint: (t: number, c: Color) => Color): void {

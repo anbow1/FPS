@@ -43,6 +43,10 @@ export const PLAYER = {
   fallDamagePerM: 12, // health points per metre above the threshold
   brokenLegSeconds: 20,
   limpSpeedMultiplier: 0.55,
+  /** Water this deep (m) halves the movement speed; shallower water slows proportionally. */
+  wadeDepthForHalfSpeedM: 1.0,
+  /** Deeper water than this (m) forbids going prone. */
+  maxProneWaterM: 0.15,
   breathHoldSeconds: 6,
   breathRecoverPenaltySeconds: 3,
   breathPenaltySwayMultiplier: 2,
@@ -447,6 +451,32 @@ export const CAMERA = {
   farM: 2600,
   mouseRadPerPixel: 0.0022,
   shakeIntensity: 1, // player-adjustable global scale
+} as const;
+
+/**
+ * The forest lake's wind waves and water (render/shoreField.ts, shoreWaves.ts, water.ts).
+ * Short, fetch-limited waves that slow and steepen on the gentle shore, lap up the bank and
+ * drain back; foam only where they break at the very edge. Values for a small lake.
+ */
+export const LAKE_WAVES = {
+  periodS: 1.7,
+  /** Amplitude (m) per m/s of wind, at full fetch; the forest wind gives ~5 cm. */
+  amplitudePerWindMs: 0.012,
+  /** Fetch (m) at which the waves have grown to full height (height ∝ √fetch below it). */
+  fullFetchM: 90,
+  breakerIndex: 0.78,
+  runupK: 2.1,
+  swashUp: 0.4,
+  swashDown: 0.55,
+  dryTimeS: 20,
+  foamLifeS: 1.1,
+  maxDepthM: 2,
+  minDepthM: 0.08,
+  res: 256,
+  /** Clear forest lake water, a little tea-coloured: absorption per metre (linear RGB). */
+  absorptionPerM: { r: 0.42, g: 0.16, b: 0.34 },
+  scatterColour: 0x2f5a44,
+  deepColour: 0x0d1f18,
 } as const;
 
 export const WORLD_WIND: Record<'city' | 'forest' | 'range', { speedMs: number; directionRad: number }> = {

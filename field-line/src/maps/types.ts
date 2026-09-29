@@ -1,6 +1,7 @@
 import type { SurfaceKind } from '../config.ts';
 import type { Vec3 } from '../core/vec.ts';
 import type { BoxSpec, Heightfield } from '../game/collision.ts';
+import type { Lake } from './lake.ts';
 
 // Pure map data. Built once by a map generator, then read by the collision
 // world (logic) and by the render layer (visuals). No THREE in here.
@@ -116,6 +117,8 @@ export interface MapData {
   wetDefault: boolean;
   /** Where render-only undergrowth (grass tufts, bracken) grows; absent on maps without any. */
   undergrowth?: UndergrowthArea;
+  /** A shallow lake carved into the terrain (maps/lake.ts). */
+  lake?: Lake;
 }
 
 /** Rectangles as [minX, minZ, maxX, maxZ] in metres. */

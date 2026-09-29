@@ -83,6 +83,9 @@ export class Player {
     return this.bufferHp + this.permanentHp;
   }
 
+  /** Water over the feet (m), set by the game each step: wading is slow, and no one lies down in it. */
+  wadeDepthM = 0;
+
   update(intent: PlayerIntent, world: CollisionWorld, dt: number, events: EventQueue): void {
     this.prevPosition.copy(this.body.position);
     if (!this.alive) {
@@ -114,6 +117,8 @@ export class Player {
       desired = this.stance === 'crouch' ? 'stand' : 'crouch';
     }
     if (intent.pronePressed) desired = this.stance === 'prone' ? 'crouch' : 'prone';
+    // Prone in water deeper than a hand's width would put the face under.
+    if (desired === 'prone' && this.wadeDepthM > PLAYER.maxProneWaterM) desired = 'crouch';
     if (intent.sprint && intent.moveForward > 0 && this.stance !== 'stand' && !this.sliding && !intent.crouchPressed) {
       desired = 'stand';
     }
@@ -149,6 +154,8 @@ export class Player {
     else if (sprinting) targetSpeed = PLAYER.sprintSpeedMs;
     else if (intent.aiming || this.itemInUse) targetSpeed = PLAYER.walkSpeedMs;
     if (injured) targetSpeed *= PLAYER.limpSpeedMultiplier;
+    // Wading: drag grows with the depth of water pushed aside.
+    targetSpeed *= 1 - Math.min(1, this.wadeDepthM / PLAYER.wadeDepthForHalfSpeedM) * 0.5;
 
     // Stamina: drains while sprinting, recovers faster crouched or prone ("seated").
     if (this.isSprinting) {

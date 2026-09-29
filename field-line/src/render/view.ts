@@ -1,5 +1,5 @@
 import { Object3D, Vector3 } from 'three/webgpu';
-import { type LightingPresetId, WORLD_WIND } from '../config.ts';
+import { LAKE_WAVES, type LightingPresetId, WORLD_WIND } from '../config.ts';
 import { damp } from '../core/vec.ts';
 import type { GameEvent } from '../game/events.ts';
 import type { Game } from '../game/game.ts';
@@ -8,7 +8,12 @@ import { ActorView } from './actors.ts';
 import { Effects } from './effects.ts';
 import { AutoExposure } from './exposure.ts';
 import { Foliage, windVector } from './foliage.ts';
-import { buildFarRing, buildTerrainMesh } from './ground.ts';
+import { buildFarRing, buildTerrainMesh, type LakeFx } from './ground.ts';
+import { Caustics } from './caustics.ts';
+import { computeShoreField, lakeDomain, shoreFieldTexture } from './shoreField.ts';
+import { buildLakeWater } from './water.ts';
+import { W } from './waterUniforms.ts';
+import { sampleHeight } from '../maps/terrain.ts';
 import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './interior.ts';
 import { Lighting } from './lighting.ts';
 import { FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
@@ -42,6 +47,8 @@ export class GameView {
   private effects!: Effects;
   private worldFx!: WorldFx;
   private foliage!: Foliage;
+  private caustics: Caustics | null = null;
+  private lakeFx: LakeFx | null = null;
   private undergrowth!: Undergrowth;
   private settings: ViewSettings;
   private shake = 0;
@@ -76,7 +83,20 @@ export class GameView {
     FOLIAGE.translucent = this.settings.quality === 'high';
     const lib = new MaterialLibrary();
     setInteriorVolumes(map.interiors);
-    stage.scene.add(buildTerrainMesh(map, lib), buildFarRing(map));
+    // The forest lake: its wave field is solved over the carved bed once here; the terrain
+    // shader reads it (swash, wet bank) along with the caustics pass.
+    if (map.lake) {
+      await progress('Filling the lake', 0.2);
+      const lake = map.lake;
+      const w = WORLD_WIND[map.id];
+      const ground = (x: number, z: number): number => sampleHeight(map.terrain, x, z);
+      const domain = lakeDomain(lake);
+      const field = { texture: shoreFieldTexture(computeShoreField(domain, lake.levelM, ground, { x: Math.sin(w.directionRad), z: Math.cos(w.directionRad) })), domain };
+      this.caustics = new Caustics(this.settings.quality);
+      this.lakeFx = { lake, field, caustics: this.caustics };
+      stage.scene.add(buildLakeWater(lake, field, ground, this.settings.quality));
+    }
+    stage.scene.add(buildTerrainMesh(map, lib, this.lakeFx), buildFarRing(map));
     await progress('Building the world', 0.35);
     this.world = buildStaticWorld(map, lib);
     stage.scene.add(this.world.group, buildProps(map.props, lib));
@@ -208,6 +228,7 @@ export class GameView {
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
+    if (this.caustics) this.updateWater(game);
     this.foliage.update(cam.position);
     this.undergrowth.update(cam.position);
     // Sun shafts through the canopy: strongest with a low sun, none under a full overcast.
@@ -220,10 +241,23 @@ export class GameView {
     if (this.scopeReady && game.weapons.current === 'sniper' && game.weapons.adsBlend > 0.3 && p.alive) {
       this.viewModel.renderScope(this.stage.renderer, this.stage.scene, cam.position);
     }
+    this.caustics?.render(this.stage.renderer);
     this.stage.render();
     this.scopeReady = true;
     this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.preset.ev100, frameSeconds);
     this.stage.setExposure(Lighting.exposureMultiplier(this.lighting.preset.ev100, this.exposure.adaptedEv));
+  }
+
+  /** The lake's shader inputs for this frame: game time, sun and sky, wind. */
+  private updateWater(game: Game): void {
+    const sun = this.lighting.sun;
+    W.time.value = game.timeSeconds;
+    W.sunDir.value.copy(this.lighting.sunVector).normalize();
+    W.sunIrradiance.value.set(sun.color.r, sun.color.g, sun.color.b).multiplyScalar(sun.intensity);
+    const sky = this.lighting.preset.skyIlluminanceLux * this.lighting.preExposure;
+    W.skyIrradiance.value.set(sky * 0.85, sky * 0.93, sky * 1.05);
+    W.wind.value.set(windVector.value.x, windVector.value.z);
+    W.amplitudeM.value = windVector.value.length() * LAKE_WAVES.amplitudePerWindMs;
   }
 
   /**

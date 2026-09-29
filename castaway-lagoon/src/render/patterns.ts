@@ -154,13 +154,20 @@ export function moss(): TexelSampler {
 }
 
 /** Grey water-rippled height field for the water's detail normals (the colour is unused). */
+/**
+ * Wind ripples as a height field. Isotropic, with a domain warp: the earlier
+ * pattern was stretched 2:1 along one axis, and the caustics splatted from it
+ * (caustics.ts) came out blocky and axis-aligned.
+ */
 export function waterRipples(): TexelSampler {
   return (u, v, t) => {
     t.r = 0.5;
     t.g = 0.5;
     t.b = 0.5;
-    const a = tileFbm(u * 4 + tileFbm(u * 2, v * 2, 2, 2, 5) * 0.8, v * 8, 4, 5, 131);
-    const b = tileFbm(u * 9, v * 5 + a * 0.5, 9, 4, 133);
+    const wu = tileFbm(u * 3, v * 3, 3, 2, 5) * 0.35;
+    const wv = tileFbm(u * 3 + 5, v * 3 + 2, 3, 2, 7) * 0.35;
+    const a = tileFbm((u + wu) * 6, (v + wv) * 6, 6, 5, 131);
+    const b = tileFbm(u * 13 + a * 0.6, v * 13, 13, 4, 133);
     t.height = a * 0.65 + b * 0.35;
     t.rough = 0.05;
   };

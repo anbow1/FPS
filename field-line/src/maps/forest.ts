@@ -4,6 +4,7 @@ import { Vec3 } from '../core/vec.ts';
 import type { Heightfield } from '../game/collision.ts';
 import { MapBuilder } from './builder.ts';
 import { distanceToSegmentXZ, makeHeightfield, sampleHeight } from './terrain.ts';
+import { carveLake, type Lake, lakeLevelFor, lakeRadius } from './lake.ts';
 import type { MapData, TreeInstance } from './types.ts';
 
 // Pine forest ridge, 800 × 800 m (brief). A ridge runs east–west north of the
@@ -41,7 +42,7 @@ function trackDistance(x: number, z: number): number {
   return best;
 }
 
-function rawHeight(x: number, z: number): number {
+function baseHeight(x: number, z: number): number {
   const rolling = fbm2(x / 180, z / 180, 5, 11) * 9;
   // Ridge profile across Z: gentle south face, steeper north face.
   const dz = z - (RIDGE_Z_M + noise2(x / 220, 3.1, 5) * 30);
@@ -92,12 +93,27 @@ function erode(t: Heightfield, iterations: number): void {
   }
 }
 
+// A shallow lake in the south-east meadows, between the spawn and the eastern
+// patrol route: wadeable (at most 1.3 m deep), clear of the track and the farm.
+const LAKE_SHAPE = { cx: 190, cz: 240, rx: 72, rz: 48, depthM: 1.3 } as const;
+let lakeCache: Lake | null = null;
+
+function lake(): Lake {
+  lakeCache ??= { ...LAKE_SHAPE, levelM: lakeLevelFor(LAKE_SHAPE.cx, LAKE_SHAPE.cz, LAKE_SHAPE.rx, LAKE_SHAPE.rz, baseHeight) };
+  return lakeCache;
+}
+
+function rawHeight(x: number, z: number): number {
+  return carveLake(lake(), x, z, baseHeight(x, z));
+}
+
 export function buildForest(): MapData {
   let terrainRef: Heightfield | null = null;
   const surfaceAt = (x: number, z: number): SurfaceKind => {
     if (!terrainRef) return 'soil';
     const e = CELL_M;
     const slope = Math.hypot(sampleHeight(terrainRef, x + e, z) - sampleHeight(terrainRef, x - e, z), sampleHeight(terrainRef, x, z + e) - sampleHeight(terrainRef, x, z - e)) / (2 * e);
+    if (lakeRadius(lake(), x, z) < 1.15) return 'soil'; // pebbly shore and lake bed
     return slope > 0.75 ? 'rock' : 'soil';
   };
   const terrain = makeHeightfield(HALF_M + 10, CELL_M, rawHeight, surfaceAt);
@@ -113,7 +129,7 @@ export function buildForest(): MapData {
   for (let i = 0; i < 70; i++) {
     const x = rng.range(-360, 360);
     const z = RIDGE_Z_M + rng.gauss() * 35;
-    if (trackDistance(x, z) < 8) continue;
+    if (trackDistance(x, z) < 8 || lakeRadius(lake(), x, z) < 1.25) continue;
     const cluster = rng.int(1, 4);
     for (let j = 0; j < cluster; j++) {
       const rx = x + rng.range(-6, 6);
@@ -125,7 +141,7 @@ export function buildForest(): MapData {
   for (let i = 0; i < 90; i++) {
     const x = rng.range(-370, 370);
     const z = rng.range(-370, 370);
-    if (surfaceAt(x, z) !== 'rock' || trackDistance(x, z) < 8) continue;
+    if (surfaceAt(x, z) !== 'rock' || trackDistance(x, z) < 8 || lakeRadius(lake(), x, z) < 1.25) continue;
     b.prop('rock', x, z, rng.range(0, 6.3), { scale: rng.range(0.8, 2.0), baseY: b.ground(x, z) - 0.3 });
     rocks.push(new Vec3(x, 0, z));
   }
@@ -144,9 +160,12 @@ export function buildForest(): MapData {
       let p = stand > 0.02 ? 0.85 : stand > -0.12 ? 0.2 : 0;
       p *= 1 - crestK * 0.75;
       if (trackDistance(x, z) < 6 || Math.hypot(x - FARM.x, z - FARM.z) < 42) p = 0;
+      // Open water and a pebbly shore: no trees, and no bushes below the bank.
+      const lakeR = lakeRadius(lake(), x, z);
+      if (lakeR < 1.4) p = 0;
       if (surfaceAt(x, z) === 'rock') p *= 0.3;
       if (rng.next() >= p) {
-        if (stand > -0.2 && rng.next() < 0.18 && trackDistance(x, z) > 4) bushes.push(plant(b, x, z, rng.range(0.7, 1.4), rng.next()));
+        if (stand > -0.2 && rng.next() < 0.18 && trackDistance(x, z) > 4 && lakeR > 1.3) bushes.push(plant(b, x, z, rng.range(0.7, 1.4), rng.next()));
         continue;
       }
       if (rocks.some((r) => Math.abs(r.x - x) < 3 && Math.abs(r.z - z) < 3)) continue;
@@ -201,6 +220,7 @@ export function buildForest(): MapData {
     groundSurface: 'soil',
     wetDefault: false,
     undergrowth: { bounds: [-HALF_M + 12, -HALF_M + 12, HALF_M - 12, HALF_M - 12], mown: [], ferns: true },
+    lake: lake(),
   };
 }
 

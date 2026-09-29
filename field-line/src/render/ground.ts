@@ -1,10 +1,15 @@
-import { attribute, cameraPosition, float, int, length, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3, vec4 } from 'three/tsl';
+import { attribute, cameraPosition, float, int, length, max, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3, vec4 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, type DataArrayTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, Mesh, MeshStandardNodeMaterial, NoColorSpace, type Node, RepeatWrapping, RGBAFormat, UnsignedByteType } from 'three/webgpu';
 import { fbm2, tileFbm } from '../core/noise.ts';
 import type { Heightfield } from '../game/collision.ts';
 import type { MapData } from '../maps/types.ts';
 import { distanceToSegmentXZ, sampleHeight } from '../maps/terrain.ts';
 import type { MaterialLibrary } from './materials.ts';
+import { type Lake, lakeRadius } from '../maps/lake.ts';
+import { type Caustics, causticAt } from './caustics.ts';
+import type { ShoreField } from './shoreField.ts';
+import { swash } from './shoreWaves.ts';
+import { W } from './waterUniforms.ts';
 import * as P from './patterns.ts';
 import { makeTextureArray, makeTextureSet } from './textures.ts';
 
@@ -20,13 +25,20 @@ const DETAIL_TILE_M = 0.35;
 const DETAIL_FADE_M = 10;
 const MACRO_TILE_M = 220;
 
-export function buildTerrainMesh(map: MapData, lib: MaterialLibrary): Mesh {
+/** The lake's render pieces the terrain shader needs: its baked wave field and the caustics pass. */
+export interface LakeFx {
+  lake: Lake;
+  field: ShoreField;
+  caustics: Caustics;
+}
+
+export function buildTerrainMesh(map: MapData, lib: MaterialLibrary, lakeFx: LakeFx | null = null): Mesh {
   const geometry = heightfieldGeometry(
     map.terrain,
     map.id === 'city' ? null : (x, z) => splatWeights(map, x, z),
     (x, z) => 1 - Math.min(0.45, canopyAt(map, x, z) * 0.22),
   );
-  const material = map.id === 'city' ? lib.get('asphalt') : splatMaterial();
+  const material = map.id === 'city' ? lib.get('asphalt') : splatMaterial(lakeFx);
   const mesh = new Mesh(geometry, material);
   mesh.receiveShadow = true;
   mesh.name = 'terrain';
@@ -78,7 +90,7 @@ export function buildFarRing(map: MapData): Mesh {
   g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  const mesh = new Mesh(g, map.id === 'city' ? new MeshStandardNodeMaterial({ color: 0x3a3a3c, roughness: 0.92 }) : splatMaterial());
+  const mesh = new Mesh(g, map.id === 'city' ? new MeshStandardNodeMaterial({ color: 0x3a3a3c, roughness: 0.92 }) : splatMaterial(null));
   mesh.receiveShadow = false;
   mesh.name = 'farRing';
   return mesh;
@@ -155,7 +167,19 @@ export function splatWeights(map: MapData, x: number, z: number): [number, numbe
   let grass = (1 - forestFloor) * (1 - rock);
   soil *= 1 - track;
   grass *= 1 - track;
-  const r = rock * (1 - track);
+  let r = rock * (1 - track);
+  // The lake: a pebbly shore just above the water, darker compacted mud and gravel below it.
+  if (map.lake) {
+    const lr = lakeRadius(map.lake, x, z);
+    if (lr < 1.16) {
+      const shore = smooth(1.16, 1.06, lr);
+      const bed = smooth(1.0, 0.94, lr);
+      grass *= 1 - shore;
+      r *= 1 - shore;
+      soil = soil * (1 - shore) + shore * (1 - bed * 0.55);
+      track = track * (1 - shore) + shore * bed * 0.55;
+    }
+  }
   const sum = grass + soil + r + track || 1;
   return [grass / sum, soil / sum, r / sum, track / sum];
 }
@@ -225,10 +249,11 @@ function macroVariation(): DataTexture {
   return tex;
 }
 
-let splatMat: MeshStandardNodeMaterial | null = null;
+const splatMats = new Map<LakeFx | null, MeshStandardNodeMaterial>();
 
-function splatMaterial(): MeshStandardNodeMaterial {
-  if (splatMat) return splatMat;
+function splatMaterial(lakeFx: LakeFx | null): MeshStandardNodeMaterial {
+  const cached = splatMats.get(lakeFx);
+  if (cached) return cached;
   // One array texture per map kind, one layer per ground type: 3 bindings instead of 12, so
   // the shader stays inside the 16-texture limit of WebGPU and phone GPUs (shadow maps and the
   // environment probe count too). At 19 textures the terrain failed to draw on WebGPU.
@@ -296,14 +321,41 @@ function splatMaterial(): MeshStandardNodeMaterial {
   const nDetail = at(layers.normalMap, uvD, SOIL).xyz;
   const n = mix(nBlend, nBlend.add(nDetail).sub(0.5), near.mul(0.5));
 
-  const roughness = ormG.g.mul(k.x).add(ormS.g.mul(k.y)).add(float(0.85).mul(k.z)).add(ormT.g.mul(k.w));
+  let roughness: Node<'float'> = ormG.g.mul(k.x).add(ormS.g.mul(k.y)).add(float(0.85).mul(k.z)).add(ormT.g.mul(k.w));
+  let nFinal: Node<'vec3'> = n;
 
-  const m = new MeshStandardNodeMaterial({ name: 'terrainSplat', metalness: 0 });
+  const m = new MeshStandardNodeMaterial({ name: lakeFx ? 'terrainSplatLake' : 'terrainSplat', metalness: 0 });
+  if (lakeFx) {
+    // The lake's edge (shoreWaves.ts): the swash of each wavelet runs up the bank and drains,
+    // the ground stays wet as far as the recent ones reached and dries over ~20 s — darker, a
+    // little more saturated, smoother. Below the water: a green-brown tint and caustics.
+    // Only around this lake: elsewhere on the map ground at the same height stays dry.
+    const L = lakeFx.lake;
+    const lakeR = xz.sub(vec2(L.cx, L.cz)).div(vec2(L.rx, L.rz)).length();
+    const y = lakeR.lessThan(1.35).select(positionWorld.y.sub(L.levelM), float(50));
+    const sw = swash(lakeFx.field, xz, y);
+    const lum = colour.dot(vec3(0.2126, 0.7152, 0.0722));
+    colour = mix(vec3(lum), colour, float(1).add(sw.wet.mul(0.35)));
+    colour = colour.mul(float(1).sub(sw.wet.mul(0.42)));
+    const film = smoothstep(0.0, 0.01, sw.sheet);
+    colour = mix(colour, colour.mul(vec3(0.72, 0.8, 0.76)), film.mul(0.6));
+    const under = float(1).sub(smoothstep(-0.4, 0.0, y));
+    colour = colour.mul(mix(vec3(1), vec3(0.72, 0.8, 0.68), under));
+    colour = mix(colour, vec3(0.78, 0.8, 0.78), sw.foam);
+    roughness = mix(mix(roughness, float(0.28), sw.wet.mul(0.9)), float(0.14), film);
+    roughness = mix(roughness, float(0.8), sw.foam);
+    nFinal = mix(n, vec3(0.5, 0.5, 1), max(film, sw.wet.mul(0.35)));
+    // Caustics: the sun's direct light on the bed scaled by the light concentration.
+    const depth = max(y.negate(), 0);
+    const focus = causticAt(lakeFx.caustics, positionWorld, depth).sub(1);
+    const sunOnBed = W.sunIrradiance.mul(max(normalWorld.dot(W.sunDir), 0));
+    m.emissiveNode = colour.mul(sunOnBed).mul(focus.mul(smoothstep(0.03, 0.2, depth)).mul(depth.mul(-0.5).exp()).mul(1.2 / Math.PI));
+  }
   m.colorNode = colour;
-  m.normalNode = normalMap(n);
+  m.normalNode = normalMap(nFinal);
   m.roughnessNode = roughness;
   // Texture occlusion × the canopy occlusion baked per vertex (indirect light only; the sun has real shadows).
   m.aoNode = mix(float(1), hG.mul(k.x).add(hS.mul(k.y)).add(hR.mul(k.z)).add(hT.mul(k.w)), 0.5).mul(attribute('shade', 'float'));
-  splatMat = m;
+  splatMats.set(lakeFx, m);
   return m;
 }

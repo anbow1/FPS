@@ -2,6 +2,7 @@ import { GRENADES, type GrenadeKind, WEAPONS, WORLD_WIND } from '../config.ts';
 import { Rng } from '../core/rng.ts';
 import { directionFromYawPitch, Vec3 } from '../core/vec.ts';
 import type { MapData } from '../maps/types.ts';
+import { waterDepth } from '../maps/lake.ts';
 import type { BodyPart } from './actor.ts';
 import { CollisionWorld } from './collision.ts';
 import { EventQueue } from './events.ts';
@@ -179,6 +180,8 @@ export class Game {
       p.yawRad -= intent.lookYawRad;
       p.pitchRad = Math.max(-1.45, Math.min(1.45, p.pitchRad - intent.lookPitchRad));
     }
+    const feet = p.body.position;
+    p.wadeDepthM = waterDepth(this.map.lake, feet.x, feet.z, feet.y);
     p.update(intent.player, this.world, dt, this.events);
 
     // 2. Items
