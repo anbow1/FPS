@@ -432,12 +432,18 @@ straight beach, the lagoon beach reached through the channel with less energy.
 
 - **Roller**: whitewater on the crest and its front face where the wave breaks.
 - **Trail**: behind it the foam decays with the time since the crest passed,
-  `age = fract(s) · P`, over `foamLifeS` (4.5 s), drifting shoreward with the bore.
+  `age = fract(s) · P`, over `foamLifeS`, drifting shoreward with the bore. Keep
+  the foam life well under one wave period (1.8 s for a 3.6 s period) in calm
+  water: at 4.5 s every breaker's foam overlapped the next one's and the whole
+  inner surf zone stayed white.
 - **Lace** (after Tidewater's lace texture): a tileable texture whose R channel
-  is the distance to the nearest bubble strand (warped Worley F2 − F1, two scales),
-  G small bubbles, B mottling, A a per-cell random. `cover = smoothstep(R − 0.08,
-  R + 0.08, amount)`: fresh foam is a dense mat, thinning foam opens holes, then
-  lace, then single strands. Offset the lace per wave (hash of `m`) so no two
+  is "hole-ness" — round holes of many sizes (three scales of jittered points, each
+  with its own radius, strongly domain-warped) plus fbm mottling — G small bubbles,
+  B mottling, A a per-cell random. `cover = smoothstep(R − 0.08, R + 0.08, amount)`:
+  fresh foam is a dense mat; as it thins, holes open and merge until only
+  irregular strands and patches remain. (Our first version used Worley F2 − F1
+  cell edges: at every amount it read as a regular honeycomb / paving stones —
+  exactly what the coastal checklist warns against.) Offset the lace per wave (hash of `m`) so no two
   waves leave the same pattern. **Multiply the result by `smoothstep(0.03, 0.12,
   amount)`**: with any mottling offset in the threshold, zero foam otherwise still
   draws the whole strand net over every beach and every square metre of water
@@ -459,9 +465,9 @@ beach band (the code runs inside a TSL `If` on the ground's height).
    along the shore whose phases depend on the wave).
 3. **Sheet**: `R(τ) − y > 0` → a film of water: darker and a touch green-blue,
    normals flattened, **roughness ≈ 0.14, not a mirror** (at 0.03 the whole run-up
-   band reflected the sky as a solid white strip); **foam at the leading edge**
-   while running up; **streaks** along the flow while draining (lace stretched
-   along the travel direction). Only **above the still waterline** (`y > 0`):
+   band reflected the sky as a solid white strip); a thin **foam line at the
+   leading edge** while running up; a few foam patches riding the backwash while
+   it drains (lace stretched along the flow looked like a comb: avoid). Only **above the still waterline** (`y > 0`):
    below it the water surface draws the waves, and swash foam on the seabed shows
    through the water as a white blanket.
 4. **Wet history**: for each of the last six waves, when did its backwash uncover
@@ -487,7 +493,11 @@ After Evan Wallace's *WebGL Water* (also Tidewater's approach):
 3. The fragment writes `area before / area after` (from `dFdx`/`dFdy` of the
    rest and landed positions): exactly the light concentration, so focusing forms
    the bright network by itself and it moves with the ripples. Two planes
-   (0.8 m in R, 2.6 m in G), blended by the real depth at lookup.
+   (1.2 m in R, 3.0 m in G), blended by the real depth at lookup. Check it by
+   reading the target back (`readRenderTargetPixelsAsync`): the mean must be ≈ 1
+   (energy conserved); a flat network means too little focusing — gentle detail
+   normals at shallow depth barely focus, so the splat scales the ripple slopes
+   by 1.5.
 4. The ground looks it up where **its sun ray entered the water**
    (`p.xz − refractedShift × depth`) and adds `(I − 1) × direct sun × albedo`,
    faded with depth.

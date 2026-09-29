@@ -198,48 +198,51 @@ export function foamValue(u: number, v: number): number {
   return Math.min(1, Math.max(0, streak * 1.3 - 0.25 + (bubbles > 0.7 ? 0.25 : 0) - cells * 0.15));
 }
 
-/** Tileable Worley F2 − F1 (distance to the nearest cell edge, in cell units) on a g × g grid. */
-function cellEdge(u: number, v: number, g: number, seed: number): number {
+/**
+ * Tileable round holes on a g × g jittered grid, each with its own radius:
+ * 1 at a hole's centre, falling to 0 at its rim, 0 between holes.
+ */
+function roundHoles(u: number, v: number, g: number, seed: number): number {
   const cx = Math.floor(u * g);
   const cy = Math.floor(v * g);
-  let f1 = 9;
-  let f2 = 9;
+  let best = 0;
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       const ix = (((cx + dx) % g) + g) % g;
       const iy = (((cy + dy) % g) + g) % g;
-      const px = (cx + dx + 0.15 + hash2(ix, iy, seed) * 0.7) / g;
-      const py = (cy + dy + 0.15 + hash2(ix, iy, seed + 1) * 0.7) / g;
-      const d = Math.hypot(u - px, v - py) * g;
-      if (d < f1) {
-        f2 = f1;
-        f1 = d;
-      } else if (d < f2) f2 = d;
+      const px = (cx + dx + 0.1 + hash2(ix, iy, seed) * 0.8) / g;
+      const py = (cy + dy + 0.1 + hash2(ix, iy, seed + 1) * 0.8) / g;
+      const radius = 0.3 + hash2(ix, iy, seed + 2) * 0.5; // in cell units
+      const d = (Math.hypot(u - px, v - py) * g) / radius;
+      best = Math.max(best, 1 - d);
     }
   }
-  return f2 - f1;
+  return Math.max(0, best);
 }
 
 /**
  * Surf-foam lace (after Tidewater's lace texture, Dan Greenheck, MIT), one
  * tile = 3.5 m. Thresholding R by the foam amount gives a dense mat when the
- * foam is fresh, a mat with holes as it thins, then lace, then single strands.
- *   R  distance to the nearest bubble strand: 0 on a strand, 1 in a hole
- *   G  small bubbles clustered along the strands
+ * foam is fresh; as it thins, round holes of many sizes open and merge until
+ * only irregular strands and patches are left — foam, not a honeycomb (a net
+ * of Worley cell edges read as regular paving stones).
+ *   R  "hole-ness": 0 where foam lasts longest, 1 where it clears first
+ *   G  small bubbles clustered where the foam is thin
  *   B  soft mottling (density variation)
  *   A  a random value per cell (staggers when stranded foam pops)
  */
 export function laceValue(u: number, v: number): [number, number, number, number] {
-  // Warped cells so strands curve like torn foam, not like a honeycomb.
-  const wu = u + (tileFbm(u * 4, v * 4, 4, 3, 161) - 0.5) * 0.08;
-  const wv = v + (tileFbm(u * 4 + 7, v * 4 + 3, 4, 3, 163) - 0.5) * 0.08;
-  const coarse = cellEdge(((wu % 1) + 1) % 1, ((wv % 1) + 1) % 1, 9, 171);
-  const fine = cellEdge(((wu * 2 % 1) + 1) % 1, ((wv * 2 % 1) + 1) % 1, 11, 173);
-  // Holes open inside the big cells first; the finer net subdivides them into lace.
-  const hole = Math.min(coarse * 1.6, fine * 1.1 + 0.25);
-  const r = Math.min(1, Math.max(0, hole));
-  const bubbles = tileNoise(u * 96, v * 96, 96, 175) > 0.72 && r < 0.35 ? 1 : 0;
-  const mottle = tileFbm(u * 3, v * 3, 3, 3, 177);
-  const cellRand = hash2(Math.floor(((u % 1) + 1) % 1 * 9), Math.floor(((v % 1) + 1) % 1 * 9), 179);
-  return [r, bubbles, mottle, cellRand];
+  const wrap = (x: number): number => ((x % 1) + 1) % 1;
+  // A strong warp so holes are never round-in-a-grid.
+  const wu = wrap(u + (tileFbm(u * 3, v * 3, 3, 4, 161) - 0.5) * 0.22);
+  const wv = wrap(v + (tileFbm(u * 3 + 7, v * 3 + 3, 3, 4, 163) - 0.5) * 0.22);
+  const big = roundHoles(wu, wv, 6, 171);
+  const small = roundHoles(wrap(wu * 2), wrap(wv * 2), 7, 175);
+  const tiny = roundHoles(wrap(wu * 4), wrap(wv * 4), 9, 181);
+  const mottle = tileFbm(u * 5, v * 5, 5, 5, 177);
+  const hole = Math.max(big, small * 0.85, tiny * 0.6);
+  const r = Math.min(1, Math.max(0, hole * 0.8 + (mottle - 0.5) * 0.45 + 0.12));
+  const bubbles = tileNoise(u * 96, v * 96, 96, 185) > 0.7 && r > 0.25 && r < 0.6 ? 1 : 0;
+  const cellRand = hash2(Math.floor(wu * 6), Math.floor(wv * 6), 179);
+  return [r, bubbles, tileFbm(u * 3, v * 3, 3, 3, 187), cellRand];
 }

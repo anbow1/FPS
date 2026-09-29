@@ -340,7 +340,7 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   const depth = max(float(WATER_LEVEL_M).sub(p.y), 0);
   const focus = causticAt(caustics, p, depth).sub(1);
   const sunOnFloor = U.sunIrradiance.mul(max(normalWorld.dot(U.sunDir), 0)).mul(float(1).sub(U.cloudCover.mul(0.8)));
-  const caustic = focus.mul(smoothstep(0.03, 0.3, depth)).mul(depth.mul(-0.22).exp()).mul(0.9);
+  const caustic = focus.mul(smoothstep(0.03, 0.3, depth)).mul(depth.mul(-0.22).exp()).mul(1.25);
   m.emissiveNode = albedo.mul(sunOnFloor).mul(caustic.div(Math.PI));
   return m;
 }

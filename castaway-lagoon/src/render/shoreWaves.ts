@@ -234,11 +234,11 @@ const swashFn = Fn(([xzIn, yIn, lodIn]: [Node<'vec2'>, Node<'float'>, Node<'floa
     const up = tau.lessThan(SHORE.swashUp);
     uprush.assign(up.select(float(1), float(0)));
     // Leading-edge foam while running up; streaks along the flow while draining.
-    const edge = smoothstep(0.0, 0.015, film).mul(float(1).sub(smoothstep(0.02, 0.07, film)));
-    const edgeFoam = laceCover(xz.add(dir.mul(tau.mul(0.8))), edge.mul(up.select(float(0.95), float(0.35))), ms, lod);
-    const streakUv = vec2(xz.dot(dir).mul(0.25), along.mul(1.6));
-    const streaks = laceCover(streakUv, smoothstep(0.0, 0.05, film).mul(up.select(float(0), float(0.45))).mul(sb(tau)), ms.add(17), lod);
-    foam.assign(max(edgeFoam, streaks).mul(aboveSea));
+    // Leading-edge foam while running up; while draining, a few patches ride the backwash seaward.
+    const edge = smoothstep(0.0, 0.008, film).mul(float(1).sub(smoothstep(0.012, 0.04, film)));
+    const edgeFoam = laceCover(xz.add(dir.mul(tau.mul(0.8))), edge.mul(up.select(float(0.7), float(0.3))), ms, lod);
+    const drainFoam = laceCover(xz.add(dir.mul(sb(tau).mul(1.2))), smoothstep(0.0, 0.03, film).mul(up.select(float(0), float(0.28))).mul(float(1).sub(sb(tau))), ms.add(17), lod);
+    foam.assign(max(edgeFoam, drainFoam).mul(aboveSea));
 
     // Wet sand: the most recent of the last six waves to have covered this height.
     const w = float(0).toVar('wetMax');

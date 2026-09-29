@@ -38,8 +38,9 @@ import { U } from './uniforms.ts';
 /** World size of one caustic tile: the water's two ripple layers repeat 1× and 3× across it. */
 export const CAUSTIC_TILE_M = 9.9;
 export const RIPPLE_TILE_M = { coarse: CAUSTIC_TILE_M, fine: CAUSTIC_TILE_M / 3 } as const;
-const PLANES_M = [0.8, 2.6] as const;
+const PLANES_M = [1.2, 3.0] as const;
 const MARGIN = 0.25;
+const CAUSTIC_SLOPE_GAIN = 1.5;
 const WATER_IOR = 1.333;
 
 /**
@@ -99,7 +100,9 @@ export class Caustics {
     m.blendDstAlpha = OneFactor;
     const q = positionLocal.xy;
     // Where this surface point's ray lands, relative to where it would under a flat surface.
-    const shift = refractedShift(rippleSlope(q, true)).sub(refractedShift(vec2(0, 0)));
+    // The ripples' slopes are scaled up here: the surface's detail normals are drawn gently, and
+    // at these depths their true curvature focuses too little to form a visible network.
+    const shift = refractedShift(rippleSlope(q, true).mul(CAUSTIC_SLOPE_GAIN)).sub(refractedShift(vec2(0, 0)));
     const landed = q.add(shift.mul(depthM / CAUSTIC_TILE_M));
     // Target texel v = 0 is the top row (NDC y = +1) on both backends (three flips WebGL reads
     // to match WebGPU), so write y inverted: tile coordinate q then equals the texture uv.
