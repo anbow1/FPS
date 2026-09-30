@@ -763,6 +763,11 @@ export class Game {
       const moved = t.animateRunningGear(dt);
       if (!t.alive) continue;
       const speed = Math.abs(t.speed);
+      // a hull pushing through a lake raises a bow wave; scaled by dt so it does not depend on frame rate
+      if (speed > 0.4 && WATER_LEVEL - this.world.hf.heightAt(t.pos.x, t.pos.z) > 0.1) {
+        const bow = t.spec.length * 0.4 * Math.sign(t.speed);
+        this.water.ripples.disturb(t.pos.x + Math.sin(t.yaw) * bow, t.pos.z + Math.cos(t.yaw) * bow, 1.4, Math.min(0.03, speed * 0.006) * dt * 60);
+      }
       // exhaust
       const exhaustRate = 0.15 + Math.abs(t.throttle) * 1.2;
       for (const e of t.model.exhaust) {
@@ -863,6 +868,7 @@ export class Game {
     }
     const explosive = ammo.id === 'HE' ? 1 : ammo.id === 'HEAT' ? 0.5 : 0;
     if (e.kind === 'water') {
+      this.water.ripples.disturb(e.point.x, e.point.z, 0.9 + explosive * 1.2, 0.25 + explosive * 0.2);
       for (let i = 0; i < 40; i++) {
         const a = Math.random() * Math.PI * 2;
         this.effects.emit(PKind.Dust, e.point.x, WATER_LEVEL + 0.2, e.point.z, Math.cos(a) * 2, 8 + Math.random() * 14, Math.sin(a) * 2, 1.2, 1.6, 0.85, 0.9, 0.92, 0.6, 2);
@@ -998,7 +1004,7 @@ export class Game {
     this.infantry.render(cam.position);
     if (!this.rotor && this.audio.ready) this.rotor = this.audio.createRotor();
     if (this.rotor) this.audio.updateRotor(this.rotor, this.drone.pos, Math.min(1, this.drone.vel.length() / DRONE.maxSpeed), this.drone.alive);
-    this.water.update(this.pipeline.renderer, this.time, cam.position);
+    this.water.update(this.pipeline.renderer, this.time, cam.position, dt);
     this.effects.update(dt, cam.position, this.quality.wreckShadow);
     this.effects.setWind(G.uWind.value);
 

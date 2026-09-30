@@ -4,6 +4,7 @@ import { cloudShadow } from '../render/atmosphere';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import type { Lighting } from '../render/lighting';
 import { OceanFFT } from '../render/ocean';
+import { RippleField } from '../render/rippleField';
 import { linear, PBR } from '../render/palette';
 import { G, vnoise2 } from '../render/nodes';
 
@@ -28,6 +29,8 @@ import { hyp2 } from '../core/mathx';
  */
 export class Water {
   readonly group = new THREE.Group();
+  /** Bow waves of wading hulls and rings from shells, round the camera (rippleField.ts). */
+  readonly ripples: RippleField;
   private readonly ocean: OceanFFT;
   private readonly material: THREE.MeshBasicNodeMaterial;
 
@@ -39,6 +42,14 @@ export class Water {
       targetSlope: 0.085,
       wind: [G.uWind.value.x, G.uWind.value.y],
     });
+    this.ripples = new RippleField({
+      cells: detail === 'high' ? 128 : 96,
+      cellM: 0.5,
+      speedMps: 2.4,
+      lifeS: 3,
+      isWater: (x, z) => hf.heightAt(x, z) < WATER_LEVEL - 0.05,
+    });
+    const ripples = this.ripples;
     const heightTex = makeHeightTexture(hf);
     // Beer–Lambert with the sheet's river tint. The sheet's 1.5 m attenuation is for a murky river;
     // these upland lakes are clearer, so the same tint is reached after 3.2 m.
@@ -129,7 +140,8 @@ export class Water {
       const slope0 = A.yz.add(rotT(B.yz, 0.8, 0.6).mul(0.12)).add(rotT(Cm.yz, 0.28, -0.96).mul(exp(dist.mul(-0.05)).mul(0.13)));
       const variance = max(A.w.sub(dot(A.yz, A.yz)), 0).add(max(B.w.sub(dot(B.yz, B.yz)), 0).mul(0.0144));
       // shallow margins are calmer
-      const slope = slope0.mul(smoothstep(0, 0.8, depthHere).mul(0.7).add(0.3));
+      const rip = ripples.sample(P.xz);
+      const slope = slope0.mul(smoothstep(0, 0.8, depthHere).mul(0.7).add(0.3)).add(rip.xy);
       const n0 = normalize(vec3(slope.x.negate(), 1, slope.y.negate()));
       const nv0 = dot(n0, V);
       const n = select(nv0.lessThan(0.02), normalize(n0.add(V.mul(float(0.02).sub(nv0)))), n0).toVar();
@@ -190,7 +202,8 @@ export class Water {
       const col = refl.mul(F).add(under.mul(float(1).sub(F))).add(spec);
       // shoreline foam, lit like a rough white diffuse layer
       const fp = max(length(fwidth(P.xz)), 1e-3);
-      const foam = shoreFoam(P.xz, max(depthHere, 0), fp, G.uTime);
+      // churned white water where a shell went in or a hull is pushing through
+      const foam = max(shoreFoam(P.xz, max(depthHere, 0), fp, G.uTime), smoothstep(0.35, 1, rip.z).mul(0.7));
       const foamCol = sunB.mul(max(sky.sun.y, 0)).add(amb.mul(Math.PI)).div(Math.PI).mul(0.75);
       // fade into the terrain mesh at the waterline
       alphaOut.assign(max(smoothstep(0, 0.25, depthHere), foam.mul(0.9)));
@@ -219,11 +232,14 @@ export class Water {
     this.ocean.update(renderer, 0);
   }
 
-  update(renderer: THREE.WebGPURenderer, time: number, camera: THREE.Vector3): void {
+  update(renderer: THREE.WebGPURenderer, time: number, camera: THREE.Vector3, dt: number): void {
     // no need to run the FFT when no lake is anywhere near the view
     let near = false;
     for (const l of LAKES) if (hyp2(camera.x - l.x, camera.z - l.z) < l.r + 900) near = true;
-    if (near) this.ocean.update(renderer, time);
+    if (near) {
+      this.ocean.update(renderer, time);
+      this.ripples.update(dt, camera.x, camera.z);
+    }
   }
 }
 

@@ -1,9 +1,9 @@
 import { cos, float, floor, int, ivec2, length, screenCoordinate, select, sin, sqrt, step, textureLoad, uniform, vec2, vec4 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
-import { Rng } from '../core/rng';
-import { hyp2 } from '../core/mathx';
 
 /**
+ * Shared file for file by Tanks (lake) and Castaway Lagoon (open sea).
+ *
  * Tessendorf FFT wave field on the GPU (after Aurélien's "Clearwater", MIT):
  * a directional wind-sea spectrum is evolved with the deep/capillary dispersion relation and
  * inverse-transformed every frame with a Stockham radix-2 FFT. The output texture holds
@@ -130,15 +130,22 @@ export class OceanFFT {
 function buildH0(p: OceanParams): THREE.DataTexture {
   const N = p.n;
   const L = p.size;
-  const rng = new Rng(7);
+  // mulberry32 with a fixed seed: the same sea on every run
+  let seed = 7;
+  const next = (): number => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
   const gauss = () => {
     let u = 0;
-    while (!u) u = rng.next();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng.next());
+    while (!u) u = next();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * next());
   };
   const kp = (2 * Math.PI) / p.peakWavelength;
   const kcut = (2 * Math.PI) / (L / N * 2.2);
-  const wl = hyp2(p.wind[0], p.wind[1]) || 1;
+  const wl = Math.hypot(p.wind[0], p.wind[1]) || 1;
   const wd = [p.wind[0] / wl, p.wind[1] / wl];
   const re = new Float32Array(N * N);
   const im = new Float32Array(N * N);
@@ -149,7 +156,7 @@ function buildH0(p: OceanParams): THREE.DataTexture {
       const nz = m < N / 2 ? m : m - N;
       const kx = (2 * Math.PI * nx) / L;
       const kz = (2 * Math.PI * nz) / L;
-      const k = hyp2(kx, kz);
+      const k = Math.hypot(kx, kz);
       let P = 0;
       if (k > 1e-6) {
         const lk = Math.log(k / kp);

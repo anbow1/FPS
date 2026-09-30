@@ -2,7 +2,7 @@ import { cameraViewMatrix, dFdx, dFdy, dot, float, floor, fract, Fn, If, int, ma
 import * as THREE from 'three/webgpu';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import { linear, PBR } from '../render/palette';
-import { G, thermalOutput } from '../render/nodes';
+import { G, thermalOutput, vnoise2 } from '../render/nodes';
 import type { GroundLayers } from '../render/groundTextures';
 import type { NoiseSet } from '../render/textures';
 import { makeRoadTexture } from '../render/textures';
@@ -128,10 +128,24 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground:
     const grad = g2.xy.mul(0.25).mul(float(1).sub(road.mul(0.5))).mul(float(1).sub(wet));
     // layer relief is in the ground plane; blend towards the slope for rock faces
     tkNrmW.assign(normalize(nW.add(vec3(ln.x.sub(grad.x), 0, ln.y.sub(grad.y)).mul(0.9))));
+    // Swash on the bank, after Castaway Lagoon (docs/graphics-playbook.md §7.5) at lake scale: the
+    // wind waves run a thin film up to 4–22 cm above the still level and pull it back, in phase
+    // with the lake shader's shore-foam fronts; the bank stays dark and glossy up to the highest
+    // run-up, and a lacy foam line rides the film's edge.
+    const above = positionWorld.y.sub(uWater);
+    const t = G.uTime;
+    const broad = vnoise2(wp.add(vec2(t.mul(0.32), t.mul(-0.13))).div(4));
+    const runup = mix(0.04, 0.22, sin(t.mul(1.22).add(broad.sub(0.5).mul(2.3))).mul(0.5).add(0.5));
+    const film = float(1).sub(smoothstep(runup.sub(0.04), runup, above));
+    const soaked = float(1).sub(smoothstep(0.2, 0.45, above.add(fine.sub(0.5).mul(0.1))));
+    const lace = smoothstep(runup.sub(0.05), runup.sub(0.01), above).mul(float(1).sub(smoothstep(runup.sub(0.01), runup.add(0.01), above))).mul(smoothstep(0.45, 0.65, fine));
+    tkRough.assign(mix(mix(tkRough, float(0.3), soaked), float(0.06), film));
+    tkNrmW.assign(normalize(mix(tkNrmW, nW, film.mul(0.8))));
     tkHeat.assign(
       float(0.06).add(fine.mul(0.04)).add(rockMask.mul(0.04)).add(road.mul(0.02)).sub(wet.mul(0.03)).add(G.uDay.mul(0.1).mul(max(dot(tkNrmW, G.uSunDir), 0))),
     );
-    return col.mul(ao.mul(0.45).add(0.55)).mul(float(1).sub(puddle.mul(0.35)));
+    const ground = col.mul(ao.mul(0.45).add(0.55)).mul(float(1).sub(puddle.mul(0.35)));
+    return mix(ground.mul(mix(float(1), float(0.6), max(soaked.mul(0.7), film))), vec3(0.8), lace.mul(0.8));
   })();
   mat.roughnessNode = tkRough;
   mat.normalNode = normalize(cameraViewMatrix.mul(vec4(tkNrmW, 0)).xyz);
