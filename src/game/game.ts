@@ -261,6 +261,16 @@ export class Game {
     for (const [l, a] of lights) l.shadow.autoUpdate = a === 1;
   }
 
+  /** Benchmark: the player's tank at a fixed spot, the chase camera behind it, no sight or drone view. */
+  benchPlace(x: number, z: number, yaw: number): void {
+    this.player.turretYaw = 0; // hull-relative: the gun looks where the tank faces
+    this.player.place(x, z, yaw, this.world);
+    this.camYaw = yaw + Math.PI;
+    this.camPitch = 0.02;
+    this.sight = false;
+    this.droneView = false;
+  }
+
   pause(on: boolean): void {
     if (on && this.state === 'playing') this.setState('paused');
     else if (!on && this.state === 'paused') this.setState('playing');

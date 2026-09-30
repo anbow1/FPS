@@ -4,12 +4,15 @@ import { Input } from './core/input';
 import { Audio } from './game/audio';
 import { Game, type GameState } from './game/game';
 import { ATMO, installAtmosphere } from './render/atmosphere';
+import { benchSpots } from './game/bench';
+import { BenchRecorder, type BenchSample, formatBench, NO_GPU_TIMES } from './render/benchRecorder';
 import { FrameGovernor } from './render/governor';
 import { PRESETS } from './render/lighting';
 import { Pipeline } from './render/pipeline';
 import { Hud } from './ui/hud';
 import { isTouchDevice, TouchControls } from './ui/touch';
 import { World } from './world/world';
+import { PLAYER_SPAWN } from './world/layout';
 
 installAtmosphere();
 
@@ -50,6 +53,9 @@ for (const [i, p] of PRESETS.entries()) {
   lightSel.append(o);
 }
 qualitySel.value = settings.quality ?? (isTouchDevice() || (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 6) ? 'low' : 'high');
+// ?q=high|low: benchmark runs pick the preset without touching stored settings.
+const qParam = new URLSearchParams(location.search).get('q');
+if (qParam === 'high' || qParam === 'low') qualitySel.value = qParam;
 lightSel.value = settings.light ?? '0';
 toneSel.value = settings.tone ?? 'aces';
 sensIn.value = settings.sens ?? '1';
@@ -86,6 +92,62 @@ async function boot(): Promise<void> {
   playBtn.textContent = 'Graj';
 
   const governor = new FrameGovernor(pipeline, () => game.refreshPixelScale());
+
+  // Benchmark (docs/graphics-playbook.md §9 in anbow1/FPS): the fixed spots of game/bench.ts,
+  // each settled for BENCH_WARM frames and recorded for BENCH_FRAMES, with the game paused and the
+  // governor at full quality. The same table as Field Line and Castaway Lagoon.
+  const params = new URLSearchParams(location.search);
+  const BENCH_WARM = Number(params.get('benchWarm')) || 45;
+  const BENCH_FRAMES = Number(params.get('benchFrames')) || 120;
+  const benchBtn = $<HTMLButtonElement>('btn-bench');
+  const benchOut = $('bench-out');
+  let bench: { index: number; left: number; recorder: BenchRecorder; rows: BenchSample[]; done: (rows: BenchSample[]) => void } | null = null;
+  const spots = benchSpots();
+  const benchTitle = () => `Tanks · ${game.quality.id} · WebGL2 (WebGLRenderer) · ${canvas.width}×${canvas.height} px`;
+  const runBenchmark = (): Promise<BenchSample[]> =>
+    new Promise((resolve) => {
+      if (bench) return resolve([]);
+      game.pause(true);
+      governor.reset();
+      const first = spots[0];
+      if (first) game.benchPlace(first.x, first.z, first.yawRad);
+      bench = { index: 0, left: BENCH_WARM, recorder: new BenchRecorder(), rows: [], done: resolve };
+    });
+  const benchFrame = (intervalS: number, cpu: number, calls: number, triangles: number): void => {
+    const run = bench;
+    if (!run) return;
+    const spot = spots[run.index];
+    if (!spot) {
+      bench = null;
+      console.log(JSON.stringify({ benchmark: benchTitle(), rows: run.rows }));
+      run.done(run.rows);
+      return;
+    }
+    if (run.left > 0) {
+      run.left--;
+      return;
+    }
+    run.recorder.frame(intervalS, cpu, calls, triangles);
+    if (run.recorder.frames < BENCH_FRAMES) return;
+    run.rows.push(run.recorder.finish(spot.name, NO_GPU_TIMES));
+    run.index++;
+    run.recorder = new BenchRecorder();
+    run.left = BENCH_WARM;
+    const next = spots[run.index];
+    if (next) game.benchPlace(next.x, next.z, next.yawRad);
+  };
+  benchBtn.disabled = false;
+  benchBtn.onclick = async () => {
+    benchBtn.disabled = true;
+    menu.style.display = 'none';
+    const rows = await runBenchmark();
+    // back where a new game starts
+    game.benchPlace(PLAYER_SPAWN.x, PLAYER_SPAWN.z, PLAYER_SPAWN.yaw);
+    menu.style.display = '';
+    benchOut.textContent = formatBench(benchTitle(), rows);
+    benchOut.style.display = '';
+    benchBtn.disabled = false;
+  };
 
   qualitySel.onchange = () => {
     settings.quality = qualitySel.value;
@@ -192,9 +254,11 @@ async function boot(): Promise<void> {
       }
       if (steps === 5) acc = 0;
     }
+    const renderStart = performance.now();
     const markers = game.frame(running ? dt : 0, running ? acc / PHYS_DT : 1);
     pipeline.render(game.now);
     const info = pipeline.info.render;
+    if (bench) benchFrame(rawDt, performance.now() - renderStart, info.calls, info.triangles);
     hud.setExtras({ drone: game.droneMap, infantry: game.spottedInfantry, droneStatus: game.droneStatus });
     hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.calls, triangles: info.triangles, scale: governor.label }, game.quality.id, markers);
     input.endFrame();
@@ -202,6 +266,8 @@ async function boot(): Promise<void> {
   };
   requestAnimationFrame(loop);
   (window as unknown as { __game: Game; __atmo: typeof ATMO }).__game = game;
+  // ?bench: tour the spots right after loading and leave the rows for scripts/benchView.mjs.
+  if (params.has('bench')) (window as unknown as { __bench: BenchSample[] }).__bench = await runBenchmark();
   (window as unknown as { __atmo: typeof ATMO }).__atmo = ATMO;
 }
 

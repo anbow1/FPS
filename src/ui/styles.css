@@ -611,3 +611,15 @@ body.drone #t-ext {
 body.drone .tbtn.dronly {
   display: block;
 }
+
+/* benchmark table (main.ts): monospace, scrolls sideways on a phone */
+#bench-out {
+  font: 12px/1.4 ui-monospace, monospace;
+  white-space: pre;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 10px;
+  margin: 12px 0;
+  text-align: left;
+  user-select: text;
+}
