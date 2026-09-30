@@ -89,7 +89,7 @@ export class Equipment {
 
   private raise(): void {
     this.slot = this.pendingSlot;
-    const dur = this.slot === 'rifle' ? RIFLE.equipSeconds : this.slot === 'knife' ? KNIFE.equipSeconds : this.slot === 'stone' ? 0.3 : 0;
+    const dur = this.slot === 'rifle' ? RIFLE.equipSeconds : this.slot === 'knife' ? KNIFE.equipSeconds : this.slot === 'stone' ? 0.3 : this.slot === 'log' ? 0.35 : 0;
     if (dur > 0) this.start('raise', dur);
     else this.finish();
   }

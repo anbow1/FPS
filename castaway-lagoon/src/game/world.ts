@@ -49,7 +49,7 @@ export interface RockInstance {
   moss: number; // 0..1: jungle rocks are furred with moss, surf-washed ones are bare
 }
 
-export type InteractableKind = 'pickup' | 'harvest' | 'crate' | 'examine' | 'sleep';
+export type InteractableKind = 'pickup' | 'harvest' | 'crate' | 'examine' | 'sleep' | 'fire';
 
 export interface Interactable {
   id: number;
@@ -334,6 +334,10 @@ function buildOutpostInteractables(add: AddFn): void {
   add({ kind: 'pickup', model: 'backpack', item: 'backpack', count: 1, pos: at(f.backpack.x, 0, f.backpack.z), yawRad: yaw + f.backpack.yawRad, radiusM: 0.35, name: 'Backpack' });
   // The lantern comes down off its hook and is carried from then on (render/outpost.ts draws it either way).
   add({ kind: 'pickup', model: 'lantern', item: 'lamp', count: 1, pos: at(f.lantern.x, f.lantern.y - 0.12, f.lantern.z), yawRad: yaw, radiusM: 0.22, name: 'Kerosene Lamp' });
+  // The stack by the shelter never runs out (game.ts keeps it); the pit feeds and lights the fire.
+  const ground = -OUTPOST.deckHeightM;
+  add({ kind: 'pickup', model: 'woodpile', item: 'log', count: 1, pos: at(f.firewood.x, ground + f.firewood.sy * 0.5, f.firewood.z), yawRad: yaw, radiusM: 0.65, name: 'Firewood' });
+  add({ kind: 'fire', model: 'none', item: null, count: 0, pos: at(f.firePit.x, ground + 0.1, f.firePit.z), yawRad: yaw, radiusM: f.firePit.radiusM, name: 'Campfire' });
   // The foot of the cot, clear of the rifle and the journal lying on it.
   add({ kind: 'sleep', model: 'none', item: null, count: 0, pos: at(f.cot.x - 0.78, f.cot.heightM, f.cot.z), yawRad: yaw, radiusM: 0.3, name: 'Cot' });
 }

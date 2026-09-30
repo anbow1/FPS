@@ -10,7 +10,7 @@ export interface P3 {
   z: number;
 }
 
-export type EquipSlot = 'hands' | 'rifle' | 'knife' | 'stone';
+export type EquipSlot = 'hands' | 'rifle' | 'knife' | 'stone' | 'log';
 
 export type LagoonEvent =
   | { type: 'footstep'; surface: SurfaceKind; pos: P3; running: boolean; wadingDepthM: number }
@@ -21,7 +21,7 @@ export type LagoonEvent =
   | { type: 'stoneWindup' }
   | { type: 'stoneThrown'; pos: P3; speedMs: number }
   | { type: 'splash'; pos: P3; speedMs: number; massKg: number; skip: boolean }
-  | { type: 'bodyHit'; pos: P3; surface: SurfaceKind; speedMs: number; body: 'stone' | 'can' | 'coconut' | 'shell' }
+  | { type: 'bodyHit'; pos: P3; surface: SurfaceKind; speedMs: number; body: 'stone' | 'can' | 'coconut' | 'shell' | 'log' }
   | { type: 'shot'; origin: P3; dir: P3 }
   | { type: 'shellEject' }
   | { type: 'bulletImpact'; pos: P3; normal: P3; dir: P3; surface: SurfaceKind; distanceM: number }
@@ -41,7 +41,8 @@ export type LagoonEvent =
   | { type: 'lightning'; strength: number; thunderDelaySeconds: number }
   | { type: 'message'; text: string }
   | { type: 'sleep'; until: TimeOfDayId }
-  | { type: 'lamp'; lit: boolean };
+  | { type: 'lamp'; lit: boolean }
+  | { type: 'fire'; what: 'fed' | 'lit' | 'out' };
 
 export class EventQueue {
   private items: LagoonEvent[] = [];

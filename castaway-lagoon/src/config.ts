@@ -47,6 +47,29 @@ export const LAGOON_PLAYER = {
   maxPitchRad: 1.45,
 } as const;
 
+/** Firewood: a split log ~45 cm long, thrown two-handed (game/bodies.ts). */
+export const LOG = {
+  radiusM: 0.07,
+  lengthM: 0.45,
+  massKg: 1.6,
+  minThrowSpeedMs: 4,
+  maxThrowSpeedMs: 10,
+  restitution: 0.15,
+} as const;
+
+/** The camp fire's fuel, in seconds of burning (game/fire.ts). Game time, not real hardwood rates. */
+export const FIRE = {
+  startFuelS: 300,
+  logBurnS: 150,
+  maxFuelS: 600,
+  /** Fuel at which the fire is at full size. */
+  fullFuelS: 300,
+  /** Heavy rain burns fuel this much faster (on top of 1). */
+  rainBurnFactor: 0.8,
+  /** A log landing this close to the pit's centre (beyond its radius) goes on the fire. */
+  catchM: 0.35,
+} as const;
+
 /** Stone: a beach pebble about 5 cm across. */
 export const STONE = {
   radiusM: 0.028,

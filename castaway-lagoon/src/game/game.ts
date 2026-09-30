@@ -1,9 +1,11 @@
 import { Rng } from '../core/rng.ts';
-import { INTERACT, KNIFE, LAGOON_PLAYER, RIFLE, STONE, TIME_OF_DAY, type TimeOfDayId, type WeatherId } from '../config.ts';
+import { FIRE, INTERACT, KNIFE, LAGOON_PLAYER, LOG, RIFLE, STONE, TIME_OF_DAY, type TimeOfDayId, type WeatherId } from '../config.ts';
 import { Bodies, type BodyRest, knockCan } from './bodies.ts';
 import { Bullets } from './bullets.ts';
 import { newHit, type RayHit } from './colliders.ts';
 import { Environment } from './environment.ts';
+import { Campfire } from './fire.ts';
+import { FURNITURE, outpostToWorld, OUTPOST } from './outpost.ts';
 import { type ActionKind, Equipment, type Triggers } from './equipment.ts';
 import { type EquipSlot, EventQueue, type P3 } from './events.ts';
 import { Inventory } from './inventory.ts';
@@ -68,6 +70,9 @@ export class LagoonGame {
   readonly bodies: Bodies;
   readonly bullets: Bullets;
   timeSeconds = 0;
+  readonly fire = new Campfire();
+  /** Centre of the fire pit on the ground, world space. */
+  readonly firePitPos: P3;
   /** The carried kerosene lamp is burning. */
   lampLit = false;
   /** Interactable under the crosshair, or null. */
@@ -87,6 +92,8 @@ export class LagoonGame {
     this.env = new Environment(time, weather);
     this.bodies = new Bodies(this.world.collision, this.events);
     this.bullets = new Bullets(this.world.collision, this.events);
+    this.firePitPos = outpostToWorld(FURNITURE.firePit.x, -OUTPOST.deckHeightM, FURNITURE.firePit.z, { x: 0, y: 0, z: 0 });
+    this.firePitPos.y = heightAt(this.firePitPos.x, this.firePitPos.z);
   }
 
   get interactables(): readonly Interactable[] {
@@ -100,6 +107,7 @@ export class LagoonGame {
     if (intent.setWeather) this.env.setWeather(intent.setWeather);
     else if (intent.cycleWeather) this.env.cycleWeather();
     this.env.step(dt, this.rng, this.events);
+    this.fire.step(dt, this.env.weather.rainRate, this.events);
 
     // 2. Look and walk.
     const eq = this.equipment;
@@ -158,6 +166,10 @@ export class LagoonGame {
     this.rested.length = 0;
     this.bodies.step(dt, this.world.cans, this.rested);
     for (const r of this.rested) {
+      if (r.body.kind === 'log') {
+        this.logLanded(r.body.pos, r.body.rot.y);
+        continue;
+      }
       const depth = -heightAt(r.body.pos.x, r.body.pos.z);
       if (r.underwater && depth > LAGOON_PLAYER.maxWadeDepthM * 0.7) continue; // lost to the lagoon floor
       this.addInteractable({ kind: 'pickup', model: 'stone', item: 'stone', count: 1, pos: { x: r.body.pos.x, y: r.body.pos.y - STONE.radiusM, z: r.body.pos.z }, yawRad: r.body.rot.y, radiusM: 0.2, name: 'Stone' });
@@ -215,6 +227,10 @@ export class LagoonGame {
       this.events.push({ type: 'sleep', until });
       return;
     }
+    if (it.kind === 'fire') {
+      this.tendFire();
+      return;
+    }
     if (it.kind === 'examine') {
       eq.start('examine', Number.POSITIVE_INFINITY, it.id);
       this.events.push({ type: 'examine', id: it.id, title: it.name, text: it.text });
@@ -234,9 +250,10 @@ export class LagoonGame {
       return;
     }
     const inv = this.inventory;
-    const missing = slot === 'rifle' ? !inv.has('rifle') : slot === 'knife' ? !inv.has('knife') : slot === 'stone' ? !inv.has('stone') : false;
+    const missing = slot === 'rifle' ? !inv.has('rifle') : slot === 'knife' ? !inv.has('knife') : slot === 'stone' ? !inv.has('stone') : slot === 'log' ? !inv.has('log') : false;
     if (missing) {
-      const text = slot === 'rifle' ? 'No rifle — there is one in the shelter' : slot === 'knife' ? 'No knife — check the shelter table' : 'No stones — pick one up on the beach';
+      const text =
+        slot === 'rifle' ? 'No rifle — there is one in the shelter' : slot === 'knife' ? 'No knife — check the shelter table' : slot === 'log' ? 'No firewood — the stack is beside the shelter' : 'No stones — pick one up on the beach';
       this.events.push({ type: 'message', text });
       return;
     }
@@ -263,8 +280,8 @@ export class LagoonGame {
         eq.start('swing', KNIFE.swingSeconds);
         this.events.push({ type: 'knifeSwing', side: eq.action.side });
       }
-    } else if (eq.slot === 'stone') {
-      if (t.firePressed && idle && this.inventory.has('stone')) {
+    } else if (eq.slot === 'stone' || eq.slot === 'log') {
+      if (t.firePressed && idle && this.inventory.has(eq.slot)) {
         eq.start('windup', Number.POSITIVE_INFINITY);
         eq.charge = 0;
         this.events.push({ type: 'stoneWindup' });
@@ -324,7 +341,7 @@ export class LagoonGame {
       const until = sleepUntil(this.env.timeId);
       this.env.setTime(until, true);
       this.events.push({ type: 'message', text: `You slept until ${TIME_OF_DAY[until].label.toLowerCase()}` });
-    } else if (kind === 'throw' && crossed(STONE.releaseSeconds)) this.releaseStone();
+    } else if (kind === 'throw' && crossed(STONE.releaseSeconds)) this.release();
     else if (kind === 'swing' && crossed(KNIFE.swingSeconds * KNIFE.hitAtFraction)) this.knifeHit();
     else if (kind === 'reload') {
       const d = durationSeconds;
@@ -346,16 +363,19 @@ export class LagoonGame {
         for (const c of crateContents(crate)) this.addInteractable(c);
         this.events.push({ type: 'crateOpened', id: crate.id });
       }
-    } else if (kind === 'throw' && !this.inventory.has('stone')) {
+    } else if (kind === 'throw' && (eq.slot === 'stone' || eq.slot === 'log') && !this.inventory.has(eq.slot)) {
       eq.switchTo('hands');
     }
   }
 
   private take(it: Interactable): void {
     if (!it.item) return;
-    it.alive = false;
-    this.interactablesVersion++;
-    this.events.push({ type: 'interactableRemoved', id: it.id });
+    // The woodpile gives a log each time and stays.
+    if (it.model !== 'woodpile') {
+      it.alive = false;
+      this.interactablesVersion++;
+      this.events.push({ type: 'interactableRemoved', id: it.id });
+    }
     const count = it.item === 'rifle' ? 1 : it.count;
     this.inventory.add(it.item, count);
     this.events.push({ type: 'itemGained', itemId: it.item, count, name: ITEMS[it.item].name });
@@ -387,18 +407,48 @@ export class LagoonGame {
     this.events.push({ type: 'lamp', lit });
   }
 
-  private releaseStone(): void {
+  /** E at the pit: put a log on, or light the wood that is there. */
+  private tendFire(): void {
+    const f = this.fire;
+    const inv = this.inventory;
+    if (!f.lit && f.fuelS > 0) {
+      if (!inv.has('lighter')) this.events.push({ type: 'message', text: 'The wood is laid — you need a lighter (the backpack in the shelter)' });
+      else f.light(this.events);
+      return;
+    }
+    if (!inv.has('log')) {
+      this.events.push({ type: 'message', text: 'No firewood — the stack is beside the shelter' });
+      return;
+    }
+    if (f.addLog(this.events)) inv.remove('log', 1);
+    else this.events.push({ type: 'message', text: 'The fire has all the wood it can take' });
+  }
+
+  /** A thrown log at rest: on the fire if it landed in the pit, otherwise a pick-up where it lies. */
+  private logLanded(pos: P3, yawRad: number): void {
+    const pit = this.firePitPos;
+    const d = Math.hypot(pos.x - pit.x, pos.z - pit.z);
+    if (d < FURNITURE.firePit.radiusM + FIRE.catchM && pos.y < pit.y + 0.8 && this.fire.addLog(this.events)) return;
+    this.addInteractable({ kind: 'pickup', model: 'log', item: 'log', count: 1, pos: { x: pos.x, y: pos.y - LOG.radiusM, z: pos.z }, yawRad, radiusM: 0.3, name: 'Firewood' });
+  }
+
+  /** Throws what is in hand: a stone overarm, a log in an underhand lob. */
+  private release(): void {
     const eq = this.equipment;
-    if (this.inventory.remove('stone', 1) === 0) return;
+    const kind = eq.slot === 'log' ? 'log' : 'stone';
+    if (this.inventory.remove(kind, 1) === 0) return;
     const p = this.player;
-    const speed = STONE.minThrowSpeedMs + (STONE.maxThrowSpeedMs - STONE.minThrowSpeedMs) * eq.charge;
+    const spec = kind === 'log' ? LOG : STONE;
+    const speed = spec.minThrowSpeedMs + (spec.maxThrowSpeedMs - spec.minThrowSpeedMs) * eq.charge;
     // Released a little above the line of sight, as an overarm throw does.
     const dir = { ...this.fwd };
     dir.y += 0.07;
     normalize(dir);
     const right = { x: Math.cos(p.yawRad), z: -Math.sin(p.yawRad) };
     const from = { x: this.eye.x + right.x * 0.18 + dir.x * 0.3, y: this.eye.y + 0.02, z: this.eye.z + right.z * 0.18 + dir.z * 0.3 };
-    this.bodies.throwStone(from, { x: dir.x * speed + p.vel.x, y: dir.y * speed + p.vel.y, z: dir.z * speed + p.vel.z });
+    const vel = { x: dir.x * speed + p.vel.x, y: dir.y * speed + p.vel.y, z: dir.z * speed + p.vel.z };
+    if (kind === 'log') this.bodies.throwLog(from, vel);
+    else this.bodies.throwStone(from, vel);
     this.events.push({ type: 'stoneThrown', pos: from, speedMs: speed });
   }
 

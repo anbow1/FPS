@@ -1,6 +1,8 @@
-import { Euler, Group, Mesh, Object3D, Quaternion, Vector3 } from 'three/webgpu';
+import { CylinderGeometry, Euler, Group, Mesh, Object3D, Quaternion, Vector3 } from 'three/webgpu';
 import { clamp, damp, smoothstep } from '../core/vec.ts';
-import { STONE } from '../config.ts';
+import { LOG, STONE } from '../config.ts';
+import type { EquipSlot } from '../game/events.ts';
+import { propMaterials } from './propMaterials.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { Arm, copyPose, mixPose, POSES } from './arms.ts';
 import { buildKnife, buildRifle, type KnifeModel, type RifleModel, stoneGeometry, WEAPON_MATERIALS } from './weaponModels.ts';
@@ -100,8 +102,10 @@ export class ViewModel {
   readonly rifle: RifleModel;
   readonly knife: KnifeModel;
   private readonly stone: Mesh;
+  /** Firewood, held in the palm like a big stone and lobbed the same way. */
+  private readonly log: Mesh;
   private readonly flashAnchor = new Object3D();
-  private shown: 'hands' | 'rifle' | 'knife' | 'stone' = 'hands';
+  private shown: EquipSlot = 'hands';
   private sprint = 0;
   private away = 0;
   private lagYaw = 0;
@@ -137,6 +141,9 @@ export class ViewModel {
     this.right.hand.root.add(this.knife.root);
     this.stone.position.set(0, -0.034, -0.058);
     this.right.hand.root.add(this.stone);
+    this.log = new Mesh(new CylinderGeometry(LOG.radiusM, LOG.radiusM * 1.1, LOG.lengthM, 9).rotateZ(Math.PI / 2), propMaterials().logBark);
+    this.log.position.set(0, -0.06, -0.07);
+    this.right.hand.root.add(this.log);
     this.root.add(this.pivot, this.right.root, this.left.root);
     this.root.traverse((o) => {
       if (o instanceof Mesh) {
@@ -177,7 +184,9 @@ export class ViewModel {
 
     this.rifle.root.visible = this.shown === 'rifle' && this.away < 0.6;
     this.knife.root.visible = this.shown === 'knife' && this.away < 0.6;
-    this.stone.visible = this.shown === 'stone' && (a.kind !== 'throw' || game.equipment.progress * (STONE.releaseSeconds + STONE.recoverSeconds) < STONE.releaseSeconds) && this.away < 0.6 && (game.inventory.has('stone') || a.kind === 'throw');
+    const inHand = (a.kind !== 'throw' || game.equipment.progress * (STONE.releaseSeconds + STONE.recoverSeconds) < STONE.releaseSeconds) && this.away < 0.6;
+    this.stone.visible = this.shown === 'stone' && inHand && (game.inventory.has('stone') || a.kind === 'throw');
+    this.log.visible = this.shown === 'log' && inHand && (game.inventory.has('log') || a.kind === 'throw');
 
     // Raise / lower offsets for tool switching.
     let drop = 0;
@@ -281,7 +290,7 @@ export class ViewModel {
     mixPose(POSES.relaxed, POSES.relaxed, 0, this.poseR);
     mixPose(POSES.relaxed, POSES.relaxed, 0, this.poseL);
     const holding = this.away < 0.5;
-    if (this.shown === 'stone' && holding) {
+    if ((this.shown === 'stone' || this.shown === 'log') && holding) {
       sample([STONE_HOLD], 0, this.tR);
       mixPose(POSES.cradle, POSES.grip, 0.35, this.poseR);
       if (a.kind === 'windup') {

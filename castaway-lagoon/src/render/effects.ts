@@ -177,15 +177,18 @@ export class Effects {
     const on = this.flashTimer > 0;
     this.flashCard.visible = on;
     this.flashLight.intensity = on ? MUZZLE_FLASH_CD * preExposure * (0.6 + Math.random() * 0.4) : 0;
-    // Camp fire: flame licks, embers, smoke — fewer in the rain.
+    // Camp fire: flame licks, embers, smoke — fewer in the rain and as the fuel runs low
+    // (a dead fire still smokes a little for a while: the embers).
     const rain = game.env.weather.rainRate;
+    const strength = game.fire.strength;
+    const smoulder = game.fire.lit ? 0 : 0.15;
     this.fireAcc += dt;
     while (this.fireAcc > 0.045) {
       this.fireAcc -= 0.045;
       const f = this.firePos;
-      if (Math.random() > rain * 0.6) this.glow.spawn(SPECS.flame, this.v.set(f.x + (Math.random() - 0.5) * 0.35, f.y + 0.12, f.z + (Math.random() - 0.5) * 0.35), this.w.set((Math.random() - 0.5) * 0.2, 0.6 + Math.random() * 0.5, (Math.random() - 0.5) * 0.2));
-      if (Math.random() < 0.25) this.glow.spawn(SPECS.ember, this.v.set(f.x, f.y + 0.2, f.z), this.w.set((Math.random() - 0.5) * 0.6, 0.8 + Math.random(), (Math.random() - 0.5) * 0.6).add(this.v.set(U.wind.value.x * 0.15, 0, U.wind.value.y * 0.15)));
-      if (Math.random() < 0.18 + rain * 0.3) this.lit.spawn(SPECS.smoke, this.v.set(f.x, f.y + 0.6, f.z), this.w.set(U.wind.value.x * 0.2, 0.6, U.wind.value.y * 0.2));
+      if (Math.random() < strength * (1 - rain * 0.6)) this.glow.spawn(SPECS.flame, this.v.set(f.x + (Math.random() - 0.5) * 0.35, f.y + 0.12, f.z + (Math.random() - 0.5) * 0.35), this.w.set((Math.random() - 0.5) * 0.2, 0.6 + Math.random() * 0.5, (Math.random() - 0.5) * 0.2));
+      if (Math.random() < 0.25 * strength) this.glow.spawn(SPECS.ember, this.v.set(f.x, f.y + 0.2, f.z), this.w.set((Math.random() - 0.5) * 0.6, 0.8 + Math.random(), (Math.random() - 0.5) * 0.6).add(this.v.set(U.wind.value.x * 0.15, 0, U.wind.value.y * 0.15)));
+      if (Math.random() < (0.18 + rain * 0.3) * strength + smoulder) this.lit.spawn(SPECS.smoke, this.v.set(f.x, f.y + 0.6, f.z), this.w.set(U.wind.value.x * 0.2, 0.6, U.wind.value.y * 0.2));
     }
     this.lit.update(dt, camera, preExposure);
     this.glow.update(dt, camera, preExposure);

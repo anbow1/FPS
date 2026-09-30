@@ -1,4 +1,5 @@
 import { BoxGeometry, CanvasTexture, ConeGeometry, CylinderGeometry, DoubleSide, Euler, Group, InstancedMesh, type Material, Matrix4, Mesh, MeshStandardNodeMaterial, type Object3D, PlaneGeometry, Quaternion, SphereGeometry, SRGBColorSpace, TorusGeometry, Vector3 } from 'three/webgpu';
+import { LOG } from '../config.ts';
 import type { LagoonGame } from '../game/game.ts';
 import type { Interactable } from '../game/world.ts';
 import { card, merge, rand } from './meshkit.ts';
@@ -19,6 +20,7 @@ export class Props {
   private version = -1;
   private readonly flying: InstancedMesh;
   private readonly shells: InstancedMesh;
+  private readonly logs: InstancedMesh;
   private readonly cans: Mesh[] = [];
   private readonly m = new Matrix4();
   private readonly q = new Quaternion();
@@ -30,7 +32,8 @@ export class Props {
     this.group.name = 'props';
     this.flying = new InstancedMesh(stoneGeometry(3), WEAPON_MATERIALS.stone, 24);
     this.shells = new InstancedMesh(shellGeometry(), WEAPON_MATERIALS.brass, 120);
-    for (const im of [this.flying, this.shells]) {
+    this.logs = new InstancedMesh(logGeometry(), propMaterials().logBark, 8);
+    for (const im of [this.flying, this.shells, this.logs]) {
       im.count = 0;
       im.frustumCulled = false;
       im.castShadow = true;
@@ -42,7 +45,7 @@ export class Props {
     const gallery = new Group();
     gallery.name = 'prop gallery';
     gallery.visible = false;
-    for (const model of ['ammoBox', 'beans', 'flare', 'stone', 'coconut'] as const) {
+    for (const model of ['ammoBox', 'beans', 'flare', 'stone', 'coconut', 'log'] as const) {
       const it = { id: -1, kind: 'pickup', model, item: null, count: 0, pos: { x: 0, y: -50, z: 0 }, yawRad: 0, radiusM: 0.2, name: model, alive: true, seed: 1, open: 0, text: '' } satisfies Interactable;
       gallery.add(prepare(this.build(it)));
     }
@@ -71,12 +74,16 @@ export class Props {
     });
     let stones = 0;
     let shells = 0;
+    let logs = 0;
     for (const b of game.bodies.list) {
       this.q.setFromEuler(this.euler.set(b.rot.x, b.rot.y, b.rot.z));
       this.m.compose(this.p.set(b.pos.x, b.pos.y, b.pos.z), this.q, this.s);
       if (b.kind === 'stone' && stones < 24) this.flying.setMatrixAt(stones++, this.m);
       else if (b.kind === 'shell' && shells < 120) this.shells.setMatrixAt(shells++, this.m);
+      else if (b.kind === 'log' && logs < 8) this.logs.setMatrixAt(logs++, this.m);
     }
+    this.logs.count = logs;
+    this.logs.instanceMatrix.needsUpdate = true;
     this.flying.count = stones;
     this.shells.count = shells;
     this.flying.instanceMatrix.needsUpdate = true;
@@ -246,6 +253,14 @@ export class Props {
         g.add(new Mesh(merge(parts, 'aloe'), mat));
         break;
       }
+      case 'log': {
+        const m = new Mesh(logGeometry(), propMaterials().logBark);
+        m.position.y = LOG.radiusM;
+        m.castShadow = true;
+        g.add(m);
+        break;
+      }
+      case 'woodpile': // the stack itself is part of the outpost
       case 'lantern': // drawn by the outpost, which carries it once taken (render/outpost.ts)
       case 'none': // a place to use, not a thing: the cot
         break;
@@ -397,3 +412,8 @@ function photoTexture(): CanvasTexture {
   });
 }
 
+
+/** A split log lying along x, centred on its middle. */
+function logGeometry(): CylinderGeometry {
+  return new CylinderGeometry(LOG.radiusM, LOG.radiusM * 1.1, LOG.lengthM, 9).rotateZ(Math.PI / 2) as CylinderGeometry;
+}

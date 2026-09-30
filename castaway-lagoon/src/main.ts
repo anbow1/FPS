@@ -103,6 +103,7 @@ class App {
           { code: 'Digit1', label: 'AK', col: 0, row: 3.2, mode: 'tap' },
           { code: 'Digit2', label: 'KNIFE', col: 1, row: 3.2, mode: 'tap' },
           { code: 'Digit3', label: 'STONE', col: 2, row: 3.2, mode: 'tap' },
+          { code: 'Digit4', label: 'WOOD', col: 5.2, row: 3.2, mode: 'tap' },
           { code: 'KeyT', label: 'WX', col: 3.2, row: 3.2, mode: 'tap' },
           { code: 'KeyN', label: 'TIME', col: 4.2, row: 3.2, mode: 'tap' },
         ],

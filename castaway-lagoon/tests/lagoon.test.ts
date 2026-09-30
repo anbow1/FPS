@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENVIRONMENT, INTERACT, LAGOON_PLAYER, RIFLE, WEATHER } from '../src/config.ts';
+import { ENVIRONMENT, FIRE, INTERACT, LAGOON_PLAYER, RIFLE, WEATHER } from '../src/config.ts';
 import { airMass, computeDaylight, Environment } from '../src/game/environment.ts';
 import type { LagoonEvent } from '../src/game/events.ts';
 import { emptyIntent, LagoonGame, type LagoonIntent, sleepUntil } from '../src/game/game.ts';
@@ -274,6 +274,62 @@ describe('shelter', () => {
     expect(g.equipment.action.kind).toBe('idle');
     expect(g.env.timeId).toBe('morning');
     expect(g.env.hour).toBeCloseTo(7.5, 5);
+  });
+});
+
+describe('camp fire', () => {
+  it('burns down and goes out, takes a log and needs the lighter to relight', () => {
+    const g = newGame();
+    expect(g.fire.lit).toBe(true);
+    const out = run(g, Math.ceil(60 * (FIRE.startFuelS + 1)));
+    expect(out.some((e) => e.type === 'fire' && e.what === 'out')).toBe(true);
+    expect(g.fire.strength).toBe(0);
+    const pit = g.interactables.find((i) => i.kind === 'fire') as Interactable;
+    g.inventory.add('log', 2);
+    lookAt(g, pit, 1.4);
+    run(g, 2, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(g.inventory.count('log')).toBe(1);
+    expect(g.fire.fuelS).toBeCloseTo(FIRE.logBurnS, 5);
+    const noLighter = run(g, 2, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(noLighter.some((e) => e.type === 'message' && e.text.includes('lighter'))).toBe(true);
+    expect(g.fire.lit).toBe(false);
+    g.inventory.add('lighter', 1);
+    run(g, 2, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(g.fire.lit).toBe(true);
+  });
+
+  it('gives a log from the woodpile every time and keeps the pile', () => {
+    const g = newGame();
+    const pile = g.interactables.find((i) => i.model === 'woodpile') as Interactable;
+    lookAt(g, pile, 1.1);
+    for (let k = 0; k < 3; k++) {
+      run(g, 60, (i, n) => {
+        i.interactPressed = n === 0;
+      });
+    }
+    expect(g.inventory.count('log')).toBe(3);
+    expect(pile.alive).toBe(true);
+  });
+
+  it('feeds the fire with a log thrown into the pit', () => {
+    const g = newGame();
+    const before = g.fire.fuelS;
+    const pit = g.firePitPos;
+    // straight down onto the embers from above the pit
+    g.bodies.throwLog({ x: pit.x, y: pit.y + 1.5, z: pit.z }, { x: 0, y: -1, z: 0 });
+    const events = run(g, 120);
+    expect(events.some((e) => e.type === 'fire' && e.what === 'fed')).toBe(true);
+    expect(g.fire.fuelS).toBeGreaterThan(before + FIRE.logBurnS - 3);
+    // one thrown on the sand stays there as a pick-up
+    g.bodies.throwLog({ x: pit.x + 4, y: pit.y + 1.5, z: pit.z }, { x: 0, y: -1, z: 0 });
+    run(g, 120);
+    expect(g.interactables.some((i) => i.model === 'log' && i.alive)).toBe(true);
   });
 });
 

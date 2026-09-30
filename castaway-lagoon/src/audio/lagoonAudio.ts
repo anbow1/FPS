@@ -135,9 +135,10 @@ export class LagoonAudio {
     this.crickets.gain.gain.setTargetAtTime(night * quiet * 0.02 * chirp, now, 0.01);
     // Fire: a low roar near the pit, plus crackles.
     const fireD = s.distanceTo(firePos());
-    this.fireBed.gain.gain.setTargetAtTime(Math.min(0.12, 0.6 / Math.max(1, fireD * fireD)) * (1 - w.rainRate * 0.5), now, 0.2);
+    const fireK = game.fire.strength;
+    this.fireBed.gain.gain.setTargetAtTime(Math.min(0.12, 0.6 / Math.max(1, fireD * fireD)) * (1 - w.rainRate * 0.5) * fireK, now, 0.2);
     this.crackleTimer -= dt;
-    if (this.crackleTimer <= 0 && fireD < 25) {
+    if (this.crackleTimer <= 0 && fireD < 25 && Math.random() < fireK) {
       this.crackleTimer = 0.05 + Math.random() * 0.4;
       const { out, when } = s.voice(firePos(), 0.05, 1);
       s.noiseBurst(out, when, { type: 'highpass', freq: 1500 + Math.random() * 3000, gain: 0.05 + Math.random() * 0.12, attack: 0.001, decay: 0.012 + Math.random() * 0.03 });
@@ -235,6 +236,14 @@ export class LagoonAudio {
       case 'stoneThrown': {
         const { out, when } = s.voice(null, 0.05);
         s.noiseBurst(out, when, { type: 'bandpass', freq: 600, sweepTo: 2200, q: 1.5, gain: 0.07 + e.speedMs * 0.004, attack: 0.04, decay: 0.2 });
+        break;
+      }
+      case 'fire': {
+        // A log dropping onto the embers, the whump of catching, or the last hiss.
+        const { out, when } = this.s.voice(firePos(), 0.1, 1.5);
+        if (e.what === 'fed') this.s.noiseBurst(out, when, { type: 'lowpass', freq: 280, gain: 0.25, attack: 0.002, decay: 0.2, buffer: this.s.brown });
+        else if (e.what === 'lit') this.s.noiseBurst(out, when, { type: 'lowpass', freq: 500, gain: 0.3, attack: 0.08, decay: 0.6, buffer: this.s.brown });
+        else this.s.noiseBurst(out, when, { type: 'highpass', freq: 2500, gain: 0.05, attack: 0.05, decay: 0.8 });
         break;
       }
       case 'lamp': {
@@ -416,7 +425,7 @@ export class LagoonAudio {
     s.noiseBurst(out, when, { type: 'bandpass', freq: 1400, q: 1.2, gain: 0.08 + 0.12 * need, attack: 0.03, decay: 0.35, sweepTo: 2200 });
   }
 
-  private clink(p: Pos, surface: SurfaceKind, speed: number, body: 'stone' | 'can' | 'coconut' | 'shell'): void {
+  private clink(p: Pos, surface: SurfaceKind, speed: number, body: 'stone' | 'can' | 'coconut' | 'shell' | 'log'): void {
     const s = this.s;
     const { out, when } = s.voice(p, 0.15, 1.5);
     const k = Math.min(1, speed / 8);
@@ -427,6 +436,10 @@ export class LagoonAudio {
     }
     if (body === 'can' || surface === 'metal') {
       for (const f of [1150, 2320, 3710]) s.tone(out, when, { type: 'sine', freq: f * (0.95 + Math.random() * 0.1), gain: 0.07 * (0.5 + k), attack: 0.001, decay: 0.25 });
+      return;
+    }
+    if (body === 'log') {
+      s.noiseBurst(out, when, { type: 'lowpass', freq: 320, gain: 0.2 * (0.4 + k), attack: 0.002, decay: 0.12, buffer: s.brown });
       return;
     }
     if (surface === 'rock') s.tone(out, when, { type: 'triangle', freq: 2600 + Math.random() * 800, gain: 0.08 * k, attack: 0.001, decay: 0.05 });

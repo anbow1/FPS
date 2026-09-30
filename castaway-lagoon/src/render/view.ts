@@ -263,7 +263,7 @@ export class LagoonView {
     // A small kerosene flame is a few 10⁴ cd/m².
     U.lampGlow.value = 2e4 * pre * lampOn * lampFlicker;
     const rainDamp = 1 - game.env.weather.rainRate * 0.6;
-    this.outpost.fire.intensity = (DAYLIGHT.fireFluxLm / (4 * Math.PI)) * pre * wobble * rainDamp;
+    this.outpost.fire.intensity = (DAYLIGHT.fireFluxLm / (4 * Math.PI)) * pre * wobble * rainDamp * game.fire.strength;
     const lamp = lightColour(DAYLIGHT.lampColourK);
     const fire = lightColour(DAYLIGHT.fireColourK);
     this.outpost.lantern.color.setRGB(lamp.r, lamp.g, lamp.b);
@@ -289,7 +289,7 @@ export class LagoonView {
       rig.rotation.set(0, 0, 0);
       this.lampSwing.fresh = true;
     }
-    this.lampAnchor.set(-0.27, -0.5, -0.42).applyQuaternion(cam.quaternion).add(cam.position);
+    this.lampAnchor.set(-0.25, -0.3, -0.5).applyQuaternion(cam.quaternion).add(cam.position);
     const s = this.lampSwing;
     if (s.fresh || dt <= 0) {
       this.lampPrevAnchor.copy(this.lampAnchor);

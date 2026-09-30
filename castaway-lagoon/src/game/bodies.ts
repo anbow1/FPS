@@ -1,14 +1,14 @@
-import { PHYSICS, STONE, WATER_LEVEL_M } from '../config.ts';
+import { LOG, PHYSICS, STONE, WATER_LEVEL_M } from '../config.ts';
 import { type CollisionWorld, newHit, type RayHit } from './colliders.ts';
 import type { EventQueue, P3 } from './events.ts';
 import { heightAt } from './terrain.ts';
 import type { TinCan } from './world.ts';
 
-// Small free bodies: thrown stones, ejected shell casings and the tin cans on
-// the log. Point masses with quadratic drag, swept against the collision world
+// Small free bodies: thrown stones and firewood, ejected shell casings and the
+// tin cans on the log. Point masses with quadratic drag, swept against the collision world
 // each step so a fast stone never tunnels through a rock (rules §5).
 
-export type BodyKind = 'stone' | 'shell';
+export type BodyKind = 'stone' | 'shell' | 'log';
 export type BodyState = 'flying' | 'sinking' | 'resting';
 
 export interface Body {
@@ -56,6 +56,10 @@ export class Bodies {
     }
   }
 
+  throwLog(from: P3, vel: P3): void {
+    this.spawn('log', from, vel);
+  }
+
   ejectShell(from: P3, vel: P3): void {
     this.spawn('shell', from, vel);
   }
@@ -97,21 +101,21 @@ export class Bodies {
         b.vel.z *= 0.9;
         if (b.pos.y <= floor + 1e-3) {
           b.state = 'resting';
-          if (b.kind === 'stone') {
+          if (b.kind !== 'shell') {
             rested.push({ body: b, underwater: true });
             this.list.splice(i, 1);
           }
         }
         continue;
       }
-      const radius = b.kind === 'stone' ? STONE.radiusM : SHELL_RADIUS_M;
-      integrate(b, dt, b.kind === 'stone' ? stoneDragPerM() : 0.02);
+      const radius = b.kind === 'stone' ? STONE.radiusM : b.kind === 'log' ? LOG.radiusM : SHELL_RADIUS_M;
+      integrate(b, dt, b.kind === 'stone' ? stoneDragPerM() : b.kind === 'log' ? 0.004 : 0.02);
       b.rot.x += b.spin.x * dt;
       b.rot.y += b.spin.y * dt;
       b.rot.z += b.spin.z * dt;
       if (b.kind === 'stone') this.stoneHitsCans(b, cans);
       if (this.sweep(b, radius)) {
-        if ((b.state as BodyState) === 'resting' && b.kind === 'stone') { // sweep() may have put it to rest
+        if ((b.state as BodyState) === 'resting' && b.kind !== 'shell') { // sweep() may have put it to rest
           rested.push({ body: b, underwater: b.pos.y < WATER_LEVEL_M });
           this.list.splice(i, 1);
         }
@@ -140,8 +144,15 @@ export class Bodies {
       const speed = Math.hypot(horizontal, b.vel.y);
       const entryRad = Math.atan2(-b.vel.y, horizontal);
       const skip = b.kind === 'stone' && entryRad < STONE.skipMaxAngleRad && speed > STONE.skipMinSpeedMs && b.skips < 8;
-      this.events.push({ type: 'splash', pos: { x, y: WATER_LEVEL_M, z }, speedMs: speed, massKg: b.kind === 'stone' ? STONE.massKg : 0.008, skip });
-      if (skip) {
+      this.events.push({ type: 'splash', pos: { x, y: WATER_LEVEL_M, z }, speedMs: speed, massKg: b.kind === 'stone' ? STONE.massKg : b.kind === 'log' ? LOG.massKg : 0.008, skip });
+      if (b.kind === 'log') {
+        // Wood floats: it comes to rest on the surface where it went in.
+        b.state = 'resting';
+        b.pos.x = x;
+        b.pos.z = z;
+        b.pos.y = WATER_LEVEL_M;
+        b.vel.x = b.vel.y = b.vel.z = 0;
+      } else if (skip) {
         b.skips++;
         b.pos.x = x;
         b.pos.z = z;
@@ -163,7 +174,7 @@ export class Bodies {
     const h = this.hit;
     const vn = b.vel.x * h.nx + b.vel.y * h.ny + b.vel.z * h.nz;
     if (vn >= 0) return false;
-    const restitution = b.kind === 'stone' ? (h.surface === 'sand' || h.surface === 'wetSand' ? STONE.restitution * 0.5 : STONE.restitution) : 0.3;
+    const restitution = b.kind === 'log' ? LOG.restitution : b.kind === 'stone' ? (h.surface === 'sand' || h.surface === 'wetSand' ? STONE.restitution * 0.5 : STONE.restitution) : 0.3;
     b.vel.x -= (1 + restitution) * vn * h.nx;
     b.vel.y -= (1 + restitution) * vn * h.ny;
     b.vel.z -= (1 + restitution) * vn * h.nz;

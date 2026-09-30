@@ -63,7 +63,7 @@ const CONTROLS: readonly [string, string][] = [
   ['LMB', 'Shoot · slash · throw (hold to wind up)'],
   ['RMB', 'Aim the rifle'],
   ['R', 'Reload'],
-  ['1 / 2 / 3', 'AK-47 · knife · stone'],
+  ['1 / 2 / 3 / 4', 'AK-47 · knife · stone · firewood'],
   ['H', 'Empty hands'],
   ['I', 'Inventory'],
   ['T / N', 'Weather · time of day'],

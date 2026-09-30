@@ -22,6 +22,7 @@ export type LagoonAction =
   | 'rifle'
   | 'knife'
   | 'stone'
+  | 'firewood'
   | 'holster'
   | 'inventory'
   | 'weather'
@@ -44,6 +45,7 @@ export const LAGOON_BINDINGS: Record<LagoonAction, readonly string[]> = {
   rifle: ['Digit1'],
   knife: ['Digit2'],
   stone: ['Digit3'],
+  firewood: ['Digit4'],
   holster: ['KeyH'],
   inventory: ['KeyI', 'Tab'],
   weather: ['KeyT'],
@@ -97,7 +99,7 @@ export class LagoonControls {
     t.fireReleased = i.released('fire');
     t.aimHeld = i.held('aim');
     t.reloadPressed = i.pressed('reload');
-    t.selectSlot = i.pressed('rifle') ? 'rifle' : i.pressed('knife') ? 'knife' : i.pressed('stone') ? 'stone' : i.pressed('holster') ? 'hands' : null;
+    t.selectSlot = i.pressed('rifle') ? 'rifle' : i.pressed('knife') ? 'knife' : i.pressed('stone') ? 'stone' : i.pressed('firewood') ? 'log' : i.pressed('holster') ? 'hands' : null;
     intent.cycleTime = i.pressed('time');
     intent.cycleWeather = i.pressed('weather');
     return intent;

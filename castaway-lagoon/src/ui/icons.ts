@@ -23,6 +23,7 @@ export const ITEM_ICONS: Record<ItemId, string> = {
   backpack: svg('<path d="M18 22c0-8 6-12 14-12s14 4 14 12v30a4 4 0 0 1-4 4H22a4 4 0 0 1-4-4z" fill="#8a7d5c"/><path d="M20 26h24v8H20z" fill="#6f6448"/><rect x="24" y="40" width="16" height="10" rx="2" fill="#6f6448"/>'),
   lamp: svg('<path d="M24 14a8 8 0 0 1 16 0" fill="none" stroke="#9aa08f" stroke-width="3"/><rect x="22" y="16" width="20" height="6" rx="2" fill="#56603f"/><rect x="24" y="22" width="16" height="22" rx="3" fill="#e9dfc4" opacity=".6"/><path d="M32 40c-3-3-3-7 0-11 3 4 3 8 0 11z" fill="#f2a33a"/><rect x="21" y="44" width="22" height="7" rx="2" fill="#56603f"/>'),
   lighter: svg('<rect x="22" y="22" width="20" height="32" rx="4" fill="#c2412f"/><rect x="24" y="14" width="16" height="9" rx="2" fill="#b9bcbe"/><path d="M32 12c-3-3-2-6 0-8 2 2 3 5 0 8z" fill="#f2a33a"/>'),
+  log: svg('<rect x="8" y="24" width="44" height="16" rx="8" fill="#7a5634"/><ellipse cx="50" cy="32" rx="6" ry="8" fill="#c9a26a"/><ellipse cx="50" cy="32" rx="3" ry="4" fill="none" stroke="#8a6a3c"/>'),
   fishhooks: svg('<rect x="12" y="22" width="40" height="24" rx="4" fill="#b9a36a"/><path d="M26 28v10a4 4 0 0 0 8 0" fill="none" stroke="#e1e3e6" stroke-width="2.5"/><path d="M40 28v8a3 3 0 0 0 6 0" fill="none" stroke="#e1e3e6" stroke-width="2"/>'),
   rope: svg('<g fill="none" stroke="#c8ae7a" stroke-width="5"><ellipse cx="32" cy="32" rx="22" ry="18"/><ellipse cx="32" cy="32" rx="14" ry="11"/></g><path d="M50 40l8 14" stroke="#c8ae7a" stroke-width="5"/>'),
 };

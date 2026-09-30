@@ -17,7 +17,8 @@ export type ItemId =
   | 'backpack'
   | 'lamp'
   | 'lighter'
-  | 'fishhooks';
+  | 'fishhooks'
+  | 'log';
 
 export interface ItemSpec {
   name: string;
@@ -42,10 +43,11 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
   backpack: { name: 'Backpack', description: 'Worn canvas backpack, straps repaired with fishing line. Everything you carry rides in it.', tool: false },
   lamp: { name: 'Kerosene Lamp', description: 'Hurricane lamp from the shelter. L lights it or puts it out; water puts it out too.', tool: false },
   lighter: { name: 'Lighter', description: 'Half-empty disposable lighter. Enough for a fire or two.', tool: false },
+  log: { name: 'Firewood', description: 'A split log from the stack. Press 4 and throw it on the fire, or put it on with E.', tool: false },
   fishhooks: { name: 'Fishhook Tin', description: 'A dozen hooks and a spool of line in an old tobacco tin.', tool: false },
 };
 
-export const ITEM_ORDER: readonly ItemId[] = ['rifle', 'knife', 'stone', 'ammo762', 'herb', 'hibiscus', 'aloe', 'coconut', 'beans', 'flare', 'canteen', 'rope', 'backpack', 'lamp', 'lighter', 'fishhooks'];
+export const ITEM_ORDER: readonly ItemId[] = ['rifle', 'knife', 'stone', 'ammo762', 'herb', 'hibiscus', 'aloe', 'coconut', 'beans', 'flare', 'canteen', 'rope', 'backpack', 'lamp', 'lighter', 'fishhooks', 'log'];
 
 export function isItemId(v: string): v is ItemId {
   return Object.hasOwn(ITEMS, v);

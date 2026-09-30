@@ -97,7 +97,10 @@ export class Hud {
     this.cross.classList.toggle('focus', f !== null && !busy);
     this.cross.style.opacity = String(1 - eq.adsBlend);
     let prompt = '';
-    if (f && f.kind === 'sleep' && !busy && eq.action.kind !== 'examine') {
+    if (f && f.kind === 'fire' && !busy && eq.action.kind !== 'examine') {
+      const fire = game.fire;
+      prompt = !fire.lit && fire.fuelS > 0 ? '<kbd>E</kbd> Light the <b>fire</b>' : `<kbd>E</kbd> Put a log on the <b>${fire.lit ? 'fire' : 'dead fire'}</b>`;
+    } else if (f && f.kind === 'sleep' && !busy && eq.action.kind !== 'examine') {
       prompt = `<kbd>E</kbd> Sleep until <b>${TIME_OF_DAY[sleepUntil(game.env.timeId)].label.toLowerCase()}</b>`;
     } else if (f && !busy && eq.action.kind !== 'examine') {
       const verb = f.kind === 'pickup' ? 'Pick up' : f.kind === 'harvest' ? 'Harvest' : f.kind === 'crate' ? 'Open' : 'Examine';
@@ -112,6 +115,7 @@ export class Hud {
     let ammo = '';
     if (eq.slot === 'rifle') ammo = `<span class="ico">${ITEM_ICONS.rifle}</span><b>${eq.magazineRounds}</b><span class="res">/ ${game.inventory.count('ammo762')}</span>`;
     else if (eq.slot === 'stone') ammo = `<span class="ico">${ITEM_ICONS.stone}</span><b>${game.inventory.count('stone')}</b>`;
+    else if (eq.slot === 'log') ammo = `<span class="ico">${ITEM_ICONS.log}</span><b>${game.inventory.count('log')}</b>`;
     else if (eq.slot === 'knife') ammo = `<span class="ico">${ITEM_ICONS.knife}</span>`;
     if (ammo !== this.lastAmmo) {
       this.ammo.innerHTML = ammo;
