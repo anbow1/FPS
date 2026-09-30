@@ -17,6 +17,11 @@ npm run dev          # http://localhost:5173
 Shared by both, at the root: the coding rules (`AGENT.md`,
 `games-ts-threejs.md`) and the reference sheets in `references/`.
 
+**[docs/graphics-rules-template.md](docs/graphics-rules-template.md)** — the
+graphics rules of all three games (Field Line, Castaway Lagoon, Tanks) as a
+fill-in template (Polish) to copy into a new game: architecture, light,
+materials, vegetation, water, stutter, measurement, presets, acceptance.
+
 **[docs/graphics-playbook.md](docs/graphics-playbook.md)** — every graphics
 technique used in both games (renderer and light units, procedural textures,
 terrain, sky, vegetation and streaming, water, shore waves, swash, caustics),
