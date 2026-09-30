@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { tileableFbm } from '../core/noise';
 import { Rng } from '../core/rng';
 import { hyp2, hyp3 } from '../core/mathx';

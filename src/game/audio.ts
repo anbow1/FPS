@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 /**
  * Procedural WebAudio: no sample files. Distant shots arrive late (343 m/s) and duller

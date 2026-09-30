@@ -1,9 +1,10 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { WATER_LEVEL } from '../config';
 import { sampleWrap } from '../core/noise';
 import { hash2, Rng } from '../core/rng';
 import { linear, PBR } from '../render/palette';
-import { addPatch, foliageNormalPatch, G, inject, thermalPatch, translucencyPatch } from '../render/shaderPatch';
+import { attribute, cos, float, Fn, If, length, Loop, normalize, normalViewGeometry, positionLocal, sin, uniformArray, vec2, vec3 } from 'three/tsl';
+import { G, thermalOutput } from '../render/nodes';
 import type { NoiseSet } from '../render/textures';
 import { NOISE_SIZE } from '../render/textures';
 import type { Heightfield } from './heightfield';
@@ -22,7 +23,7 @@ export class Grass {
   readonly group = new THREE.Group();
   private chunks = new Map<number, THREE.Mesh>();
   private pool: THREE.BufferGeometry[] = [];
-  private readonly material: THREE.MeshStandardMaterial;
+  private readonly material: THREE.MeshStandardNodeMaterial;
   private readonly pushers: THREE.Vector4[] = [];
   private perChunk: number;
   private radius: number;
@@ -38,46 +39,32 @@ export class Grass {
     this.perChunk = perChunk;
     this.radius = radius;
     for (let i = 0; i < MAX_PUSHERS; i++) this.pushers.push(new THREE.Vector4(0, -9999, 0, 0));
-    this.material = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, vertexColors: true });
-    const pushers = this.pushers;
-    addPatch(this.material, {
-      key: 'grass',
-      apply(shader) {
-        shader.uniforms.uTime = G.uTime;
-        shader.uniforms.uWind = G.uWind;
-        shader.uniforms.uPush = { value: pushers };
-        inject(
-          shader,
-          'vertex',
-          '#include <common>',
-          `uniform float uTime; uniform vec2 uWind; uniform vec4 uPush[${MAX_PUSHERS}];
-           attribute float tip;`,
-          'after',
-        );
-        inject(
-          shader,
-          'vertex',
-          '#include <begin_vertex>',
-          `vec3 wpos = transformed;
-           float ph = wpos.x * 0.35 + wpos.z * 0.27;
-           float gust = sin(uTime * 1.7 + ph * 0.3) * 0.5 + 0.5;
-           vec2 sway = uWind * (0.18 + 0.32 * gust) + vec2(sin(uTime * 3.1 + ph), cos(uTime * 2.6 + ph * 1.3)) * 0.05;
-           vec2 push = vec2(0.0);
-           for (int i = 0; i < ${MAX_PUSHERS}; i++) {
-             vec2 d = wpos.xz - uPush[i].xz;
-             float dist = length(d);
-             float r = uPush[i].w;
-             if (r > 0.0 && dist < r) push += normalize(d + 1e-4) * (1.0 - dist / r) * 1.2;
-           }
-           transformed.xz += (sway + push) * tip * tip;
-           transformed.y -= length(push) * tip * 0.35;`,
-          'after',
-        );
-      },
-    });
-    addPatch(this.material, foliageNormalPatch);
-    addPatch(this.material, translucencyPatch(0.45));
-    addPatch(this.material, thermalPatch('grass', '0.07 + 0.08 * uDay'));
+    this.material = new THREE.MeshStandardNodeMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, vertexColors: true });
+    const push = uniformArray(this.pushers, 'vec4');
+    // Chunks sit at the origin, so local position is world position: sway from the wind field, a
+    // flutter per blade, and vehicles flattening the blades away from them (xyz position, w radius).
+    this.material.positionNode = Fn(() => {
+      const wpos = positionLocal;
+      const tip = attribute('tip', 'float');
+      const ph = wpos.x.mul(0.35).add(wpos.z.mul(0.27));
+      const gust = sin(G.uTime.mul(1.7).add(ph.mul(0.3))).mul(0.5).add(0.5);
+      const sway = G.uWind.mul(gust.mul(0.32).add(0.18)).add(vec2(sin(G.uTime.mul(3.1).add(ph)), cos(G.uTime.mul(2.6).add(ph.mul(1.3)))).mul(0.05));
+      const off = vec2(0).toVar();
+      Loop(MAX_PUSHERS, ({ i }) => {
+        const pu = push.element(i) as unknown as THREE.Node<'vec4'>;
+        const d = wpos.xz.sub(pu.xz);
+        const dist = length(d);
+        const r = pu.w;
+        If(r.greaterThan(0).and(dist.lessThan(r)), () => {
+          off.addAssign(normalize(d.add(1e-4)).mul(float(1).sub(dist.div(r))).mul(1.2));
+        });
+      });
+      const bendK = tip.mul(tip);
+      const xz = wpos.xz.add(sway.add(off).mul(bendK));
+      return vec3(xz.x, wpos.y.sub(length(off).mul(tip).mul(0.35)), xz.y);
+    })();
+    this.material.normalNode = normalViewGeometry;
+    thermalOutput(this.material, G.uDay.mul(0.08).add(0.07));
     this.blade = makeBlade();
   }
 

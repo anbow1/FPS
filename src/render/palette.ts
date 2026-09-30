@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 /**
  * PBR values from the material reference sheet. Colours are sRGB hex; THREE converts them
@@ -35,7 +35,8 @@ export function linear(hex: number): THREE.Color {
   return new THREE.Color(hex); // ColorManagement converts sRGB hex → linear working space
 }
 
-export function stdMat(key: PbrKey, extra: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardMaterial {
+/** A node material from the sheet (node materials take the thermal output and wind nodes). */
+export function stdMat(key: PbrKey, extra: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardNodeMaterial {
   const p = PBR[key];
-  return new THREE.MeshStandardMaterial({ color: p.color, roughness: p.rough, metalness: p.metal, ...extra });
+  return new THREE.MeshStandardNodeMaterial({ color: p.color, roughness: p.rough, metalness: p.metal, ...extra });
 }

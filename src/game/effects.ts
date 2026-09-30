@@ -1,7 +1,8 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { makeSmokeSprite } from '../render/textures';
 import { kelvinToLinear } from '../render/lighting';
-import { G } from '../render/shaderPatch';
+import { float, instancedBufferAttribute, length, mix, smoothstep, texture, uniform, uv, vec3 } from 'three/tsl';
+import { G } from '../render/nodes';
 
 /**
  * CPU-simulated particles rendered as two point clouds: lit alpha-blended (smoke, dust, debris)
@@ -18,7 +19,7 @@ export const enum PKind {
 }
 
 interface Pool {
-  points: THREE.Points;
+  sprite: THREE.Sprite;
   max: number;
   count: number;
   pos: Float32Array;
@@ -31,81 +32,68 @@ interface Pool {
   alpha: Float32Array;
   rot: Float32Array;
   kind: Uint8Array;
-  // GPU attributes
+  // GPU attributes (per instance)
   aSize: Float32Array;
   aAlpha: Float32Array;
   aRot: Float32Array;
   aCol: Float32Array;
+  attrs: THREE.InstancedBufferAttribute[];
 }
 
-const VERT = /* glsl */ `
-attribute float aSize; attribute float aAlpha; attribute float aRot; attribute vec3 aCol;
-varying float vAlpha; varying float vRot; varying vec3 vCol;
-uniform float uScale;
-void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * mv;
-  gl_PointSize = aSize * uScale / max(0.5, -mv.z);
-  vAlpha = aAlpha; vRot = aRot; vCol = aCol;
-}`;
+/** Uniforms of the lit (smoke, dust, debris) and additive (fire, sparks, flash) particles. */
+const PU = {
+  ambient: uniform(new THREE.Color()),
+  sun: uniform(new THREE.Color()),
+  emissive: uniform(1),
+};
 
-const FRAG_LIT = /* glsl */ `
-uniform sampler2D tSprite; uniform vec3 uAmbient; uniform vec3 uSun; uniform float uThermal;
-uniform vec3 fogColor; uniform float fogDensity;
-varying float vAlpha; varying float vRot; varying vec3 vCol;
-void main() {
-  vec2 p = gl_PointCoord - 0.5;
-  float c = cos(vRot), s = sin(vRot);
-  p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) + 0.5;
-  vec4 t = texture2D(tSprite, p);
-  // thermal imagers see through most smoke and dust
-  float a = t.a * vAlpha * mix(1.0, 0.25, uThermal);
-  if (a < 0.004) discard;
-  // cheap volumetric lighting: ambient + forward-scattered sun, darker in dense cores
-  vec3 light = uAmbient * 1.6 + uSun * (0.35 + 0.25 * t.r);
-  vec3 col = vCol * light * (0.7 + 0.3 * t.r);
-  col = mix(col, vec3(0.03 + vCol.r * 0.1), uThermal);
-  float depth = gl_FragCoord.z / gl_FragCoord.w;
-  float fogF = 1.0 - exp(-fogDensity * fogDensity * depth * depth);
-  col = mix(col, fogColor, fogF);
-  gl_FragColor = vec4(col, a);
-}`;
-
-const FRAG_ADD = /* glsl */ `
-uniform sampler2D tSprite; uniform float uEmissive; uniform float uThermal;
-varying float vAlpha; varying float vRot; varying vec3 vCol;
-void main() {
-  vec2 p = gl_PointCoord - 0.5;
-  float d = length(p) * 2.0;
-  float c = cos(vRot), s = sin(vRot);
-  vec2 q = vec2(c * p.x - s * p.y, s * p.x + c * p.y) + 0.5;
-  float a = texture2D(tSprite, q).a * vAlpha * smoothstep(1.0, 0.2, d);
-  if (a < 0.003) discard;
-  vec3 col = vCol * uEmissive;
-  col = mix(col, vec3(1.2), uThermal);
-  gl_FragColor = vec4(col * a, 1.0);
-}`;
-
-function makePool(max: number, mat: THREE.ShaderMaterial): Pool {
-  const geo = new THREE.BufferGeometry();
+/**
+ * One pool = one instanced sprite: camera-facing quads sized in metres, their per-particle
+ * position, size, rotation, alpha and colour in instanced attributes rewritten each frame.
+ * (WebGPU draws points at one pixel only, so the old point sprites became real quads.)
+ */
+function makePool(max: number, additive: boolean, spriteTex: THREE.Texture): Pool {
   const pos = new Float32Array(max * 3);
   const aSize = new Float32Array(max);
   const aAlpha = new Float32Array(max);
   const aRot = new Float32Array(max);
   const aCol = new Float32Array(max * 3);
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('aAlpha', new THREE.BufferAttribute(aAlpha, 1).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('aRot', new THREE.BufferAttribute(aRot, 1).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('aCol', new THREE.BufferAttribute(aCol, 3).setUsage(THREE.DynamicDrawUsage));
-  geo.setDrawRange(0, 0);
-  const points = new THREE.Points(geo, mat);
-  points.frustumCulled = false;
+  const attr = (a: Float32Array, n: number) => new THREE.InstancedBufferAttribute(a, n).setUsage(THREE.DynamicDrawUsage);
+  const attrs = [attr(pos, 3), attr(aSize, 1), attr(aAlpha, 1), attr(aRot, 1), attr(aCol, 3)] as const;
+  const [P, S, A, R, C] = attrs;
+  const mat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false });
+  mat.name = additive ? 'particles-add' : 'particles-lit';
+  mat.positionNode = instancedBufferAttribute(P);
+  mat.scaleNode = instancedBufferAttribute(S);
+  mat.rotationNode = instancedBufferAttribute(R);
+  const alpha = instancedBufferAttribute(A) as unknown as THREE.Node<'float'>;
+  const col = instancedBufferAttribute(C) as unknown as THREE.Node<'vec3'>;
+  const t = texture(spriteTex, uv());
+  if (additive) {
+    mat.blending = THREE.AdditiveBlending;
+    mat.fog = false;
+    const d = length(uv().sub(0.5)).mul(2);
+    const a = t.a.mul(alpha).mul(float(1).sub(smoothstep(0.2, 1, d)));
+    // additive: the colour carries the coverage, alpha stays 1
+    mat.colorNode = mix(col.mul(PU.emissive), vec3(1.2), G.uThermal).mul(a);
+    mat.opacityNode = float(1);
+  } else {
+    // thermal imagers see through most smoke and dust
+    const a = t.a.mul(alpha).mul(mix(1, 0.25, G.uThermal));
+    // cheap volumetric lighting: ambient + forward-scattered sun, darker in dense cores
+    const light = PU.ambient.mul(1.6).add(PU.sun.mul(t.r.mul(0.25).add(0.35)));
+    const lit = col.mul(light).mul(t.r.mul(0.3).add(0.7));
+    mat.colorNode = mix(lit, vec3(col.r.mul(0.1).add(0.03)), G.uThermal);
+    mat.opacityNode = a;
+  }
+  const sprite = new THREE.Sprite(mat);
+  sprite.count = 0;
+  sprite.frustumCulled = false;
   return {
-    points, max, count: 0, pos,
+    sprite, max, count: 0, pos,
     vel: new Float32Array(max * 3), col: new Float32Array(max * 3), age: new Float32Array(max), life: new Float32Array(max),
     size: new Float32Array(max), grow: new Float32Array(max), alpha: new Float32Array(max), rot: new Float32Array(max),
-    kind: new Uint8Array(max), aSize, aAlpha, aRot, aCol,
+    kind: new Uint8Array(max), aSize, aAlpha, aRot, aCol, attrs: [...attrs],
   };
 }
 
@@ -134,8 +122,6 @@ export class Effects {
   readonly group = new THREE.Group();
   private lit: Pool;
   private add: Pool;
-  private litMat: THREE.ShaderMaterial;
-  private addMat: THREE.ShaderMaterial;
   private flashes: FlashLight[] = [];
   private fireLights: THREE.PointLight[] = [];
   readonly fires: Fire[] = [];
@@ -149,34 +135,11 @@ export class Effects {
 
   constructor(maxParticles: number) {
     const sprite = makeSmokeSprite(3);
-    this.litMat = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: FRAG_LIT,
-      uniforms: {
-        tSprite: { value: sprite },
-        uScale: { value: 600 },
-        uAmbient: { value: new THREE.Color() },
-        uSun: { value: new THREE.Color() },
-        uThermal: G.uThermal,
-        fogColor: { value: new THREE.Color() },
-        fogDensity: { value: 0 },
-      },
-      transparent: true,
-      depthWrite: false,
-    });
-    this.addMat = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: FRAG_ADD,
-      uniforms: { tSprite: { value: sprite }, uScale: { value: 600 }, uEmissive: { value: 1 }, uThermal: G.uThermal },
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    this.lit = makePool(maxParticles, this.litMat);
-    this.add = makePool(Math.floor(maxParticles / 2), this.addMat);
-    this.lit.points.renderOrder = 5;
-    this.add.points.renderOrder = 6;
-    this.group.add(this.lit.points, this.add.points);
+    this.lit = makePool(maxParticles, false, sprite);
+    this.add = makePool(Math.floor(maxParticles / 2), true, sprite);
+    this.lit.sprite.renderOrder = 5;
+    this.add.sprite.renderOrder = 6;
+    this.group.add(this.lit.sprite, this.add.sprite);
 
     // Fixed light count: toggling intensity never changes the shader program.
     for (let i = 0; i < 2; i++) {
@@ -195,7 +158,7 @@ export class Effects {
     this.tracerGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 6, 1, true);
     this.tracerGeo.rotateX(Math.PI / 2);
     for (let i = 0; i < 24; i++) {
-      const m = new THREE.Mesh(this.tracerGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      const m = new THREE.Mesh(this.tracerGeo, new THREE.MeshBasicNodeMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
       m.visible = false;
       m.frustumCulled = false;
       this.group.add(m);
@@ -217,16 +180,13 @@ export class Effects {
   }
 
   /** Keep particle lighting and emissive levels consistent with the current light preset. */
-  setLighting(exposure: number, ambient: THREE.Color, sun: THREE.Color, fog: THREE.Color, fogDensity: number, pixelScale: number): void {
+  /** Particle lighting and emissive levels follow the light preset (the height fog is the scene's). */
+  setLighting(exposure: number, ambient: THREE.Color, sun: THREE.Color): void {
     this.exposure = exposure;
-    (this.litMat.uniforms.uAmbient!.value as THREE.Color).copy(ambient);
-    (this.litMat.uniforms.uSun!.value as THREE.Color).copy(sun).multiplyScalar(1 / Math.PI);
-    (this.litMat.uniforms.fogColor!.value as THREE.Color).copy(fog);
-    this.litMat.uniforms.fogDensity!.value = fogDensity;
+    PU.ambient.value.copy(ambient);
+    PU.sun.value.copy(sun).multiplyScalar(1 / Math.PI);
     // fire luminance ~5e4 cd/m² pre-exposed, floored/capped so it reads day and night
-    this.addMat.uniforms.uEmissive!.value = Math.min(40, Math.max(2.5, 5e4 * exposure));
-    this.litMat.uniforms.uScale!.value = pixelScale;
-    this.addMat.uniforms.uScale!.value = pixelScale;
+    PU.emissive.value = Math.min(40, Math.max(2.5, 5e4 * exposure));
   }
 
   setWind(w: THREE.Vector2): void {
@@ -496,10 +456,8 @@ export class Effects {
       }
     }
     p.count = n;
-    const geo = p.points.geometry;
-    geo.setDrawRange(0, n);
-    for (const name of ['position', 'aSize', 'aAlpha', 'aRot', 'aCol']) {
-      const a = geo.getAttribute(name) as THREE.BufferAttribute;
+    p.sprite.count = n;
+    for (const a of p.attrs) {
       a.clearUpdateRanges();
       a.addUpdateRange(0, n * a.itemSize);
       a.needsUpdate = true;

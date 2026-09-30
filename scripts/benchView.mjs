@@ -61,7 +61,7 @@ const query = `?bench&benchWarm=2&benchFrames=${frames}&q=${quality}`;
 await page.goto(url + query);
 await page.waitForFunction(() => Array.isArray(window.__bench), null, { timeout: 3_600_000, polling: 1000 });
 const rows = await page.evaluate(() => window.__bench);
-const backend = await page.evaluate(() => 'WebGL2 (WebGLRenderer)');
+const backend = await page.evaluate(() => window.__backend ?? '');
 await browser.close();
 
 const run = { map, quality, gpu, backend, date: new Date().toISOString(), rows };

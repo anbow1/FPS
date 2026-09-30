@@ -1,9 +1,9 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { Rng } from '../core/rng';
 import { buildingMaterial, type SurfaceKind } from '../render/buildingMaterial';
 import { box, cyl, prismX } from '../render/geom';
 import { stdMat } from '../render/palette';
-import { addThermalConst } from '../render/shaderPatch';
+import { addThermalConst } from '../render/nodes';
 import type { Heightfield } from './heightfield';
 import { SITES } from './layout';
 import { hyp2 } from '../core/mathx';

@@ -1,6 +1,6 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { DRONE } from '../config';
-import { addThermalConst } from '../render/shaderPatch';
+import { addThermalConst } from '../render/nodes';
 import type { World } from '../world/world';
 import type { SoftTarget } from './bullets';
 import { type Effects, PKind } from './effects';
@@ -36,11 +36,11 @@ export class Drone implements SoftTarget {
   warning = '';
 
   constructor() {
-    const grey = new THREE.MeshStandardMaterial({ color: 0x6a6d71, roughness: 0.58 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x2b2b2d, roughness: 0.6 });
-    const prop = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.5, transparent: true, opacity: 0.35, depthWrite: false });
-    const red = new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff2010, emissiveIntensity: 4 });
-    const green = new THREE.MeshStandardMaterial({ color: 0x003000, emissive: 0x20ff30, emissiveIntensity: 4 });
+    const grey = new THREE.MeshStandardNodeMaterial({ color: 0x6a6d71, roughness: 0.58 });
+    const dark = new THREE.MeshStandardNodeMaterial({ color: 0x2b2b2d, roughness: 0.6 });
+    const prop = new THREE.MeshStandardNodeMaterial({ color: 0x1c1c1c, roughness: 0.5, transparent: true, opacity: 0.35, depthWrite: false });
+    const red = new THREE.MeshStandardNodeMaterial({ color: 0x300000, emissive: 0xff2010, emissiveIntensity: 4 });
+    const green = new THREE.MeshStandardNodeMaterial({ color: 0x003000, emissive: 0x20ff30, emissiveIntensity: 4 });
     addThermalConst(grey, 0.9);
     addThermalConst(dark, 1.3);
     this.body = new THREE.Group();

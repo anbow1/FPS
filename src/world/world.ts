@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import type { QualityPreset } from '../config';
 import { makeGroundLayers } from '../render/groundTextures';
 import { makeNoiseSet, type NoiseSet } from '../render/textures';
@@ -95,6 +95,6 @@ export class World {
   update(dt: number, cam: THREE.Vector3): void {
     this.terrain.update(cam);
     this.grass.update(cam);
-    this.vegetation.update(dt);
+    this.vegetation.update(dt, cam);
   }
 }

@@ -147,6 +147,7 @@ export interface QualityPreset {
   bloom: boolean;
   grassPerChunk: number;
   grassRadius: number;
+  /** Full tree meshes within this distance (m); impostors beyond (world/vegetation.ts). */
   treeNearDist: number;
   maxParticles: number;
   wreckShadow: boolean;
@@ -155,11 +156,11 @@ export interface QualityPreset {
 export const QUALITY: Record<'high' | 'low', QualityPreset> = {
   high: {
     id: 'high', pixelRatioCap: 1.5, shadowMapSize: 4096, shadowExtent: 140, ao: true, bloom: true,
-    grassPerChunk: 5200, grassRadius: 90, treeNearDist: 420, maxParticles: 5000, wreckShadow: true,
+    grassPerChunk: 5200, grassRadius: 90, treeNearDist: 320, maxParticles: 5000, wreckShadow: true,
   },
   low: {
     id: 'low', pixelRatioCap: 1, shadowMapSize: 2048, shadowExtent: 110, ao: false, bloom: true,
-    grassPerChunk: 1800, grassRadius: 55, treeNearDist: 250, maxParticles: 2500, wreckShadow: false,
+    grassPerChunk: 1800, grassRadius: 55, treeNearDist: 200, maxParticles: 2500, wreckShadow: false,
   },
 };
 

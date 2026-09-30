@@ -1,6 +1,6 @@
 # Tanks
 
-Gra czołgowa 3D w przeglądarce: **TypeScript + Three.js (WebGL2)**, bez żadnych zewnętrznych
+Gra czołgowa 3D w przeglądarce: **TypeScript + Three.js (WebGPU, zapasowo WebGL2; shadery w TSL)**, bez żadnych zewnętrznych
 assetów. Teren, las, wioska, czołgi, tekstury i dźwięki powstają proceduralnie w kodzie.
 
 ```bash
@@ -40,9 +40,9 @@ reflektory ~15 000 cd. Mapa środowiska (IBL) z tego samego nieba, mgła = kolor
 **Atmosfera** – mgła wysokościowa (gęstsza w dolinach, grzbiety i niebo czyste) z rozpraszaniem
 Mie w stronę słońca, tym samym co halo nieba, więc odległy teren płynnie przechodzi w horyzont.
 Chmury kłębiaste na niebie (pokrycie zależne od pory) dryfują z wiatrem i rzucają na ziemię i wodę
-ruchome cienie z tego samego pola gęstości. Promienie słońca (smugi światła przez drzewa) liczone
-w ćwierć rozdzielczości z bufora głębi, wyłączane gdy słońce jest za kamerą. Wszystko wstrzyknięte
-we wspólne fragmenty shaderów three.js – bez dodatkowych przebiegów sceny ani draw calli.
+ruchome cienie z tego samego pola gęstości (mnożone w węźle cienia słońca). Promienie słońca (smugi
+światła przez drzewa) liczone z bufora głębi, wyłączane gdy słońce jest za kamerą. Mgła to węzeł
+`scene.fogNode`, więc dostaje ją każdy materiał – bez dodatkowych przebiegów sceny ani draw calli.
 
 **Materiały PBR** – kolory bazowe i chropowatość z arkusza (NATO green #4B5340 / rough 0,76,
 khaki #5C5B3E, guma gąsienic, stal, sadza, rdza, trawa, gleba, skała, błoto, woda, cegła…).
@@ -84,16 +84,27 @@ wskaźnik wieża/kadłub, dalmierz · amunicja · przeładowanie, siatka + znacz
 minimapa ze stożkiem wieży, dronem i wykrytą piechotą, stan modułów kadłuba. Na ekranach 21:9 / 32:9 HUD trzyma się
 środkowego obszaru 16:9.
 
-**Wydajność** – budżety z arkusza: presety Wysoka / Niska (cienie 4096/2048, GTAO, gęstość
+**Architektura** – ta sama co w Field Line i Castaway Lagoon (anbow1/FPS): `WebGPURenderer`
+(WebGPU, a gdy go brak – jego własny backend WebGL2), materiały węzłowe TSL zamiast łatek
+`onBeforeCompile`, jeden `RenderPipeline`: przebieg sceny HDR → TRAA (Wysoka) → GTAO (Wysoka) →
+promienie słońca → bloom → ekspozycja / ACES / sRGB → termowizja → wyostrzenie (Wysoka) / FXAA
+(Niska). Cienie kaskadowe (CSM), cząsteczki jako instancjonowane sprite'y. Wspólne pliki:
+`render/perf.ts` (czas GPU na przebieg, regulator klatek), `render/benchRecorder.ts` (test
+wydajności), `render/warmup.ts` (kompilacja wszystkich shaderów przy ładowaniu),
+`render/webgpuCompat.ts`.
+
+**Wydajność** – budżety z arkusza: presety Wysoka / Niska (cienie CSM 3×2048 / 2×1024, GTAO, gęstość
 trawy, liczba cząsteczek), stała liczba świateł (bez rekompilacji shaderów), instancing drzew,
 skał i kół, geometria łączona per materiał, LOD terenu w kawałkach 128 m. F3 pokazuje draw calls
-i trójkąty względem limitów (Wysoka 2500 / 12 M, Niska 1500 / 4 M). Fizyka w stałym kroku 60 Hz
-z interpolacją renderu.
+i trójkąty względem limitów (Wysoka 2500 / 12 M, Niska 1500 / 4 M), backend i czas GPU na przebieg
+(na WebGPU). Fizyka w stałym kroku 60 Hz z interpolacją renderu. **Test wydajności** (przycisk w
+menu albo `?bench`) objeżdża pięć stałych punktów i podaje tabelę do skopiowania;
+`scripts/benchView.mjs` robi to samo w przeglądarce bez okna i porównuje przebiegi.
 
 **Płynność** – gra pilnuje 60 kl./s kosztem obrazu, nigdy rozgrywki: regulator czasu klatki
-(percentyle z okna 1 s, odporny na pojedyncze przycięcia) najpierw wyłącza AO, potem obniża
-rozdzielczość renderu w krokach 100 → 58 %, a wraca w górę ostrożnie i bez oscylacji (F3 pokazuje
-bieżący poziom). Wszystkie shadery – efekty, smugacze, dron, termowizja, FFT wody, promienie słońca
+(percentyle z okna 1 s, odporny na pojedyncze przycięcia) najpierw wyłącza AO, potem promienie
+słońca, potem obniża rozdzielczość renderu w krokach 100 → 58 %, a wraca w górę ostrożnie i bez
+oscylacji (F3 pokazuje bieżący poziom); krok, który niczego nie przyspieszył (ekran 30 Hz), cofa. Wszystkie shadery – efekty, smugacze, dron, termowizja, FFT wody, promienie słońca
 – kompilują się przy ładowaniu, a zmiana pory dnia (T) nie wymusza rekompilacji. Trawa dobudowuje
 się porcjami po ~1300 źdźbeł na klatkę i wysyła do GPU tylko użyte wierzchołki; AI sprawdza
 kierunki jazdy 10 razy na sekundę; gorące pętle alokują ~3× mniej pamięci niż wcześniej (rzadsze GC).
@@ -104,8 +115,8 @@ kierunki jazdy 10 razy na sekundę; gorące pętle alokują ~3× mniej pamięci 
 src/
   config.ts            parametry gry: amunicja, czołgi, presety jakości, budżety
   core/                PRNG, szum, wejście
-  render/              pipeline (GTAO, bloom, ACES, SMAA, termowizja), oświetlenie i niebo,
-                       materiały PBR, patche shaderów, geometria proceduralna
+  render/              pipeline (TRAA, GTAO, bloom, ACES, FXAA, termowizja), oświetlenie i niebo,
+                       materiały PBR i węzły TSL, FFT wody, pomiar i regulator, geometria
   world/               heightfield, teren z LOD, roślinność, trawa, woda, budynki, decale
   game/                czołg (fizyka, moduły), model czołgu, balistyka, pancerz, pociski,
                        AI, efekty, dźwięk, logika gry

@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { AMMO, type AmmoId, type AmmoSpec, GRAVITY, PLAY_HALF, type TankSpec, WATER_LEVEL } from '../config';
 import { pushOutObb } from '../world/buildings';
 import type { World } from '../world/world';

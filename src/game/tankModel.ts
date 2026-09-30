@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { box, convexHull2, cyl, latheX, mergeParts, prismX, prismY, sphereCap } from '../render/geom';
 import { makeTrackTexture } from '../render/textures';
 import { makeVehicleUniforms, vehicleMaterial, type VehicleUniforms } from '../render/vehicleMaterial';
@@ -28,7 +28,7 @@ export interface TankModel {
   gunPivot: THREE.Vector3; // in turret frame
   uniforms: VehicleUniforms;
   materials: THREE.Material[];
-  trackMats: [THREE.MeshStandardMaterial, THREE.MeshStandardMaterial];
+  trackMats: [THREE.MeshStandardNodeMaterial, THREE.MeshStandardNodeMaterial];
   trackTex: [THREE.Texture, THREE.Texture];
   wheels: THREE.InstancedMesh;
   wheelSpecs: WheelSpec[]; // per side (mirrored)
@@ -42,7 +42,7 @@ export interface TankModel {
   gunLength: number;
   exhaust: THREE.Vector3[]; // hull frame
   headlights: THREE.Vector3[]; // hull frame
-  headlightMat: THREE.MeshStandardMaterial;
+  headlightMat: THREE.MeshStandardNodeMaterial;
 }
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -234,8 +234,8 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
   const dark = vehicleMaterial('parkerised', uniforms);
   const rubber = vehicleMaterial('tyreRubber', uniforms);
   const steel = vehicleMaterial('steelWorn', uniforms, { params: { roughness: 0.45 } });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x0a0f12, roughness: 0.04, metalness: 0.0, envMapIntensity: 1.6 });
-  const headlightMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e0, roughness: 0.1, emissive: 0xfff2d8, emissiveIntensity: 0 });
+  const glass = new THREE.MeshStandardNodeMaterial({ color: 0x0a0f12, roughness: 0.04, metalness: 0.0, envMapIntensity: 1.6 });
+  const headlightMat = new THREE.MeshStandardNodeMaterial({ color: 0xe8e8e0, roughness: 0.1, emissive: 0xfff2d8, emissiveIntensity: 0 });
   const layout = layoutFor(style);
   const linkPitch = 0.16;
 

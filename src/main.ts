@@ -1,20 +1,17 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { PHYS_DT, QUALITY } from './config';
 import { Input } from './core/input';
 import { Audio } from './game/audio';
 import { Game, type GameState } from './game/game';
-import { ATMO, installAtmosphere } from './render/atmosphere';
+import { ATMO } from './render/atmosphere';
 import { benchSpots } from './game/bench';
-import { BenchRecorder, type BenchSample, formatBench, NO_GPU_TIMES } from './render/benchRecorder';
-import { FrameGovernor } from './render/governor';
+import { BenchRecorder, type BenchSample, formatBench } from './render/benchRecorder';
 import { PRESETS } from './render/lighting';
 import { Pipeline } from './render/pipeline';
 import { Hud } from './ui/hud';
 import { isTouchDevice, TouchControls } from './ui/touch';
 import { World } from './world/world';
 import { PLAYER_SPAWN } from './world/layout';
-
-installAtmosphere();
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -74,9 +71,14 @@ async function boot(): Promise<void> {
   const world = new World(20260923, quality);
   status.textContent = 'Kompilowanie shaderów…';
   await nextFrame();
-  const pipeline = new Pipeline(canvas, new THREE.Scene(), new THREE.PerspectiveCamera());
+  // the governor's resolution steps change particle sizes in pixels: refresh them when it acts
+  let onGovernor = (): void => {};
+  const pipeline = new Pipeline(canvas, new THREE.Scene(), new THREE.PerspectiveCamera(), () => onGovernor());
+  await pipeline.init();
   const game = new Game(pipeline, world, input, hud, audio, quality.id);
+  onGovernor = () => game.refreshPixelScale();
   game.setQuality(quality);
+  await game.init();
   game.setPreset(Number(lightSel.value));
   pipeline.setToneMapping(toneSel.value === 'agx' ? 'agx' : 'aces');
   pipeline.setExposureComp(Number(evIn.value));
@@ -86,12 +88,12 @@ async function boot(): Promise<void> {
   // pre-compile every material against the current lights so the first shot does not hitch
   game.start();
   game.pause(true);
-  game.warmup();
+  await game.warmup();
   status.textContent = `Gotowe (${((performance.now() - t0) / 1000).toFixed(1)} s)`;
   playBtn.disabled = false;
   playBtn.textContent = 'Graj';
 
-  const governor = new FrameGovernor(pipeline, () => game.refreshPixelScale());
+  const governor = pipeline.governor;
 
   // Benchmark (docs/graphics-playbook.md §9 in anbow1/FPS): the fixed spots of game/bench.ts,
   // each settled for BENCH_WARM frames and recorded for BENCH_FRAMES, with the game paused and the
@@ -103,12 +105,13 @@ async function boot(): Promise<void> {
   const benchOut = $('bench-out');
   let bench: { index: number; left: number; recorder: BenchRecorder; rows: BenchSample[]; done: (rows: BenchSample[]) => void } | null = null;
   const spots = benchSpots();
-  const benchTitle = () => `Tanks · ${game.quality.id} · WebGL2 (WebGLRenderer) · ${canvas.width}×${canvas.height} px`;
+  const benchTitle = () => `Tanks · ${game.quality.id} · ${pipeline.backendName} · ${canvas.width}×${canvas.height} px`;
   const runBenchmark = (): Promise<BenchSample[]> =>
     new Promise((resolve) => {
       if (bench) return resolve([]);
       game.pause(true);
-      governor.reset();
+      governor.enabled = false;
+      governor.update(0);
       const first = spots[0];
       if (first) game.benchPlace(first.x, first.z, first.yawRad);
       bench = { index: 0, left: BENCH_WARM, recorder: new BenchRecorder(), rows: [], done: resolve };
@@ -119,6 +122,7 @@ async function boot(): Promise<void> {
     const spot = spots[run.index];
     if (!spot) {
       bench = null;
+      governor.enabled = true;
       console.log(JSON.stringify({ benchmark: benchTitle(), rows: run.rows }));
       run.done(run.rows);
       return;
@@ -129,7 +133,7 @@ async function boot(): Promise<void> {
     }
     run.recorder.frame(intervalS, cpu, calls, triangles);
     if (run.recorder.frames < BENCH_FRAMES) return;
-    run.rows.push(run.recorder.finish(spot.name, NO_GPU_TIMES));
+    run.rows.push(run.recorder.finish(spot.name, pipeline.passTimer));
     run.index++;
     run.recorder = new BenchRecorder();
     run.left = BENCH_WARM;
@@ -153,7 +157,7 @@ async function boot(): Promise<void> {
     settings.quality = qualitySel.value;
     save();
     game.setQuality(QUALITY[qualitySel.value === 'low' ? 'low' : 'high']);
-    game.warmup();
+    void game.warmup();
     governor.reset();
   };
   lightSel.onchange = () => {
@@ -258,14 +262,15 @@ async function boot(): Promise<void> {
     const markers = game.frame(running ? dt : 0, running ? acc / PHYS_DT : 1);
     pipeline.render(game.now);
     const info = pipeline.info.render;
-    if (bench) benchFrame(rawDt, performance.now() - renderStart, info.calls, info.triangles);
+    if (bench) benchFrame(rawDt, performance.now() - renderStart, info.drawCalls, info.triangles);
     hud.setExtras({ drone: game.droneMap, infantry: game.spottedInfantry, droneStatus: game.droneStatus });
-    hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.calls, triangles: info.triangles, scale: governor.label }, game.quality.id, markers);
+    hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.drawCalls, triangles: info.triangles, scale: pipeline.governorLabel, gpu: pipeline.passTimer.summary(), backend: pipeline.backendName }, game.quality.id, markers);
     input.endFrame();
     cpuMs += (performance.now() - frameStart - cpuMs) * 0.05;
   };
   requestAnimationFrame(loop);
   (window as unknown as { __game: Game; __atmo: typeof ATMO }).__game = game;
+  (window as unknown as { __backend: string }).__backend = pipeline.backendName;
   // ?bench: tour the spots right after loading and leave the rows for scripts/benchView.mjs.
   if (params.has('bench')) (window as unknown as { __bench: BenchSample[] }).__bench = await runBenchmark();
   (window as unknown as { __atmo: typeof ATMO }).__atmo = ATMO;

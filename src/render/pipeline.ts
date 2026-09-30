@@ -1,122 +1,241 @@
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ao } from 'three/addons/tsl/display/GTAONode.js';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
+import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
+import { traa } from 'three/addons/tsl/display/TRAANode.js';
+import {
+  unpackRGBToNormal,
+  packNormalToRGB,
+  dot,
+  exp,
+  float,
+  Fn,
+  fract,
+  int,
+  length,
+  Loop,
+  max,
+  min,
+  mix,
+  mrt,
+  normalView,
+  output,
+  pass,
+  pow,
+  renderOutput,
+  sample,
+  screenCoordinate,
+  sin,
+  smoothstep,
+  uniform,
+  uv,
+  vec2,
+  vec3,
+  vec4,
+  velocity,
+} from 'three/tsl';
+import { ACESFilmicToneMapping, AgXToneMapping, Color, HalfFloatType, type Node, type PerspectiveCamera, RenderPipeline, type Scene, SRGBColorSpace, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import type { QualityPreset } from '../config';
-import { SunShaftsPass } from './sunShafts';
+import { hash12 } from './nodes';
+import { FrameGovernor, PassTimer } from './perf.ts';
+import { installWebGpuCompat } from './webgpuCompat.ts';
 
-/** Sight overlay for the thermal channel: sensor noise, slight blur of the edges, vignette. */
-const ThermalShader = {
-  uniforms: {
-    tDiffuse: { value: null as THREE.Texture | null },
-    uTime: { value: 0 },
-    uAmount: { value: 0 },
-    uRes: { value: new THREE.Vector2(1, 1) },
-  },
-  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float uTime; uniform float uAmount; uniform vec2 uRes;
-    varying vec2 vUv;
-    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime * 61.7) * 43758.5453); }
-    void main(){
-      vec4 c = texture2D(tDiffuse, vUv);
-      if (uAmount <= 0.0) { gl_FragColor = c; return; }
-      vec2 px = 1.0 / uRes;
-      vec3 b = (texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb +
-                texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb) * 0.25;
-      float l = dot(mix(c.rgb, b, 0.5), vec3(0.299, 0.587, 0.114));
-      l = pow(l, 0.85) * 1.1;
-      l += (h(floor(vUv * uRes / 1.5)) - 0.5) * 0.07;
-      float row = sin(vUv.y * uRes.y * 0.5) * 0.015;
-      vec3 col = vec3(l + row);
-      gl_FragColor = vec4(mix(c.rgb, col, uAmount), 1.0);
-    }`,
-};
+/**
+ * Renderer and post chain, the same architecture as Field Line and Castaway Lagoon (anbow1/FPS):
+ * WebGPURenderer (WebGPU, or its own WebGL2 fallback) and one TSL RenderPipeline.
+ *   scene pass (HDR half float; velocity for TRAA, view normals for GTAO on High)
+ *   → TRAA (High) → GTAO (High) → sun shafts (sky mask smeared toward the sun)
+ *   → bloom (input clamped so a glint cannot flood the frame) → exposure, ACES/AgX, sRGB
+ *   → thermal sight grade → sharpen (High) / FXAA (Low).
+ * Everything the governor or the sight switches is a uniform, so nothing recompiles mid-game.
+ */
+
+/** Taps of the shafts loop per preset (a uniform count: the governor can turn them off). */
+const SHAFT_TAPS = { high: 24, low: 12 } as const;
+
+/** What the frame governor may give up, cheapest loss first. */
+interface GovernorStep {
+  ao: boolean;
+  shafts: boolean;
+  scale: number;
+}
+const GOVERNOR_STEPS: readonly GovernorStep[] = [
+  { ao: true, shafts: true, scale: 1 },
+  { ao: false, shafts: true, scale: 1 },
+  { ao: false, shafts: false, scale: 1 },
+  { ao: false, shafts: false, scale: 0.87 },
+  { ao: false, shafts: false, scale: 0.76 },
+  { ao: false, shafts: false, scale: 0.67 },
+  { ao: false, shafts: false, scale: 0.58 },
+];
+
+/** Screen-space crepuscular rays: world direction to the sun and their pre-exposed colour (0 = off). */
+export class Shafts {
+  readonly sunDir = new Vector3(0, 1, 0);
+  readonly color = new Color(0, 0, 0);
+  /** shader warm-up: draw them even without a visible sun */
+  force = false;
+  readonly uSun = uniform(new Vector2(0.5, 0.5));
+  readonly uColor = uniform(new Color(0, 0, 0));
+  readonly uAspect = uniform(1);
+  private readonly f = new Vector3();
+  private readonly v = new Vector3();
+
+  /** Once per frame: aim at the sun and fade out when it is behind the camera or far off screen. */
+  prepare(camera: PerspectiveCamera, allowed: boolean): void {
+    let k = 0;
+    if (this.force) k = 1;
+    else if (allowed && this.color.r + this.color.g + this.color.b > 0) {
+      camera.getWorldDirection(this.f);
+      const facing = this.f.dot(this.sunDir);
+      this.v.copy(camera.position).addScaledVector(this.sunDir, 1000).project(camera);
+      // sun a little off-screen still throws rays into view
+      if (facing >= 0.15 && Math.abs(this.v.x) <= 1.6 && Math.abs(this.v.y) <= 1.6) {
+        this.uSun.value.set(this.v.x * 0.5 + 0.5, 0.5 - this.v.y * 0.5);
+        k = Math.min(1, (facing - 0.15) / 0.35);
+      }
+    }
+    this.uColor.value.copy(this.color).multiplyScalar(k);
+    this.uAspect.value = camera.aspect;
+  }
+}
 
 export class Pipeline {
-  readonly renderer: THREE.WebGLRenderer;
-  readonly composer: EffectComposer;
-  private renderPass: RenderPass;
-  private gtao: GTAOPass;
-  private bloom: UnrealBloomPass;
-  private output: OutputPass;
-  private smaa: SMAAPass;
-  private thermal: ShaderPass;
-  readonly shafts: SunShaftsPass;
-  private quality!: QualityPreset;
-  private scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
+  readonly renderer: WebGPURenderer;
+  /** GPU time per pass group (F3, benchmark). */
+  readonly passTimer = new PassTimer();
+  readonly governor: FrameGovernor<GovernorStep>;
+  readonly shafts = new Shafts();
+  private scene: Scene;
+  camera: PerspectiveCamera;
   thermalOn = false;
   /** 0..1 fraction of the preset's pixel ratio, set by the frame-time governor */
   renderScale = 1;
   /** governor may switch ambient occlusion off before touching resolution */
   aoAllowed = true;
+  private shaftsAllowed = true;
+  private quality: QualityPreset | null = null;
+  /** full chain, and the same chain without GTAO: both compiled at load, the governor picks one */
+  private full: RenderPipeline | null = null;
+  private lite: RenderPipeline | null = null;
+  private readonly uThermal = uniform(0);
+  private readonly uTime = uniform(0);
+  private readonly uBloom = uniform(1);
+  private readonly uShaftCount = uniform(0, 'int');
 
-  constructor(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
+  constructor(canvas: HTMLCanvasElement, scene: Scene, camera: PerspectiveCamera, onGovernorChange: () => void = () => {}) {
     this.scene = scene;
     this.camera = camera;
-    const r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
-    r.outputColorSpace = THREE.SRGBColorSpace;
-    r.toneMapping = THREE.ACESFilmicToneMapping;
+    installWebGpuCompat();
+    // Reversed depth: 0.25 m near and 9 km far without z-fighting on the far ridges (gunnery at 3 km).
+    const r = new WebGPURenderer({ canvas, antialias: false, reversedDepthBuffer: true, powerPreference: 'high-performance', trackTimestamp: true });
+    r.inspector = this.passTimer;
+    r.outputColorSpace = SRGBColorSpace;
+    r.toneMapping = ACESFilmicToneMapping;
     r.toneMappingExposure = Math.pow(2, 0.5); // +0.5 EV default compensation
     r.shadowMap.enabled = true;
-    r.shadowMap.type = THREE.PCFShadowMap;
     r.info.autoReset = false;
     this.renderer = r;
+    this.passTimer.mainScene = scene;
+    this.passTimer.mainCamera = camera;
+    this.governor = new FrameGovernor(GOVERNOR_STEPS, (s) => {
+      this.aoAllowed = s.ao;
+      this.shaftsAllowed = s.shafts;
+      this.setRenderScale(s.scale);
+      onGovernorChange();
+    });
+  }
 
-    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 0 });
-    // scene depth as a texture: the sun-shaft pass reads the sky mask from it
-    rt.depthTexture = new THREE.DepthTexture(1, 1);
-    this.composer = new EffectComposer(r, rt);
-    this.renderPass = new RenderPass(scene, camera);
-    this.gtao = new GTAOPass(scene, camera, 1, 1);
-    this.gtao.blendIntensity = 0.75;
-    this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.0, samples: 12 });
-    this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
-    // GTAO draws its normal/depth buffer with an override material that ignores alpha clipping;
-    // alpha-tested foliage would show up as solid quads, so it is left out of the AO pass.
-    const g = this.gtao as unknown as { _overrideVisibility: () => void; _visibilityCache: THREE.Object3D[] };
-    const baseOverride = g._overrideVisibility.bind(this.gtao);
-    g._overrideVisibility = () => {
-      baseOverride();
-      scene.traverse((o) => {
-        if (o.userData.noAO && o.visible) {
-          o.visible = false;
-          g._visibilityCache.push(o);
-        }
-      });
-    };
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.12, 0.35, 1.6);
-    // Clamp what feeds the bloom: a sun glint on water is ~100x brighter than the threshold and
-    // would otherwise flood the frame. The image itself keeps full HDR; only the halo is capped.
-    const hp = this.bloom.materialHighPassFilter;
-    hp.fragmentShader = hp.fragmentShader.replace(
-      'gl_FragColor = mix( outputColor, texel, alpha );',
-      'vec4 bloomIn = mix( outputColor, texel, alpha ); float bl = max(max(bloomIn.r, bloomIn.g), bloomIn.b); gl_FragColor = bloomIn * min(1.0, 6.0 / max(bl, 1e-4));',
-    );
-    hp.needsUpdate = true;
-    this.output = new OutputPass();
-    this.smaa = new SMAAPass();
-    this.thermal = new ShaderPass(ThermalShader);
-    this.shafts = new SunShaftsPass(() => this.camera);
-    this.composer.addPass(this.renderPass);
-    // must follow the render pass directly: it reads the scene's depth from the input buffer
-    this.composer.addPass(this.shafts);
-    this.composer.addPass(this.gtao);
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(this.output);
-    this.composer.addPass(this.smaa);
-    this.composer.addPass(this.thermal);
+  async init(): Promise<void> {
+    await this.renderer.init();
+  }
+
+  get backendName(): string {
+    const backend: unknown = this.renderer.backend;
+    const isWebGpu = typeof backend === 'object' && backend !== null && 'isWebGPUBackend' in backend;
+    return isWebGpu ? 'WebGPU' : 'WebGL2 (fallback)';
+  }
+
+  /** "87 % · AO off": what the governor currently gives up. */
+  get governorLabel(): string {
+    const s = this.governor.step;
+    return `${Math.round(s.scale * 100)} %${s.ao ? '' : ' · AO off'}${s.shafts ? '' : ' · shafts off'}`;
   }
 
   setQuality(q: QualityPreset): void {
+    const rebuild = q.id !== this.quality?.id;
     this.quality = q;
-    this.gtao.enabled = q.ao;
+    if (rebuild) this.build(q);
     this.applyPixelRatio();
+  }
+
+  private build(q: QualityPreset): void {
+    const high = q.id === 'high';
+    const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
+    scenePass.setMRT(high ? mrt({ output, normal: packNormalToRGB(normalView), velocity }) : mrt({ output }));
+    const colour = scenePass.getTextureNode('output');
+    const depth = scenePass.getTextureNode('depth');
+    const aa = high ? traa(colour, depth, scenePass.getTextureNode('velocity'), this.camera) : colour;
+
+    // Sun shafts: the sky (reversed depth: 0 at the far plane) smeared radially toward the sun, taps
+    // jittered per pixel to trade banding for fine noise, strongest near the sun.
+    const taps = SHAFT_TAPS[q.id];
+    const sh = this.shafts;
+    const count = this.uShaftCount;
+    const rays = Fn(() => {
+      const p0 = uv();
+      const d = sh.uSun.sub(p0);
+      const stepv = d.mul(0.6 / taps).mul(min(1, float(0.9).div(max(length(d.mul(vec2(sh.uAspect, 1))), 1e-3))));
+      const p = p0.add(stepv.mul(hash12(screenCoordinate.xy))).toVar();
+      const sum = float(0).toVar();
+      const w = float(1).toVar();
+      Loop({ start: int(0), end: count, type: 'int', condition: '<' }, () => {
+        sum.addAssign(float(1).sub(smoothstep(0, 1e-6, depth.sample(p).r)).mul(w));
+        w.mulAssign(0.93);
+        p.addAssign(stepv);
+      });
+      const fall = exp(length(p0.sub(sh.uSun).mul(vec2(sh.uAspect, 1))).mul(-2.6));
+      return sum.div(11).mul(fall);
+    })();
+
+    const withRays = (c: Node<'vec4'>) => vec4(c.rgb.add(sh.uColor.mul(rays)), c.a);
+    // Bloom: a small share of the HDR image, its input capped so a sun glint on water (~100× the
+    // threshold) cannot flood the frame. The image itself keeps full HDR. Off in the thermal sight.
+    const chain = (c: Node<'vec4'>) => {
+      const lit = withRays(c);
+      const peak = max(max(lit.r, lit.g), lit.b);
+      const capped = lit.mul(min(1, float(6).div(max(peak, 1e-4))));
+      const glare = bloom(capped, 0.12, 0.35, 1.6);
+      const hdr = vec4(lit.rgb.add(glare.rgb.mul(this.uBloom)), 1);
+      // exposure, tone mapping and sRGB here, so the sight grade and the AA work on display values
+      const ldr = renderOutput(hdr);
+      const graded = thermalGrade(ldr, this.uThermal, this.uTime);
+      return high ? sharpen(graded, 0.25) : fxaa(graded);
+    };
+
+    this.full?.dispose();
+    this.lite?.dispose();
+    const lite = new RenderPipeline(this.renderer);
+    lite.outputColorTransform = false;
+    lite.outputNode = chain(aa);
+    this.lite = lite;
+    if (high) {
+      // GTAO at half resolution from the depth and view normals of the same scene pass.
+      const normals = scenePass.getTextureNode('normal');
+      const sceneNormal = sample((c) => unpackRGBToNormal(normals.sample(c)));
+      const aoPass = ao(depth, sceneNormal, this.camera);
+      aoPass.resolutionScale = 0.5;
+      const occl = aoPass.getTextureNode().sample(uv()).r;
+      // thermal imagers see heat, not occlusion; the sky (reversed depth: 0 at the far plane) has none
+      const onGeometry = smoothstep(0, 1e-6, depth.sample(uv()).r);
+      const k = mix(float(1), mix(occl, float(1), this.uThermal).mul(0.75).add(0.25), onGeometry);
+      const full = new RenderPipeline(this.renderer);
+      full.outputColorTransform = false;
+      full.outputNode = chain(vec4(aa.rgb.mul(k), aa.a));
+      this.full = full;
+    } else {
+      this.full = null;
+    }
   }
 
   /** Changes the render resolution (reallocates the post-processing targets: call sparingly). */
@@ -127,9 +246,8 @@ export class Pipeline {
   }
 
   private applyPixelRatio(): void {
-    const pr = Math.min(window.devicePixelRatio || 1, this.quality.pixelRatioCap) * this.renderScale;
-    this.renderer.setPixelRatio(pr);
-    this.composer.setPixelRatio(pr);
+    const cap = this.quality?.pixelRatioCap ?? 1;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap) * this.renderScale);
     this.resize();
   }
 
@@ -139,38 +257,60 @@ export class Pipeline {
   }
 
   setToneMapping(kind: 'aces' | 'agx'): void {
-    this.renderer.toneMapping = kind === 'aces' ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping;
+    this.renderer.toneMapping = kind === 'aces' ? ACESFilmicToneMapping : AgXToneMapping;
   }
 
   resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h, false);
-    this.composer.setSize(w, h);
-    const pr = this.renderer.getPixelRatio();
-    this.thermal.uniforms.uRes!.value.set(w * pr, h * pr);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
 
-  render(time: number): void {
-    this.renderer.info.reset();
-    this.renderPass.camera = this.camera;
-    (this.gtao as unknown as { camera: THREE.Camera }).camera = this.camera;
-    this.gtao.enabled = this.quality.ao && this.aoAllowed && !this.thermalOn;
-    this.bloom.enabled = this.quality.bloom && !this.thermalOn;
-    this.thermal.enabled = this.thermalOn;
-    this.shafts.prepare(!this.thermalOn);
-    this.thermal.uniforms.uTime!.value = time;
-    this.thermal.uniforms.uAmount!.value = this.thermalOn ? 1 : 0;
-    this.composer.render();
+  /** Draw both chains once (behind the loading screen), so switching between them never compiles. */
+  renderBoth(time: number): void {
+    const allowed = this.aoAllowed;
+    this.aoAllowed = true;
+    this.render(time);
+    this.aoAllowed = false;
+    this.render(time);
+    this.aoAllowed = allowed;
   }
 
-  get info(): THREE.WebGLInfo {
+  render(time: number): void {
+    const pl = this.quality?.ao && this.aoAllowed && !this.thermalOn && this.full ? this.full : this.lite;
+    if (!pl) throw new Error('pipeline.render() before setQuality()');
+    this.renderer.info.reset();
+    this.passTimer.mainCamera = this.camera;
+    this.uThermal.value = this.thermalOn ? 1 : 0;
+    this.uTime.value = time;
+    this.uBloom.value = this.quality?.bloom && !this.thermalOn ? 1 : 0;
+    this.shafts.prepare(this.camera, !this.thermalOn && this.shaftsAllowed);
+    // no visible sun: skip the loop entirely (its cost is the taps, not the add)
+    const c = this.shafts.uColor.value;
+    this.uShaftCount.value = this.shafts.force || c.r + c.g + c.b > 0 ? SHAFT_TAPS[this.quality?.id ?? 'low'] : 0;
+    pl.render();
+    this.passTimer.poll(this.renderer);
+  }
+
+  get info(): WebGPURenderer['info'] {
     return this.renderer.info;
   }
 
-  get sceneRef(): THREE.Scene {
+  get sceneRef(): Scene {
     return this.scene;
   }
+}
+
+/**
+ * Thermal sight: white-hot luminance with a little gamma, sensor noise and faint scan lines, on
+ * display values. `amount` is 0 or 1 (a uniform); the materials already output heat as grey.
+ */
+function thermalGrade(c: Node<'vec4'>, amount: Node<'float'>, time: Node<'float'>): Node<'vec4'> {
+  const l0 = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+  const grain = fract(sin(dot(screenCoordinate.xy.div(1.5).floor(), vec2(12.9898, 78.233)).add(time.mul(61.7))).mul(43758.5453)).sub(0.5).mul(0.07);
+  const row = sin(screenCoordinate.y.mul(0.5)).mul(0.015);
+  const l = pow(max(l0, 0), 0.85).mul(1.1).add(grain).add(row);
+  return vec4(mix(c.rgb, vec3(l), amount), 1);
 }

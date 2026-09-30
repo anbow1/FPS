@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import type { AmmoSpec } from '../config';
 import type { World } from '../world/world';
 import { type ShellState, stepShell } from './ballistics';
@@ -59,7 +59,7 @@ export class Projectiles {
     };
     if (s.tracer) {
       const c = ammo.tracer;
-      (s.tracer.material as THREE.MeshBasicMaterial).color.setRGB(c[0] * 30, c[1] * 30, c[2] * 30);
+      (s.tracer.material as THREE.MeshBasicNodeMaterial).color.setRGB(c[0] * 30, c[1] * 30, c[2] * 30);
       s.tracer.scale.set(ammo.id === 'APFSDS' ? 0.6 : 1.4, ammo.id === 'APFSDS' ? 0.6 : 1.4, 1);
     }
     this.shells.push(s);
@@ -74,7 +74,7 @@ export class Projectiles {
       cracked: false, ricochets: 3, bounce: false,
     };
     if (s.tracer) {
-      (s.tracer.material as THREE.MeshBasicMaterial).color.setRGB(40, 20, 6);
+      (s.tracer.material as THREE.MeshBasicNodeMaterial).color.setRGB(40, 20, 6);
       s.tracer.scale.set(2.2, 2.2, 1);
     }
     this.shells.push(s);

@@ -1,7 +1,7 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { PLAY_HALF, RIFLE_556, RPG_ROCKET, WATER_LEVEL } from '../config';
 import { Rng } from '../core/rng';
-import { addThermalConst } from '../render/shaderPatch';
+import { addThermalConst } from '../render/nodes';
 import type { World } from '../world/world';
 import type { Audio } from './audio';
 import { aimDirection, timeOfFlight } from './ballistics';
@@ -109,11 +109,11 @@ export class Infantry {
   private readonly cap = 48;
 
   constructor() {
-    const uniform = new THREE.MeshStandardMaterial({ color: 0x5a5e48, roughness: 0.9 });
-    const helmet = new THREE.MeshStandardMaterial({ color: 0x5c5b3e, roughness: 0.7 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0x9c7a62, roughness: 0.75 });
-    const gun = new THREE.MeshStandardMaterial({ color: 0x3c3c3e, roughness: 0.62 });
-    const tube = new THREE.MeshStandardMaterial({ color: 0x4b5340, roughness: 0.7 });
+    const uniform = new THREE.MeshStandardNodeMaterial({ color: 0x5a5e48, roughness: 0.9 });
+    const helmet = new THREE.MeshStandardNodeMaterial({ color: 0x5c5b3e, roughness: 0.7 });
+    const skin = new THREE.MeshStandardNodeMaterial({ color: 0x9c7a62, roughness: 0.75 });
+    const gun = new THREE.MeshStandardNodeMaterial({ color: 0x3c3c3e, roughness: 0.62 });
+    const tube = new THREE.MeshStandardNodeMaterial({ color: 0x4b5340, roughness: 0.7 });
     // soldiers are warm bodies in the thermal sight
     addThermalConst(uniform, 1.5);
     addThermalConst(skin, 2.0);

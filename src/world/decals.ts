@@ -1,6 +1,6 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { stdMat } from '../render/palette';
-import { addThermalConst } from '../render/shaderPatch';
+import { addThermalConst } from '../render/nodes';
 import { makeScorchTexture, makeTrackMarkTexture } from '../render/textures';
 import type { Heightfield } from './heightfield';
 

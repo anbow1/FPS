@@ -1,10 +1,12 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { PLAY_HALF, WATER_LEVEL } from '../config';
 import { sampleWrap } from '../core/noise';
 import { Rng } from '../core/rng';
 import { mergeParts } from '../render/geom';
 import { stdMat } from '../render/palette';
-import { addPatch, addThermalConst, foliageNormalPatch, G, inject, translucencyPatch } from '../render/shaderPatch';
+import { float, fwidth, hash, instanceIndex, log2, max, normalViewGeometry, positionLocal, pow, sin, texture, uv, vec3 } from 'three/tsl';
+import { ditherOutBeyond, ImpostorAtlas, ImpostorField, type ImpostorInstance } from '../render/impostor.ts';
+import { addThermalConst, G } from '../render/nodes';
 import type { NoiseSet } from '../render/textures';
 import { NOISE_SIZE } from '../render/textures';
 import type { Heightfield } from './heightfield';
@@ -25,48 +27,41 @@ export interface Tree {
   falling: boolean;
 }
 
-/** Wind sway for instanced foliage: bends with height, phase from instance position. */
-function windPatch(mat: THREE.Material, strength: number): void {
-  addPatch(mat, {
-    key: `wind`,
-    apply(shader) {
-      shader.uniforms.uTime = G.uTime;
-      shader.uniforms.uWind = G.uWind;
-      shader.uniforms.uWindAmp = { value: strength };
-      inject(shader, 'vertex', '#include <common>', 'uniform float uTime; uniform vec2 uWind; uniform float uWindAmp;', 'after');
-      inject(
-        shader,
-        'vertex',
-        '#include <begin_vertex>',
-        `#ifdef USE_INSTANCING
-          vec3 ip = instanceMatrix[3].xyz;
-          float ph = ip.x * 0.071 + ip.z * 0.053;
-          float bend = pow(max(position.y, 0.0) / 10.0, 1.6) * uWindAmp;
-          float gust = sin(uTime * 1.3 + ph) * 0.6 + sin(uTime * 2.9 + ph * 1.7) * 0.25;
-          transformed.xz += uWind * bend * (0.6 + gust);
-        #endif`,
-        'after',
-      );
-    },
-  });
+/** Wind sway for instanced foliage: bends with height (local metres), a phase per instance. */
+function windSway(mat: THREE.NodeMaterial, strength: number): void {
+  const ph = hash(instanceIndex).mul(40);
+  const bend = pow(max(positionLocal.y, 0).div(10), 1.6).mul(strength);
+  const gust = sin(G.uTime.mul(1.3).add(ph)).mul(0.6).add(sin(G.uTime.mul(2.9).add(ph.mul(1.7))).mul(0.25));
+  const push = G.uWind.mul(bend).mul(gust.add(0.6));
+  mat.positionNode = positionLocal.add(vec3(push.x, 0, push.y));
 }
 
-/** Keep alpha-clipped foliage from thinning out in the distance as mip levels average alpha down. */
-const alphaCoveragePatch = {
-  key: 'alphaCoverage',
-  apply(shader: THREE.WebGLProgramParametersWithUniforms) {
-    inject(
-      shader,
-      'fragment',
-      '#include <map_fragment>',
-      `#ifdef USE_MAP
-        vec2 tkTexel = fwidth(vMapUv) * vec2(textureSize(map, 0));
-        diffuseColor.a *= 1.0 + 0.28 * max(0.0, log2(max(max(tkTexel.x, tkTexel.y), 1e-3)));
-      #endif`,
-      'after',
-    );
-  },
-};
+/**
+ * Alpha-clipped foliage cards: normals kept on back faces (lit like a thin sheet, not black), alpha
+ * raised with the mip level so crowns do not thin out in the distance, and — on High — thin-sheet
+ * translucency inside the light loop (MeshSSSNodeMaterial, as in Field Line), so only leaves the
+ * sun actually reaches glow from behind.
+ */
+function foliageMaterial(map: THREE.Texture, transl: number, lite: boolean): THREE.MeshStandardNodeMaterial {
+  const params = { map, alphaTest: 0.42, side: THREE.DoubleSide, vertexColors: true, roughness: 0.85, metalness: 0 };
+  const m = lite ? new THREE.MeshStandardNodeMaterial(params) : new THREE.MeshSSSNodeMaterial(params);
+  m.normalNode = normalViewGeometry;
+  const img = map.image as { width?: number; height?: number } | undefined;
+  const size = float(Math.max(img?.width ?? 256, img?.height ?? 256));
+  const texel = fwidth(uv()).mul(size);
+  m.opacityNode = texture(map).a.mul(max(log2(max(max(texel.x, texel.y), 1e-3)), 0).mul(0.28).add(1));
+  if (m instanceof THREE.MeshSSSNodeMaterial) {
+    m.thicknessColorNode = texture(map).rgb.mul(vec3(1.1, 1.2, 0.6));
+    m.thicknessDistortionNode = float(0.2);
+    m.thicknessAmbientNode = float(0);
+    m.thicknessAttenuationNode = float(transl);
+    m.thicknessPowerNode = float(3);
+    m.thicknessScaleNode = float(3 * transl);
+  }
+  windSway(m, 0.35);
+  addThermalConst(m, 0.05);
+  return m;
+}
 
 function rockGeometry(rng: Rng): THREE.BufferGeometry {
   const g = new THREE.IcosahedronGeometry(1, 2);
@@ -83,6 +78,9 @@ function rockGeometry(rng: Rng): THREE.BufferGeometry {
   return mergeParts([g]);
 }
 
+/** Grid cell (m) on which the near trees and the impostors are refilled. */
+const LOD_CELL_M = 32;
+
 export class Vegetation {
   readonly group = new THREE.Group();
   readonly trees: Tree[] = [];
@@ -92,26 +90,24 @@ export class Vegetation {
   private crowns: THREE.InstancedMesh[] = [];
   readonly rocks: { x: number; z: number; r: number }[] = [];
   private dirty = new Set<number>();
+  /** each variant's trees, and which instance slot a tree holds while it is near (−1: not drawn as a mesh) */
+  private readonly perVariant: Tree[][] = [[], [], []];
+  private readonly slot = new Map<Tree, number>();
+  private readonly kinds: { trunk: THREE.BufferGeometry; crown: THREE.BufferGeometry; bark: THREE.NodeMaterial; crownMat: THREE.NodeMaterial }[] = [];
+  private impostors: ImpostorField | null = null;
+  private readonly impostorOf = new Map<Tree, ImpostorInstance>();
+  private nearM = Infinity;
+  private lodCell = Number.NaN;
 
   constructor(hf: Heightfield, noise: NoiseSet, seed: number, lite = false) {
     const rng = new Rng(seed);
-    // Foliage: alpha-clipped cards (sheet: "alpha-clip + A2C"; no MSAA here, so plain clip),
-    // normals kept on back faces, thin-sheet translucency, wind.
-    const foliage = (map: THREE.Texture, transl: number) => {
-      const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.42, side: THREE.DoubleSide, vertexColors: true, roughness: 0.85, metalness: 0 });
-      addPatch(m, foliageNormalPatch);
-      addPatch(m, alphaCoveragePatch);
-      addPatch(m, translucencyPatch(transl));
-      windPatch(m, 0.35);
-      addThermalConst(m, 0.05);
-      return m;
-    };
-    const needles = foliage(makeNeedleTexture(seed + 1), 0.3);
-    const leaves = foliage(makeLeafTexture(seed + 2), 0.5);
+    // Foliage: alpha-clipped cards (sheet: "alpha-clip + A2C"; no MSAA here, so plain clip).
+    const needles = foliageMaterial(makeNeedleTexture(seed + 1), 0.3, lite);
+    const leaves = foliageMaterial(makeLeafTexture(seed + 2), 0.5, lite);
     const barkDark = stdMat('treeBark', { map: makeBarkTexture(seed + 3), color: 0xffffff, vertexColors: true });
     const barkBirch = stdMat('treeBark', { map: makeBarkTexture(seed + 4, true), color: 0xffffff, roughness: 0.8, vertexColors: true });
     for (const b of [barkDark, barkBirch]) {
-      windPatch(b, 0.12);
+      windSway(b, 0.12);
       addThermalConst(b, 0.07);
     }
     const kinds = [
@@ -125,7 +121,7 @@ export class Vegetation {
     const mid = (x: number, z: number) => sampleWrap(noise.g, NOISE_SIZE, x / 64, z / 64);
     const nrm = { x: 0, y: 1, z: 0 };
     const variants = 3;
-    const perVariant: Tree[][] = [[], [], []];
+    const perVariant = this.perVariant;
     const lim = PLAY_HALF + 120;
     for (let attempt = 0; attempt < 60000 && this.trees.length < 5200; attempt++) {
       const x = rng.range(-lim, lim);
@@ -154,25 +150,20 @@ export class Vegetation {
       const kind = kinds[v]!;
       const g = kind.geo();
       const list = perVariant[v]!;
+      // Until the impostors are baked (initImpostors) every tree is near; afterwards only those
+      // within the LOD radius hold a slot, refilled on a 32 m grid.
       const tm = new THREE.InstancedMesh(g.trunk, kind.bark, Math.max(1, list.length));
       const cm = new THREE.InstancedMesh(g.crown, kind.crown, Math.max(1, list.length));
-      tm.count = cm.count = list.length;
+      tm.count = cm.count = 0;
       tm.castShadow = cm.castShadow = true;
-      cm.userData.noAO = true;
       tm.receiveShadow = cm.receiveShadow = true;
+      tm.frustumCulled = cm.frustumCulled = false;
       this.trunks.push(tm);
       this.crowns.push(cm);
+      this.kinds.push({ trunk: g.trunk, crown: g.crown, bark: kind.bark, crownMat: kind.crown });
       this.group.add(tm, cm);
     }
-    // instance slot of each tree inside its variant mesh
-    const slot = new Map<Tree, number>();
-    for (let v = 0; v < variants; v++) perVariant[v]!.forEach((t, i) => slot.set(t, i));
-    this.slotOf = (t) => slot.get(t)!;
-    for (const t of this.trees) this.writeTree(t);
-    for (const m of [...this.trunks, ...this.crowns]) {
-      m.instanceMatrix.needsUpdate = true;
-      m.computeBoundingSphere();
-    }
+    this.refill(null);
 
     // --- rocks and boulders
     const rockMat = stdMat('rock');
@@ -211,10 +202,57 @@ export class Vegetation {
     });
   }
 
-  private slotOf: (t: Tree) => number;
+  /**
+   * Bake the three species into an impostor atlas and draw every tree beyond `nearM` as one quad
+   * of a single instanced draw (render/impostor.ts, shared with anbow1/FPS). The full meshes
+   * dissolve over the band before `nearM` while the impostors dissolve in; only the near trees
+   * cast shadows, so the cascades no longer draw the whole forest.
+   */
+  initImpostors(renderer: THREE.WebGPURenderer, nearM: number, fadeM: number, framePx: number): void {
+    const sources = this.kinds.map((k) => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(k.trunk, k.bark), new THREE.Mesh(k.crown, k.crownMat));
+      return g;
+    });
+    const atlas = new ImpostorAtlas(renderer, sources, { views: 8, framePx });
+    const inst: ImpostorInstance[] = [];
+    this.perVariant.forEach((list, v) =>
+      list.forEach((t) => {
+        const i: ImpostorInstance = { x: t.x, y: t.y, z: t.z, yawRad: t.rot, scale: t.s, species: v, hidden: t.fall > 0 || t.falling };
+        inst.push(i);
+        this.impostorOf.set(t, i);
+      }),
+    );
+    this.impostors = new ImpostorField(atlas, inst, { nearM, fadeM, cellM: LOD_CELL_M });
+    addThermalConst(this.impostors.material, 0.05);
+    this.group.add(this.impostors.mesh);
+    // the two conifers share their materials: dissolve each material once
+    for (const m of new Set(this.kinds.flatMap((k) => [k.bark, k.crownMat]))) ditherOutBeyond(m, nearM - fadeM, nearM);
+    this.nearM = nearM;
+    this.lodCell = Number.NaN;
+  }
+
+  /** Near trees into the meshes (and felled ones, wherever they lie); the rest are impostors. */
+  private refill(camera: THREE.Vector3 | null): void {
+    const r = this.nearM + LOD_CELL_M * 1.42;
+    const r2 = r * r;
+    this.slot.clear();
+    this.perVariant.forEach((list, v) => {
+      let k = 0;
+      for (const t of list) {
+        const near = !camera || t.fall > 0 || t.falling || (t.x - camera.x) ** 2 + (t.z - camera.z) ** 2 < r2;
+        if (!near) continue;
+        this.slot.set(t, k++);
+        this.writeTree(t);
+      }
+      this.trunks[v]!.count = this.crowns[v]!.count = k;
+      this.dirty.add(v);
+    });
+  }
 
   private writeTree(t: Tree): void {
-    const i = this.slotOf(t);
+    const i = this.slot.get(t);
+    if (i === undefined) return;
     _q.setFromAxisAngle(_up, t.rot);
     if (t.fall > 0) {
       _axis.set(Math.cos(t.fallDir), 0, -Math.sin(t.fallDir));
@@ -255,9 +293,23 @@ export class Vegetation {
     if (t.falling || t.fall > 0) return;
     t.falling = true;
     t.fallDir = Math.atan2(dx, dz);
+    // a felled tree stays a mesh wherever it lies: the impostors only know standing trees
+    const imp = this.impostorOf.get(t);
+    if (imp) {
+      imp.hidden = true;
+      this.impostors?.refresh();
+    }
+    if (!this.slot.has(t)) this.lodCell = Number.NaN;
   }
 
-  update(dt: number): void {
+  update(dt: number, camera: THREE.Vector3): void {
+    const cell = Math.floor(camera.x / LOD_CELL_M) * 100003 + Math.floor(camera.z / LOD_CELL_M);
+    if (cell !== this.lodCell && Number.isFinite(this.nearM)) {
+      this.lodCell = cell;
+      const c = new THREE.Vector3((Math.floor(camera.x / LOD_CELL_M) + 0.5) * LOD_CELL_M, 0, (Math.floor(camera.z / LOD_CELL_M) + 0.5) * LOD_CELL_M);
+      this.refill(c);
+    }
+    this.impostors?.update(camera);
     for (const t of this.trees) {
       if (!t.falling) continue;
       t.fall = Math.min(1, t.fall + dt * (0.3 + t.fall * 2.6));

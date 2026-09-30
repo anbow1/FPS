@@ -1,11 +1,12 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { DRONE, ENEMY_TANK, HMG_127, MG_762, MG_AIM, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
 import type { Input } from '../core/input';
 import { Rng } from '../core/rng';
-import { ATMO } from '../render/atmosphere';
+import { ATMO, installAtmosphere } from '../render/atmosphere';
 import { Lighting, PRESETS } from '../render/lighting';
 import type { Pipeline } from '../render/pipeline';
-import { G } from '../render/shaderPatch';
+import { G } from '../render/nodes';
+import { revealOnePerPipeline, warmAllPipelines } from '../render/warmup.ts';
 import type { Hud, MarkerState } from '../ui/hud';
 import { PLAYER_SPAWN } from '../world/layout';
 import { Water } from '../world/water';
@@ -32,6 +33,23 @@ const _ray = { t: 0, x: 0, y: 0, z: 0, kind: 'none' as 'terrain' | 'building' | 
 const _proj = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _fwd = new THREE.Vector3();
+
+function nextFrame(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => r()));
+}
+
+/** Resolve `job`, or give up waiting after `ms` (a slow phone GPU must not hold the loading screen). */
+async function withTimeout(job: Promise<unknown>, ms: number): Promise<void> {
+  let timer = 0;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = window.setTimeout(() => resolve('timeout'), ms);
+  });
+  try {
+    if ((await Promise.race([job, timeout])) === 'timeout') console.warn(`shader pre-compilation still running after ${ms / 1000} s; continuing`);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 const OUTCOME_TEXT: Record<string, string> = {
   ricochet: 'RYKOSZET', nopen: 'BRAK PRZEBICIA', pen: 'PRZEBICIE', track: 'GĄSIENICA ZERWANA', gun: 'TRAFIENIE W DZIAŁO', kill: 'CEL ZNISZCZONY',
@@ -93,6 +111,7 @@ export class Game {
   private shakeOffset = new THREE.Vector3();
   private freeLook = false;
   private camPos = new THREE.Vector3();
+  private cascadeFov = 0;
   private deadCamT = 0;
   onStateChange: (s: GameState) => void = () => {};
 
@@ -107,7 +126,8 @@ export class Game {
     pipeline.camera = this.camera;
     this.scene = pipeline.sceneRef;
     this.scene.add(world.group);
-    this.lighting = new Lighting(pipeline.renderer, this.scene);
+    installAtmosphere(this.scene);
+    this.lighting = new Lighting(pipeline.renderer, this.scene, initialDetail);
     this.effects = new Effects(this.quality.maxParticles);
     this.scene.add(this.effects.group);
     this.projectiles = new Projectiles(this.effects);
@@ -116,10 +136,10 @@ export class Game {
     this.infantry.onKill = (s, how) => this.onSoldierKilled(s, how);
     this.headlight = new THREE.SpotLight(0xfff4e0, 0, 120, 0.5, 0.45, 2);
     this.scene.add(this.headlight, this.headlight.target);
-    this.scene.fog = new THREE.FogExp2(0xffffff, 0.0003);
     this.setQuality(this.quality);
     this.setPreset(0);
-    this.water = new Water(pipeline.renderer, world.hf, world.noise, this.lighting, initialDetail);
+    this.water = new Water(world.hf, world.noise, this.lighting, initialDetail);
+    for (const t of this.water.targets) pipeline.passTimer.name(t, 'water');
     this.scene.add(this.water.group);
     hud.buildMinimap(world);
   }
@@ -152,20 +172,28 @@ export class Game {
   }
 
   private applyFog(): void {
-    const fog = this.scene.fog as THREE.FogExp2;
     const p = this.lighting.preset;
+    const colour = ATMO.fogColor.value;
+    let density: number;
     if (this.thermal) {
-      fog.color.setRGB(0.02, 0.02, 0.02);
-      fog.density = p.fogDensity * 0.5;
+      colour.setRGB(0.02, 0.02, 0.02);
+      density = p.fogDensity * 0.5;
     } else {
-      fog.color.copy(this.lighting.fogColor);
-      fog.density = p.fogDensity;
+      colour.copy(this.lighting.fogColor);
+      density = p.fogDensity;
     }
     // height fog: denser in the valleys, thinner on the ridges (see render/atmosphere.ts)
-    ATMO.fog[0] = fog.density * 1.12;
-    ATMO.fog[3] = this.thermal ? 0 : 1;
-    const pr = this.pipeline.renderer.getPixelRatio();
-    this.effects.setLighting(this.lighting.exposure, this.lighting.ambient, this.lighting.sunColor, fog.color, fog.density, (window.innerHeight * pr) / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
+    ATMO.fog.value.x = density * 1.12;
+    ATMO.fog.value.w = this.thermal ? 0 : 1;
+    this.effects.setLighting(this.lighting.exposure, this.lighting.ambient, this.lighting.sunColor);
+  }
+
+  /** Bake the sky probe behind the loading screen (the renderer must be initialised). */
+  async init(): Promise<void> {
+    await this.lighting.prepare();
+    // trees beyond the quality's near distance become impostors (baked once, here)
+    const q = this.quality;
+    this.world.vegetation.initImpostors(this.pipeline.renderer, q.treeNearDist, q.id === 'high' ? 30 : 24, q.id === 'high' ? 192 : 128);
   }
 
   // ------------------------------------------------------------------ lifecycle
@@ -218,47 +246,46 @@ export class Game {
 
   /**
    * Compile every shader the battle can need before it starts. Effects, tracers, the drone and
-   * wreck fires are hidden until first used; a hidden object is skipped by the renderer, so its
-   * program (and its shadow-pass variant) would otherwise compile mid-fight and stall a frame.
-   * Everything is shown for two real frames (normal and thermal channel), then restored.
+   * wreck fires are hidden until first used, and compileAsync skips hidden objects (and compiles
+   * for the plain framebuffer, not the post chain's scene pass), so they would otherwise compile
+   * mid-fight and stall a frame. One object per shader build is forced visible for compileAsync and
+   * for one real frame of both post chains, sun shafts forced on, in the normal and thermal
+   * channels; then everything is put back (render/warmup.ts, shared with anbow1/FPS).
    */
-  warmup(): void {
-    const shown: THREE.Object3D[] = [];
-    const counts: [THREE.InstancedMesh, number][] = [];
-    this.scene.traverse((o) => {
-      if (!o.visible) {
-        shown.push(o);
-        o.visible = true;
-      }
-      const im = o as THREE.InstancedMesh;
-      if (im.isInstancedMesh && im.count === 0) {
-        counts.push([im, 0]);
-        im.count = 1;
-      }
-    });
-    const lights: [THREE.DirectionalLight, number][] = [];
+  async warmup(): Promise<void> {
+    const r = this.pipeline.renderer;
+    this.water.warmup(r);
+    const lights: [THREE.DirectionalLight, boolean][] = [];
     this.scene.traverse((o) => {
       const l = o as THREE.DirectionalLight;
       if (l.isLight && l.castShadow && l.shadow) {
-        lights.push([l, l.shadow.autoUpdate ? 1 : 0]);
+        lights.push([l, l.shadow.autoUpdate]);
         l.shadow.autoUpdate = true;
       }
     });
-    const r = this.pipeline.renderer;
-    this.water.warmup(r);
-    r.compile(this.scene, this.camera);
-    this.pipeline.shafts.force = true;
+    const restore = revealOnePerPipeline(this.scene);
+    try {
+      await withTimeout(r.compileAsync(this.scene, this.camera), 20000);
+    } catch (err) {
+      console.error('shader pre-compilation failed; continuing, the rest compiles on first use:', err);
+    } finally {
+      restore();
+    }
+    // the scene pass renders at most once per animation frame: give each warm frame its own
     this.pipeline.render(this.now);
-    this.pipeline.shafts.force = false;
+    await nextFrame();
     const th = this.pipeline.thermalOn;
-    this.pipeline.thermalOn = true;
-    G.uThermal.value = 1;
-    this.pipeline.render(this.now);
+    for (const thermal of [false, true]) {
+      this.pipeline.thermalOn = thermal;
+      G.uThermal.value = thermal ? 1 : 0;
+      this.pipeline.shafts.force = true;
+      warmAllPipelines(this.scene, () => this.pipeline.renderBoth(this.now));
+      this.pipeline.shafts.force = false;
+      await nextFrame();
+    }
     this.pipeline.thermalOn = th;
     G.uThermal.value = th ? 1 : 0;
-    for (const o of shown) o.visible = false;
-    for (const [im, c] of counts) im.count = c;
-    for (const [l, a] of lights) l.shadow.autoUpdate = a === 1;
+    for (const [l, a] of lights) l.shadow.autoUpdate = a;
   }
 
   /** Benchmark: the player's tank at a fixed spot, the chase camera behind it, no sight or drone view. */
@@ -870,8 +897,9 @@ export class Game {
     const cam = this.camera;
     this.hitAge += dt;
     // cloud field drifts with the wind (~9 m/s); wrapped so float precision never degrades
-    ATMO.cloud[0] = (ATMO.cloud[0]! + G.uWind.value.x * dt * 8.5) % 90000;
-    ATMO.cloud[1] = (ATMO.cloud[1]! + G.uWind.value.y * dt * 8.5) % 90000;
+    const cl = ATMO.cloud.value;
+    cl.x = (cl.x + G.uWind.value.x * dt * 8.5) % 90000;
+    cl.y = (cl.y + G.uWind.value.y * dt * 8.5) % 90000;
     for (const t of this.tanks) t.interpolate(alpha);
     // own gun and turret would fill the gunner's view: hide them in the sight (shadows too, acceptable)
     const inSight = this.sight && p.alive;
@@ -923,6 +951,12 @@ export class Game {
     }
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
+    // the shadow cascades are split along the view frustum: refit them when the sight zooms
+    if (cam.fov !== this.cascadeFov) {
+      this.cascadeFov = cam.fov;
+      this.lighting.refitCascades();
+    }
+    this.lighting.track(cam.position);
 
     // aim point (the turret holds its last aim while the crew flies the drone)
     const origin = this.sight ? p.sightPosition(_v) : cam.position;

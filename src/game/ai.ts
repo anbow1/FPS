@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { PLAY_HALF, WATER_LEVEL } from '../config';
 import { Rng } from '../core/rng';
 import type { World } from '../world/world';

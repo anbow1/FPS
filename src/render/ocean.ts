@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { cos, float, floor, int, ivec2, length, screenCoordinate, select, sin, sqrt, step, textureLoad, uniform, vec2, vec4 } from 'three/tsl';
+import * as THREE from 'three/webgpu';
 import { Rng } from '../core/rng';
 import { hyp2 } from '../core/mathx';
 
@@ -9,6 +9,10 @@ import { hyp2 } from '../core/mathx';
  * inverse-transformed every frame with a Stockham radix-2 FFT. The output texture holds
  * (height, dh/dx, dh/dz, slope²); its mip chain gives the slope variance used to widen
  * sun glints in the distance (LEAN mapping) instead of letting them alias.
+ *
+ * Each pass is a full-screen TSL quad into a float target. Every butterfly stage has its own
+ * material with its stride, direction and source texture baked in, so a frame of FFT changes no
+ * uniform between draws and every pipeline is compiled once.
  */
 export interface OceanParams {
   n: number; // grid (power of two)
@@ -18,121 +22,99 @@ export interface OceanParams {
   wind: [number, number];
 }
 
-const VERT = /* glsl */ `
-out vec2 vUv;
-void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+type V2 = THREE.Node<'vec2'>;
+const cmul = (a: V2, b: V2): V2 => vec2(a.x.mul(b.x).sub(a.y.mul(b.y)), a.x.mul(b.y).add(a.y.mul(b.x)));
 
 export class OceanFFT {
-  readonly surface: THREE.WebGLRenderTarget;
+  readonly surface: THREE.RenderTarget;
   readonly size: number;
   private readonly logN: number;
-  private readonly a: THREE.WebGLRenderTarget;
-  private readonly b: THREE.WebGLRenderTarget;
+  private readonly a: THREE.RenderTarget;
+  private readonly b: THREE.RenderTarget;
   private readonly h0: THREE.DataTexture;
-  private readonly quad = new FullScreenQuad();
-  private readonly spec: THREE.ShaderMaterial;
-  private readonly fft: THREE.ShaderMaterial;
-  private readonly resolve: THREE.ShaderMaterial;
+  private readonly specQuad: THREE.QuadMesh;
+  private readonly fftQuads: { quad: THREE.QuadMesh; dst: THREE.RenderTarget }[] = [];
+  private readonly resolveQuad: THREE.QuadMesh;
+  private readonly uT = uniform(0);
 
-  constructor(renderer: THREE.WebGLRenderer, p: OceanParams) {
+  constructor(p: OceanParams) {
     this.size = p.size;
     this.logN = Math.round(Math.log2(p.n));
     const N = p.n;
-    const float = renderer.extensions.has('EXT_color_buffer_float');
-    const fmt = { type: float ? THREE.FloatType : THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false, generateMipmaps: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping };
-    this.a = new THREE.WebGLRenderTarget(N, N, fmt);
-    this.b = new THREE.WebGLRenderTarget(N, N, fmt);
-    this.surface = new THREE.WebGLRenderTarget(N, N, {
+    const fmt = { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false, generateMipmaps: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping };
+    this.a = new THREE.RenderTarget(N, N, fmt);
+    this.b = new THREE.RenderTarget(N, N, fmt);
+    this.surface = new THREE.RenderTarget(N, N, {
       type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false, generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,
     });
     this.surface.texture.anisotropy = 8;
     this.h0 = buildH0(p);
+    const quad = (node: THREE.Node<'vec4'>, name: string) => {
+      const m = new THREE.MeshBasicNodeMaterial({ depthTest: false, depthWrite: false });
+      m.name = name;
+      m.colorNode = node;
+      return new THREE.QuadMesh(m);
+    };
+    const id = ivec2(floor(screenCoordinate.xy));
 
-    const common = { vertexShader: VERT, depthTest: false, depthWrite: false };
-    this.spec = new THREE.ShaderMaterial({
-      ...common,
-      uniforms: { uH0: { value: this.h0 }, uT: { value: 0 }, uL: { value: p.size } },
-      fragmentShader: /* glsl */ `
-        precision highp float; precision highp sampler2D;
-        uniform sampler2D uH0; uniform float uT, uL;
-        vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
-        void main(){
-          ivec2 id = ivec2(gl_FragCoord.xy);
-          vec4 s = texelFetch(uH0, id, 0);
-          vec2 n = vec2(id); n -= step(${N / 2}.0, n) * ${N}.0;
-          vec2 k = 6.28318530718 * n / uL; float kl = length(k);
-          float w = sqrt(9.81 * kl + 7.4e-5 * kl * kl * kl);
-          float w0 = 6.28318530718 / 90.0; w = floor(w / w0) * w0; // seamless 90 s loop
-          float c = cos(w * uT), sn = sin(w * uT);
-          vec2 H = cmul(s.xy, vec2(c, sn)) + cmul(s.zw, vec2(c, -sn));
-          // two real fields in one complex FFT: h + i*dh/dx, and dh/dz
-          gl_FragColor = vec4(H - k.x * H, vec2(-k.y * H.y, k.y * H.x));
-        }`,
-    });
-    this.fft = new THREE.ShaderMaterial({
-      ...common,
-      uniforms: { uSrc: { value: null }, uP: { value: 1 }, uHoriz: { value: 1 } },
-      fragmentShader: /* glsl */ `
-        precision highp float; precision highp sampler2D; precision highp int;
-        uniform sampler2D uSrc; uniform int uP, uHoriz;
-        vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
-        void main(){
-          ivec2 id = ivec2(gl_FragCoord.xy);
-          int j = uHoriz == 1 ? id.x : id.y;
-          int k = j & (uP - 1);
-          int i = ((j - (j & (2 * uP - 1))) >> 1) + k;
-          bool y1 = (j & uP) != 0;
-          ivec2 a = uHoriz == 1 ? ivec2(i, id.y) : ivec2(id.x, i);
-          ivec2 b = uHoriz == 1 ? ivec2(i + ${N / 2}, id.y) : ivec2(id.x, i + ${N / 2});
-          vec4 x0 = texelFetch(uSrc, a, 0), x1 = texelFetch(uSrc, b, 0);
-          float ang = 3.14159265359 * float(k) / float(uP);
-          vec2 w = vec2(cos(ang), sin(ang));
-          vec4 wx = vec4(cmul(w, x1.xy), cmul(w, x1.zw));
-          gl_FragColor = y1 ? x0 - wx : x0 + wx;
-        }`,
-    });
-    this.resolve = new THREE.ShaderMaterial({
-      ...common,
-      uniforms: { uSrc: { value: null } },
-      fragmentShader: /* glsl */ `
-        precision highp float; precision highp sampler2D;
-        uniform sampler2D uSrc;
-        void main(){
-          vec4 s = texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0);
-          vec2 sl = vec2(s.y, s.z);
-          gl_FragColor = vec4(s.x, sl, dot(sl, sl));
-        }`,
-    });
-  }
+    // spectrum at time t: two real fields in one complex FFT, h + i·dh/dx and dh/dz
+    {
+      const s = textureLoad(this.h0, id);
+      const n0 = vec2(id);
+      const n = n0.sub(step(N / 2, n0).mul(N));
+      const k = n.mul((2 * Math.PI) / p.size);
+      const kl = length(k);
+      const w0 = (2 * Math.PI) / 90;
+      const w = floor(sqrt(kl.mul(9.81).add(kl.mul(kl).mul(kl).mul(7.4e-5))).div(w0)).mul(w0); // seamless 90 s loop
+      const c = cos(w.mul(this.uT));
+      const sn = sin(w.mul(this.uT));
+      const H = cmul(s.xy, vec2(c, sn)).add(cmul(s.zw, vec2(c, sn.negate())));
+      this.specQuad = quad(vec4(H.sub(H.mul(k.x)), k.y.negate().mul(H.y), k.y.mul(H.x)), 'ocean-spectrum');
+    }
 
-  update(renderer: THREE.WebGLRenderer, time: number): void {
-    const prev = renderer.getRenderTarget();
-    const prevAuto = renderer.autoClear;
-    renderer.autoClear = false;
-    this.spec.uniforms.uT!.value = time;
-    this.quad.material = this.spec;
-    renderer.setRenderTarget(this.a);
-    this.quad.render(renderer);
+    // Stockham butterflies: rows, then columns; source and destination alternate a → b → a …
     let src = this.a;
     let dst = this.b;
-    this.quad.material = this.fft;
     for (let horiz = 1; horiz >= 0; horiz--) {
-      for (let s = 0; s < this.logN; s++) {
-        this.fft.uniforms.uSrc!.value = src.texture;
-        this.fft.uniforms.uP!.value = 1 << s;
-        this.fft.uniforms.uHoriz!.value = horiz;
-        renderer.setRenderTarget(dst);
-        this.quad.render(renderer);
+      for (let stage = 0; stage < this.logN; stage++) {
+        const P = 1 << stage;
+        const j = horiz ? id.x : id.y;
+        const kk = j.bitAnd(int(P - 1));
+        const i = j.sub(j.bitAnd(int(2 * P - 1))).shiftRight(int(1)).add(kk);
+        const y1 = j.bitAnd(int(P)).notEqual(int(0));
+        const ia = horiz ? ivec2(i, id.y) : ivec2(id.x, i);
+        const ib = horiz ? ivec2(i.add(N / 2), id.y) : ivec2(id.x, i.add(N / 2));
+        const x0 = textureLoad(src.texture, ia);
+        const x1 = textureLoad(src.texture, ib);
+        const ang = float(kk).mul(Math.PI / P);
+        const tw = vec2(cos(ang), sin(ang));
+        const wx = vec4(cmul(tw, x1.xy), cmul(tw, x1.zw));
+        this.fftQuads.push({ quad: quad(select(y1, x0.sub(wx), x0.add(wx)), `ocean-fft-${horiz ? 'h' : 'v'}${stage}`), dst });
         [src, dst] = [dst, src];
       }
     }
-    this.resolve.uniforms.uSrc!.value = src.texture;
-    this.quad.material = this.resolve;
-    renderer.setRenderTarget(this.surface); // mipmaps regenerate on unbind
-    this.quad.render(renderer);
+    const s = textureLoad(src.texture, id);
+    this.resolveQuad = quad(vec4(s.x, s.y, s.z, s.y.mul(s.y).add(s.z.mul(s.z))), 'ocean-resolve');
+  }
+
+  /** Every offscreen target, for the per-pass GPU timer. */
+  get targets(): THREE.RenderTarget[] {
+    return [this.a, this.b, this.surface];
+  }
+
+  update(renderer: THREE.WebGPURenderer, time: number): void {
+    const prev = renderer.getRenderTarget();
+    this.uT.value = time;
+    renderer.setRenderTarget(this.a);
+    this.specQuad.render(renderer);
+    for (const f of this.fftQuads) {
+      renderer.setRenderTarget(f.dst);
+      f.quad.render(renderer);
+    }
+    renderer.setRenderTarget(this.surface); // mipmaps are regenerated after the pass
+    this.resolveQuad.render(renderer);
     renderer.setRenderTarget(prev);
-    renderer.autoClear = prevAuto;
   }
 
   dispose(): void {
@@ -140,10 +122,7 @@ export class OceanFFT {
     this.b.dispose();
     this.surface.dispose();
     this.h0.dispose();
-    this.spec.dispose();
-    this.fft.dispose();
-    this.resolve.dispose();
-    this.quad.dispose();
+    for (const q of [this.specQuad, this.resolveQuad, ...this.fftQuads.map((f) => f.quad)]) (q.material as THREE.Material).dispose();
   }
 }
 

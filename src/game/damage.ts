@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import type { AmmoSpec, TankSpec } from '../config';
 import { penetrationAt } from './ballistics';
 

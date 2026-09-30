@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import type { BulletSpec } from '../config';
 import type { World } from '../world/world';
 import type { Audio } from './audio';
@@ -48,7 +48,7 @@ export class Bullets {
   constructor(private readonly effects: Effects) {
     const g = new THREE.CylinderGeometry(0.018, 0.018, 1, 5, 1, true);
     g.rotateX(Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const mat = new THREE.MeshBasicNodeMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
     this.tracers = new THREE.InstancedMesh(g, mat, MAX_TRACERS);
     this.tracers.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_TRACERS * 3), 3);
     this.tracers.frustumCulled = false;
