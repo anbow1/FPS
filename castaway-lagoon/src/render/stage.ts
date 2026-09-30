@@ -1,13 +1,15 @@
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { float, Fn, int, length, Loop, mrt, output, pass, pow, saturation, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { exp, float, Fn, int, length, Loop, mix, mrt, output, pass, pow, saturation, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
 import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PCFShadowMap, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { setMaxAnisotropy } from './textureSet.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 import { LAGOON_CAMERA } from '../config.ts';
 import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
+import { U } from './uniforms.ts';
+import { underwaterExtinction, underwaterTint } from './waterFx.ts';
 
 // Renderer and post chain for the lagoon (rules §2.1, §2.5): HDR half-float
 // scene pass with a velocity MRT → TRAA (High) → screen-space sun shafts, the
@@ -151,7 +153,13 @@ export class LagoonStage {
     const motion = scenePass.getTextureNode('velocity');
     this.sceneTexture = scenePass.getTexture('output');
     const high = this.settings.quality === 'high';
-    const aa = high ? traa(colour, depth, motion, this.camera) : colour;
+    const antialiased = high ? traa(colour, depth, motion, this.camera) : colour;
+    // Under water: everything fades with its distance through the water toward the water's own
+    // colour (Beer–Lambert per channel), the view-space depth giving the distance. A uniform
+    // switches it, so going under compiles nothing.
+    const throughWater = exp(underwaterExtinction().mul(scenePass.getViewZNode().negate()).negate());
+    const submerged = antialiased.rgb.mul(throughWater).add(underwaterTint().mul(vec3(1).sub(throughWater)));
+    const aa = mix(antialiased, vec4(submerged, 1), U.underwater);
 
     const samples = SHAFT_SAMPLES[this.settings.quality];
     const sunUv = this.sunScreen;

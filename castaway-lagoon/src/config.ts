@@ -20,7 +20,22 @@ export const LAGOON_PLAYER = {
   walkSpeedMs: 3.2, // brisk walk on sand; the FPS jog is 3.5
   sprintSpeedMs: 6.0, // scale sheet sprint
   wadeSpeedFactor: 0.55, // knee-deep water roughly halves walking pace
-  maxWadeDepthM: 1.25, // deeper than this the player cannot go (no swimming)
+  maxWadeDepthM: 1.25, // stones lost deeper than ~0.9 m of this are gone for good
+  // Swimming (game/player.ts). Deeper than swimDepthM the walker floats, eye just above the chop.
+  swimDepthM: 1.5,
+  floatEyeAboveWaterM: 0.12,
+  swimSpeedMs: 1.0, // breaststroke
+  swimSprintMs: 1.6, // front crawl
+  diveSpeedMs: 1.1,
+  ascendSpeedMs: 1.3,
+  swimResponse: 2.5, // 1/s: water drag, velocity settles in ~0.4 s
+  swimStrokeSeconds: 1.1,
+  breathSeconds: 45, // a relaxed breath-hold
+  breathRecoveryPerS: 6, // seconds of air regained per second at the surface
+  // Soft world border: past borderStartM from the lagoon's centre a current pushes you back.
+  borderStartM: 165,
+  borderEndM: 190,
+  borderCurrentMs: 2.2,
   groundAccelMs2: 30, // tuned by hand: reaches walk speed in ~0.1 s, no instant stop
   groundFrictionMs2: 22,
   airAccelMs2: 4,
@@ -83,6 +98,8 @@ export const INTERACT = {
   pickupSeconds: 0.5,
   harvestSeconds: 0.9,
   crateOpenSeconds: 1.1,
+  /** Lying down, the night passing under a fade to black, and getting up (game.ts). */
+  sleepSeconds: 4.5,
   examineMaxAngleRad: 0.2,
 } as const;
 

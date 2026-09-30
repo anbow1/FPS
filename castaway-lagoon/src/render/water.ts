@@ -1,5 +1,5 @@
-import { cameraPosition, clamp, cos, dot, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
-import { BufferAttribute, BufferGeometry, DataTexture, DataUtils, HalfFloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, type Node, RedFormat, type Vector3 } from 'three/webgpu';
+import { cameraPosition, clamp, cos, dot, frontFacing, select, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
+import { BufferAttribute, BufferGeometry, DataTexture, DataUtils, DoubleSide, HalfFloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, type Node, RedFormat, type Vector3 } from 'three/webgpu';
 import { OceanFFT } from './ocean.ts';
 import { hexToLinear } from './colour.ts';
 import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
@@ -7,7 +7,7 @@ import { SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
 import { skyRadiance } from './sky.ts';
 import { causticFoamMap } from './textures.ts';
 import { U } from './uniforms.ts';
-import { rainRings, splashRipples } from './waterFx.ts';
+import { rainRings, splashRipples, underwaterTint } from './waterFx.ts';
 import { laceCover, shoreSurface, surfFoam } from './shoreWaves.ts';
 import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
 
@@ -97,7 +97,8 @@ export function placeWater(mesh: Mesh, eye: Vector3): void {
 }
 
 function waterMaterial(depthMap: DataTexture, ocean: OceanFFT): MeshBasicNodeMaterial {
-  const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true });
+  // Double-sided: a swimmer sees the surface from below (Snell's window).
+  const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true, side: DoubleSide });
   const cf = causticFoamMap();
 
   // ── Vertex: Gerstner displacement, damped in the shallows and at range.
@@ -216,7 +217,24 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT): MeshBasicNodeMat
   const surface = mix(underwater, reflection, fresnel);
   // Right at the waterline the film is thin: fade the surface into the wet sand behind it.
   const edge = smoothstep(0.0, 0.05, depth);
-  m.colorNode = mix(behind, mix(surface, foamLight, foam), edge);
+  const above = mix(behind, mix(surface, foamLight, foam), edge);
+
+  // From below: inside Snell's window (48.6° from the vertical) the sky refracted through the
+  // surface, darkened by the Fresnel reflection back down; outside it total internal reflection
+  // mirrors the water itself, which is the colour the underwater pass fades toward.
+  const up = V.negate();
+  const cosUp = clamp(dot(up, N), 0, 1);
+  const sinT = sqrt(float(1).sub(cosUp.mul(cosUp))).mul(1.333);
+  const tir = smoothstep(0.97, 1.0, sinT);
+  const cosT = sqrt(max(float(1).sub(sinT.mul(sinT)), 0));
+  const outDir = normalize(up.mul(1.333).add(N.mul(cosT.sub(cosUp.mul(1.333)))));
+  const fresnelIn = float(0.02).add(float(0.98).mul(pow(float(1).sub(cosT), float(5))));
+  const skyIn = skyRadiance(normalize(vec3(outDir.x, max(outDir.y, 0.004), outDir.z)), float(1))
+    .add(U.sunIrradiance.mul(pow(max(dot(outDir, U.sunDir), 0), 300).mul(2)));
+  const tint = underwaterTint();
+  const snell = mix(skyIn.mul(float(1).sub(fresnelIn)).add(tint.mul(fresnelIn)), tint, tir);
+  const below = mix(snell, tint.mul(0.6).add(foamLight.mul(0.25)), foam);
+  m.colorNode = select(frontFacing, above, below);
   m.opacityNode = float(1);
   return m;
 }

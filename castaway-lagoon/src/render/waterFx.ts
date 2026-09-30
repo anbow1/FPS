@@ -1,6 +1,7 @@
-import { exp, float, floor, fract, Fn, hash, length, normalize, sin, vec2, vec3 } from 'three/tsl';
+import { exp, float, floor, fract, Fn, hash, length, max, normalize, sin, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
-import { WATER_LEVEL_M } from '../config.ts';
+import { WATER_LEVEL_M, WAVES } from '../config.ts';
+import { hexToLinear } from './colour.ts';
 import { heightAt } from '../game/terrain.ts';
 import { RippleField } from './rippleField.ts';
 import { U } from './uniforms.ts';
@@ -35,6 +36,25 @@ export function addRipple(x: number, z: number, strength: number): void {
 /** Slope and agitation from the ripple field: vec3(∂h/∂x, ∂h/∂z, agitation). */
 export function splashRipples(p: N2): Node<'vec3'> {
   return field ? field.sample(p) : vec3(0);
+}
+
+/**
+ * Seen from under the surface: extinction per metre (the water's absorption plus
+ * a little scattering by plankton and silt, so the far view fades to the water's
+ * own colour instead of to black) and that colour, the in-scattered sun and sky.
+ */
+export const UNDERWATER_TURBIDITY_PER_M = 0.05;
+
+export function underwaterExtinction(): Node<'vec3'> {
+  const a = WAVES.absorptionPerM;
+  const t = UNDERWATER_TURBIDITY_PER_M;
+  return vec3(a.r + t, a.g + t, a.b + t);
+}
+
+export function underwaterTint(): Node<'vec3'> {
+  const sc = hexToLinear(WAVES.scatterColour);
+  const ambient = U.sunIrradiance.mul(max(U.sunDir.y, 0)).add(U.skyIrradiance).div(Math.PI);
+  return vec3(sc.r, sc.g, sc.b).mul(ambient).mul(0.55);
 }
 
 /** Raindrop rings: two staggered layers of cells, each ringing once per cycle. Returns a slope. */

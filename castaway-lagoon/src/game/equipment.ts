@@ -6,7 +6,7 @@ import type { EquipSlot } from './events.ts';
 // interaction (pick-up, harvest, crate). Logic owns the timing; the viewmodel
 // only reads `action` and `progress` to pose the arms.
 
-export type ActionKind = 'idle' | 'lower' | 'raise' | 'reload' | 'swing' | 'windup' | 'throw' | 'pickup' | 'harvest' | 'openCrate' | 'examine';
+export type ActionKind = 'idle' | 'lower' | 'raise' | 'reload' | 'swing' | 'windup' | 'throw' | 'pickup' | 'harvest' | 'openCrate' | 'examine' | 'sleep';
 
 export interface Action {
   kind: ActionKind;

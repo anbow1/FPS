@@ -13,7 +13,11 @@ export type ItemId =
   | 'beans'
   | 'flare'
   | 'canteen'
-  | 'rope';
+  | 'rope'
+  | 'backpack'
+  | 'lamp'
+  | 'lighter'
+  | 'fishhooks';
 
 export interface ItemSpec {
   name: string;
@@ -35,9 +39,13 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
   flare: { name: 'Signal Flare', description: 'Red hand flare. Someone might be watching the sky.', tool: false },
   canteen: { name: 'Canteen', description: 'Dented aluminium canteen, half full of rainwater.', tool: false },
   rope: { name: 'Rope Coil', description: 'Ten metres of frayed nylon rope.', tool: false },
+  backpack: { name: 'Backpack', description: 'Worn canvas backpack, straps repaired with fishing line. Everything you carry rides in it.', tool: false },
+  lamp: { name: 'Kerosene Lamp', description: 'Hurricane lamp from the shelter. L lights it or puts it out; water puts it out too.', tool: false },
+  lighter: { name: 'Lighter', description: 'Half-empty disposable lighter. Enough for a fire or two.', tool: false },
+  fishhooks: { name: 'Fishhook Tin', description: 'A dozen hooks and a spool of line in an old tobacco tin.', tool: false },
 };
 
-export const ITEM_ORDER: readonly ItemId[] = ['rifle', 'knife', 'stone', 'ammo762', 'herb', 'hibiscus', 'aloe', 'coconut', 'beans', 'flare', 'canteen', 'rope'];
+export const ITEM_ORDER: readonly ItemId[] = ['rifle', 'knife', 'stone', 'ammo762', 'herb', 'hibiscus', 'aloe', 'coconut', 'beans', 'flare', 'canteen', 'rope', 'backpack', 'lamp', 'lighter', 'fishhooks'];
 
 export function isItemId(v: string): v is ItemId {
   return Object.hasOwn(ITEMS, v);

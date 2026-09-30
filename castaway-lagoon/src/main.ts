@@ -97,6 +97,7 @@ class App {
           { code: 'KeyE', label: 'USE', col: 0, row: 1.45, mode: 'tap' },
           { code: 'Mouse2', label: 'AIM', col: 1.45, row: 0, mode: 'toggle' },
           { code: 'Space', label: 'JUMP', col: 1.45, row: 1.45, mode: 'tap' },
+          { code: 'KeyC', label: 'DIVE', col: 2.45, row: 1.45 },
           { code: 'KeyR', label: 'R', col: 2.45, row: 0, mode: 'tap' },
           { code: 'KeyI', label: 'BAG', col: 3.45, row: 0, mode: 'tap' },
           { code: 'Digit1', label: 'AK', col: 0, row: 3.2, mode: 'tap' },

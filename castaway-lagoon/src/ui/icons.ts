@@ -20,6 +20,10 @@ export const ITEM_ICONS: Record<ItemId, string> = {
   beans: svg('<rect x="18" y="12" width="28" height="40" rx="4" fill="#c8c8c4"/><rect x="18" y="20" width="28" height="22" fill="#2e6a8a"/><rect x="18" y="12" width="28" height="4" fill="#9a9a96"/>'),
   flare: svg('<rect x="10" y="28" width="42" height="10" rx="3" fill="#b8302a"/><rect x="50" y="29" width="6" height="8" fill="#e8e0d0"/><path d="M56 26l6-6M57 33h7M56 40l6 6" stroke="#f0a040" stroke-width="3"/>'),
   canteen: svg('<ellipse cx="32" cy="36" rx="18" ry="20" fill="#b9bcbe"/><rect x="28" y="8" width="8" height="10" fill="#3a3d33"/><path d="M14 30c6 4 30 4 36 0" stroke="#5a5e48" stroke-width="4" fill="none"/>'),
+  backpack: svg('<path d="M18 22c0-8 6-12 14-12s14 4 14 12v30a4 4 0 0 1-4 4H22a4 4 0 0 1-4-4z" fill="#8a7d5c"/><path d="M20 26h24v8H20z" fill="#6f6448"/><rect x="24" y="40" width="16" height="10" rx="2" fill="#6f6448"/>'),
+  lamp: svg('<path d="M24 14a8 8 0 0 1 16 0" fill="none" stroke="#9aa08f" stroke-width="3"/><rect x="22" y="16" width="20" height="6" rx="2" fill="#56603f"/><rect x="24" y="22" width="16" height="22" rx="3" fill="#e9dfc4" opacity=".6"/><path d="M32 40c-3-3-3-7 0-11 3 4 3 8 0 11z" fill="#f2a33a"/><rect x="21" y="44" width="22" height="7" rx="2" fill="#56603f"/>'),
+  lighter: svg('<rect x="22" y="22" width="20" height="32" rx="4" fill="#c2412f"/><rect x="24" y="14" width="16" height="9" rx="2" fill="#b9bcbe"/><path d="M32 12c-3-3-2-6 0-8 2 2 3 5 0 8z" fill="#f2a33a"/>'),
+  fishhooks: svg('<rect x="12" y="22" width="40" height="24" rx="4" fill="#b9a36a"/><path d="M26 28v10a4 4 0 0 0 8 0" fill="none" stroke="#e1e3e6" stroke-width="2.5"/><path d="M40 28v8a3 3 0 0 0 6 0" fill="none" stroke="#e1e3e6" stroke-width="2"/>'),
   rope: svg('<g fill="none" stroke="#c8ae7a" stroke-width="5"><ellipse cx="32" cy="32" rx="22" ry="18"/><ellipse cx="32" cy="32" rx="14" ry="11"/></g><path d="M50 40l8 14" stroke="#c8ae7a" stroke-width="5"/>'),
 };
 

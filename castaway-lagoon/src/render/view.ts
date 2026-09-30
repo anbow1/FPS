@@ -1,8 +1,10 @@
-import { Quaternion, Vector3 } from 'three/webgpu';
+import { Group, Quaternion, Vector3 } from 'three/webgpu';
 import { damp } from '../core/vec.ts';
 import { lightColour } from './colour.ts';
 import { AutoExposure } from './exposure.ts';
-import { DAYLIGHT, LAGOON_CAMERA, LAGOON_EXPOSURE, LAGOON_PLAYER, WATER_LEVEL_M, WAVES } from '../config.ts';
+import { DAYLIGHT, LAGOON_CAMERA, LAGOON_EXPOSURE, LAGOON_PLAYER, WATER_LEVEL_M } from '../config.ts';
+import { waterSurfaceY, waveScale } from '../game/waves.ts';
+import { heightAt } from '../game/terrain.ts';
 import type { LagoonEvent } from '../game/events.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { Effects } from './effects.ts';
@@ -61,6 +63,12 @@ export class LagoonView {
   private flicker = 0;
   readonly hooks: ViewHooks = { update: [], events: [] };
   private readonly eye = new Vector3();
+  /** The carried lamp hangs from this pivot, which follows the left hand (swingLamp). */
+  private readonly lampCarry = new Group();
+  private readonly lampAnchor = new Vector3();
+  private readonly lampPrevAnchor = new Vector3();
+  private readonly lampPrevVel = new Vector3();
+  private lampSwing = { x: 0, z: 0, vx: 0, vz: 0, fresh: true };
   private bobK = 0;
   private landDip = 0;
   private gust = 0;
@@ -115,7 +123,7 @@ export class LagoonView {
     stage.scene.add(buildRocks(game.world.rocks));
     await progress('Building the shelter', 0.47);
     this.outpost = buildOutpost();
-    stage.scene.add(this.outpost.group, this.outpost.dock);
+    stage.scene.add(this.outpost.group, this.outpost.dock, this.lampCarry);
     this.props = new Props(game);
     stage.scene.add(this.props.group);
     this.viewModel = new ViewModel();
@@ -186,6 +194,7 @@ export class LagoonView {
     this.bobK = damp(this.bobK, p.grounded ? Math.min(1.4, p.speedMs / LAGOON_PLAYER.walkSpeedMs) : 0, 10, dt);
     this.landDip = damp(this.landDip, 0, 9, dt);
     this.placeCamera(game, alpha, pendingYawRad, pendingPitchRad);
+    this.swingLamp(game, dt);
     const env = game.env;
     U.time.value = game.timeSeconds + alpha / 60;
     // Gusts: a slow random envelope on top of the mean wind.
@@ -196,7 +205,11 @@ export class LagoonView {
     }
     this.gust = damp(this.gust, this.gustTarget, 0.8, dt);
     U.gust.value = this.gust;
-    U.waveScale.value = 1 + (WAVES.stormAmplitudeScale - 1) * env.weather.rainRate + (env.weather.windMs - 3) * 0.03;
+    U.waveScale.value = waveScale(env.weather.rainRate, env.weather.windMs);
+    // Under water when the eye is below the chop right above it (the same waves the surface is drawn with).
+    const eyeP = this.stage.camera.position;
+    const surfY = waterSurfaceY(eyeP.x, eyeP.z, U.time.value, U.waveScale.value, WATER_LEVEL_M - heightAt(eyeP.x, eyeP.z));
+    U.underwater.value = eyeP.y < surfY - 0.02 ? 1 : 0;
     this.lighting.update(env, this.stage.camera, dt);
     placeWater(this.water.mesh, this.stage.camera.position);
     this.props.update(game);
@@ -224,7 +237,7 @@ export class LagoonView {
     const d = env.daylight;
     const lightDir = d.night > 0.5 ? d.moonDir : d.sunDir;
     const lowSun = 1 - Math.min(1, Math.max(0, d.sunDir.y - 0.05) / 0.6);
-    this.stage.aimShafts(lightDir, (1 - env.weather.cloudCover * 0.9) * (0.35 + lowSun * 0.5) * (d.night > 0.5 ? 0.25 : 1));
+    this.stage.aimShafts(lightDir, (1 - env.weather.cloudCover * 0.9) * (0.35 + lowSun * 0.5) * (d.night > 0.5 ? 0.25 : 1) * (1 - U.underwater.value));
     this.caustics.render(this.stage.renderer);
     this.water.ocean.update(this.stage.renderer, U.time.value);
     this.cpu.lap('water');
@@ -242,8 +255,13 @@ export class LagoonView {
     this.flicker += dt;
     const f = this.flicker;
     const wobble = 0.85 + 0.1 * Math.sin(f * 13.1) + 0.06 * Math.sin(f * 29.7 + 1.3) + 0.04 * Math.sin(f * 51.3);
-    const lampOn = Math.min(1, Math.max(0, (d.night + (1 - Math.min(1, d.sunDir.y * 6 + 0.5)) * 0.6 - 0.2) * 2));
-    this.outpost.lantern.intensity = (DAYLIGHT.lampFluxLm / (4 * Math.PI)) * pre * lampOn * (0.95 + 0.05 * Math.sin(f * 7));
+    // Hanging in the shelter it lights itself at dusk; once carried it burns when the player lit it.
+    const carried = game.inventory.has('lamp');
+    const lampOn = carried ? (game.lampLit ? 1 : 0) : Math.min(1, Math.max(0, (d.night + (1 - Math.min(1, d.sunDir.y * 6 + 0.5)) * 0.6 - 0.2) * 2));
+    const lampFlicker = 0.95 + 0.05 * Math.sin(f * 7);
+    this.outpost.lantern.intensity = (DAYLIGHT.lampFluxLm / (4 * Math.PI)) * pre * lampOn * lampFlicker;
+    // A small kerosene flame is a few 10⁴ cd/m².
+    U.lampGlow.value = 2e4 * pre * lampOn * lampFlicker;
     const rainDamp = 1 - game.env.weather.rainRate * 0.6;
     this.outpost.fire.intensity = (DAYLIGHT.fireFluxLm / (4 * Math.PI)) * pre * wobble * rainDamp;
     const lamp = lightColour(DAYLIGHT.lampColourK);
@@ -253,8 +271,49 @@ export class LagoonView {
     this.lampOn = lampOn;
   }
 
-  /** 0..1: whether the lantern is lit (effects draw its flame). */
+  /** 0..1: whether the lantern is lit. */
   lampOn = 0;
+
+  /**
+   * Once taken, the lamp hangs from the left hand, low and ahead, and swings: a damped pendulum
+   * (0.2 m, about 1.1 Hz) driven by how the hand accelerates, so walking, turning and stopping
+   * set it rocking. The lantern light moves with it; no light is added or removed.
+   */
+  private swingLamp(game: LagoonGame, dt: number): void {
+    const rig = this.outpost.lanternRig;
+    if (!game.inventory.has('lamp')) return;
+    const cam = this.stage.camera;
+    if (rig.parent !== this.lampCarry) {
+      this.lampCarry.add(rig);
+      rig.position.set(0, -LAMP_PIVOT_M, 0);
+      rig.rotation.set(0, 0, 0);
+      this.lampSwing.fresh = true;
+    }
+    this.lampAnchor.set(-0.27, -0.5, -0.42).applyQuaternion(cam.quaternion).add(cam.position);
+    const s = this.lampSwing;
+    if (s.fresh || dt <= 0) {
+      this.lampPrevAnchor.copy(this.lampAnchor);
+      this.lampPrevVel.set(0, 0, 0);
+      s.fresh = false;
+    } else {
+      const vx = (this.lampAnchor.x - this.lampPrevAnchor.x) / dt;
+      const vz = (this.lampAnchor.z - this.lampPrevAnchor.z) / dt;
+      // A teleport or a hitch is not a swing: clamp the hand's acceleration.
+      const ax = Math.max(-30, Math.min(30, (vx - this.lampPrevVel.x) / dt));
+      const az = Math.max(-30, Math.min(30, (vz - this.lampPrevVel.z) / dt));
+      this.lampPrevVel.set(vx, 0, vz);
+      this.lampPrevAnchor.copy(this.lampAnchor);
+      const g = 9.81 / LAMP_PIVOT_M;
+      const h = Math.min(dt, 1 / 30);
+      // In the hand's frame the lamp feels −a: it lags behind whatever the hand does.
+      s.vx += (-g * Math.sin(s.x) + (az / LAMP_PIVOT_M) * Math.cos(s.x) - 2.2 * s.vx) * h;
+      s.vz += (-g * Math.sin(s.z) - (ax / LAMP_PIVOT_M) * Math.cos(s.z) - 2.2 * s.vz) * h;
+      s.x = Math.max(-1.1, Math.min(1.1, s.x + s.vx * h));
+      s.z = Math.max(-1.1, Math.min(1.1, s.z + s.vz * h));
+    }
+    this.lampCarry.position.copy(this.lampAnchor);
+    this.lampCarry.rotation.set(s.x, 0, s.z);
+  }
 
   /**
    * One frame of the real pipeline with every pipeline's object forced
@@ -279,6 +338,8 @@ export class LagoonView {
 }
 
 const PRECOMPILE_TIMEOUT_MS = 20000;
+/** From the hand to the middle of the lamp's glass (m). */
+const LAMP_PIVOT_M = 0.2;
 
 /**
  * Shader pre-compilation behind the loading screen (rules §9). A phone GPU can

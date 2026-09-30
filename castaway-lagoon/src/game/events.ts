@@ -1,3 +1,4 @@
+import type { TimeOfDayId } from '../config.ts';
 import type { SurfaceKind } from './terrain.ts';
 
 // Everything logic tells render, audio and HUD about, once per step. The
@@ -15,6 +16,8 @@ export type LagoonEvent =
   | { type: 'footstep'; surface: SurfaceKind; pos: P3; running: boolean; wadingDepthM: number }
   | { type: 'jump'; surface: SurfaceKind }
   | { type: 'land'; surface: SurfaceKind; impactSpeedMs: number }
+  | { type: 'swim'; what: 'start' | 'stand' | 'under' | 'surface' | 'outOfAir'; airFraction?: number }
+  | { type: 'swimStroke'; pos: P3; underwater: boolean; fast: boolean }
   | { type: 'stoneWindup' }
   | { type: 'stoneThrown'; pos: P3; speedMs: number }
   | { type: 'splash'; pos: P3; speedMs: number; massKg: number; skip: boolean }
@@ -36,7 +39,9 @@ export type LagoonEvent =
   | { type: 'examine'; id: number; title: string; text: string }
   | { type: 'canHit'; id: number }
   | { type: 'lightning'; strength: number; thunderDelaySeconds: number }
-  | { type: 'message'; text: string };
+  | { type: 'message'; text: string }
+  | { type: 'sleep'; until: TimeOfDayId }
+  | { type: 'lamp'; lit: boolean };
 
 export class EventQueue {
   private items: LagoonEvent[] = [];

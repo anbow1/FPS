@@ -1,5 +1,5 @@
 import { Rng } from '../core/rng.ts';
-import { INTERACT, KNIFE, LAGOON_PLAYER, RIFLE, STONE, type TimeOfDayId, type WeatherId } from '../config.ts';
+import { INTERACT, KNIFE, LAGOON_PLAYER, RIFLE, STONE, TIME_OF_DAY, type TimeOfDayId, type WeatherId } from '../config.ts';
 import { Bodies, type BodyRest, knockCan } from './bodies.ts';
 import { Bullets } from './bullets.ts';
 import { newHit, type RayHit } from './colliders.ts';
@@ -10,6 +10,7 @@ import { Inventory } from './inventory.ts';
 import { ITEMS } from './items.ts';
 import { type MoveIntent, Player } from './player.ts';
 import { heightAt } from './terrain.ts';
+import { waveScale } from './waves.ts';
 import { buildWorld, crateContents, type Interactable, type LagoonWorld } from './world.ts';
 
 // The lagoon's game logic, headless (rules §10: no THREE here). One fixed
@@ -27,6 +28,7 @@ export interface LagoonIntent {
   lookPitchRad: number;
   triggers: Triggers;
   interactPressed: boolean;
+  toggleLamp: boolean;
   cycleTime: boolean;
   cycleWeather: boolean;
   setTime: TimeOfDayId | null;
@@ -35,11 +37,12 @@ export interface LagoonIntent {
 
 export function emptyIntent(): LagoonIntent {
   return {
-    move: { moveRight: 0, moveForward: 0, sprint: false, jump: false },
+    move: { moveRight: 0, moveForward: 0, sprint: false, jump: false, dive: false, rise: false },
     lookYawRad: 0,
     lookPitchRad: 0,
     triggers: { firePressed: false, fireHeld: false, fireReleased: false, aimHeld: false, reloadPressed: false, selectSlot: null },
     interactPressed: false,
+    toggleLamp: false,
     cycleTime: false,
     cycleWeather: false,
     setTime: null,
@@ -47,7 +50,12 @@ export function emptyIntent(): LagoonIntent {
   };
 }
 
-const HANDS_ACTIONS: readonly ActionKind[] = ['pickup', 'harvest', 'openCrate'];
+const HANDS_ACTIONS: readonly ActionKind[] = ['pickup', 'harvest', 'openCrate', 'sleep'];
+
+/** Where a sleep on the cot ends: evenings and nights sleep to morning, days to the golden hour. */
+export function sleepUntil(now: TimeOfDayId): TimeOfDayId {
+  return now === 'sunset' || now === 'night' ? 'morning' : 'sunset';
+}
 
 export class LagoonGame {
   readonly world: LagoonWorld;
@@ -60,6 +68,8 @@ export class LagoonGame {
   readonly bodies: Bodies;
   readonly bullets: Bullets;
   timeSeconds = 0;
+  /** The carried kerosene lamp is burning. */
+  lampLit = false;
   /** Interactable under the crosshair, or null. */
   focus: Interactable | null = null;
   /** Bumped whenever interactables are added or removed, so render can re-sync. */
@@ -95,9 +105,29 @@ export class LagoonGame {
     const eq = this.equipment;
     this.player.look(intent.lookYawRad, intent.lookPitchRad);
     const slowed = eq.adsBlend > 0.5 || HANDS_ACTIONS.includes(eq.action.kind) || eq.action.kind === 'windup';
-    this.player.step({ ...intent.move, slowed }, dt, this.world.collision, this.events);
+    // Asleep: nobody walks.
+    if (eq.action.kind === 'sleep') {
+      intent.move.moveForward = 0;
+      intent.move.moveRight = 0;
+      intent.move.jump = false;
+    }
+    const water = { timeS: this.timeSeconds, waveScale: waveScale(this.env.weather.rainRate, this.env.weather.windMs) };
+    this.player.step({ ...intent.move, slowed }, dt, this.world.collision, this.events, water);
+    // Both hands are for swimming: whatever was held goes on the back.
+    if (this.player.swimming && eq.slot !== 'hands' && eq.action.kind !== 'lower') {
+      eq.finish();
+      eq.switchTo('hands');
+      this.events.push({ type: 'equip', slot: 'hands' });
+    }
     this.player.eye(this.eye);
     this.player.forward(this.fwd);
+
+    // The lamp: L lights it or puts it out; a dunking puts it out.
+    if (intent.toggleLamp && this.inventory.has('lamp') && !this.player.underwater) this.setLamp(!this.lampLit);
+    if (this.lampLit && this.player.underwater) {
+      this.setLamp(false);
+      this.events.push({ type: 'message', text: 'The lamp went out' });
+    }
 
     // 3. Focus.
     this.focus = this.findFocus();
@@ -178,6 +208,13 @@ export class LagoonGame {
     }
     const it = this.focus;
     if (!it || !eq.canInteract()) return;
+    if (it.kind === 'sleep') {
+      if (this.player.swimming) return;
+      const until = sleepUntil(this.env.timeId);
+      eq.start('sleep', INTERACT.sleepSeconds, it.id);
+      this.events.push({ type: 'sleep', until });
+      return;
+    }
     if (it.kind === 'examine') {
       eq.start('examine', Number.POSITIVE_INFINITY, it.id);
       this.events.push({ type: 'examine', id: it.id, title: it.name, text: it.text });
@@ -192,6 +229,10 @@ export class LagoonGame {
   private select(slot: EquipSlot): void {
     const eq = this.equipment;
     if (HANDS_ACTIONS.includes(eq.action.kind) || eq.action.kind === 'windup' || eq.action.kind === 'throw') return;
+    if (this.player.swimming && slot !== 'hands') {
+      this.events.push({ type: 'message', text: 'Not while swimming' });
+      return;
+    }
     const inv = this.inventory;
     const missing = slot === 'rifle' ? !inv.has('rifle') : slot === 'knife' ? !inv.has('knife') : slot === 'stone' ? !inv.has('stone') : false;
     if (missing) {
@@ -278,7 +319,12 @@ export class LagoonGame {
     if (kind === 'pickup' && crossed(INTERACT.pickupSeconds * 0.55) && target) this.take(target);
     else if (kind === 'harvest' && crossed(INTERACT.harvestSeconds * 0.62) && target) this.take(target);
     else if (kind === 'openCrate' && target) target.open = Math.min(0.999, smooth(Math.min(after, INTERACT.crateOpenSeconds) / INTERACT.crateOpenSeconds)); // 1 only once opened
-    else if (kind === 'throw' && crossed(STONE.releaseSeconds)) this.releaseStone();
+    else if (kind === 'sleep' && crossed(durationSeconds * 0.5)) {
+      // Under the fade: the hours pass at once, weather and all.
+      const until = sleepUntil(this.env.timeId);
+      this.env.setTime(until, true);
+      this.events.push({ type: 'message', text: `You slept until ${TIME_OF_DAY[until].label.toLowerCase()}` });
+    } else if (kind === 'throw' && crossed(STONE.releaseSeconds)) this.releaseStone();
     else if (kind === 'swing' && crossed(KNIFE.swingSeconds * KNIFE.hitAtFraction)) this.knifeHit();
     else if (kind === 'reload') {
       const d = durationSeconds;
@@ -313,6 +359,14 @@ export class LagoonGame {
     const count = it.item === 'rifle' ? 1 : it.count;
     this.inventory.add(it.item, count);
     this.events.push({ type: 'itemGained', itemId: it.item, count, name: ITEMS[it.item].name });
+    if (it.item === 'backpack') {
+      // Its contents come with it.
+      for (const id of ['lighter', 'fishhooks'] as const) {
+        this.inventory.add(id, 1);
+        this.events.push({ type: 'itemGained', itemId: id, count: 1, name: ITEMS[id].name });
+      }
+    }
+    if (it.item === 'lamp') this.setLamp(true);
     if (it.item === 'rifle') {
       // The rifle comes with a spare magazine's worth of loose rounds.
       this.inventory.add('ammo762', RIFLE.startReserveRounds);
@@ -325,6 +379,12 @@ export class LagoonGame {
       eq.switchTo(tool);
       this.events.push({ type: 'equip', slot: tool });
     }
+  }
+
+  private setLamp(lit: boolean): void {
+    if (lit === this.lampLit) return;
+    this.lampLit = lit;
+    this.events.push({ type: 'lamp', lit });
   }
 
   private releaseStone(): void {

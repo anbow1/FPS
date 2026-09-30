@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ENVIRONMENT, RIFLE, WEATHER } from '../src/config.ts';
+import { ENVIRONMENT, INTERACT, LAGOON_PLAYER, RIFLE, WEATHER } from '../src/config.ts';
 import { airMass, computeDaylight, Environment } from '../src/game/environment.ts';
 import type { LagoonEvent } from '../src/game/events.ts';
-import { emptyIntent, LagoonGame, type LagoonIntent } from '../src/game/game.ts';
+import { emptyIntent, LagoonGame, type LagoonIntent, sleepUntil } from '../src/game/game.ts';
 import { Inventory } from '../src/game/inventory.ts';
 import { heightAt, LAGOON_CENTRE, surfaceAt } from '../src/game/terrain.ts';
 import type { Interactable } from '../src/game/world.ts';
@@ -213,15 +213,138 @@ describe('outpost interactions', () => {
   });
 });
 
+describe('shelter', () => {
+  it('takes the backpack with what is in it', () => {
+    const g = newGame();
+    const pack = g.interactables.find((i) => i.model === 'backpack') as Interactable;
+    lookAt(g, pack, 0.9);
+    run(g, 60, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(pack.alive).toBe(false);
+    for (const id of ['backpack', 'lighter', 'fishhooks'] as const) expect(g.inventory.count(id)).toBe(1);
+  });
+
+  it('takes the lamp down lit, puts it out with L, and a dunking puts it out', () => {
+    const g = newGame();
+    const lamp = g.interactables.find((i) => i.model === 'lantern') as Interactable;
+    lookAt(g, lamp, 0.9);
+    const events = run(g, 60, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(g.inventory.has('lamp')).toBe(true);
+    expect(g.lampLit).toBe(true);
+    expect(events.some((e) => e.type === 'lamp' && e.lit)).toBe(true);
+    run(g, 2, (i, n) => {
+      i.toggleLamp = n === 0;
+    });
+    expect(g.lampLit).toBe(false);
+    run(g, 2, (i, n) => {
+      i.toggleLamp = n === 0;
+    });
+    expect(g.lampLit).toBe(true);
+    // swim out and dive
+    g.player.yawRad = 0.0;
+    g.player.pos.x = g.world.spawn.pos.x;
+    g.player.pos.z = g.world.spawn.pos.z;
+    g.player.pos.y = g.world.spawn.pos.y;
+    run(g, 60 * 25, (i) => {
+      i.move.moveForward = 1;
+    });
+    const dunk = run(g, 60 * 3, (i) => {
+      i.move.dive = true;
+    });
+    expect(g.lampLit).toBe(false);
+    expect(dunk.some((e) => e.type === 'message' && e.text === 'The lamp went out')).toBe(true);
+  });
+
+  it('sleeps on the cot from night until morning, standing still meanwhile', () => {
+    const g = new LagoonGame(1234, 'night', 'clear');
+    const cot = g.interactables.find((i) => i.kind === 'sleep') as Interactable;
+    lookAt(g, cot, 0.8);
+    expect(sleepUntil('night')).toBe('morning');
+    const start = { ...g.player.pos };
+    const events = run(g, Math.floor(60 * INTERACT.sleepSeconds) - 5, (i, n) => {
+      i.interactPressed = n === 0;
+      i.move.moveForward = 1; // ignored while asleep
+    });
+    expect(events.some((e) => e.type === 'sleep' && e.until === 'morning')).toBe(true);
+    expect(Math.hypot(g.player.pos.x - start.x, g.player.pos.z - start.z)).toBeLessThan(0.05);
+    run(g, 30);
+    expect(g.equipment.action.kind).toBe('idle');
+    expect(g.env.timeId).toBe('morning');
+    expect(g.env.hour).toBeCloseTo(7.5, 5);
+  });
+});
+
 describe('player', () => {
-  it('stops at chest-deep water instead of walking into the lagoon', () => {
+  it('walks into the lagoon, then swims with the eye just above the waves', () => {
+    const g = newGame();
+    g.player.yawRad = 0.0;
+    const events = run(g, 60 * 25, (i) => {
+      i.move.moveForward = 1;
+    });
+    expect(events.some((e) => e.type === 'swim' && e.what === 'start')).toBe(true);
+    expect(g.player.swimming).toBe(true);
+    expect(-heightAt(g.player.pos.x, g.player.pos.z)).toBeGreaterThan(LAGOON_PLAYER.swimDepthM - 0.2);
+    const eyeY = g.player.pos.y + LAGOON_PLAYER.eyeHeightM;
+    expect(Math.abs(eyeY - g.player.waterY - LAGOON_PLAYER.floatEyeAboveWaterM)).toBeLessThan(0.1);
+    expect(g.player.underwater).toBe(false);
+  });
+
+  it('dives while the dive key is held, runs out of air and is pushed back up', () => {
     const g = newGame();
     g.player.yawRad = 0.0;
     run(g, 60 * 25, (i) => {
       i.move.moveForward = 1;
     });
-    expect(-heightAt(g.player.pos.x, g.player.pos.z)).toBeLessThanOrEqual(1.3);
-    expect(g.player.wadingDepthM).toBeGreaterThan(0.5);
+    expect(g.player.swimming).toBe(true);
+    run(g, 60 * 3, (i) => {
+      i.move.dive = true;
+    });
+    expect(g.player.underwater).toBe(true);
+    const events = run(g, 60 * (LAGOON_PLAYER.breathSeconds + 2), (i) => {
+      i.move.dive = true;
+    });
+    expect(events.some((e) => e.type === 'swim' && e.what === 'outOfAir')).toBe(true);
+    expect(events.some((e) => e.type === 'swim' && e.what === 'surface')).toBe(true);
+    expect(g.player.airS).toBeGreaterThan(0);
+  });
+
+  it('puts the tool away to swim and refuses to take one out in the water', () => {
+    const g = newGame();
+    g.inventory.add('knife', 1);
+    run(g, 2, (i, n) => {
+      i.triggers.selectSlot = n === 0 ? 'knife' : null;
+    });
+    run(g, 60);
+    expect(g.equipment.slot).toBe('knife');
+    g.player.yawRad = 0.0;
+    run(g, 60 * 25, (i) => {
+      i.move.moveForward = 1;
+    });
+    expect(g.player.swimming).toBe(true);
+    expect(g.equipment.slot).toBe('hands');
+    const events = run(g, 2, (i, n) => {
+      i.triggers.selectSlot = n === 0 ? 'knife' : null;
+    });
+    expect(events.some((e) => e.type === 'message' && e.text === 'Not while swimming')).toBe(true);
+  });
+
+  it('is carried back by a current past the edge of the world', () => {
+    const g = newGame();
+    g.player.yawRad = 0.0;
+    run(g, 60 * 25, (i) => {
+      i.move.moveForward = 1;
+    });
+    const p = g.player;
+    // put the swimmer out beyond the border, at sea north of the channel
+    const r0 = (LAGOON_PLAYER.borderStartM + LAGOON_PLAYER.borderEndM) / 2;
+    p.pos.x = LAGOON_CENTRE.x;
+    p.pos.z = LAGOON_CENTRE.z - r0;
+    run(g, 60 * 5);
+    expect(Math.hypot(p.pos.x - LAGOON_CENTRE.x, p.pos.z - LAGOON_CENTRE.z)).toBeLessThan(r0 - 2);
+    expect(p.current).toBeGreaterThanOrEqual(0);
   });
 
   it('accelerates instead of reaching full speed on the first step', () => {

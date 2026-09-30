@@ -1,8 +1,10 @@
-import { BoxGeometry, type BufferGeometry, BufferAttribute, CylinderGeometry, Group, type Material, Mesh, PlaneGeometry, PointLight, SphereGeometry, Vector3 } from 'three/webgpu';
+import { vec3 } from 'three/tsl';
+import { BoxGeometry, type BufferGeometry, BufferAttribute, CylinderGeometry, Group, type Material, Mesh, MeshBasicNodeMaterial, PlaneGeometry, PointLight, SphereGeometry, TorusGeometry, Vector3 } from 'three/webgpu';
 import { CAN_LOG, DOCK, FURNITURE, OUTPOST } from '../game/outpost.ts';
 import { heightAt } from '../game/terrain.ts';
 import { merge, rand, tube } from './meshkit.ts';
 import { propMaterials } from './propMaterials.ts';
+import { U } from './uniforms.ts';
 
 // The survival outpost: a lean-to on a plank deck — log posts, a canvas tarp
 // sagging between bamboo rafters, a lashed bamboo back wall, hides hung along
@@ -18,6 +20,11 @@ export interface OutpostView {
   group: Group;
   dock: Group;
   lantern: PointLight;
+  /**
+   * The kerosene lamp itself — caps, glass, bail, flame and the lantern light — as one group,
+   * so it can come off its hook and be carried (view.ts reparents and swings it).
+   */
+  lanternRig: Group;
   fire: PointLight;
   /** Where flames and embers rise from, world space. */
   firePos: Vector3;
@@ -152,9 +159,8 @@ export function buildOutpost(): OutpostView {
   // ── Lantern hanging from the front beam.
   const L = FURNITURE.lantern;
   put(dry, M.steel, tube([new Vector3(L.x, fh - 0.15, L.z), new Vector3(L.x, L.y + 0.14, L.z)], [0.003, 0.003], 4, 0.5));
-  put(dry, M.olivePaint, new CylinderGeometry(0.07, 0.085, 0.05, 12).translate(L.x, L.y + 0.1, L.z));
-  put(dry, M.olivePaint, new CylinderGeometry(0.08, 0.08, 0.04, 12).translate(L.x, L.y - 0.1, L.z));
-  const glass = new Mesh(new CylinderGeometry(0.055, 0.055, 0.15, 14, 1, true).translate(L.x, L.y, L.z), M.glass);
+  const lanternRig = buildLantern();
+  lanternRig.position.set(L.x, L.y, L.z);
 
   const group = new Group();
   group.name = 'outpost';
@@ -172,18 +178,39 @@ export function buildOutpost(): OutpostView {
       group.add(mesh);
     }
   }
-  markDry(glass.geometry, 1);
-  group.add(glass);
   const lantern = new PointLight(0xffb070, 0, 9, 2);
-  lantern.position.set(L.x, L.y, L.z);
+  lanternRig.add(lantern);
   const fire = new PointLight(0xff9048, 0, 14, 2);
   fire.position.copy(firePos).add(new Vector3(0, 0.45, 0));
-  group.add(lantern, fire);
+  group.add(lanternRig, fire);
   group.position.set(OUTPOST.x, OUTPOST.groundY + OUTPOST.deckHeightM, OUTPOST.z);
   group.rotation.y = OUTPOST.yawRad;
   group.updateMatrixWorld(true);
   const toWorld = (v: Vector3): Vector3 => v.clone().applyMatrix4(group.matrixWorld);
-  return { group, dock: buildDock(), lantern, fire, firePos: toWorld(firePos), lanternPos: toWorld(new Vector3(L.x, L.y, L.z)) };
+  return { group, dock: buildDock(), lantern, lanternRig, fire, firePos: toWorld(firePos), lanternPos: toWorld(new Vector3(L.x, L.y, L.z)) };
+}
+
+/** The hurricane lamp around its own centre (the middle of the glass): caps, glass, wire bail, flame. */
+function buildLantern(): Group {
+  const M = propMaterials();
+  const rig = new Group();
+  rig.name = 'lantern';
+  const part = (g: BufferGeometry, m: Material): Mesh => {
+    markDry(g, 1);
+    const mesh = new Mesh(g, m);
+    rig.add(mesh);
+    return mesh;
+  };
+  part(new CylinderGeometry(0.07, 0.085, 0.05, 12).translate(0, 0.1, 0), M.olivePaint);
+  part(new CylinderGeometry(0.08, 0.08, 0.04, 12).translate(0, -0.1, 0), M.olivePaint);
+  part(new TorusGeometry(0.075, 0.003, 4, 16, Math.PI).translate(0, 0.12, 0), M.steel);
+  part(new CylinderGeometry(0.055, 0.055, 0.15, 14, 1, true), M.glass);
+  // The flame: a small bright teardrop whose radiance follows the lamp (U.lampGlow, pre-exposed).
+  const flameMat = new MeshBasicNodeMaterial({ name: 'lamp flame' });
+  flameMat.colorNode = vec3(1, 0.62, 0.3).mul(U.lampGlow);
+  const flame = part(new SphereGeometry(0.012, 8, 6).scale(1, 2.2, 1).translate(0, -0.02, 0), flameMat);
+  flame.castShadow = false;
+  return rig;
 }
 
 function tarpGeometry(px: number, pz: number, roofY: (z: number) => number): BufferGeometry {

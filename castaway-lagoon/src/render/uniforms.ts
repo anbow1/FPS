@@ -40,4 +40,8 @@ export const U = {
   fogFalloff: uniform(0.012),
   preExposure: uniform(1),
   waveScale: uniform(1),
+  /** 1 while the camera is below the water surface (stage post pass, water underside). */
+  underwater: uniform(0),
+  /** Radiance of the lamp's flame, pre-exposed (0 when out). */
+  lampGlow: uniform(0),
 };

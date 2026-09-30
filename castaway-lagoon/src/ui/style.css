@@ -260,6 +260,58 @@ svg {
   opacity: 1;
 }
 
+/* Breath under water: a thin bar above the centre-bottom, gone once full again. */
+.air {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.air.on {
+  opacity: 1;
+}
+.air i {
+  display: block;
+  width: min(220px, 40vw);
+  height: 5px;
+  border-radius: 3px;
+  background: var(--glass);
+  overflow: hidden;
+}
+.air b {
+  display: block;
+  height: 100%;
+  background: var(--sea);
+  transform-origin: left center;
+  transition: background 0.3s;
+}
+.air.low b {
+  background: #e0674f;
+}
+
+.current {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: var(--ink-dim);
+  opacity: 0;
+  transition: opacity 0.6s;
+}
+.current.on {
+  opacity: 1;
+}
+
 /* ── Title, pause, inventory ─────────────────────────────────────── */
 #ui > * {
   position: fixed;
@@ -531,4 +583,13 @@ summary {
 }
 #stats.on {
   display: block;
+}
+
+/* Sleep: the screen goes black while the hours pass. */
+.fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
 }

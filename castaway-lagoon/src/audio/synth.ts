@@ -13,6 +13,8 @@ export interface Pos {
 export class Synth {
   readonly ctx: AudioContext;
   readonly master: GainNode;
+  /** Low-pass after the master: wide open in air, a few hundred hertz with the head under water. */
+  private readonly muffleFilter: BiquadFilterNode;
   /** Everything but the UI goes through here, and a share into the reverb. */
   readonly world: GainNode;
   readonly reverbSend: GainNode;
@@ -28,7 +30,10 @@ export class Synth {
     comp.ratio.value = 3;
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.8;
-    this.master.connect(comp).connect(this.ctx.destination);
+    this.muffleFilter = this.ctx.createBiquadFilter();
+    this.muffleFilter.type = 'lowpass';
+    this.muffleFilter.frequency.value = 20000;
+    this.master.connect(this.muffleFilter).connect(comp).connect(this.ctx.destination);
     this.world = this.ctx.createGain();
     this.world.connect(this.master);
     // Open-air reverb: a short, bright early field and a long, dark tail off the cliffs.
@@ -40,6 +45,11 @@ export class Synth {
     this.white = this.noise('white', 2);
     this.pink = this.noise('pink', 3);
     this.brown = this.noise('brown', 3);
+  }
+
+  /** Under water (true) sound loses its highs: water passes little above ~500 Hz to an ear full of it. */
+  muffle(under: boolean): void {
+    this.muffleFilter.frequency.setTargetAtTime(under ? 480 : 20000, this.ctx.currentTime, 0.06);
   }
 
   get now(): number {

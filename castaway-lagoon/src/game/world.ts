@@ -49,7 +49,7 @@ export interface RockInstance {
   moss: number; // 0..1: jungle rocks are furred with moss, surf-washed ones are bare
 }
 
-export type InteractableKind = 'pickup' | 'harvest' | 'crate' | 'examine';
+export type InteractableKind = 'pickup' | 'harvest' | 'crate' | 'examine' | 'sleep';
 
 export interface Interactable {
   id: number;
@@ -96,7 +96,6 @@ const EXAMINE_TEXT = {
   map: 'A hand-drawn map on waxed paper. The lagoon, the channel north, a cross marked on the ridge above the shelter, and a note: "fresh water — follow the stream".',
   radio: 'A field radio with a cracked case. The battery terminals are green with corrosion. It hisses faintly, then nothing.',
   photo: 'A sun-bleached photograph pinned to the bamboo: two people on a harbour wall, laughing. Written on the back: "Come home soon."',
-  backpack: 'Worn canvas backpack, straps repaired with fishing line. Inside: a spare shirt, fishhooks in a tin, and a half-empty lighter.',
 } as const;
 
 export function buildWorld(seed: number): LagoonWorld {
@@ -331,7 +330,12 @@ function buildOutpostInteractables(add: AddFn): void {
   add({ kind: 'examine', model: 'map', item: null, count: 0, pos: at(f.table.x - 0.05, f.table.heightM + 0.004, f.table.z + 0.02), yawRad: yaw - 0.15, radiusM: 0.22, name: 'Hand-drawn Map', text: EXAMINE_TEXT.map });
   add({ kind: 'examine', model: 'radio', item: null, count: 0, pos: at(f.table.x - 0.4, f.table.heightM, f.table.z + 0.22), yawRad: yaw + 0.2, radiusM: 0.18, name: 'Field Radio', text: EXAMINE_TEXT.radio });
   add({ kind: 'examine', model: 'photo', item: null, count: 0, pos: at(0.55, 1.35, OUTPOST.deckHalfZ - 0.12), yawRad: yaw, radiusM: 0.14, name: 'Photograph', text: EXAMINE_TEXT.photo });
-  add({ kind: 'examine', model: 'backpack', item: null, count: 0, pos: at(f.backpack.x, 0, f.backpack.z), yawRad: yaw + f.backpack.yawRad, radiusM: 0.35, name: 'Backpack', text: EXAMINE_TEXT.backpack });
+  // Taking the backpack takes what is in it (game.ts): a lighter and a tin of fishhooks.
+  add({ kind: 'pickup', model: 'backpack', item: 'backpack', count: 1, pos: at(f.backpack.x, 0, f.backpack.z), yawRad: yaw + f.backpack.yawRad, radiusM: 0.35, name: 'Backpack' });
+  // The lantern comes down off its hook and is carried from then on (render/outpost.ts draws it either way).
+  add({ kind: 'pickup', model: 'lantern', item: 'lamp', count: 1, pos: at(f.lantern.x, f.lantern.y - 0.12, f.lantern.z), yawRad: yaw, radiusM: 0.22, name: 'Kerosene Lamp' });
+  // The foot of the cot, clear of the rifle and the journal lying on it.
+  add({ kind: 'sleep', model: 'none', item: null, count: 0, pos: at(f.cot.x - 0.78, f.cot.heightM, f.cot.z), yawRad: yaw, radiusM: 0.3, name: 'Cot' });
 }
 
 /** Crate contents appear once the lid is up. */

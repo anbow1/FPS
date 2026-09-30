@@ -246,6 +246,9 @@ export class Props {
         g.add(new Mesh(merge(parts, 'aloe'), mat));
         break;
       }
+      case 'lantern': // drawn by the outpost, which carries it once taken (render/outpost.ts)
+      case 'none': // a place to use, not a thing: the cot
+        break;
       default:
         throw new Error(`no prop model for '${it.model}'`);
     }

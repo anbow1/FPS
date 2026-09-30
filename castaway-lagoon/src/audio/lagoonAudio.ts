@@ -96,6 +96,7 @@ export class LagoonAudio {
     this.listener.y = eye.y;
     this.listener.z = eye.z;
     s.setListener(eye, forward);
+    s.muffle(game.player.underwater);
     const now = s.now;
     const env = game.env;
     const w = env.weather;
@@ -236,6 +237,22 @@ export class LagoonAudio {
         s.noiseBurst(out, when, { type: 'bandpass', freq: 600, sweepTo: 2200, q: 1.5, gain: 0.07 + e.speedMs * 0.004, attack: 0.04, decay: 0.2 });
         break;
       }
+      case 'lamp': {
+        // The wick: a lighter's flick and the flame catching, or a breath blowing it out.
+        const { out, when } = this.s.voice(null, 0.05);
+        if (e.lit) {
+          this.s.noiseBurst(out, when, { type: 'bandpass', freq: 3800, q: 2, gain: 0.08, attack: 0.001, decay: 0.03 });
+          this.s.noiseBurst(out, when + 0.08, { type: 'lowpass', freq: 700, gain: 0.07, attack: 0.04, decay: 0.3, buffer: this.s.brown });
+        } else this.s.noiseBurst(out, when, { type: 'bandpass', freq: 1100, q: 0.7, gain: 0.05, attack: 0.03, decay: 0.25 });
+        break;
+      }
+      case 'swimStroke':
+        this.stroke(e.pos, e.underwater, e.fast);
+        break;
+      case 'swim':
+        if (e.what === 'start' || e.what === 'under') this.splash(game.player.pos, 1.2, 1, false);
+        else if (e.what === 'surface' && (e.airFraction ?? 1) < 0.6) this.gasp(1 - (e.airFraction ?? 1));
+        break;
       case 'splash':
         this.splash(e.pos, e.speedMs, e.massKg, e.skip);
         break;
@@ -373,6 +390,30 @@ export class LagoonAudio {
       const f = 500 + Math.random() * 900;
       s.tone(out, when + 0.05 + Math.random() * 0.25, { type: 'sine', freq: f, to: f * 1.6, gain: 0.03 * k, attack: 0.002, decay: 0.06 });
     }
+  }
+
+  /** One stroke: a soft slosh at the surface, a muffled push and a few bubbles under it. */
+  private stroke(p: Pos, under: boolean, fast: boolean): void {
+    const s = this.s;
+    const { out, when } = s.voice(p, 0.2, 1.5);
+    const k = fast ? 1.3 : 1;
+    if (under) {
+      s.noiseBurst(out, when, { type: 'lowpass', freq: 300, gain: 0.2 * k, attack: 0.05, decay: 0.35, buffer: s.brown });
+      for (let i = 0; i < 3; i++) {
+        const f = 300 + Math.random() * 500;
+        s.tone(out, when + 0.1 + Math.random() * 0.3, { type: 'sine', freq: f, to: f * 1.5, gain: 0.03, attack: 0.002, decay: 0.07 });
+      }
+      return;
+    }
+    s.noiseBurst(out, when, { type: 'bandpass', freq: 900, q: 0.9, gain: 0.12 * k, attack: 0.04, decay: 0.3 });
+    s.noiseBurst(out, when + 0.12, { type: 'bandpass', freq: 2400, q: 1.1, gain: 0.06 * k, attack: 0.01, decay: 0.2 });
+  }
+
+  /** Breaking the surface after a long dive: a sharp breath in, harder the emptier the lungs. */
+  private gasp(need: number): void {
+    const s = this.s;
+    const { out, when } = s.voice(null, 0.05);
+    s.noiseBurst(out, when, { type: 'bandpass', freq: 1400, q: 1.2, gain: 0.08 + 0.12 * need, attack: 0.03, decay: 0.35, sweepTo: 2200 });
   }
 
   private clink(p: Pos, surface: SurfaceKind, speed: number, body: 'stone' | 'can' | 'coconut' | 'shell'): void {

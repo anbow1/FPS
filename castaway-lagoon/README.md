@@ -20,10 +20,17 @@ lagoon (hold the mouse to wind up; flat, fast throws skip), take the AK-47
 from the cot and the knife from the table, open the supply crate, harvest
 herbs, hibiscus and aloe, read the journal and the map, knock the tin cans
 off the driftwood log, and change the weather (T) and time of day (N).
+Wade out and swim (deeper than 1.5 m), hold C to dive and look around under
+water until the air runs out; take the backpack and the kerosene lamp (L
+lights it; it swings in your hand and goes out in the water); sleep on the
+cot until morning or the golden hour. Swim too far and a current carries
+you back.
 
 | | |
 |---|---|
-| Move / sprint / jump | WASD · Shift · Space |
+| Move / sprint / jump · swim up | WASD · Shift · Space |
+| Dive (hold, in deep water) | C |
+| Lamp on / off | L |
 | Interact / pick up / harvest / examine | E |
 | Shoot · slash · throw (hold to wind up) | Mouse 1 |
 | Aim the rifle | Mouse 2 |
@@ -100,7 +107,8 @@ fallback) at every time of day and weather, and by scripted play-throughs:
 pick up and throw a stone into the lagoon, open the crate, harvest a plant,
 take the rifle, fire, reload, aim, slash with the knife. `npm test` covers
 the logic (terrain, inventory, stones and skipping, rifle, crate, harvest,
-examine, wading limit, daylight and weather).
+examine, swimming, diving and air, the border current, backpack, lamp,
+sleep, daylight and weather).
 
 Known gaps:
 
