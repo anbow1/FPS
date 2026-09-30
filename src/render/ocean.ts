@@ -51,9 +51,13 @@ export class OceanFFT {
     this.surface.texture.anisotropy = 8;
     this.h0 = buildH0(p);
     const quad = (node: THREE.Node<'vec4'>, name: string) => {
-      const m = new THREE.MeshBasicNodeMaterial({ depthTest: false, depthWrite: false });
+      // The pass writes raw data through fragmentNode, past the material's colour and output stages:
+      // through colorNode the channels came out clamped at 0 (half of every wave field is negative)
+      // and alpha forced to 1 on an opaque material, though .w carries data here (an FFT component,
+      // then the slope²). No blending, so .w is stored as it is.
+      const m = new THREE.MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, transparent: true, blending: THREE.NoBlending });
       m.name = name;
-      m.colorNode = node;
+      m.fragmentNode = node;
       return new THREE.QuadMesh(m);
     };
     const id = ivec2(floor(screenCoordinate.xy));
