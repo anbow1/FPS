@@ -12,6 +12,8 @@ import { buildFarRing, buildTerrainMesh, type LakeFx } from './ground.ts';
 import { Caustics } from './caustics.ts';
 import { computeShoreField, lakeDomain, shoreFieldTexture } from './shoreField.ts';
 import { buildLakeWater } from './water.ts';
+import { RippleField } from './rippleField.ts';
+import { waterDepth } from '../maps/lake.ts';
 import { W } from './waterUniforms.ts';
 import { sampleHeight } from '../maps/terrain.ts';
 import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './interior.ts';
@@ -50,6 +52,8 @@ export class GameView {
   private foliage!: Foliage;
   private caustics: Caustics | null = null;
   private lakeFx: LakeFx | null = null;
+  /** Interactive ripples on the lake: legs wading, bullets and blasts (rippleField.ts). */
+  private ripples: RippleField | null = null;
   private undergrowth!: Undergrowth;
   private settings: ViewSettings;
   private shake = 0;
@@ -98,7 +102,14 @@ export class GameView {
       this.caustics = new Caustics(this.settings.quality);
       stage.passTimer.name(this.caustics.target, 'water');
       this.lakeFx = { lake, field, caustics: this.caustics };
-      stage.scene.add(buildLakeWater(lake, field, ground, this.settings.quality));
+      this.ripples = new RippleField({
+        cells: this.settings.quality === 'high' ? 128 : 96,
+        cellM: 0.2,
+        speedMps: 1.1,
+        lifeS: 1.8,
+        isWater: (x, z) => waterDepth(lake, x, z, ground(x, z)) > 0.02,
+      });
+      stage.scene.add(buildLakeWater(lake, field, ground, this.settings.quality, this.ripples));
     }
     stage.scene.add(buildTerrainMesh(map, lib, this.lakeFx), buildFarRing(map));
     await progress('Building the world', 0.35);
@@ -184,9 +195,12 @@ export class GameView {
       if (e.type === 'explosion' && e.kind !== 'smoke') {
         // the blast lays the grass flat outward from the centre
         this.undergrowth.grass?.stamp(e.pos.x, e.pos.z, 4, 0, 0, 1);
+        if (this.inLake(e.pos.x, e.pos.y - 1.5, e.pos.z)) this.ripples?.disturb(e.pos.x, e.pos.z, 1.6, 0.18);
         const d = this.stage.camera.position.distanceTo(this.tmp.set(e.pos.x, e.pos.y, e.pos.z));
         this.shake += Math.max(0, 2.5 - d * 0.1);
       }
+      // A round into the lake: the hit is on the bed, a little past where it entered the water.
+      if (e.type === 'impact' && !e.exit && this.inLake(e.pos.x, e.pos.y, e.pos.z)) this.ripples?.disturb(e.pos.x, e.pos.z, 0.12, 0.03);
       if (e.type === 'land') this.shake += Math.min(1, e.impactSpeedMs * 0.08);
       this.effects.handle(e, game.player.id, null);
     }
@@ -242,6 +256,10 @@ export class GameView {
     this.undergrowth.update(cam.position, frameSeconds, cam.fov, this.stage.renderer.domElement.height);
     this.trampleGrass(game);
     this.cpu.lap('streaming');
+    if (this.ripples) {
+      this.stirWater(game, frameSeconds);
+      this.ripples.update(frameSeconds, cam.position.x, cam.position.z);
+    }
     // Sun shafts through the canopy: strongest with a low sun, none under a full overcast.
     const preset = this.lighting.preset;
     const lowSun = 1 - Math.min(1, Math.max(0, preset.sunElevationRad - 0.05) / 0.6);
@@ -272,6 +290,29 @@ export class GameView {
     if (speed < 0.3 && p.stance !== 'prone') return;
     const r = p.stance === 'prone' ? 0.7 : 0.35;
     grass.stamp(p.body.position.x, p.body.position.z, r, v.x, v.z, p.stance === 'prone' ? 0.25 : Math.min(0.2, speed * 0.05));
+  }
+
+  /** Whether a point is under the lake's still surface. */
+  private inLake(x: number, y: number, z: number): boolean {
+    const lake = this.map.lake;
+    return !!lake && y < lake.levelM && waterDepth(lake, x, z, y) > 0;
+  }
+
+  /** Everyone wading pushes a wake: a dip at the legs that grows with speed (per 1/60 s, so frame rate does not matter). */
+  private stirWater(game: Game, dtS: number): void {
+    const ripples = this.ripples;
+    if (!ripples) return;
+    const wade = (x: number, y: number, z: number, vx: number, vz: number): void => {
+      if (!this.inLake(x, y, z)) return;
+      const speed = Math.hypot(vx, vz);
+      if (speed < 0.2) return;
+      ripples.disturb(x, z, 0.3, Math.min(0.004, speed * 0.0015) * dtS * 60);
+    };
+    const p = game.player;
+    if (p.alive) wade(p.body.position.x, p.body.position.y, p.body.position.z, p.body.velocity.x, p.body.velocity.z);
+    for (const s of game.soldiers) {
+      if (s.alive) wade(s.body.position.x, s.body.position.y, s.body.position.z, s.body.velocity.x, s.body.velocity.z);
+    }
   }
 
   /** The lake's shader inputs for this frame: game time, sun and sky, wind. */

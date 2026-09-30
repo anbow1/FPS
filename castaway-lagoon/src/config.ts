@@ -189,9 +189,13 @@ export const WAVES = {
   absorptionPerM: { r: 0.45, g: 0.07, b: 0.045 },
   scatterColour: 0x0f7f86, // in-scattered turquoise over white sand
   deepColour: 0x03243a,
-  rippleSlots: 24,
-  rippleSpeedMs: 1.1,
-  rippleLifeSeconds: 4.5,
+  /**
+   * Wind sea on open water (render/ocean.ts, a Tessendorf FFT shared with Tanks): detail normals
+   * where the lagoon is deeper than a few metres, faded out over the shallows, whose ripples must
+   * stay the ones the caustics are splatted from. Two copies of the patch at different scales and
+   * a rotation keep it from tiling visibly.
+   */
+  openSea: { patchM: 64, peakWavelengthM: 6.5, rmsSlope: 0.11, directionDeg: 240, fullDepthM: 10 },
 } as const;
 
 /**

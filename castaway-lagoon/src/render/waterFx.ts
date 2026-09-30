@@ -1,48 +1,41 @@
-import { exp, float, floor, fract, Fn, hash, length, Loop, normalize, sin, uniformArray, vec2, vec3 } from 'three/tsl';
-import { type Node, Vector4 } from 'three/webgpu';
-import { WAVES } from '../config.ts';
+import { exp, float, floor, fract, Fn, hash, length, normalize, sin, vec2, vec3 } from 'three/tsl';
+import type { Node } from 'three/webgpu';
+import { WATER_LEVEL_M } from '../config.ts';
+import { heightAt } from '../game/terrain.ts';
+import { RippleField } from './rippleField.ts';
 import { U } from './uniforms.ts';
 
-// Surface disturbances shared by the lagoon and by rain puddles: expanding
-// rings from splashes (a small ring buffer of sources written by the effects
-// system) and the dense, short-lived rings of raindrops.
+// Surface disturbances on the lagoon: splashes, bullets and wading legs push
+// the ripple field (rippleField.ts, one texture read per water pixel: it
+// replaced a loop over 24 analytic ring sources in every pixel, and adds
+// wakes and rings that reflect off the shore), and raindrops ring in short,
+// dense analytic cells.
 
 type N2 = Node<'vec2'>;
 
-/** x, z, start time (s), strength. Strength 0 = empty slot. */
-export const rippleSources = uniformArray(
-  Array.from({ length: WAVES.rippleSlots }, () => new Vector4(0, 0, -100, 0)),
-  'vec4',
-);
+let field: RippleField | null = null;
 
-let nextSlot = 0;
-
-export function addRipple(x: number, z: number, timeSeconds: number, strength: number): void {
-  const v = rippleSources.array[nextSlot] as Vector4;
-  v.set(x, z, timeSeconds, strength);
-  nextSlot = (nextSlot + 1) % WAVES.rippleSlots;
+/** The lagoon's ripple field, 32 m (High) or 24 m (Low) round the player; land cells stay still. */
+export function createRipples(quality: 'high' | 'low'): RippleField {
+  field = new RippleField({
+    cells: quality === 'high' ? 128 : 96,
+    cellM: 0.25,
+    speedMps: 1.1,
+    lifeS: 2.2,
+    isWater: (x, z) => heightAt(x, z) < WATER_LEVEL_M - 0.02,
+  });
+  return field;
 }
 
-/** Slope (d height / dx, dz) and a foam amount from every live splash ring. Returns vec3(slopeX, slopeZ, foam). */
-export const splashRipples = Fn(([p]: [N2]) => {
-  const slope = vec2(0).toVar();
-  const foam = float(0).toVar();
-  Loop(WAVES.rippleSlots, ({ i }) => {
-    const r = rippleSources.element(i) as unknown as Node<'vec4'>; // typed as a generic element
-    const age = U.time.sub(r.z);
-    const alive = age.greaterThan(0).and(age.lessThan(WAVES.rippleLifeSeconds)).and(r.w.greaterThan(0));
-    const off = p.sub(r.xy);
-    const dist = length(off).max(1e-3);
-    const front = age.mul(WAVES.rippleSpeedMs).add(0.05);
-    const x = dist.sub(front);
-    const fade = exp(age.mul(-0.9)).mul(r.w).mul(alive.select(float(1), float(0)));
-    // A short packet of crests trailing the front (capillary–gravity ring train).
-    const packet = exp(x.mul(x).mul(-6)).mul(sin(x.mul(22))).mul(fade).div(dist.mul(0.6).add(1));
-    slope.addAssign(off.div(dist).mul(packet.mul(0.9)));
-    foam.addAssign(exp(x.mul(x).mul(-30)).mul(fade).mul(0.5).add(exp(dist.mul(dist).mul(-6)).mul(exp(age.mul(-1.8))).mul(r.w)));
-  });
-  return vec3(slope.x, slope.y, foam);
-});
+/** A splash of the given strength (≈ 0.2 knife … 1.75 heavy stone) at (x, z). */
+export function addRipple(x: number, z: number, strength: number): void {
+  field?.disturb(x, z, 0.12 + strength * 0.15, 0.012 + strength * 0.04);
+}
+
+/** Slope and agitation from the ripple field: vec3(∂h/∂x, ∂h/∂z, agitation). */
+export function splashRipples(p: N2): Node<'vec3'> {
+  return field ? field.sample(p) : vec3(0);
+}
 
 /** Raindrop rings: two staggered layers of cells, each ringing once per cycle. Returns a slope. */
 export const rainRings = Fn(([p]: [N2]) => {

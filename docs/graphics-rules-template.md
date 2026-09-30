@@ -45,6 +45,8 @@
    - `render/webgpuCompat.ts` — obejście błędu `swizzle` w starszych WebView,
    - `render/impostor.ts` — impostory drzew + dithering przejścia,
    - `render/grassField.ts` — trawa z prawdziwych źdźbeł,
+   - `render/rippleField.ts` — interaktywne zmarszczki na wodzie,
+   - `render/ocean.ts` — fale wiatrowe FFT (Tessendorf),
    - `render/instanceStream.ts` — instancjonowanie strumieniowe.
 6. **TypeScript strict**, bez `any`, jednostki SI w nazwach (`radiusM`, `dtS`,
    `lux`, `ev100`), komentarze wyjaśniają *dlaczego*.
@@ -117,9 +119,17 @@
 3. Swash z mokrym pasem schnącym z opóźnieniem, piana jako tekstura
    „koronki” (nie surowy szum).
 4. Kaustyki: rozpryski fotonów (stosunek pól powierzchni) do małego RT,
-   próbkowane na dnie.
-5. Daleka woda: FFT (przebiegi quad, jeden materiał na etap motylkowy) lub
-   zestaw Gerstnerów — wysokość na CPU musi zgadzać się z GPU.
+   próbkowane na dnie — albo, gdy dno widać tylko przez wodę, soczewkowanie
+   pierwszego rzędu w shaderze wody (dywergencja nachylenia fali).
+5. Daleka / głęboka woda: FFT (przebiegi quad, jeden materiał na etap
+   motylkowy, `ocean.ts`) na normalne detalu, dwie kopie łatki w innej skali
+   i obrocie; na płyciźnie zostają zmarszczki, z których liczone są kaustyki.
+   Geometria z Gerstnerów — wysokość na CPU musi zgadzać się z GPU.
+6. **Zmarszczki interaktywne** (`rippleField.ts`): siatka ‹128²› wokół kamery,
+   równanie falowe z tłumieniem na CPU (stały krok 30 Hz), ląd trzymany na 0
+   (odbicia od brzegu), nachylenia do tekstury RGBA8 — jeden odczyt na piksel.
+   Źródła: nogi w wodzie, kadłuby, kule, kamienie, wybuchy; ruch skalowany
+   przez `dt·60`. Po uspokojeniu nic się nie liczy ani nie wysyła.
 
 ## 6. Płynność — zero przycięć w grze
 

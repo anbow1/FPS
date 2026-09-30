@@ -2,7 +2,7 @@ import { Quaternion, Vector3 } from 'three/webgpu';
 import { damp } from '../core/vec.ts';
 import { lightColour } from './colour.ts';
 import { AutoExposure } from './exposure.ts';
-import { DAYLIGHT, LAGOON_CAMERA, LAGOON_EXPOSURE, LAGOON_PLAYER, WAVES } from '../config.ts';
+import { DAYLIGHT, LAGOON_CAMERA, LAGOON_EXPOSURE, LAGOON_PLAYER, WATER_LEVEL_M, WAVES } from '../config.ts';
 import type { LagoonEvent } from '../game/events.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { Effects } from './effects.ts';
@@ -25,6 +25,8 @@ import { LagoonLighting } from './lighting.ts';
 import { LagoonStage, type StageSettings } from './stage.ts';
 import { U } from './uniforms.ts';
 import { buildWater, placeWater } from './water.ts';
+import { createRipples } from './waterFx.ts';
+import type { RippleField } from './rippleField.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 
 // The render system: reads game state once per display frame and writes
@@ -46,6 +48,7 @@ export class LagoonView {
   private water!: ReturnType<typeof buildWater>;
   private caustics!: Caustics;
   private grass: GrassField | null = null;
+  private ripples!: RippleField;
   /** CPU milliseconds per part of render() (F3, benchmark). */
   readonly cpu = new CpuTimer();
   outpost!: OutpostView;
@@ -122,7 +125,11 @@ export class LagoonView {
     this.life = new AmbientLife();
     stage.scene.add(this.rain.mesh, this.life.group);
     await progress('Filling the lagoon', 0.5);
-    this.water = buildWater();
+    this.ripples = createRipples(stage.quality);
+    this.water = buildWater(stage.quality);
+    for (const t of this.water.ocean.targets) stage.passTimer.name(t, 'water');
+    // one FFT at load, so its pipelines and targets exist before the first frame
+    this.water.ocean.update(stage.renderer, 0);
     stage.scene.add(this.water.mesh);
     this.lighting = new LagoonLighting(stage.renderer, stage.scene, stage.quality);
     await extra(this, progress);
@@ -210,11 +217,16 @@ export class LagoonView {
       if (p.grounded && speed > 0.3) this.grass.stamp(p.pos.x, p.pos.z, 0.35, p.vel.x, p.vel.z, Math.min(0.2, speed * 0.05));
     }
     this.cpu.lap('streaming');
+    // Wading and swimming push a wake that grows with speed (per 1/60 s, so frame rate does not matter).
+    const wadeSpeed = Math.hypot(p.vel.x, p.vel.z);
+    if (p.pos.y < WATER_LEVEL_M - 0.05 && wadeSpeed > 0.2) this.ripples.disturb(p.pos.x, p.pos.z, 0.3, Math.min(0.004, wadeSpeed * 0.0015) * dt * 60);
+    this.ripples.update(dt, this.stage.camera.position.x, this.stage.camera.position.z);
     const d = env.daylight;
     const lightDir = d.night > 0.5 ? d.moonDir : d.sunDir;
     const lowSun = 1 - Math.min(1, Math.max(0, d.sunDir.y - 0.05) / 0.6);
     this.stage.aimShafts(lightDir, (1 - env.weather.cloudCover * 0.9) * (0.35 + lowSun * 0.5) * (d.night > 0.5 ? 0.25 : 1));
     this.caustics.render(this.stage.renderer);
+    this.water.ocean.update(this.stage.renderer, U.time.value);
     this.cpu.lap('water');
     this.stage.render();
     this.cpu.lap('submit');

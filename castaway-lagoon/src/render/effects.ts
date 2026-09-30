@@ -68,7 +68,7 @@ export class Effects {
     switch (e.type) {
       case 'splash': {
         const k = Math.min(1, (e.speedMs * e.massKg) / 2);
-        addRipple(e.pos.x, e.pos.z, game.timeSeconds, e.skip ? 0.35 : 0.55 + k * 1.2);
+        addRipple(e.pos.x, e.pos.z, e.skip ? 0.35 : 0.55 + k * 1.2);
         const n = e.skip ? 8 : 24 + Math.round(k * 30);
         for (let i = 0; i < n; i++) {
           const a = Math.random() * Math.PI * 2;
@@ -84,10 +84,10 @@ export class Effects {
         break;
       }
       case 'bulletImpact':
-        this.impact(e.surface, e.pos, e.normal, game, 1);
+        this.impact(e.surface, e.pos, e.normal, 1);
         break;
       case 'knifeHit':
-        this.impact(e.surface, e.pos, e.normal, game, 0.35);
+        this.impact(e.surface, e.pos, e.normal, 0.35);
         break;
       case 'bulletLeaves':
         for (let i = 0; i < 6; i++) this.lit.spawn(SPECS.leaf, this.v.set(e.pos.x, e.pos.y, e.pos.z), this.w.set((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2));
@@ -126,11 +126,11 @@ export class Effects {
     }
   }
 
-  private impact(surface: SurfaceKind, pos: { x: number; y: number; z: number }, normal: { x: number; y: number; z: number }, game: LagoonGame, k: number): void {
+  private impact(surface: SurfaceKind, pos: { x: number; y: number; z: number }, normal: { x: number; y: number; z: number }, k: number): void {
     const n = Math.max(1, Math.round(10 * k));
     switch (surface) {
       case 'water':
-        addRipple(pos.x, pos.z, game.timeSeconds, 0.35 * k + 0.1);
+        addRipple(pos.x, pos.z, 0.35 * k + 0.1);
         for (let i = 0; i < n + 4; i++) this.lit.spawn(SPECS.spray, this.v.set(pos.x, WATER_LEVEL_M, pos.z), this.w.set((Math.random() - 0.5) * 0.5, 2.5 + Math.random() * 3, (Math.random() - 0.5) * 0.5));
         return;
       case 'sand':

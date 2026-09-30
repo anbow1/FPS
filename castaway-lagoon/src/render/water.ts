@@ -1,5 +1,6 @@
 import { cameraPosition, clamp, cos, dot, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, DataTexture, DataUtils, HalfFloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, type Node, RedFormat, type Vector3 } from 'three/webgpu';
+import { OceanFFT } from './ocean.ts';
 import { hexToLinear } from './colour.ts';
 import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
 import { SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
@@ -21,17 +22,27 @@ import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
 //               Schlick Fresnel for water (F0 = 0.02) and a glitter lobe;
 //   foam        at the shoreline (lines running up the beach), on crests in a
 //               storm, and around splashes;
-//   ripples     from splashes and raindrops, perturbing the normal.
+//   ripples     from splashes and raindrops, perturbing the normal;
+//   wind sea    a GPU FFT (ocean.ts) for the detail normals of deep water.
 
 const DEPTH_MAP = { ...SHORE_DOMAIN, px: SHORE.res } as const;
 
-export function buildWater(): { mesh: Mesh; depthMap: DataTexture } {
+export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: DataTexture; ocean: OceanFFT } {
   const depthMap = bakeDepthMap();
-  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap));
+  const sea = WAVES.openSea;
+  const dir = (sea.directionDeg * Math.PI) / 180;
+  const ocean = new OceanFFT({
+    n: quality === 'high' ? 256 : 128,
+    size: sea.patchM,
+    peakWavelength: sea.peakWavelengthM,
+    targetSlope: sea.rmsSlope,
+    wind: [Math.cos(dir), Math.sin(dir)],
+  });
+  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, ocean));
   mesh.frustumCulled = false;
   mesh.name = 'water';
   mesh.renderOrder = 10;
-  return { mesh, depthMap };
+  return { mesh, depthMap, ocean };
 }
 
 /** Floor height below sea level, half float, 1.2 m per texel (the heights are shared with the wave field). */
@@ -85,7 +96,7 @@ export function placeWater(mesh: Mesh, eye: Vector3): void {
   mesh.position.set(Math.round(eye.x / 0.35) * 0.35, WATER_LEVEL_M, Math.round(eye.z / 0.35) * 0.35);
 }
 
-function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
+function waterMaterial(depthMap: DataTexture, ocean: OceanFFT): MeshBasicNodeMaterial {
   const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true });
   const cf = causticFoamMap();
 
@@ -152,8 +163,17 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
   const detail = rippleSlope(p.xz.div(CAUSTIC_TILE_M), false).div(dist.mul(0.012).add(1));
   const splash = splashRipples(p.xz);
   const rain = rainRings(p.xz).div(dist.mul(0.08).add(1));
-  const slope = detail.add(splash.xy).add(rain);
-  const N = normalize(vNormal.add(vec3(slope.x, 0, slope.y.negate())));
+  // Wind sea from the FFT (a height gradient, like the ripple field) over deep water; the tiled
+  // ripples stay at half strength there for detail finer than the FFT grid.
+  const L = WAVES.openSea.patchM;
+  const fftA = texture(ocean.surface.texture, p.xz.div(L)).yz;
+  const fftB = texture(ocean.surface.texture, vec2(p.x.mul(0.8).add(p.z.mul(0.6)), p.z.mul(0.8).sub(p.x.mul(0.6))).div(L * 0.41).add(0.37)).yz;
+  const fft = fftA.add(vec2(fftB.x.mul(0.8).sub(fftB.y.mul(0.6)), fftB.x.mul(0.6).add(fftB.y.mul(0.8))).mul(0.12)).mul(sqrt(U.waveScale));
+  const open = smoothstep(2.5, WAVES.openSea.fullDepthM, depth);
+  const slope = detail.mul(float(1).sub(open.mul(0.5))).add(rain);
+  // The ripple field and the FFT give height gradients: the normal leans against them.
+  const grad = splash.xy.add(fft.mul(open));
+  const N = normalize(vNormal.add(vec3(slope.x.sub(grad.x), 0, slope.y.negate().sub(grad.y))));
 
   const NdotV = clamp(dot(N, V), 0.001, 1);
   const fresnel = float(0.02).add(float(0.98).mul(pow(float(1).sub(NdotV), float(5))));
@@ -189,7 +209,7 @@ function waterMaterial(depthMap: DataTexture): MeshBasicNodeMaterial {
   const surf = surfFoam(p.xz, vShoreS, vBreak, vShoreDir);
   const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.01, 0.06, depth)).mul(0.3), float(0));
   const crestFoam = smoothstep(0.8, 1.6, vCrest).mul(smoothstep(1.3, 2.4, U.waveScale));
-  const foam = clamp(max(surf, edgeLace).add(crestFoam.add(splash.z).mul(foamTex.mul(1.6))), 0, 1);
+  const foam = clamp(max(surf, edgeLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))), 0, 1);
 
   const foamLight = U.sunIrradiance.mul(max(dot(N, U.sunDir), 0)).add(U.skyIrradiance).div(Math.PI).mul(0.8);
 

@@ -610,6 +610,65 @@ After Evan Wallace's *WebGL Water* (also Tidewater's approach):
    winding, and refraction can fold triangles).
 6. Vertex-stage texture reads need `.level(0)` (WGSL has no implicit LOD there).
 
+### 7.7 Interactive ripples (`render/rippleField.ts`, shared by all three games)
+
+Splash rings used to be analytic: a uniform array of 24 sources, each summed
+in every water pixel. That costs a loop per pixel over the whole lagoon,
+cannot show a wake (a moving source would need a new slot every frame), and
+rings run straight through sand banks. The replacement is a small height field
+stepped on the CPU:
+
+1. **Grid**: 128² cells (96² on Low) round the camera — 0.2 m in Field Line
+   (26 m), 0.25 m in the lagoon (32 m), 0.5 m in Tanks (64 m). Two time levels
+   and a land mask (`isWater(x, z)`: the ground under the still water level).
+2. **Step**: the damped wave equation at a fixed 30 Hz,
+   `h' = (2h − h₋ + C²·∇²h)·damp`, `C = c·Δt/Δx`, five-point Laplacian, at most
+   three steps per frame. With c = 1.1 m/s (lake, lagoon) or 2.4 m/s (Tanks) C²
+   stays far below the 2-D stability limit of 0.5. Land cells are held at 0, so
+   rings reflect off banks and islets. The steepest part of a ring trails its
+   leading front (at c·t) a little, as 2-D waves do.
+3. **Upload**: central-difference slopes go into an RGBA8 texture (R, G =
+   ∂h/∂x, ∂h/∂z in ±0.6; B = |h| as agitation, 1 at 12 cm), linear filtered.
+   The water shader reads it once per pixel and leans the normal against the
+   gradient; B above ~0.35 adds froth, so a blast or a heavy stone churns the
+   surface and a wading wake (a few cm) does not. Cells at the window's edge
+   are held flat and the sample fades there.
+4. **Following**: the window re-centres in whole cells once the camera has
+   moved 12 cells, shifting both time levels and the mask, so a ring stays put
+   in the world. Only newly exposed cells call `isWater`.
+5. **Idle**: once every |h| is under 20 µm the field zeroes itself, uploads one
+   flat frame and stops stepping, so calm water costs nothing on the CPU.
+6. **Sources**: `disturb(x, z, radius, depth)` pushes a raised-cosine dip.
+   Splashes call it once (stone: radius 0.12 + 0.15·s, depth 0.012 + 0.04·s;
+   shell: 0.9–2.1 m, 0.25–0.45 m); anything moving through water calls it every
+   frame scaled by `dt·60` (legs: 0.3 m, ≤ 4 mm; tank bow: 1.4 m, ≤ 3 cm), so
+   the wake does not depend on the frame rate.
+
+Cost: one 128² step is ~16 k cell updates (≈ 0.1 ms in V8), plus a 64 KB
+texture upload per frame while anything moves. It needs no render target, so
+it behaves the same on the WebGL 2 fallback. Tests: `tests/rippleField.test.ts`
+in Field Line (ring speed, calming down, land held still, re-centring).
+
+### 7.8 Swash at lake scale (Tanks `world/terrain.ts`)
+
+The lagoon's swash (§7.5)
+comes from its baked shore field; a small upland lake has no swell, only wind
+chop, so Tanks fakes it cheaply in the terrain shader: a film runs up to
+4–22 cm above the still level and back, with the same phase as the lake
+shader's shore-foam fronts (`sin(1.22·t + noise)`), the bank stays dark and
+glossy up to the highest run-up, and a lacy foam line rides the film's edge.
+
+### 7.9 Open-sea FFT (lagoon `render/ocean.ts`, shared with Tanks)
+
+Deep water
+(fading in from 2.5 m to 10 m depth) takes its detail normals from a
+Tessendorf FFT: a 64 m patch (256² High, 128² Low) sampled twice at different
+scales and a rotation, scaled with the storm's wave height. The tiled ripple
+normals stay at full strength over the shallows, because the caustics pass
+splats exactly those, and at half strength in the deep for detail finer than
+the FFT grid. The FFT runs every frame (spectrum, 2·log₂N butterfly passes,
+resolve with mipmaps); its targets are filed under "water" in the pass timer.
+
 ---
 ## 8. Phones: budget and stutter-proofing
 

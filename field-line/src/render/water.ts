@@ -3,6 +3,7 @@ import { BufferAttribute, BufferGeometry, Mesh, MeshPhysicalNodeMaterial } from 
 import { LAKE_WAVES } from '../config.ts';
 import { lakeRadius, type Lake } from '../maps/lake.ts';
 import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
+import type { RippleField } from './rippleField.ts';
 import { hexToLinear } from './colour.ts';
 import type { ShoreField } from './shoreField.ts';
 import { laceCover, shoreSurface, surfFoam } from './shoreWaves.ts';
@@ -23,8 +24,8 @@ import { W } from './waterUniforms.ts';
 /** How far past the waterline (in lake radii) the water mesh reaches: the banks rise above it there. */
 const MESH_R = 1.32;
 
-export function buildLakeWater(lake: Lake, field: ShoreField, ground: (x: number, z: number) => number, quality: 'high' | 'low'): Mesh {
-  const mesh = new Mesh(lakeGrid(lake, ground, quality === 'high' ? 0.5 : 1.0), lakeMaterial(field));
+export function buildLakeWater(lake: Lake, field: ShoreField, ground: (x: number, z: number) => number, quality: 'high' | 'low', ripples: RippleField): Mesh {
+  const mesh = new Mesh(lakeGrid(lake, ground, quality === 'high' ? 0.5 : 1.0), lakeMaterial(field, ripples));
   mesh.name = 'lake';
   mesh.renderOrder = 10;
   mesh.receiveShadow = true;
@@ -74,7 +75,7 @@ function lakeGrid(lake: Lake, ground: (x: number, z: number) => number, cellM: n
   return g;
 }
 
-function lakeMaterial(field: ShoreField): MeshPhysicalNodeMaterial {
+function lakeMaterial(field: ShoreField, ripples: RippleField): MeshPhysicalNodeMaterial {
   const m = new MeshPhysicalNodeMaterial({ name: 'lake', transparent: true, depthWrite: true, metalness: 0, ior: 1.333 });
 
   // ── Vertex: depth-aware waves from the shore field.
@@ -96,7 +97,9 @@ function lakeMaterial(field: ShoreField): MeshPhysicalNodeMaterial {
   // Detail ripples at half the strength the caustics splat them with: at full strength the
   // surface glittered white all over.
   const detail = rippleSlope(p.xz.div(CAUSTIC_TILE_M), false).mul(0.45).div(dist.mul(0.015).add(1));
-  const N = normalize(vec3(vSlope.x.negate().add(detail.x), 1, vSlope.y.negate().sub(detail.y)));
+  // Rings and wakes from the ripple field: slope in xy, agitation in z.
+  const rip = ripples.sample(p.xz);
+  const N = normalize(vec3(vSlope.x.negate().add(detail.x).sub(rip.x), 1, vSlope.y.negate().sub(detail.y).sub(rip.y)));
   m.normalNode = transformNormalToView(N);
 
   const NdotV = clamp(dot(N, V), 0.001, 1);
@@ -117,7 +120,8 @@ function lakeMaterial(field: ShoreField): MeshPhysicalNodeMaterial {
   // Foam: breaking wavelets at the very edge, and a thin lacy line where water meets the bank.
   const surf = surfFoam(p.xz, vS, vBreak, vDir);
   const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.005, 0.04, depth)).mul(0.25), float(0));
-  const foam = max(surf, edgeLace);
+  // A splash leaves a brief patch of froth where the water was pushed hardest.
+  const foam = max(max(surf, edgeLace), smoothstep(0.35, 1.0, rip.z).mul(0.6));
 
   // The far shore: the environment probe holds only sky and ground, so a reflected ray leaving
   // the water at a low angle would show bright sky where a real lake mirrors the tree line.
