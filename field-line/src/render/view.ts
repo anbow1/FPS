@@ -182,6 +182,8 @@ export class GameView {
       }
       if (e.type === 'playerHit') this.shake += e.armour ? 0.4 : 0.7;
       if (e.type === 'explosion' && e.kind !== 'smoke') {
+        // the blast lays the grass flat outward from the centre
+        this.undergrowth.grass?.stamp(e.pos.x, e.pos.z, 4, 0, 0, 1);
         const d = this.stage.camera.position.distanceTo(this.tmp.set(e.pos.x, e.pos.y, e.pos.z));
         this.shake += Math.max(0, 2.5 - d * 0.1);
       }
@@ -237,7 +239,8 @@ export class GameView {
     if (this.caustics) this.updateWater(game);
     this.cpu.lap('update');
     this.foliage.update(cam.position);
-    this.undergrowth.update(cam.position);
+    this.undergrowth.update(cam.position, frameSeconds, cam.fov, this.stage.renderer.domElement.height);
+    this.trampleGrass(game);
     this.cpu.lap('streaming');
     // Sun shafts through the canopy: strongest with a low sun, none under a full overcast.
     const preset = this.lighting.preset;
@@ -257,6 +260,18 @@ export class GameView {
     this.scopeReady = true;
     this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.preset.ev100, frameSeconds);
     this.stage.setExposure(Lighting.exposureMultiplier(this.lighting.preset.ev100, this.exposure.adaptedEv));
+  }
+
+  /** The player's feet bend the grass they walk through (and it stands up again over ~9 s). */
+  private trampleGrass(game: Game): void {
+    const grass = this.undergrowth.grass;
+    const p = game.player;
+    if (!grass || !p.body.grounded) return;
+    const v = p.body.velocity;
+    const speed = Math.hypot(v.x, v.z);
+    if (speed < 0.3 && p.stance !== 'prone') return;
+    const r = p.stance === 'prone' ? 0.7 : 0.35;
+    grass.stamp(p.body.position.x, p.body.position.z, r, v.x, v.z, p.stance === 'prone' ? 0.25 : Math.min(0.2, speed * 0.05));
   }
 
   /** The lake's shader inputs for this frame: game time, sun and sky, wind. */

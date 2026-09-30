@@ -1,22 +1,25 @@
+import { time, vec2 } from 'three/tsl';
 import { type BufferGeometry, Color, Group, type Material, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
+import { GrassField } from './grassField.ts';
 import { InstanceStream } from './instanceStream.ts';
 import { fbm2 } from '../core/noise.ts';
 import { Rng } from '../core/rng.ts';
 import { sampleHeight } from '../maps/terrain.ts';
 import { lakeRadius } from '../maps/lake.ts';
 import type { MapData } from '../maps/types.ts';
-import { addSway, swayingMaterial } from './foliage.ts';
+import { addSway, swayingMaterial, windVector } from './foliage.ts';
 import { splatWeights } from './ground.ts';
 import type { MaterialLibrary } from './materials.ts';
 import { card, foldedStrip, merge, rand } from './meshkit.ts';
 
 // Render-only ground cover, the forest's equivalent of the lagoon's jungle
-// floor: grass tufts wherever the ground is grass, bracken in clumps under and
-// between the pines. It has no effect on play (concealment is the map's
-// bushes), so it can be dense near the player and simply end further out:
-// one streamed mesh per plant (instanceStream.ts) holds the plants around the
-// camera, and within the last stretch they sink into the ground so they
-// never pop out of view.
+// floor: a field of real grass blades wherever the ground is grass
+// (grassField.ts; sedge in the lake margin), bracken in clumps under and
+// between the pines, reeds at the waterline. It has no effect on play
+// (concealment is the map's bushes), so it can be dense near the player and
+// simply end further out: one streamed mesh per plant (instanceStream.ts)
+// holds the plants around the camera, and within the last stretch they sink
+// into the ground so they never pop out of view.
 
 const CELL_M = 16;
 const FIELD_CELL_M = 4;
@@ -32,25 +35,8 @@ interface Kind {
   scale: [number, number];
 }
 
-const GRASS: Kind = { densityPerM2: 0.7, fade: { high: [34, 48], low: [18, 26] }, sinkM: 0.8, scale: [0.6, 1.15] };
 const FERN: Kind = { densityPerM2: 0.06, fade: { high: [60, 80], low: [30, 42] }, sinkM: 1.4, scale: [0.7, 1.4] };
 const LOW_DENSITY = 0.3;
-
-function grassGeometry(): BufferGeometry {
-  const parts: BufferGeometry[] = [];
-  for (let i = 0; i < 3; i++) parts.push(card(0.8, 0.6).rotateY((i * Math.PI) / 3 + 0.3));
-  const g = merge(parts, 'grass tuft');
-  // Blades lit as if they faced up: the tuft reads as a lawn, not as dark vertical cards.
-  const n = g.getAttribute('normal');
-  const p = g.getAttribute('position');
-  const d = new Vector3();
-  for (let i = 0; i < n.count; i++) {
-    d.set(p.getX(i) * 0.5, 1, p.getZ(i) * 0.5).normalize();
-    n.setXYZ(i, d.x, d.y, d.z);
-  }
-  addSway(g);
-  return g;
-}
 
 const REED: Kind = { densityPerM2: 0, fade: { high: [70, 95], low: [40, 55] }, sinkM: 2.2, scale: [0.8, 1.25] };
 
@@ -102,9 +88,14 @@ interface Placement {
   tint: number;
 }
 
+/** Real grass blades (grassField.ts): blades per 4 m tile and where the field ends, per quality. */
+const GRASS_FIELD = { blades: { high: 700, low: 300 }, radiusM: { high: 40, low: 24 } } as const;
+
 export class Undergrowth {
   readonly group = new Group();
   private readonly streams: InstanceStream[] = [];
+  /** The blade field over the meadows (null on maps without undergrowth). */
+  grass: GrassField | null = null;
 
   constructor(map: MapData, lib: MaterialLibrary, quality: Quality) {
     this.group.name = 'undergrowth';
@@ -133,7 +124,30 @@ export class Undergrowth {
       return out;
     };
     // Weights: [grass, soil, rock, track]. Grass thins toward the forest floor; none on rock or the track.
-    const grass = scatter(GRASS, (_x, _z, w) => ((w[0] ?? 0) - (w[3] ?? 0) * 3 - (w[2] ?? 0) * 2) * 1.1 + (w[1] ?? 0) * 0.06);
+    const grassWeight = (w: readonly number[]): number => ((w[0] ?? 0) - (w[3] ?? 0) * 3 - (w[2] ?? 0) * 2) * 1.1 + (w[1] ?? 0) * 0.06;
+    this.grass = new GrassField(
+      { heights: map.terrain.heightsM, originX: map.terrain.originX, originZ: map.terrain.originZ, cellM: map.terrain.cellM, samplesX: map.terrain.samplesX, samplesZ: map.terrain.samplesZ, split: 'bc' },
+      grassDensity(area.bounds, (x, z) => {
+        if (mown(x, z) || blocked(x, z)) return [0, 0, 0, 0];
+        const w = field.at(x, z);
+        // sedge in the damp margin round the lake, none in the water itself
+        if (lake) {
+          const r = lakeRadius(lake, x, z);
+          if (r < 1.02) return [0, 0, 0, 0];
+          if (r < 1.3) return [Math.max(0, grassWeight(w)) * 0.4, 0, (1.3 - r) / 0.28, w[1] ?? 0];
+        }
+        return [Math.max(0, Math.min(1, grassWeight(w))), 0, 0, Math.min(1, (w[1] ?? 0) * 1.4)];
+      }),
+      {
+        tileM: 4,
+        bladesPerTile: GRASS_FIELD.blades[quality],
+        radiusM: GRASS_FIELD.radiusM[quality],
+        wind: vec2(windVector.x, windVector.z),
+        time,
+        colours: { meadow: [0.085, 0.15, 0.035], beach: [0.3, 0.27, 0.14], sedge: [0.06, 0.12, 0.045], dry: [0.36, 0.3, 0.12] },
+      },
+    );
+    this.group.add(this.grass.group);
     const ferns = area.ferns
       ? scatter(FERN, (x, z, w) => {
           // Bracken grows in clumps on the forest floor and along its edge with the meadows.
@@ -142,13 +156,7 @@ export class Undergrowth {
         })
       : [];
 
-    const grassMat = swayingMaterial(lib.get('grassTuft'), 0.06, [...GRASS.fade[quality], GRASS.sinkM]);
     const fernMat = swayingMaterial(lib.get('fern'), 0.04, [...FERN.fade[quality], FERN.sinkM]);
-    // Straw-yellow and lush patches across the meadows.
-    const dry = new Color(1.18, 1.08, 0.72);
-    const lush = new Color(0.85, 1.0, 0.85);
-    const tint = (t: number, c: Color): Color => c.copy(lush).lerp(dry, Math.min(1, Math.max(0, t * 1.6 + 0.45)));
-    this.add(grass, [grassGeometry()], grassMat, GRASS.fade[quality][1], false, tint);
     // No fern shadows: they would double the draw calls in every sun cascade for a few dark patches.
     this.add(ferns, [fernGeometry(9, 1.1, 3)], fernMat, FERN.fade[quality][1], false, (t, c) => c.setScalar(0.85 + t * 0.3));
 
@@ -187,8 +195,9 @@ export class Undergrowth {
   }
 
   /** Refills the plant sets around the camera when it crosses into another cell (the shader has sunk the outer ring by then). */
-  update(camera: Vector3): void {
+  update(camera: Vector3, dtS = 0, fovDeg = 60, heightPx = 1080): void {
     for (const s of this.streams) s.update(camera);
+    this.grass?.update(camera, dtS, fovDeg, heightPx);
   }
 }
 
@@ -247,4 +256,23 @@ function obstacleTest(map: MapData): (x: number, z: number) => boolean {
     }
     return false;
   };
+}
+
+/** Grass density on a 1 m square grid over the undergrowth area: meadow, beach grass, sedge, canopy shade (0..1 each). */
+function grassDensity(bounds: [number, number, number, number], at: (x: number, z: number) => [number, number, number, number]) {
+  const [minX, minZ, maxX, maxZ] = bounds;
+  const cellM = 1;
+  const size = Math.ceil(Math.max(maxX - minX, maxZ - minZ) / cellM) + 1;
+  const data = new Uint8Array(size * size * 4);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const x = minX + i * cellM;
+      const z = minZ + j * cellM;
+      const inside = x <= maxX && z <= maxZ;
+      const v = inside ? at(x, z) : [0, 0, 0, 0];
+      const o = (j * size + i) * 4;
+      for (let c = 0; c < 4; c++) data[o + c] = Math.round(Math.max(0, Math.min(1, v[c] ?? 0)) * 255);
+    }
+  }
+  return { data, originX: minX, originZ: minZ, cellM, size };
 }

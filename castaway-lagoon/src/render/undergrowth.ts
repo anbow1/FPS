@@ -94,18 +94,6 @@ function bananaGeometry(seed: number): { stem: BufferGeometry; leaves: BufferGeo
   return { stem, leaves };
 }
 
-function grassGeometry(): BufferGeometry {
-  const parts: BufferGeometry[] = [];
-  for (let i = 0; i < 3; i++) {
-    const g = card(0.8, 0.62);
-    g.rotateY((i * Math.PI) / 3);
-    parts.push(g);
-  }
-  const g = merge(parts, 'grass');
-  addSway(g, 0.2, (_x, y) => y * 1.5, 0.62);
-  return g;
-}
-
 function sproutGeometry(): BufferGeometry {
   const parts: BufferGeometry[] = [];
   for (let i = 0; i < 5; i++) {
@@ -177,7 +165,6 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
   scatter('fern', Math.round(1800 * density), (x, z, d) => d > 1 && d < 60 && nearBay(x, z), [0.8, 1.4], 0.6);
   scatter('shrub', Math.round(900 * density), (x, z, d) => d > 2 && d < 70 && nearBay(x, z), [0.8, 1.8], 0.9);
   scatter('banana', Math.round(160 * density), (x, z, d) => d > 1 && d < 25 && nearBay(x, z), [0.9, 1.3], 1.2);
-  scatter('grass', Math.round(16000 * density), (x, z, d) => d > -1.5 && d < 16 && Math.hypot(x + 5, z - 5) < 110, [0.7, 1.5], 0.25);
   scatter('sprout', Math.round(700 * density), (_x, _z, d) => d > -9 && d < 0 && shoreDistanceOk(_x, _z), [0.6, 1.3], 0.2);
   // Vines hang from trees near the beach and the shelter.
   for (const t of world.trees) {
@@ -190,7 +177,6 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
   const fernMat = leafMaterial('fern');
   const shrubMat = leafMaterial('broadleaf');
   const bananaMat = leafMaterial('banana');
-  const grassMat = leafMaterial('grass', false);
   const stemMat = swayingSolid(0x5b6a32, 0.7);
   const vineRope = barkMaterial('jungle');
   const variants = (kind: Kind, count: number, build: (seed: number) => [BufferGeometry, Material][], shadows: boolean): void => {
@@ -209,7 +195,6 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
       [b.leaves, bananaMat],
     ];
   }, true);
-  variants('grass', 1, () => [[grassGeometry(), grassMat]], false);
   variants('sprout', 1, () => [[sproutGeometry(), fernMat]], false);
   variants('vine', 2, (s) => {
     const v = vineGeometry(s);

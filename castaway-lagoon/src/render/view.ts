@@ -6,7 +6,9 @@ import { DAYLIGHT, LAGOON_CAMERA, LAGOON_EXPOSURE, LAGOON_PLAYER, WAVES } from '
 import type { LagoonEvent } from '../game/events.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { Effects } from './effects.ts';
-import { buildGround } from './ground.ts';
+import { buildGround, grassInputs } from './ground.ts';
+import { GrassField } from './grassField.ts';
+import { OUTPOST } from '../game/outpost.ts';
 import { Caustics } from './caustics.ts';
 import { CpuTimer } from './perf.ts';
 import { AmbientLife } from './life.ts';
@@ -43,6 +45,7 @@ export class LagoonView {
   private exposure!: AutoExposure;
   private water!: ReturnType<typeof buildWater>;
   private caustics!: Caustics;
+  private grass: GrassField | null = null;
   /** CPU milliseconds per part of render() (F3, benchmark). */
   readonly cpu = new CpuTimer();
   outpost!: OutpostView;
@@ -89,7 +92,22 @@ export class LagoonView {
     await progress('Growing the jungle', 0.28);
     if (!bare) stage.scene.add(buildJungle(game.world.trees, stage.quality));
     await progress('Undergrowth', 0.4);
-    if (!bare) stage.scene.add(buildUndergrowth(game.world, stage.quality));
+    if (!bare) {
+      stage.scene.add(buildUndergrowth(game.world, stage.quality));
+      // Real grass blades (grassField.ts): meadow where sand turns to soil, beach grass in clumps.
+      const keep = game.world.interactables.map((i) => i.pos);
+      const { ground, density } = grassInputs(game.world, (x, z) => Math.hypot(x - OUTPOST.x, z - OUTPOST.z) > 5.5 && keep.every((k) => Math.abs(k.x - x) > 0.8 || Math.abs(k.z - z) > 0.8));
+      const high = stage.quality === 'high';
+      this.grass = new GrassField(ground, density, {
+        tileM: 4,
+        bladesPerTile: high ? 700 : 300,
+        radiusM: high ? 40 : 24,
+        wind: U.wind,
+        time: U.time,
+        colours: { meadow: [0.07, 0.16, 0.03], beach: [0.38, 0.34, 0.16], sedge: [0.06, 0.13, 0.04], dry: [0.44, 0.36, 0.15] },
+      });
+      stage.scene.add(this.grass.group);
+    }
     await progress('Rocks', 0.44);
     stage.scene.add(buildRocks(game.world.rocks));
     await progress('Building the shelter', 0.47);
@@ -184,6 +202,13 @@ export class LagoonView {
     this.life.update(game, dt, this.camQuat);
     this.cpu.lap('update');
     for (const h of this.hooks.update) h(game, dt, alpha);
+    if (this.grass) {
+      const cam = this.stage.camera;
+      this.grass.update(cam.position, dt, cam.fov, this.stage.renderer.domElement.height);
+      // feet bend the blades they walk through; they stand up again over ~9 s
+      const speed = Math.hypot(p.vel.x, p.vel.z);
+      if (p.grounded && speed > 0.3) this.grass.stamp(p.pos.x, p.pos.z, 0.35, p.vel.x, p.vel.z, Math.min(0.2, speed * 0.05));
+    }
     this.cpu.lap('streaming');
     const d = env.daylight;
     const lightDir = d.night > 0.5 ? d.moonDir : d.sunDir;

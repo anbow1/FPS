@@ -2,7 +2,7 @@ import { attribute, float, int, max, mix, normalMap, normalWorld, positionWorld,
 import { BufferAttribute, BufferGeometry, type DataArrayTexture, Group, Mesh, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { fbm2 } from '../core/noise.ts';
 import { WATER_LEVEL_M } from '../config.ts';
-import { beachWidth, cliffiness, heightAt, LAGOON_CENTRE, shoreDistance } from '../game/terrain.ts';
+import { beachWidth, cliffiness, heightAt, LAGOON_CENTRE, normalAt, shoreDistance } from '../game/terrain.ts';
 import type { LagoonWorld } from '../game/world.ts';
 import { noiseMap, terrainArray } from './textures.ts';
 import { swash } from './shoreWaves.ts';
@@ -343,4 +343,51 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   const caustic = focus.mul(smoothstep(0.03, 0.3, depth)).mul(depth.mul(-0.22).exp()).mul(1.25);
   m.emissiveNode = albedo.mul(sunOnFloor).mul(caustic.div(Math.PI));
   return m;
+}
+
+/**
+ * Inputs of the blade field (grassField.ts): the near ground mesh's own height grid (same split as
+ * the mesh, so blades root exactly on it) and a 1 m density map — meadow grass where the ground
+ * turns from sand to soil, stiff pale beach grass in clumps on the upper beach, darker under the
+ * crowns; none on paths, in the shelter's clearing or in the water.
+ */
+export function grassInputs(world: LagoonWorld, clear: (x: number, z: number) => boolean) {
+  const nx = Math.round((NEAR.x1 - NEAR.x0) / NEAR.cellM) + 1;
+  const nz = Math.round((NEAR.z1 - NEAR.z0) / NEAR.cellM) + 1;
+  const heights = new Float32Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) heights[j * nx + i] = heightAt(NEAR.x0 + i * NEAR.cellM, NEAR.z0 + j * NEAR.cellM);
+  const bin = binTrees([...world.palms.map((p) => ({ x: p.x, z: p.z, r: 2.2 })), ...world.trees.map((t) => ({ x: t.x, z: t.z, r: t.heightM * 0.28 }))]);
+  const cellM = 1;
+  const size = Math.ceil(Math.max(NEAR.x1 - NEAR.x0, NEAR.z1 - NEAR.z0) / cellM) + 1;
+  const data = new Uint8Array(size * size * 4);
+  const n = { x: 0, y: 1, z: 0 };
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const x = NEAR.x0 + i * cellM;
+      const z = NEAR.z0 + j * cellM;
+      if (x > NEAR.x1 || z > NEAR.z1 || !clear(x, z)) continue;
+      const y = heightAt(x, z);
+      if (y < WATER_LEVEL_M + 0.5) continue;
+      normalAt(x, z, n);
+      const w = splatAt(x, z, y, n.y, true);
+      const open = 1 - w.path * 2 - w.rock * 1.5;
+      if (open <= 0) continue;
+      const shade = 1 - (treeShade(bin, x, z) - 0.55) / 0.45;
+      const d = shoreDistance(x, z);
+      const bw = beachWidth(x, z);
+      // beach grass: clumps on the dry upper beach, where the sand meets the soil
+      const clump = smooth(0.55, 0.7, fbm2(x * 0.35, z * 0.35, 2, 91));
+      const upper = smooth(bw * 0.45, bw * 0.8, d);
+      const beach = w.sand * upper * clump * open;
+      const meadow = w.grass * open * (1 - shade * 0.5);
+      const o = (j * size + i) * 4;
+      data[o] = Math.round(Math.min(1, meadow * 1.2) * 255);
+      data[o + 1] = Math.round(Math.min(1, beach * 1.4) * 255);
+      data[o + 3] = Math.round(Math.max(0, Math.min(1, shade)) * 255);
+    }
+  }
+  return {
+    ground: { heights, originX: NEAR.x0, originZ: NEAR.z0, cellM: NEAR.cellM, samplesX: nx, samplesZ: nz, split: 'bc' as const },
+    density: { data, originX: NEAR.x0, originZ: NEAR.z0, cellM, size },
+  };
 }

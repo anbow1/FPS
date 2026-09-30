@@ -322,6 +322,51 @@ Measured on the forest map (SwiftShader, 640×360): 516 → ~130 draw calls,
    them), which is the cheap "invisible proxy" the high-end pipelines add
    separately. Impostors therefore need no collision of their own.
 
+### 5.6 Grass from real blades (`render/grassField.ts`, shared by all three games)
+
+Grass cards (a few crossed quads per tuft) read as paper on a phone at any
+distance under 10 m, and every tuft is its own instance. The shared field
+draws **individual Bezier blades**, generated entirely in the vertex stage:
+
+1. **One tile, R2 order.** A 4 m tile holds N blades (700 High / 300 Low in
+   the FPS games) in R2 low-discrepancy order (Roberts 2018), so *any prefix*
+   of the list is an evenly spread subset. Each blade is jittered within its
+   spacing and a two-sine clump field modulates presence and height, so the
+   tile never shows rows.
+2. **Three rings, three draws.** Tiles are instanced round the camera in rings
+   out to 30 %, 65 % and 100 % of the radius (40 m / 24 m). Each ring has its
+   own geometry (4, 3, 2 segments per blade) and a `drawRange` of the list
+   prefix it can ever need (100 % → 45 % → 20 %). Inside the ring a blade's
+   rank is compared with a keep fraction that falls smoothly with distance,
+   and blades near the cut shrink over the last 15 % of ranks — no pop. Kept
+   blades widen by `1/sqrt(keep)` (never below ~1 px), so coverage holds.
+3. **Exact ground height.** The terrain's height grid goes up as an R32F
+   `DataTexture` read with `textureLoad`, and the vertex splits each cell into
+   the same two triangles the terrain mesh uses (`split: 'bc' | 'ad'`), so no
+   blade floats or sinks on a slope. Bilinear sampling is visibly wrong here.
+4. **Density map.** An RGBA8 grid per game — meadow, beach grass, sedge, shade
+   — decides presence, kind (height, lean, colour) and darkening under trees.
+   It is zero in water, on roads, under buildings and wherever the logic says
+   the ground is mown or blocked; the game bakes it once at load.
+5. **Shape and light.** Width tapers to the tip, the Bezier control point
+   leans by kind and by a travelling wind gust (`uWind`, `uTime`); the shading
+   normal is 60 % straight up and 40 % the blade's own face normal, so a field
+   lights like ground with texture instead of flickering blade by blade, and
+   colour darkens toward the root (`mix(0.6, 1, sqrt(t))`) — that dark base
+   is what sells depth from above. Blades are two-sided.
+6. **Trampling.** A 128² × 0.3 m map, re-centred on the player in whole
+   texels, stores a push direction and strength per cell;
+   `stamp(x, z, r, dirX, dirZ, strength)` is called for the feet each frame
+   (bigger when prone), for hulls in Tanks and with a 4 m radius for
+   explosions; cells decay back exponentially over a few seconds.
+7. **Per-game scale.** `widthScale`/`heightScale` and the colours are options:
+   Tanks views the ground from 3–10 m up, so its blades are 3.2× wider, 1.3×
+   taller and brighter (thin blades at that range alias into stripes darker
+   than the terrain under them).
+
+Cost measured with the bench (§9.2): about +0.5 M triangles and 3 draws in
+Field Line; in Tanks +0.1–0.4 M.
+
 ### Traps
 
 - **`NodeMaterial.copy()` never calls `Material.copy()`** (r186), so `clone()` loses
