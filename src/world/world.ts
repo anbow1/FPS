@@ -94,7 +94,7 @@ export class World {
 
   update(dt: number, cam: THREE.Vector3): void {
     this.terrain.update(cam);
-    this.grass.update(cam);
+    this.grass.update(cam, dt);
     this.vegetation.update(dt, cam);
   }
 }

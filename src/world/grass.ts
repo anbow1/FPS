@@ -1,323 +1,141 @@
 import * as THREE from 'three/webgpu';
-import { WATER_LEVEL } from '../config';
+import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import { sampleWrap } from '../core/noise';
-import { hash2, Rng } from '../core/rng';
-import { linear, PBR } from '../render/palette';
-import { attribute, cos, float, Fn, If, length, Loop, normalize, normalViewGeometry, positionLocal, sin, uniformArray, vec2, vec3 } from 'three/tsl';
+import { hyp2 } from '../core/mathx';
+import { GrassField } from '../render/grassField.ts';
 import { G, thermalOutput } from '../render/nodes';
+import { linear, PBR } from '../render/palette';
 import type { NoiseSet } from '../render/textures';
 import { NOISE_SIZE } from '../render/textures';
 import type { Heightfield } from './heightfield';
 import { SITES } from './layout';
-import { hyp2 } from '../core/mathx';
 
-const CHUNK = 24;
 const MAX_PUSHERS = 10;
+/** Density map cell (m): the field's own noise breaks it up below this. */
+const DENSITY_CELL_M = 2;
 
 /**
- * Near-field grass blades in 24 m chunks around the camera. Blade positions are hashed per chunk,
- * so a chunk rebuilt later looks identical. Colour and density follow the same macro noise the
- * terrain shader uses, and blades bend away from vehicles.
+ * Grass: a field of real blades round the camera (render/grassField.ts, shared with anbow1/FPS),
+ * rooted exactly on the terrain mesh's triangles. Where it grows follows the same rules the
+ * terrain shader paints with: none on bare soil, rock, roads, near the water or in the villages;
+ * dry meadows turn to paler, stiffer grass; sedge on the damp lake shores; darker under the forest.
+ * Vehicles flatten it as they drive (a trampling map that recovers over ~9 s).
  */
 export class Grass {
   readonly group = new THREE.Group();
-  private chunks = new Map<number, THREE.Mesh>();
-  private pool: THREE.BufferGeometry[] = [];
-  private readonly material: THREE.MeshStandardNodeMaterial;
-  private readonly pushers: THREE.Vector4[] = [];
-  private perChunk: number;
-  private radius: number;
-  private blade: { pos: Float32Array; tip: Float32Array };
-  private job: GrassJob | null = null;
+  private field: GrassField | null = null;
+  private readonly density: { data: Uint8Array; originX: number; originZ: number; cellM: number; size: number };
+  private readonly heights: Float32Array;
+  private readonly last: { x: number; z: number }[] = [];
+  private bladesPerTile = 0;
+  private radius = 0;
 
   constructor(
     private readonly hf: Heightfield,
-    private readonly noise: NoiseSet,
+    noise: NoiseSet,
     perChunk: number,
     radius: number,
   ) {
-    this.perChunk = perChunk;
-    this.radius = radius;
-    for (let i = 0; i < MAX_PUSHERS; i++) this.pushers.push(new THREE.Vector4(0, -9999, 0, 0));
-    this.material = new THREE.MeshStandardNodeMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, vertexColors: true });
-    const push = uniformArray(this.pushers, 'vec4');
-    // Chunks sit at the origin, so local position is world position: sway from the wind field, a
-    // flutter per blade, and vehicles flattening the blades away from them (xyz position, w radius).
-    this.material.positionNode = Fn(() => {
-      const wpos = positionLocal;
-      const tip = attribute('tip', 'float');
-      const ph = wpos.x.mul(0.35).add(wpos.z.mul(0.27));
-      const gust = sin(G.uTime.mul(1.7).add(ph.mul(0.3))).mul(0.5).add(0.5);
-      const sway = G.uWind.mul(gust.mul(0.32).add(0.18)).add(vec2(sin(G.uTime.mul(3.1).add(ph)), cos(G.uTime.mul(2.6).add(ph.mul(1.3)))).mul(0.05));
-      const off = vec2(0).toVar();
-      Loop(MAX_PUSHERS, ({ i }) => {
-        const pu = push.element(i) as unknown as THREE.Node<'vec4'>;
-        const d = wpos.xz.sub(pu.xz);
-        const dist = length(d);
-        const r = pu.w;
-        If(r.greaterThan(0).and(dist.lessThan(r)), () => {
-          off.addAssign(normalize(d.add(1e-4)).mul(float(1).sub(dist.div(r))).mul(1.2));
-        });
-      });
-      const bendK = tip.mul(tip);
-      const xz = wpos.xz.add(sway.add(off).mul(bendK));
-      return vec3(xz.x, wpos.y.sub(length(off).mul(tip).mul(0.35)), xz.y);
-    })();
-    this.material.normalNode = normalViewGeometry;
-    thermalOutput(this.material, G.uDay.mul(0.08).add(0.07));
-    this.blade = makeBlade();
+    this.heights = hf.heights;
+    this.density = bakeDensity(hf, noise);
+    for (let i = 0; i < MAX_PUSHERS; i++) this.last.push({ x: NaN, z: NaN });
+    this.setDensity(perChunk, radius);
   }
 
+  /** Quality change: rebuild the field (a menu action; the warm-up that follows compiles it). */
   setDensity(perChunk: number, radius: number): void {
-    if (perChunk === this.perChunk && radius === this.radius) return;
-    this.perChunk = perChunk;
-    this.radius = radius;
-    for (const [, m] of this.chunks) this.release(m);
-    this.chunks.clear();
-    if (this.job) this.pool.push(this.job.g);
-    this.job = null;
+    const blades = perChunk >= 3000 ? 420 : 200;
+    const r = Math.min(radius, perChunk >= 3000 ? 45 : 26);
+    if (blades === this.bladesPerTile && r === this.radius) return;
+    this.bladesPerTile = blades;
+    this.radius = r;
+    if (this.field) this.group.remove(this.field.group);
+    const green = linear(PBR.grassFresh.color);
+    const dry = linear(PBR.grassDry.color);
+    const hf = this.hf;
+    this.field = new GrassField(
+      { heights: this.heights, originX: -hf.half, originZ: -hf.half, cellM: HEIGHT_CELL, samplesX: hf.n, samplesZ: hf.n, split: 'bc' },
+      this.density,
+      {
+        tileM: 4,
+        bladesPerTile: blades,
+        radiusM: r,
+        // G.uWind is a direction with a gust scale of ~1; the field wants metres per second
+        wind: G.uWind.mul(6),
+        time: G.uTime,
+        // seen from a tank's height: fewer, longer, broader blades read as grass, not as a fine carpet
+        widthScale: 3.2,
+        heightScale: 1.3,
+        // the sheet colours are the terrain's base; its textured grass layer is ~1.7× brighter, and
+        // blades darker than the ground under them read as stripes from a tank's height
+        colours: {
+          meadow: [green.r * 1.7, green.g * 1.7, green.b * 1.6],
+          beach: [dry.r * 1.9, dry.g * 1.8, dry.b * 1.6],
+          sedge: [green.r * 1.4, green.g * 1.5, green.b * 1.4],
+          dry: [dry.r * 2.1, dry.g * 1.9, dry.b * 1.5],
+        },
+      },
+    );
+    thermalOutput(this.field.material, G.uDay.mul(0.08).add(0.07));
+    this.group.add(this.field.group);
   }
 
-  /** Vehicles flatten grass: xyz = position, w = radius. */
-  setPusher(i: number, x: number, y: number, z: number, r: number): void {
-    if (i < MAX_PUSHERS) this.pushers[i]!.set(x, y, z, r);
+  /** Vehicles flatten grass: xyz = position, r = radius. Called every frame per vehicle slot. */
+  setPusher(i: number, x: number, _y: number, z: number, r: number): void {
+    const last = this.last[i];
+    if (!last || !this.field) return;
+    const dx = Number.isNaN(last.x) ? 0 : x - last.x;
+    const dz = Number.isNaN(last.z) ? 0 : z - last.z;
+    last.x = x;
+    last.z = z;
+    if (r <= 0 || dx * dx + dz * dz < 1e-6) return;
+    this.field.stamp(x, z, r, dx, dz, 0.6);
   }
 
-  /**
-   * Streams chunks in around the camera. A chunk is filled a slice of blades per frame (never a
-   * whole chunk at once), nearest missing chunk first, and shown when complete.
-   */
-  update(cam: THREE.Vector3, bladesPerFrame = BLADES_PER_FRAME): void {
-    const r = this.radius;
-    for (const [key, m] of this.chunks) {
-      const ci = Math.floor(key / 4096) - 2048;
-      const cj = (key % 4096) - 2048;
-      const cx = (ci + 0.5) * CHUNK;
-      const cz = (cj + 0.5) * CHUNK;
-      if (hyp2(cx - cam.x, cz - cam.z) > r + CHUNK) {
-        this.release(m);
-        this.chunks.delete(key);
-      }
-    }
-    const job = this.job;
-    if (job && hyp2((job.ci + 0.5) * CHUNK - cam.x, (job.cj + 0.5) * CHUNK - cam.z) > r + CHUNK) {
-      this.pool.push(job.g);
-      this.job = null;
-    }
-    // from the drone's altitude blades are sub-pixel: keep what exists, build nothing new
-    if (cam.y - this.hf.heightAt(cam.x, cam.z) > 45) return;
-    let left = bladesPerFrame;
-    while (left > 0) {
-      if (!this.job && !this.startNearest(cam)) return;
-      left = this.fill(this.job!, left);
-      if (this.job!.b >= this.perChunk) {
-        const j = this.job!;
-        this.job = null;
-        const m = this.finish(j);
-        this.chunks.set(j.key, m);
-        this.group.add(m);
-      }
-    }
+  update(cam: THREE.Vector3, dtS = 1 / 60): void {
+    // from the drone's altitude blades are sub-pixel: the field still follows, the view never sees it
+    this.field?.update(cam, dtS, 60, window.innerHeight * window.devicePixelRatio);
   }
 
-  /** Fill everything around a point at once (spawn, before the first frame is shown). */
-  warm(cam: THREE.Vector3): void {
-    this.update(cam, 1e9);
-  }
+  /** Nothing to build ahead of time: the blades are placed by the GPU every frame. */
+  warm(_cam: THREE.Vector3): void {}
 
-  private startNearest(cam: THREE.Vector3): boolean {
-    const r = this.radius;
-    const ci0 = Math.floor((cam.x - r) / CHUNK);
-    const ci1 = Math.floor((cam.x + r) / CHUNK);
-    const cj0 = Math.floor((cam.z - r) / CHUNK);
-    const cj1 = Math.floor((cam.z + r) / CHUNK);
-    let best = Infinity;
-    let bi = 0;
-    let bj = 0;
-    for (let ci = ci0; ci <= ci1; ci++) {
-      for (let cj = cj0; cj <= cj1; cj++) {
-        const d = hyp2((ci + 0.5) * CHUNK - cam.x, (cj + 0.5) * CHUNK - cam.z);
-        if (d > r || d >= best) continue;
-        if (this.chunks.has((ci + 2048) * 4096 + (cj + 2048))) continue;
-        best = d;
-        bi = ci;
-        bj = cj;
-      }
-    }
-    if (best === Infinity) return false;
-    this.job = {
-      key: (bi + 2048) * 4096 + (bj + 2048),
-      ci: bi,
-      cj: bj,
-      g: this.geometry(),
-      rng: new Rng(Math.floor(hash2(bi, bj, 5) * 1e9)),
-      b: 0,
-      used: 0,
-      minY: Infinity,
-      maxY: -Infinity,
-    };
-    return true;
-  }
-
-  private release(m: THREE.Mesh): void {
-    this.group.remove(m);
-    this.pool.push(m.geometry);
-  }
-
-  private geometry(): THREE.BufferGeometry {
-    const bladeV = this.blade.pos.length / 3;
-    const n = this.perChunk;
-    let g = this.pool.pop();
-    if (!g || (g.getAttribute('position') as THREE.BufferAttribute).count !== n * bladeV) {
-      g?.dispose();
-      g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * bladeV * 3), 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * bladeV * 3), 3));
-      g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * bladeV * 3), 3));
-      const tipA = new Float32Array(n * bladeV);
-      for (let b = 0; b < n; b++) tipA.set(this.blade.tip, b * bladeV);
-      g.setAttribute('tip', new THREE.BufferAttribute(tipA, 1));
-    }
-    return g;
-  }
-
-  /** Place up to `budget` blades of the job; returns the budget left over. */
-  private fill(job: GrassJob, budget: number): number {
-    const bladeV = this.blade.pos.length / 3;
-    const n = this.perChunk;
-    const { ci, cj, rng, g } = job;
-    const P = (g.getAttribute('position') as THREE.BufferAttribute).array as Float32Array;
-    const N = (g.getAttribute('normal') as THREE.BufferAttribute).array as Float32Array;
-    const C = (g.getAttribute('color') as THREE.BufferAttribute).array as Float32Array;
-    const tn = _tn;
-    const end = Math.min(n, job.b + budget);
-    const spent = end - job.b;
-    for (let b = job.b; b < end; b++) {
-      const x = (ci + rng.next()) * CHUNK;
-      const z = (cj + rng.next()) * CHUNK;
-      const macro = sampleWrap(this.noise.r, NOISE_SIZE, x / 1100, z / 1100);
-      const macro2 = sampleWrap(this.noise.g, NOISE_SIZE, x / 380 + 0.3, z / 380 + 0.3);
-      const mid = sampleWrap(this.noise.g, NOISE_SIZE, x / 64, z / 64);
-      const fine = sampleWrap(this.noise.b, NOISE_SIZE, x / 5.5, z / 5.5);
-      const dry = smooth(0.4, 0.66, macro * 0.7 + macro2 * 0.3 + (mid - 0.5) * 0.3);
-      const soil = smooth(0.74, 0.86, mid + (fine - 0.5) * 0.4 + dry * 0.06);
-      const y = this.hf.heightAt(x, z);
-      if (y < WATER_LEVEL + 0.8 || soil > 0.999) {
-        rng.next();
-        continue;
-      }
-      this.hf.normalAt(x, z, tn);
-      const road = this.hf.roadAt(x, z);
-      let keep = (1 - soil) * (1 - smooth(0.2, 0.33, 1 - tn.y)) * (1 - smooth(0.02, 0.2, road));
-      for (const s of SITES) if (hyp2(x - s.x, z - s.z) < s.r * 0.35) keep *= 0.3;
-      if (rng.next() > keep * (0.55 + 0.45 * fine)) continue;
-      const h = (0.35 + rng.next() * 0.45) * (1 - dry * 0.25) * (0.7 + fine * 0.6);
-      const w = 0.05 + rng.next() * 0.04;
-      const rot = rng.next() * Math.PI * 2;
-      const lean = (rng.next() - 0.5) * 0.4;
-      const c = Math.cos(rot);
-      const s = Math.sin(rot);
-      // colour: same palette as the terrain, lighter tips come from `tip` below
-      _c0.copy(GRASS_FRESH).lerp(GRASS_DRY, Math.min(1, dry + rng.next() * 0.25));
-      _c0.multiplyScalar(0.8 + 0.35 * macro2 + rng.next() * 0.12);
-      const bp = this.blade.pos;
-      const base = job.used * bladeV;
-      for (let k = 0; k < bladeV; k++) {
-        const bx = bp[k * 3]! * w;
-        const by = bp[k * 3 + 1]! * h;
-        const t = this.blade.tip[k]!;
-        const bz = lean * t * h;
-        const i = (base + k) * 3;
-        P[i] = x + bx * c + bz * s;
-        P[i + 1] = y + by - 0.03;
-        P[i + 2] = z - bx * s + bz * c;
-        N[i] = tn.x * 0.6 + s * 0.2;
-        N[i + 1] = tn.y;
-        N[i + 2] = tn.z * 0.6 + c * 0.2;
-        const shade = 0.55 + 0.6 * t;
-        C[i] = _c0.r * shade;
-        C[i + 1] = _c0.g * shade;
-        C[i + 2] = _c0.b * shade;
-      }
-      if (y < job.minY) job.minY = y;
-      if (y + h > job.maxY) job.maxY = y + h;
-      job.used++;
-    }
-    job.b = end;
-    return budget - spent;
-  }
-
-  private finish(job: GrassJob): THREE.Mesh {
-    const bladeV = this.blade.pos.length / 3;
-    const { g, ci, cj, used } = job;
-    g.setDrawRange(0, used * bladeV);
-    // upload only the blades that were kept (a full chunk is ~3 MB of vertex data)
-    for (const name of ['position', 'normal', 'color']) {
-      const a = g.getAttribute(name) as THREE.BufferAttribute;
-      a.clearUpdateRanges();
-      a.addUpdateRange(0, Math.max(3, used * bladeV * 3));
-      a.needsUpdate = true;
-    }
-    // analytic bound instead of scanning every vertex
-    if (!g.boundingSphere) g.boundingSphere = new THREE.Sphere();
-    const cy = used ? (job.minY + job.maxY) / 2 : this.hf.heightAt((ci + 0.5) * CHUNK, (cj + 0.5) * CHUNK);
-    g.boundingSphere.center.set((ci + 0.5) * CHUNK, cy, (cj + 0.5) * CHUNK);
-    g.boundingSphere.radius = CHUNK * 0.75 + (used ? (job.maxY - job.minY) / 2 : 0) + 1;
-    const m = new THREE.Mesh(g, this.material);
-    m.receiveShadow = true;
-    m.castShadow = false;
-    return m;
+  get material(): THREE.MeshStandardNodeMaterial | null {
+    return this.field?.material ?? null;
   }
 }
 
-interface GrassJob {
-  key: number;
-  ci: number;
-  cj: number;
-  g: THREE.BufferGeometry;
-  rng: Rng;
-  /** next blade index to place, blades kept so far */
-  b: number;
-  used: number;
-  minY: number;
-  maxY: number;
-}
-
-/** ~1-2 ms on a phone: a 5200-blade chunk streams in over four frames */
-const BLADES_PER_FRAME = 1300;
-const _tn = { x: 0, y: 1, z: 0 };
-
-/** One tapered blade as a 3-segment triangle strip, unrolled to a triangle list. */
-function makeBlade(): { pos: Float32Array; tip: Float32Array } {
-  const rows: [number, number][] = [
-    [0.5, 0],
-    [0.42, 0.35],
-    [0.28, 0.7],
-    [0, 1],
-  ];
-  const tri: number[] = [];
-  const tip: number[] = [];
-  const v = (x: number, y: number) => {
-    tri.push(x, y, 0);
-    tip.push(y);
+/** Meadow, beach (dry, pale) grass, sedge, canopy shade over the world on a 2 m grid. */
+function bakeDensity(hf: Heightfield, noise: NoiseSet): { data: Uint8Array; originX: number; originZ: number; cellM: number; size: number } {
+  const size = Math.round(WORLD_SIZE / DENSITY_CELL_M) + 1;
+  const data = new Uint8Array(size * size * 4);
+  const tn = { x: 0, y: 1, z: 0 };
+  const smooth = (a: number, b: number, x: number) => {
+    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
   };
-  for (let r = 0; r < rows.length - 1; r++) {
-    const [w0, y0] = rows[r]!;
-    const [w1, y1] = rows[r + 1]!;
-    v(-w0, y0); v(w0, y0); v(w1, y1);
-    if (w1 > 0) {
-      v(-w0, y0); v(w1, y1); v(-w1, y1);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const x = -hf.half + i * DENSITY_CELL_M;
+      const z = -hf.half + j * DENSITY_CELL_M;
+      const macro = sampleWrap(noise.r, NOISE_SIZE, x / 1100, z / 1100);
+      const macro2 = sampleWrap(noise.g, NOISE_SIZE, x / 380 + 0.3, z / 380 + 0.3);
+      const mid = sampleWrap(noise.g, NOISE_SIZE, x / 64, z / 64);
+      const dry = smooth(0.4, 0.66, macro * 0.7 + macro2 * 0.3 + (mid - 0.5) * 0.3);
+      const soil = smooth(0.74, 0.86, mid + dry * 0.06);
+      const y = hf.heightAt(x, z);
+      hf.normalAt(x, z, tn);
+      const road = hf.roadAt(x, z);
+      let keep = (1 - soil) * (1 - smooth(0.2, 0.33, 1 - tn.y)) * (1 - smooth(0.02, 0.2, road)) * smooth(WATER_LEVEL + 0.8, WATER_LEVEL + 1.4, y);
+      for (const s of SITES) if (hyp2(x - s.x, z - s.z) < s.r * 0.35) keep *= 0.3;
+      const damp = smooth(WATER_LEVEL + 0.4, WATER_LEVEL + 0.9, y) * (1 - smooth(WATER_LEVEL + 1.6, WATER_LEVEL + 3, y)) * (1 - smooth(0.2, 0.33, 1 - tn.y));
+      const forest = sampleWrap(noise.g, NOISE_SIZE, x / 380 + 0.3, z / 380) * 0.7 + macro * 0.3;
+      const o = (j * size + i) * 4;
+      data[o] = Math.round(keep * (1 - dry * 0.7) * 255);
+      data[o + 1] = Math.round(keep * dry * 0.7 * 255);
+      data[o + 2] = Math.round(damp * 0.8 * 255);
+      data[o + 3] = Math.round(smooth(0.5, 0.64, forest) * 255);
     }
   }
-  return { pos: new Float32Array(tri), tip: new Float32Array(tip) };
-}
-
-const _c0 = linear(0);
-// palette colours converted to linear once, not per blade
-const GRASS_FRESH = linear(PBR.grassFresh.color);
-const GRASS_DRY = linear(PBR.grassDry.color);
-
-function smooth(a: number, b: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
+  return { data, originX: -hf.half, originZ: -hf.half, cellM: DENSITY_CELL_M, size };
 }
