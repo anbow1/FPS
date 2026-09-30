@@ -79,6 +79,7 @@ html, body { margin: 0; height: 100%; background: #0e0f11; overflow: hidden; col
 .menu button.on { background: #e9e7e2; color: #111; border-color: #e9e7e2; }
 .menu button.primary { background: #e0a15a; color: #111; border-color: #e0a15a; font-weight: 600; padding: 10px 22px; }
 .menu button:disabled { opacity: 0.4; }
+.menu pre.bench { font: 12px/1.4 ui-monospace, monospace; white-space: pre; overflow-x: auto; background: rgba(0,0,0,0.35); padding: 10px; margin: 12px 0; }
 .menu .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px 14px; font-size: 13px; }
 .menu .keys button { padding: 3px 8px; font-size: 12px; min-width: 70px; }
 .menu .actions { display: flex; gap: 10px; margin-top: 18px; }

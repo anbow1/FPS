@@ -10,3 +10,5 @@ android/app/build/
 android/app/src/*/assets/game/
 android/out/
 android/local.properties
+# Benchmark runs (scripts/benchView.mjs): machine-specific numbers
+bench/

@@ -1,3 +1,4 @@
+import { benchSpots, type BenchSpot, placePlayer } from './app/bench.ts';
 import { Controls } from './app/controls.ts';
 import { loadSettings, type Settings, saveSettings } from './app/settings.ts';
 import { Audio, type Listener } from './audio/audio.ts';
@@ -9,6 +10,7 @@ import { Game, type GameIntent } from './game/game.ts';
 import type { ModeId } from './game/modes.ts';
 import { buildMap } from './maps/index.ts';
 import type { MapId } from './maps/types.ts';
+import { BenchRecorder, type BenchSample, formatBench } from './render/perf.ts';
 import { GameView } from './render/view.ts';
 import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
@@ -17,7 +19,7 @@ import { TouchControls } from './ui/touch.ts';
 // Entry point: menu → loading → play ⇄ pause → results. One fixed update order
 // lives in Game.step; this file only wires input, logic, render, HUD and audio.
 
-type State = 'menu' | 'loading' | 'ready' | 'playing' | 'paused' | 'over';
+type State = 'menu' | 'loading' | 'ready' | 'playing' | 'paused' | 'over' | 'bench';
 
 interface DebugHooks {
   game: Game | null;
@@ -25,6 +27,22 @@ interface DebugHooks {
   /** Lets a test script drive the player without a pointer lock. */
   intent: ((i: GameIntent, game: Game) => void) | null;
   stats: Record<string, number | string>;
+  /** Tours the benchmark spots and resolves with one row per spot. */
+  bench: (() => Promise<BenchSample[]>) | null;
+}
+
+/** Frames to settle at each benchmark spot (streaming, exposure, GPU timer batches), then to record. */
+const BENCH_FRAMES = { warm: 45, measure: 120 } as const;
+
+interface BenchRun {
+  spots: BenchSpot[];
+  index: number;
+  warm: number;
+  measure: number;
+  left: number;
+  recorder: BenchRecorder;
+  rows: BenchSample[];
+  done: (rows: BenchSample[]) => void;
 }
 
 class App {
@@ -46,7 +64,8 @@ class App {
   private stepMsAvg = 0;
   private frameMsAvg = 0;
   private readonly listener: Listener = { position: { x: 0, y: 0, z: 0 }, forward: { x: 0, y: 0, z: -1 } };
-  readonly debug: DebugHooks = { game: null, view: null, intent: null, stats: {} };
+  readonly debug: DebugHooks = { game: null, view: null, intent: null, stats: {}, bench: null };
+  private bench: BenchRun | null = null;
 
   constructor() {
     this.canvas = byId<HTMLCanvasElement>('view');
@@ -59,6 +78,7 @@ class App {
       onStart: (s) => void this.start(s),
       onResume: () => this.resume(),
       onQuit: () => this.quit(),
+      onBenchmark: () => void this.benchmarkFromMenu(),
       onSettingsChanged: (s) => void this.applySettings(s),
     });
     this.statsEl.className = 'stats';
@@ -95,6 +115,10 @@ class App {
       if (this.state === 'ready') this.lockAndPlay();
     });
     window.addEventListener('resize', () => this.view?.resize());
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'F3') void this.applySettings({ ...this.settings, showStats: !this.settings.showStats });
+    });
+    this.debug.bench = () => this.runBenchmark();
   }
 
   showMenu(): void {
@@ -108,6 +132,7 @@ class App {
     this.controls.sensitivity = s.sensitivity;
     this.hud.settings.minimal = s.minimalHud;
     this.statsEl.classList.toggle('on', s.showStats);
+    if (this.view && !this.bench) this.view.stage.governor.enabled = s.adaptive;
     if (this.view && (this.state === 'paused' || this.state === 'playing')) await this.view.applySettings(this.viewSettings(s));
   }
 
@@ -137,6 +162,7 @@ class App {
       await nextFrame();
     });
     this.view.stage.renderer.info.autoReset = false;
+    this.view.stage.governor.enabled = s.adaptive;
     // Two frames behind the loading screen: the post chain and shadow passes compile their
     // pipelines on first use, which compileAsync does not reach. No hitch on the first real frame.
     this.menu.showLoading('Preparing shaders', 0.93);
@@ -193,7 +219,7 @@ class App {
   private step(dt: number): void {
     const game = this.game;
     const view = this.view;
-    if (!game || !view) return;
+    if (!game || !view || this.bench) return;
     const scripted = this.debug.intent !== null;
     if (this.state !== 'playing' && !scripted) return;
     const t0 = performance.now();
@@ -228,7 +254,10 @@ class App {
     directionFromYawPitch(game.weapons.viewYaw(game.player), game.weapons.viewPitch(game.player), _fwd);
     this.listener.forward = _fwd;
     this.audio?.updateListener(this.listener, game.flashAmount);
-    this.frameMsAvg += (performance.now() - t0 - this.frameMsAvg) * 0.05;
+    const cpuMs = performance.now() - t0;
+    this.frameMsAvg += (cpuMs - this.frameMsAvg) * 0.05;
+    if (this.bench) this.benchFrame(frameSeconds, cpuMs, view, game);
+    else if (this.state === 'playing' && !document.hidden) view.stage.governor.update(frameSeconds);
     this.updateStats(frameSeconds, view);
     if (game.mode.view.finished && this.state === 'playing') {
       this.overTimer += frameSeconds;
@@ -238,6 +267,87 @@ class App {
         this.menu.showResult(game.mode.view.won, game.mode.view.resultText, game.kills);
       }
     }
+  }
+
+  private async benchmarkFromMenu(): Promise<void> {
+    const rows = await this.runBenchmark();
+    const map = this.game?.map;
+    this.state = 'paused';
+    this.menu.showBenchmark(this.benchTitle(map?.label ?? '') + '\n' + formatBench('', rows).trimStart());
+  }
+
+  private benchTitle(mapLabel: string): string {
+    const view = this.view;
+    const canvas = this.canvas;
+    return `Field Line · ${mapLabel} · ${this.settings.quality} · ${view?.stage.backendName ?? ''} · ${canvas.width}×${canvas.height} px`;
+  }
+
+  /**
+   * Visits every benchmark spot of the current map with logic paused and the governor off, and
+   * restores the player afterwards. Rendering keeps running from the normal loop.
+   */
+  runBenchmark(): Promise<BenchSample[]> {
+    const game = this.game;
+    const view = this.view;
+    if (!game || !view || this.bench) return Promise.resolve([]);
+    const spots = benchSpots(game.map);
+    const p = game.player;
+    const saved = { x: p.body.position.x, y: p.body.position.y, z: p.body.position.z, yaw: p.yawRad, pitch: p.pitchRad, state: this.state };
+    const params = new URLSearchParams(location.search);
+    const warm = Number(params.get('benchWarm')) || BENCH_FRAMES.warm;
+    const measure = Number(params.get('benchFrames')) || BENCH_FRAMES.measure;
+    view.stage.governor.enabled = false;
+    view.stage.governor.update(0);
+    this.menu.hide();
+    this.state = 'bench';
+    const first = spots[0];
+    if (first) placePlayer(game, first);
+    this.loop.start();
+    return new Promise((resolve) => {
+      this.bench = {
+        spots,
+        index: 0,
+        warm,
+        measure,
+        left: warm,
+        recorder: new BenchRecorder(),
+        rows: [],
+        done: (rows) => {
+          p.body.position.set(saved.x, saved.y, saved.z);
+          p.prevPosition.copy(p.body.position);
+          p.yawRad = saved.yaw;
+          p.pitchRad = saved.pitch;
+          view.stage.governor.enabled = this.settings.adaptive;
+          this.state = saved.state;
+          console.log(JSON.stringify({ benchmark: this.benchTitle(game.map.label), rows }));
+          resolve(rows);
+        },
+      };
+    });
+  }
+
+  private benchFrame(frameSeconds: number, cpuMs: number, view: GameView, game: Game): void {
+    const run = this.bench;
+    if (!run) return;
+    const spot = run.spots[run.index];
+    if (!spot) {
+      this.bench = null;
+      run.done(run.rows);
+      return;
+    }
+    if (run.left > 0) {
+      run.left--;
+      return;
+    }
+    const info = view.stage.renderer.info.render;
+    run.recorder.frame(frameSeconds, cpuMs, info.drawCalls, info.triangles);
+    if (run.recorder.frames < run.measure) return;
+    run.rows.push(run.recorder.finish(spot.name, view.stage.passTimer));
+    run.index++;
+    run.recorder = new BenchRecorder();
+    run.left = run.warm;
+    const next = run.spots[run.index];
+    if (next) placePlayer(game, next);
   }
 
   private fpsAvg = 60;
@@ -253,8 +363,11 @@ class App {
     s.triangles = info.triangles;
     s.ev = +view.adaptedEv.toFixed(2);
     s.backend = view.stage.backendName;
+    s.gpuMs = view.stage.passTimer.hasGpuTimes ? +view.stage.passTimer.gpuTotalMs.toFixed(2) : 'n/a';
+    s.governor = view.stage.governorLabel;
     if (!this.settings.showStats) return;
-    this.statsEl.textContent = `${s.fps} fps · ${(1000 / Math.max(1, this.fpsAvg)).toFixed(1)} ms frame\nCPU: render submit ${s.cpuFrameMs} ms · logic ${s.stepMs} ms/step\ndraw calls ${s.drawCalls} · tris ${(info.triangles / 1e6).toFixed(2)} M\nEV100 ${s.ev} (preset ${view.presetEv}) · ${s.backend}`;
+    const gpu = view.stage.passTimer.summary() || 'GPU timing: n/a on this backend';
+    this.statsEl.textContent = `${s.fps} fps · ${(1000 / Math.max(1, this.fpsAvg)).toFixed(1)} ms frame · res ${s.governor}${this.settings.adaptive ? ' (adaptive)' : ''}\nCPU ${s.cpuFrameMs} ms: ${view.cpu.summary()} · logic ${s.stepMs} ms/step\n${gpu}\ndraw calls ${s.drawCalls} · tris ${(info.triangles / 1e6).toFixed(2)} M\nEV100 ${s.ev} (preset ${view.presetEv}) · ${s.backend}`;
   }
 }
 
@@ -284,9 +397,11 @@ if (params.has('autostart')) {
   s.wet = params.has('wet');
   s.showStats = !params.has('nostats');
   app.debug.intent = () => {};
-  void app.start(s).then(() => {
+  void app.start(s).then(async () => {
     document.querySelector<HTMLElement>('.hint')?.style.setProperty('display', 'none');
     (window as unknown as { __ready: boolean }).__ready = true;
+    // ?bench: tour the spots right away and leave the rows for the script (scripts/benchView.mjs).
+    if (params.has('bench')) (window as unknown as { __bench: BenchSample[] }).__bench = await app.runBenchmark();
   });
 } else {
   app.showMenu();

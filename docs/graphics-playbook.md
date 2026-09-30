@@ -621,10 +621,59 @@ teleporting across the map.
 4. Look at the image. Then take **frames several seconds apart** for anything that
    moves (waves, swash, foam, caustics).
 
-### 9.2 Numbers to log
+### 9.2 Numbers to log: the measurement routine
 
-`drawCalls`, `triangles` (from `renderer.info`), CPU frame time, load time, and
-for a performance change the same numbers before and after at the same pose.
+`drawCalls`, `triangles` (from `renderer.info`), CPU and GPU frame time per
+pass, load time — and for any performance change **the same numbers before and
+after at the same fixed views**. All three games share `render/perf.ts` file
+for file:
+
+- **Fixed benchmark spots** (`app/bench.ts` per game): spawn, spawn turned
+  round, and the heaviest views of the map (Field Line: squad ground,
+  extraction, the lake; Lagoon: shore, jungle, outpost deck, islet). A spot is
+  a position and a look direction, nothing random.
+- **Benchmark run**: pause menu → *Benchmark* (on the phone, where real numbers
+  come from), or `?autostart&bench` in a browser. Logic is paused, the
+  governor is off, each spot settles 45 frames (streaming, exposure, a GPU
+  timer batch) and records 120. One row per spot: fps, p95 frame time, CPU
+  render time, calls, triangles, GPU ms per pass. *Copy* puts the table on the
+  clipboard for the report.
+- **Headless**: `node scripts/benchView.mjs --save before`, change, then
+  `--save after --compare before` (Playwright; `PLAYWRIGHT_MODULE` points at a
+  global install). Calls and triangles are exact anywhere; SwiftShader times
+  only compare runs on the same machine.
+- **GPU time per pass** (`PassTimer`): the renderer is created with
+  `trackTimestamp: true` and a custom `renderer.inspector`. Three calls
+  `inspector.beginRender(uid, scene, camera, target)` for every render and
+  writes a timestamp pair under the same uid; the inspector sorts uids into
+  groups (main scene + eye camera = `scene`; main scene + any other camera =
+  `shadows`; a `QuadMesh` = `post`; offscreen targets registered by name, e.g.
+  caustics = `water`, the rifle scope = `scope`). Every 12 frames
+  `renderer.resolveTimestampsAsync('render')` fills
+  `backend.timestampQueryPool.render.timestamps` (uid → ms); sum per group,
+  divide by the frames in the batch. WebGPU needs the `timestamp-query`
+  feature (Chrome quantises to 100 µs); WebGL2 needs
+  `EXT_disjoint_timer_query_webgl2`, which most phones lack — the overlay then
+  says "n/a" and CPU numbers carry the comparison.
+- **CPU time per section** (`CpuTimer.lap`): update, streaming, scope, water,
+  submit (the render call itself).
+- **F3 overlay**: fps, frame ms, governor level, CPU and GPU breakdowns, calls,
+  triangles, EV, backend.
+
+### 9.2b Frame governor (dynamic resolution)
+
+`FrameGovernor` (from Tanks, now shared) holds 60 fps by trading image
+quality, never gameplay. Each one-second window it takes the 70th and 90th
+percentile of frame intervals: p70 over 1/52 s → one step cheaper (quickly,
+2.5 s cooldown); p90 under 1/58.5 s for 8 windows → one step better (slowly),
+never back to a level that just failed (60 s memory). Isolated hitches don't
+move it. Steps, cheapest loss first: sun shafts off (a uniform loop count, so
+no recompile), then render scale 100 → 87 → 76 → 67 → 58 %. **A switch must
+not recompile** — uniforms and render-target size only — or the governor
+measures its own hitch. Added here: a run of steps down is judged after two
+steps; if p70 did not improve by 8 % (a display capped at 30 Hz, a CPU-bound
+frame), it goes back up and stays for a minute instead of blurring the image
+for nothing. Off in benchmarks; a settings toggle for players.
 
 ### 9.3 Pipeline tracer (catches stutter sources)
 
@@ -704,6 +753,7 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | WGSL compile error: sampling in non-uniform control flow | `texture()` with implicit LOD inside `If` (WebGL accepts it, WebGPU does not) | pass an explicit `.level()` computed outside the branch (e.g. from camera distance) |
 | WebGPU only: `Failed to execute 'createView' … 'swizzle' … not of type 'GPUTextureComponentSwizzle'`, never finishes loading | three r186 sets `swizzle: 'rgba'` on every texture view; older Chromium/WebView builds (e.g. 140) implement an older swizzle draft | shim `GPUTexture.prototype.createView` to retry without the (identity) swizzle (`render/webgpuCompat.ts`), installed before the renderer |
 | Headless tests only ever exercise WebGL2 | Playwright's headless shell has no WebGPU adapter | full Chromium with `--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader --use-webgpu-adapter=swiftshader --disable-vulkan-surface` gives a software WebGPU adapter: test WGSL there too |
+| Software WebGPU: "A valid external Instance reference no longer exists", device lost at once | Chromium 141 headless loses the device as soon as a canvas context is configured/presented (a bare device without a canvas lives) | test-only init script that replaces `GPUCanvasContext.configure/getCurrentTexture` with an ordinary texture (`benchView.mjs --no-present`): nothing is shown, every shader still compiles and errors still surface |
 | Headless test hangs with an idle browser | a page error stopped loading; the script waits for "ready" | always log `pageerror` and console errors; time out early |
 
 ---

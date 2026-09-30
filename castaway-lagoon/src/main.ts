@@ -1,8 +1,10 @@
+import { benchSpots, type BenchSpot, placePlayer } from './app/bench.ts';
 import { FixedLoop } from './core/loop.ts';
 import { LagoonControls } from './app/controls.ts';
 import { LagoonAudio } from './audio/lagoonAudio.ts';
 import { TIME_ORDER, type TimeOfDayId, WEATHER_ORDER, type WeatherId } from './config.ts';
 import { emptyIntent, LagoonGame, type LagoonIntent } from './game/game.ts';
+import { BenchRecorder, type BenchSample, formatBench } from './render/perf.ts';
 import { LagoonView, type Progress } from './render/view.ts';
 import { Hud } from './ui/hud.ts';
 import { type LagoonSettings, loadSettings, Menus } from './ui/menus.ts';
@@ -12,7 +14,7 @@ import { TouchControls } from './ui/touch.ts';
 // order lives in LagoonGame.step; this file wires input, logic, render, HUD
 // and audio, and owns nothing else.
 
-type State = 'loading' | 'ready' | 'playing' | 'paused';
+type State = 'loading' | 'ready' | 'playing' | 'paused' | 'bench';
 
 interface DebugHooks {
   game: LagoonGame | null;
@@ -23,6 +25,22 @@ interface DebugHooks {
   frames: number;
   /** Test scripts queue one intent editor per fixed step (only with ?autostart); `'freeze'` stops the picture there. */
   script: (((i: LagoonIntent, game: LagoonGame) => void) | 'freeze')[];
+  /** Tours the benchmark spots and resolves with one row per spot. */
+  bench: (() => Promise<BenchSample[]>) | null;
+}
+
+/** Frames to settle at each benchmark spot (streaming, exposure, GPU timer batches), then to record. */
+const BENCH_FRAMES = { warm: 45, measure: 120 } as const;
+
+interface BenchRun {
+  spots: BenchSpot[];
+  index: number;
+  warm: number;
+  measure: number;
+  left: number;
+  recorder: BenchRecorder;
+  rows: BenchSample[];
+  done: (rows: BenchSample[]) => void;
 }
 
 class App {
@@ -41,12 +59,17 @@ class App {
   private readonly stats: HTMLElement;
   private touch: TouchControls | null = null;
   private fpsAvg = 60;
-  readonly debug: DebugHooks = { game: null, view: null, stats: {}, freeze: false, frames: 0, script: [] };
+  readonly debug: DebugHooks = { game: null, view: null, stats: {}, freeze: false, frames: 0, script: [], bench: null };
+  private bench: BenchRun | null = null;
+  private cpuMsAvg = 0;
   scripted = false;
 
   constructor() {
     this.canvas = byId<HTMLCanvasElement>('view');
     this.settings = loadSettings();
+    // ?q=high|low: test and benchmark runs pick the preset without touching stored settings.
+    const q = new URLSearchParams(location.search).get('q');
+    if (q === 'high' || q === 'low') this.settings = { ...this.settings, quality: q };
     this.controls = new LagoonControls(document.body);
     this.applyControlSettings();
     this.hud = new Hud(byId('hud'));
@@ -61,7 +84,9 @@ class App {
         this.pendingWeather = id;
       },
       onSettings: (s) => this.applySettings(s),
+      onBenchmark: () => void this.benchmarkFromMenu(),
     });
+    this.debug.bench = () => this.runBenchmark();
     this.loop = new FixedLoop({ step: (dt) => this.step(dt), render: (alpha, frame) => this.render(alpha, frame) });
     if (this.controls.input.touch) {
       this.touch = new TouchControls(this.controls.input, {
@@ -110,6 +135,7 @@ class App {
     this.settings = s;
     this.applyControlSettings();
     this.audio?.setVolume(s.volume);
+    if (this.view && !this.bench) this.view.stage.governor.enabled = s.adaptive;
     if (rebuild && this.view) this.view.stage.applySettings({ quality: s.quality, renderScale: 1, toneMap: s.toneMap });
   }
 
@@ -134,6 +160,7 @@ class App {
     }
     this.debug.game = game;
     this.debug.view = this.view;
+    this.view.stage.governor.enabled = this.settings.adaptive;
     this.menus.showReady();
     this.state = 'ready';
     this.loop.start();
@@ -155,7 +182,7 @@ class App {
   private step(dt: number): void {
     const game = this.game;
     const view = this.view;
-    if (!game || !view || this.debug.freeze) return;
+    if (!game || !view || this.debug.freeze || this.bench) return;
     const playing = this.state === 'playing';
     if (!playing && !this.scripted && this.pendingTime === null && this.pendingWeather === null) return;
     const inventory = this.menus.inventoryOpen;
@@ -199,13 +226,91 @@ class App {
     if (this.state === 'paused') game.env.step(frameSeconds, game.rng, game.events);
     if (this.state === 'playing') this.controls.readMouse(game.equipment.adsBlend, !this.menus.inventoryOpen);
     view.stage.renderer.info.reset();
+    const t0 = performance.now();
     view.render(game, alpha, frameSeconds, this.controls.pendingYawRad, this.controls.pendingPitchRad);
+    const cpuMs = performance.now() - t0;
+    this.cpuMsAvg += (cpuMs - this.cpuMsAvg) * 0.05;
+    if (this.bench) this.benchFrame(frameSeconds, cpuMs, view, game);
+    else if (this.state === 'playing' && !document.hidden) view.stage.governor.update(frameSeconds);
     this.hud.update(game, frameSeconds);
     this.touch?.update();
     const cam = view.stage.camera;
     const fwd = { x: -Math.sin(cam.rotation.y) * Math.cos(cam.rotation.x), y: Math.sin(cam.rotation.x), z: -Math.cos(cam.rotation.y) * Math.cos(cam.rotation.x) };
     this.audio?.update(game, cam.position, fwd, frameSeconds);
     this.updateStats(frameSeconds, view);
+  }
+
+  private async benchmarkFromMenu(): Promise<void> {
+    this.menus.hidePause();
+    const rows = await this.runBenchmark();
+    this.menus.showBenchmark(formatBench(this.benchTitle(), rows), () => this.pause());
+  }
+
+  private benchTitle(): string {
+    return `Castaway Lagoon · ${this.settings.quality} · ${this.view?.stage.backendName ?? ''} · ${this.canvas.width}×${this.canvas.height} px`;
+  }
+
+  /**
+   * Visits every benchmark spot with logic paused and the governor off, and restores the
+   * player afterwards. Rendering keeps running from the normal loop.
+   */
+  runBenchmark(): Promise<BenchSample[]> {
+    const game = this.game;
+    const view = this.view;
+    if (!game || !view || this.bench) return Promise.resolve([]);
+    const spots = benchSpots(game);
+    const p = game.player;
+    const saved = { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yawRad, pitch: p.pitchRad, state: this.state };
+    const params = new URLSearchParams(location.search);
+    const warm = Number(params.get('benchWarm')) || BENCH_FRAMES.warm;
+    const measure = Number(params.get('benchFrames')) || BENCH_FRAMES.measure;
+    view.stage.governor.enabled = false;
+    view.stage.governor.update(0);
+    this.state = 'bench';
+    const first = spots[0];
+    if (first) placePlayer(game, first);
+    return new Promise((resolve) => {
+      this.bench = {
+        spots,
+        index: 0,
+        warm,
+        measure,
+        left: warm,
+        recorder: new BenchRecorder(),
+        rows: [],
+        done: (rows) => {
+          placePlayer(game, { name: 'restore', x: saved.x, y: saved.y, z: saved.z, yawRad: saved.yaw, pitchRad: saved.pitch });
+          view.stage.governor.enabled = this.settings.adaptive;
+          this.state = saved.state;
+          console.log(JSON.stringify({ benchmark: this.benchTitle(), rows }));
+          resolve(rows);
+        },
+      };
+    });
+  }
+
+  private benchFrame(frameSeconds: number, cpuMs: number, view: LagoonView, game: LagoonGame): void {
+    const run = this.bench;
+    if (!run) return;
+    const spot = run.spots[run.index];
+    if (!spot) {
+      this.bench = null;
+      run.done(run.rows);
+      return;
+    }
+    if (run.left > 0) {
+      run.left--;
+      return;
+    }
+    const info = view.stage.renderer.info.render;
+    run.recorder.frame(frameSeconds, cpuMs, info.drawCalls, info.triangles);
+    if (run.recorder.frames < run.measure) return;
+    run.rows.push(run.recorder.finish(spot.name, view.stage.passTimer));
+    run.index++;
+    run.recorder = new BenchRecorder();
+    run.left = run.warm;
+    const next = run.spots[run.index];
+    if (next) placePlayer(game, next);
   }
 
   private updateStats(frameSeconds: number, view: LagoonView): void {
@@ -217,7 +322,12 @@ class App {
     s.triangles = info.triangles;
     s.ev = +view.adaptedEv.toFixed(2);
     s.backend = view.stage.backendName;
-    if (this.stats.classList.contains('on')) this.stats.textContent = `${s.fps} fps · ${s.backend}\ndraw calls ${s.drawCalls} · ${(info.triangles / 1e6).toFixed(2)} M tris\nEV100 ${s.ev}`;
+    s.cpuFrameMs = +this.cpuMsAvg.toFixed(2);
+    s.gpuMs = view.stage.passTimer.hasGpuTimes ? +view.stage.passTimer.gpuTotalMs.toFixed(2) : 'n/a';
+    s.governor = view.stage.governorLabel;
+    if (!this.stats.classList.contains('on')) return;
+    const gpu = view.stage.passTimer.summary() || 'GPU timing: n/a on this backend';
+    this.stats.textContent = `${s.fps} fps · ${(1000 / Math.max(1, this.fpsAvg)).toFixed(1)} ms frame · res ${s.governor}${this.settings.adaptive ? ' (adaptive)' : ''} · ${s.backend}\nCPU ${s.cpuFrameMs} ms: ${view.cpu.summary()}\n${gpu}\ndraw calls ${s.drawCalls} · ${(info.triangles / 1e6).toFixed(2)} M tris\nEV100 ${s.ev}`;
   }
 }
 
@@ -240,6 +350,8 @@ const pick = <T extends string>(key: string, options: readonly T[], fallback: T)
 };
 // ?autostart runs the world without a pointer lock, for screenshots and tests.
 app.scripted = params.has('autostart');
-void app.start(pick('time', TIME_ORDER, 'noon'), pick('weather', WEATHER_ORDER, 'clear')).then(() => {
+void app.start(pick('time', TIME_ORDER, 'noon'), pick('weather', WEATHER_ORDER, 'clear')).then(async () => {
   (window as unknown as { __ready: boolean }).__ready = true;
+  // ?bench: tour the spots right away and leave the rows for the script (scripts/benchView.mjs).
+  if (params.has('bench')) (window as unknown as { __bench: BenchSample[] }).__bench = await app.runBenchmark();
 });

@@ -18,6 +18,7 @@ import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './int
 import { Lighting } from './lighting.ts';
 import { FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
 import { buildProps } from './props.ts';
+import { CpuTimer } from './perf.ts';
 import { Stage, type StageSettings } from './stage.ts';
 import { Undergrowth } from './undergrowth.ts';
 import { VIEWMODEL_LAYER, VM_SCALE, ViewModel } from './viewmodel.ts';
@@ -58,6 +59,8 @@ export class GameView {
   private readonly eye = new Vector3();
   private readonly tmp = new Vector3();
   private deathTilt = 0;
+  /** CPU milliseconds per part of render() (F3, benchmark). */
+  readonly cpu = new CpuTimer();
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -93,6 +96,7 @@ export class GameView {
       const domain = lakeDomain(lake);
       const field = { texture: shoreFieldTexture(computeShoreField(domain, lake.levelM, ground, { x: Math.sin(w.directionRad), z: Math.cos(w.directionRad) })), domain };
       this.caustics = new Caustics(this.settings.quality);
+      stage.passTimer.name(this.caustics.target, 'water');
       this.lakeFx = { lake, field, caustics: this.caustics };
       stage.scene.add(buildLakeWater(lake, field, ground, this.settings.quality));
     }
@@ -113,6 +117,7 @@ export class GameView {
     windVector.value.set(Math.sin(w.directionRad) * w.speedMs, 0, Math.cos(w.directionRad) * w.speedMs);
     wetness.value = this.settings.wet && map.id === 'city' ? 1 : 0;
     this.viewModel = new ViewModel(this.scopeSidePx());
+    stage.passTimer.name(this.viewModel.scope.target, 'scope');
     stage.camera.add(this.viewModel.root);
     this.viewModel.setEnvironment(stage.scene.environment, 1);
     this.effects = new Effects(stage.scene);
@@ -197,6 +202,7 @@ export class GameView {
   }
 
   render(game: Game, alpha: number, frameSeconds: number, pendingYawRad: number, pendingPitchRad: number): void {
+    this.cpu.begin();
     const cam = this.stage.camera;
     const p = game.player;
     // Eye: interpolated feet + smoothed eye height; dead players slump to the ground.
@@ -229,8 +235,10 @@ export class GameView {
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
     if (this.caustics) this.updateWater(game);
+    this.cpu.lap('update');
     this.foliage.update(cam.position);
     this.undergrowth.update(cam.position);
+    this.cpu.lap('streaming');
     // Sun shafts through the canopy: strongest with a low sun, none under a full overcast.
     const preset = this.lighting.preset;
     const lowSun = 1 - Math.min(1, Math.max(0, preset.sunElevationRad - 0.05) / 0.6);
@@ -241,8 +249,11 @@ export class GameView {
     if (this.scopeReady && game.weapons.current === 'sniper' && game.weapons.adsBlend > 0.3 && p.alive) {
       this.viewModel.renderScope(this.stage.renderer, this.stage.scene, cam.position);
     }
+    this.cpu.lap('scope');
     this.caustics?.render(this.stage.renderer);
+    this.cpu.lap('water');
     this.stage.render();
+    this.cpu.lap('submit');
     this.scopeReady = true;
     this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.preset.ev100, frameSeconds);
     this.stage.setExposure(Lighting.exposureMultiplier(this.lighting.preset.ev100, this.exposure.adaptedEv));

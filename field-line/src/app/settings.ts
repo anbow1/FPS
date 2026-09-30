@@ -14,6 +14,8 @@ export interface Settings {
   wet: boolean;
   quality: Quality;
   renderScale: number;
+  /** Frame governor: drops sun shafts, then resolution, to hold 60 fps (render/perf.ts). */
+  adaptive: boolean;
   toneMap: ToneMap;
   minimalHud: boolean;
   sensitivity: number;
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   wet: false,
   quality: isTouchDevice() ? 'low' : 'high', // phones and tablets start on the Low preset
   renderScale: 1,
+  adaptive: true,
   toneMap: 'aces',
   minimalHud: false,
   sensitivity: 1,

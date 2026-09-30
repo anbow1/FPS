@@ -1,12 +1,13 @@
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { float, Fn, length, Loop, mrt, output, pass, pow, saturation, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { float, Fn, int, length, Loop, mrt, output, pass, pow, saturation, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
 import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PCFShadowMap, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { setMaxAnisotropy } from './textureSet.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 import { LAGOON_CAMERA } from '../config.ts';
 import { isTouchDevice } from '../core/input.ts';
+import { FrameGovernor, PassTimer } from './perf.ts';
 
 // Renderer and post chain for the lagoon (rules §2.1, §2.5): HDR half-float
 // scene pass with a velocity MRT → TRAA (High) → screen-space sun shafts, the
@@ -26,6 +27,29 @@ export interface StageSettings {
 
 const SHAFT_SAMPLES = { high: 40, low: 0 } as const; // low: no shafts (a full-screen 40-tap loop)
 
+/** What the frame governor may give up, cheapest loss first: the shafts' 40-tap loop, then pixels. */
+export interface GovernorStep {
+  shafts: boolean;
+  scale: number;
+}
+const GOVERNOR_STEPS: Record<Quality, readonly GovernorStep[]> = {
+  high: [
+    { shafts: true, scale: 1 },
+    { shafts: false, scale: 1 },
+    { shafts: false, scale: 0.87 },
+    { shafts: false, scale: 0.76 },
+    { shafts: false, scale: 0.67 },
+    { shafts: false, scale: 0.58 },
+  ],
+  low: [
+    { shafts: false, scale: 1 },
+    { shafts: false, scale: 0.87 },
+    { shafts: false, scale: 0.76 },
+    { shafts: false, scale: 0.67 },
+    { shafts: false, scale: 0.58 },
+  ],
+};
+
 export class LagoonStage {
   readonly renderer: WebGPURenderer;
   readonly scene = new Scene();
@@ -34,6 +58,12 @@ export class LagoonStage {
   readonly sunScreen = uniform(new Vector2(0.5, 0.5));
   readonly shaftStrength = uniform(0);
   readonly saturationAmount = uniform(1.08);
+  /** GPU time per pass group (F3, benchmark). */
+  readonly passTimer = new PassTimer();
+  governor: FrameGovernor<GovernorStep>;
+  /** Loop count of the shafts pass: a uniform, so the governor turns them off without a recompile. */
+  private readonly shaftCount = uniform(0, 'int');
+  private dynamicScale = 1;
   private pipeline: RenderPipeline | null = null;
   private sceneTexture: Texture | null = null;
   private settings: StageSettings;
@@ -45,13 +75,36 @@ export class LagoonStage {
   ) {
     this.settings = { ...settings };
     installWebGpuCompat();
-    this.renderer = new WebGPURenderer({ canvas, antialias: false, reversedDepthBuffer: true, powerPreference: 'high-performance' });
+    this.renderer = new WebGPURenderer({ canvas, antialias: false, reversedDepthBuffer: true, powerPreference: 'high-performance', trackTimestamp: true });
+    this.renderer.inspector = this.passTimer;
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFShadowMap;
     this.camera = new PerspectiveCamera(LAGOON_CAMERA.verticalFovDeg, 16 / 9, LAGOON_CAMERA.nearM, LAGOON_CAMERA.farM);
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);
+    this.passTimer.mainScene = this.scene;
+    this.passTimer.mainCamera = this.camera;
+    this.governor = this.makeGovernor();
+  }
+
+  private makeGovernor(): FrameGovernor<GovernorStep> {
+    return new FrameGovernor(GOVERNOR_STEPS[this.settings.quality], (step) => this.applyStep(step));
+  }
+
+  private applyStep(step: GovernorStep): void {
+    this.shaftCount.value = step.shafts ? SHAFT_SAMPLES[this.settings.quality] : 0;
+    if (step.scale !== this.dynamicScale) {
+      this.dynamicScale = step.scale;
+      this.resize();
+    }
+  }
+
+  /** "87 % · shafts off": what the governor currently gives up. */
+  get governorLabel(): string {
+    const s = this.governor.step;
+    const shaftsOff = !s.shafts && SHAFT_SAMPLES[this.settings.quality] > 0;
+    return `${Math.round(s.scale * 100)} %${shaftsOff ? ' · shafts off' : ''}`;
   }
 
   async init(): Promise<void> {
@@ -75,11 +128,18 @@ export class LagoonStage {
   }
 
   applySettings(s: StageSettings): void {
+    const qualityChanged = s.quality !== this.settings.quality;
     this.settings = { ...s };
+    if (qualityChanged) {
+      const enabled = this.governor.enabled;
+      this.governor = this.makeGovernor();
+      this.governor.enabled = enabled;
+    }
     // ACES by default: it keeps the lagoon's turquoise and the jungle greens punchy.
     // AgX stays as the A/B for the sunset sky, where ACES pushes orange toward yellow.
     this.renderer.toneMapping = s.toneMap === 'agx' ? AgXToneMapping : ACESFilmicToneMapping;
     this.buildPipeline();
+    this.applyStep(this.governor.step);
     this.resize();
   }
 
@@ -96,13 +156,15 @@ export class LagoonStage {
     const samples = SHAFT_SAMPLES[this.settings.quality];
     const sunUv = this.sunScreen;
     const strength = this.shaftStrength;
+    const count = this.shaftCount;
     const shafts = Fn(() => {
       const start = uv();
       const step = start.sub(sunUv).mul(0.85 / samples);
       const coord = start.toVar();
       const decay = float(1).toVar();
       const sum = vec3(0).toVar();
-      Loop(samples, () => {
+      // The loop count is a uniform, so control flow stays uniform and implicit-LOD sampling is legal in WGSL.
+      Loop({ start: int(0), end: count, type: 'int', condition: '<' }, () => {
         coord.subAssign(step);
         const d = depth.sample(coord).r;
         // Reversed depth: the sky sits at 0.
@@ -131,7 +193,7 @@ export class LagoonStage {
     // Phones report a device pixel ratio of 3 or more: rendering that many pixels would halve the
     // frame rate for detail a 6-inch screen cannot show. Touch screens render at 1 pixel per CSS pixel.
     const maxRatio = isTouchDevice() ? 1 : 4;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio) * this.settings.renderScale);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio) * this.settings.renderScale * this.dynamicScale);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -156,6 +218,7 @@ export class LagoonStage {
   render(): void {
     if (!this.pipeline) throw new Error('stage.render() before init()');
     this.pipeline.render();
+    this.passTimer.poll(this.renderer);
   }
 }
 

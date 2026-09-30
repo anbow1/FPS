@@ -43,6 +43,8 @@ export interface MenuCallbacks {
   onStart: (s: Settings) => void;
   onResume: () => void;
   onQuit: () => void;
+  /** Tours the map's fixed benchmark spots and shows the numbers (app/bench.ts). */
+  onBenchmark: () => void;
   onSettingsChanged: (s: Settings) => void;
 }
 
@@ -96,14 +98,31 @@ export class Menu {
         <p class="sub">Click Resume to recapture the mouse.</p>
         <div class="row"><label>Light</label><div class="seg" data-g="preset"></div></div>
         ${this.settingsRows()}
-        <div class="actions"><button class="primary" data-a="resume">Resume</button><button data-a="quit">Quit to menu</button></div>
+        <div class="actions"><button class="primary" data-a="resume">Resume</button><button data-a="bench">Benchmark</button><button data-a="quit">Quit to menu</button></div>
         <details><summary style="cursor:pointer;margin-top:14px;color:#a9a59c">Controls</summary><div class="keys" data-g="keys"></div></details>
       </div>`;
     this.bindCommon();
     this.renderChoices();
     this.renderKeys();
     this.q('[data-a="resume"]').addEventListener('click', () => this.cb.onResume());
+    this.q('[data-a="bench"]').addEventListener('click', () => this.cb.onBenchmark());
     this.q('[data-a="quit"]').addEventListener('click', () => this.cb.onQuit());
+  }
+
+  /** Benchmark results as a plain table, with a copy button for pasting into a report. */
+  showBenchmark(text: string): void {
+    this.root.classList.remove('hidden');
+    this.root.innerHTML = `
+      <div class="menu">
+        <h1>BENCHMARK</h1>
+        <pre class="bench"></pre>
+        <div class="actions"><button class="primary" data-a="copy">Copy</button><button data-a="back">Back</button></div>
+      </div>`;
+    this.q('pre').textContent = text;
+    this.q('[data-a="copy"]').addEventListener('click', () => {
+      navigator.clipboard?.writeText(text).catch((err: unknown) => console.warn('clipboard unavailable:', err));
+    });
+    this.q('[data-a="back"]').addEventListener('click', () => this.showPause());
   }
 
   showLoading(label: string, fraction: number): void {
@@ -138,6 +157,7 @@ export class Menu {
     return `
       <div class="row"><label>Quality</label><div class="seg"><button data-set="quality:high">High</button><button data-set="quality:low">Low</button></div></div>
       <div class="row"><label>Render scale</label><div class="seg"><button data-set="renderScale:0.75">0.75</button><button data-set="renderScale:1">1.0</button><button data-set="renderScale:1.25">1.25</button><button data-set="renderScale:1.5">1.5</button></div></div>
+      <div class="row"><label>Adaptive resolution</label><div class="seg"><button data-set="adaptive:true">On</button><button data-set="adaptive:false">Off</button></div></div>
       <div class="row"><label>Tone mapping</label><div class="seg"><button data-set="toneMap:aces">ACES</button><button data-set="toneMap:agx">AgX</button></div></div>
       <div class="row"><label>Wet streets</label><div class="seg"><button data-set="wet:true">On</button><button data-set="wet:false">Off</button></div></div>
       <div class="row"><label>HUD</label><div class="seg"><button data-set="minimalHud:false">Full</button><button data-set="minimalHud:true">Minimal</button></div></div>

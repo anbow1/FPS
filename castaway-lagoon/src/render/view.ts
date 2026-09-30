@@ -8,6 +8,7 @@ import type { LagoonGame } from '../game/game.ts';
 import { Effects } from './effects.ts';
 import { buildGround } from './ground.ts';
 import { Caustics } from './caustics.ts';
+import { CpuTimer } from './perf.ts';
 import { AmbientLife } from './life.ts';
 import { Rain } from './weatherFx.ts';
 import { FOLIAGE } from './foliageMaterials.ts';
@@ -42,6 +43,8 @@ export class LagoonView {
   private exposure!: AutoExposure;
   private water!: ReturnType<typeof buildWater>;
   private caustics!: Caustics;
+  /** CPU milliseconds per part of render() (F3, benchmark). */
+  readonly cpu = new CpuTimer();
   outpost!: OutpostView;
   private props!: Props;
   viewModel!: ViewModel;
@@ -76,6 +79,7 @@ export class LagoonView {
     await stage.init();
     await progress('Shaping the island', 0.1);
     this.caustics = new Caustics(stage.quality);
+    stage.passTimer.name(this.caustics.target, 'water');
     stage.scene.add(buildGround(game.world, this.caustics));
     // `?bare` (a debug switch for viewmodel work) skips the vegetation, which dominates load and frame time.
     const bare = new URLSearchParams(location.search).has('bare');
@@ -151,6 +155,7 @@ export class LagoonView {
   }
 
   render(game: LagoonGame, alpha: number, frameSeconds: number, pendingYawRad: number, pendingPitchRad: number): void {
+    this.cpu.begin();
     const dt = Math.max(0, frameSeconds);
     const p = game.player;
     this.bobK = damp(this.bobK, p.grounded ? Math.min(1.4, p.speedMs / LAGOON_PLAYER.walkSpeedMs) : 0, 10, dt);
@@ -177,13 +182,17 @@ export class LagoonView {
     this.rain.update(game, dt, this.stage.camera, this.effects);
     this.stage.camera.getWorldQuaternion(this.camQuat);
     this.life.update(game, dt, this.camQuat);
+    this.cpu.lap('update');
     for (const h of this.hooks.update) h(game, dt, alpha);
+    this.cpu.lap('streaming');
     const d = env.daylight;
     const lightDir = d.night > 0.5 ? d.moonDir : d.sunDir;
     const lowSun = 1 - Math.min(1, Math.max(0, d.sunDir.y - 0.05) / 0.6);
     this.stage.aimShafts(lightDir, (1 - env.weather.cloudCover * 0.9) * (0.35 + lowSun * 0.5) * (d.night > 0.5 ? 0.25 : 1));
     this.caustics.render(this.stage.renderer);
+    this.cpu.lap('water');
     this.stage.render();
+    this.cpu.lap('submit');
     // The eye aims for the anchor, so night stays about two stops under a grey card.
     this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.anchorEv, dt, -DAYLIGHT.nightExposureBiasEv * d.night);
     this.stage.setExposure(2 ** (this.lighting.anchorEv - this.exposure.adaptedEv + LAGOON_EXPOSURE.compensationEv));
