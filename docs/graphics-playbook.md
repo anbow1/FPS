@@ -290,6 +290,38 @@ Lagoon `render/palms.ts`, `render/jungle.ts`, `render/undergrowth.ts`,
 Measured on the forest map (SwiftShader, 640×360): 516 → ~130 draw calls,
 3.99 M → 3.1 M triangles on High; 87 draw calls / 1.7 M on Low.
 
+5. **Impostors beyond `impostorM`** (`render/impostor.ts`, shared by all three
+   games): at load each species is rendered from 8 directions round its vertical
+   axis into one atlas, **unlit albedo + alpha and object-space normals through
+   one MRT** (`mrt({ albedo: vec4(diffuseColor.rgb, 1), normal: normalWorld·0.5+0.5 })`,
+   render-target textures named like the MRT outputs), each species in a row,
+   each view in a column, framed by an orthographic camera fitted to the
+   species' bounding box (`target.viewport/scissor` per frame, autoClear off).
+   At run time **all far trees of all species are one instanced draw**: an
+   `InstancedBufferGeometry` quad whose corners are an attribute; the vertex
+   node builds the billboard in world space facing the camera horizontally,
+   takes the camera's angle round the tree **in the tree's own frame**
+   (atan2 − yaw), and passes the UVs of the two nearest baked views plus the
+   blend between them, so walking round a tree turns it smoothly. The fragment
+   blends both views, turns the baked normal by the instance yaw and lights it
+   like any surface (sun, sky, shadows, fog). Refilled on the stream grid.
+6. **Dithered hand-over**: over a band `[impostorM − fadeM, impostorM]` the
+   meshes keep a pixel where an interleaved-gradient-noise threshold is above the
+   fade and the impostor where it is below (`ditherOutBeyond` gives opaque bark
+   an alphaTest for this): the two cover every pixel exactly once, and TRAA hides
+   the pattern. Both sides use the **same per-pixel horizontal distance**; a
+   per-instance distance on one side and per-pixel on the other leaves holes.
+7. **Ring streams**: the far mesh LOD is `outside: true, maxM: impostorM`, a
+   ring, so meshes stop where the impostors take over. In Tanks, where every
+   tree was a full mesh at any range and every one of them fell into three
+   shadow cascades, the near set is refilled per 32 m cell (felled trees stay
+   meshes wherever they lie, and leave the impostor list).
+8. **Hit proxies**: bullets, shells and the knife never test render geometry in
+   these games — they test the logic's own colliders (Field Line: a box per
+   trunk; Tanks: hulls knock trees through a 16 m spatial hash, shells ignore
+   them), which is the cheap "invisible proxy" the high-end pipelines add
+   separately. Impostors therefore need no collision of their own.
+
 ### Traps
 
 - **`NodeMaterial.copy()` never calls `Material.copy()`** (r186), so `clone()` loses

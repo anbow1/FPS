@@ -21,6 +21,8 @@ export interface StreamOptions {
   radiusM: number;
   /** Draw the instances beyond the radius instead (a far level of detail). */
   outside?: boolean;
+  /** With `outside`: and only those within this distance (m) — a ring, the impostors take over beyond. */
+  maxM?: number;
   castShadow: boolean;
   receiveShadow?: boolean;
 }
@@ -85,17 +87,20 @@ export class InstanceStream {
    * cell diagonal of margin.
    */
   private selected(camX: number, camZ: number, c: { x: number; z: number }): boolean {
-    const near = Math.hypot(c.x - camX, c.z - camZ) - this.opts.cellM * 1.42 < this.opts.radiusM;
-    return this.opts.outside ? !near : near;
+    const d = Math.hypot(c.x - camX, c.z - camZ);
+    const slack = this.opts.cellM * 1.42;
+    const near = d - slack < this.opts.radiusM;
+    if (!this.opts.outside) return near;
+    return !near && (this.opts.maxM === undefined || d - slack < this.opts.maxM);
   }
 
   /** The most instances any camera cell can select: the fixed capacity. */
   private largestRefill(): number {
-    if (!Number.isFinite(this.opts.radiusM) || this.opts.outside) return this.matrices.length / 16;
+    if (!Number.isFinite(this.opts.radiusM) || (this.opts.outside && this.opts.maxM === undefined)) return this.matrices.length / 16;
     const cell = this.opts.cellM;
     const xs = this.cellCentres.map((c) => c.x);
     const zs = this.cellCentres.map((c) => c.z);
-    const reach = Math.ceil(this.opts.radiusM / cell) + 2;
+    const reach = Math.ceil((this.opts.maxM ?? this.opts.radiusM) / cell) + 2;
     let best = 0;
     // Every cell the camera could stand in, empty ones included.
     for (let x = Math.min(...xs) - reach * cell; x <= Math.max(...xs) + reach * cell; x += cell) {

@@ -29,6 +29,8 @@ interface DebugHooks {
   stats: Record<string, number | string>;
   /** Tours the benchmark spots and resolves with one row per spot. */
   bench: (() => Promise<BenchSample[]>) | null;
+  /** The spots of the last tour, so screenshot scripts can return to them. */
+  spots: BenchSpot[];
 }
 
 /** Frames to settle at each benchmark spot (streaming, exposure, GPU timer batches), then to record. */
@@ -64,7 +66,7 @@ class App {
   private stepMsAvg = 0;
   private frameMsAvg = 0;
   private readonly listener: Listener = { position: { x: 0, y: 0, z: 0 }, forward: { x: 0, y: 0, z: -1 } };
-  readonly debug: DebugHooks = { game: null, view: null, intent: null, stats: {}, bench: null };
+  readonly debug: DebugHooks = { game: null, view: null, intent: null, stats: {}, bench: null, spots: [] };
   private bench: BenchRun | null = null;
 
   constructor() {
@@ -291,6 +293,7 @@ class App {
     const view = this.view;
     if (!game || !view || this.bench) return Promise.resolve([]);
     const spots = benchSpots(game.map);
+    this.debug.spots = spots;
     const p = game.player;
     const saved = { x: p.body.position.x, y: p.body.position.y, z: p.body.position.z, yaw: p.yawRad, pitch: p.pitchRad, state: this.state };
     const params = new URLSearchParams(location.search);

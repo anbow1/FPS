@@ -105,7 +105,7 @@ export class GameView {
     this.world = buildStaticWorld(map, lib);
     stage.scene.add(this.world.group, buildProps(map.props, lib));
     await progress('Planting trees', 0.5);
-    this.foliage = new Foliage(map.trees, map.bushes, lib, this.settings.quality);
+    this.foliage = new Foliage(map.trees, map.bushes, lib, this.settings.quality, stage.renderer);
     await progress('Growing undergrowth', 0.55);
     this.undergrowth = new Undergrowth(map, lib, this.settings.quality);
     stage.scene.add(this.foliage.group, this.undergrowth.group, this.actors.group);

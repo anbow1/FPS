@@ -1,5 +1,6 @@
 import { attribute, cameraPosition, positionLocal, sin, smoothstep, time, uniform, vec2, vec3 } from 'three/tsl';
-import { BufferAttribute, type BufferGeometry, Color, CylinderGeometry, Group, type Material, Matrix4, type MeshStandardNodeMaterial, Quaternion, Vector3 } from 'three/webgpu';
+import { BufferAttribute, type BufferGeometry, Color, CylinderGeometry, Group, type Material, Matrix4, Mesh, type MeshStandardNodeMaterial, Quaternion, Vector3, type WebGPURenderer } from 'three/webgpu';
+import { ditherOutBeyond, ImpostorAtlas, ImpostorField } from './impostor.ts';
 import { InstanceStream, type StreamPlacement } from './instanceStream.ts';
 import type { TreeInstance } from '../maps/types.ts';
 import { cloneMaterial, type MaterialLibrary } from './materials.ts';
@@ -21,6 +22,11 @@ export const FOLIAGE_LOD = {
   shrubM: { high: 220, low: 120 },
   /** Trunks within this distance cast shadows; beyond, the crowns' shadows are gone too. */
   trunkShadowM: { high: 110, low: 60 },
+  /** Beyond this distance pines are impostors (impostor.ts); the meshes dither out over the band before it. */
+  impostorM: { high: 200, low: 125 },
+  impostorFadeM: { high: 24, low: 18 },
+  /** Side of one baked impostor view, px. */
+  impostorPx: { high: 192, low: 128 },
 } as const;
 
 /**
@@ -168,8 +174,10 @@ const CELL_M = 32;
 export class Foliage {
   readonly group = new Group();
   private readonly streams: InstanceStream[] = [];
+  private impostors: ImpostorField | null = null;
+  private atlas: ImpostorAtlas | null = null;
 
-  constructor(trees: readonly TreeInstance[], bushes: readonly TreeInstance[], lib: MaterialLibrary, quality: 'high' | 'low') {
+  constructor(trees: readonly TreeInstance[], bushes: readonly TreeInstance[], lib: MaterialLibrary, quality: 'high' | 'low', renderer: WebGPURenderer) {
     this.group.name = 'foliage';
     if (trees.length === 0 && bushes.length === 0) return;
     const nearM = FOLIAGE_LOD.nearCrownM[quality];
@@ -207,10 +215,25 @@ export class Foliage {
       // tree on the map into each sun cascade. The ground under them keeps its baked canopy shade.
       const trunks = place(trees, 0.3, (seed) => new Color().setScalar(0.8 + rand(seed, 3) * 0.35));
       const shadowM = FOLIAGE_LOD.trunkShadowM[quality];
+      // Beyond impostorM a pine is one quad of a single instanced draw; the far meshes stop there,
+      // dissolving over the band before it while the impostors dissolve in (complementary dither).
+      const impM = FOLIAGE_LOD.impostorM[quality];
+      const fadeM = FOLIAGE_LOD.impostorFadeM[quality];
+      const farBark = swayingMaterial(lib.get('pineBark'), 0.08);
+      const farNeedles = swayingMaterial(lib.get('needles'), 0.18);
+      ditherOutBeyond(farBark, impM - fadeM, impM);
+      ditherOutBeyond(farNeedles, impM - fadeM, impM);
       add(new InstanceStream(trunk, bark, trunks, { cellM: CELL_M, radiusM: shadowM, castShadow: true }));
-      add(new InstanceStream(trunk, bark, trunks, { cellM: CELL_M, radiusM: shadowM, outside: true, castShadow: false }));
+      add(new InstanceStream(trunk, farBark, trunks, { cellM: CELL_M, radiusM: shadowM, outside: true, maxM: impM, castShadow: false }));
       add(new InstanceStream(nearCrown, needles, crowns, { cellM: CELL_M, radiusM: nearM, castShadow: true }));
-      add(new InstanceStream(farCrown, needles, crowns, { cellM: CELL_M, radiusM: nearM, outside: true, castShadow: false }));
+      add(new InstanceStream(farCrown, farNeedles, crowns, { cellM: CELL_M, radiusM: nearM, outside: true, maxM: impM, castShadow: false }));
+      // One species: the full pine (trunk and near crown) at unit height, as the streams place it.
+      const pine = new Group();
+      pine.add(new Mesh(trunk, lib.get('pineBark')), new Mesh(nearCrown, lib.get('needles')));
+      this.atlas = new ImpostorAtlas(renderer, [pine], { views: 8, framePx: FOLIAGE_LOD.impostorPx[quality] });
+      const inst = trees.map((t) => ({ x: t.pos.x, y: t.pos.y - 0.3, z: t.pos.z, yawRad: t.yawRad, scale: t.heightM, species: 0 }));
+      this.impostors = new ImpostorField(this.atlas, inst, { nearM: impM, fadeM, cellM: CELL_M });
+      this.group.add(this.impostors.mesh);
     }
     for (let v = 0; v < shrubs.length; v++) {
       const list = bushes.filter((b) => b.seed % shrubs.length === v);
@@ -223,5 +246,6 @@ export class Foliage {
   /** Refills the near/far crown and shrub sets when the camera crosses into another cell. */
   update(camera: Vector3): void {
     for (const s of this.streams) s.update(camera);
+    this.impostors?.update(camera);
   }
 }
