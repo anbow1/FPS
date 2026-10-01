@@ -66,6 +66,8 @@ export class Grass {
         // seen from a tank's height: fewer, longer, broader blades read as grass, not as a fine carpet
         widthScale: 3.2,
         heightScale: 1.3,
+        // from a tank's height dark roots read as dashes on the ground: keep them almost as bright as the tips
+        rootShade: 0.85,
         // the sheet colours are the terrain's base; its textured grass layer is ~1.7× brighter, and
         // blades darker than the ground under them read as stripes from a tank's height
         colours: {
