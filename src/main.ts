@@ -274,6 +274,8 @@ async function boot(): Promise<void> {
   // ?bench: tour the spots right after loading and leave the rows for scripts/benchView.mjs.
   if (params.has('bench')) (window as unknown as { __bench: BenchSample[] }).__bench = await runBenchmark();
   (window as unknown as { __atmo: typeof ATMO }).__atmo = ATMO;
+  // Screenshot scripts revisit the same named views the benchmark uses (game.benchPlace).
+  if (params.has('bench') || params.has('debug')) (window as unknown as { __spots: ReturnType<typeof benchSpots> }).__spots = benchSpots();
 }
 
 function nextFrame(): Promise<void> {
