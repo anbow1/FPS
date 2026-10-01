@@ -117,6 +117,11 @@ export interface GrassOptions {
   /** Blade size multipliers (1 = meadow grass ~0.25–0.5 m tall, 12 mm wide). */
   widthScale?: number;
   heightScale?: number;
+  /**
+   * Brightness at a blade's root, 0–1 (default 0.6): the dark base sells depth at eye height, but
+   * from a camera several metres up (Tanks) it turns a meadow into dark dashes.
+   */
+  rootShade?: number;
 }
 
 /** Share of the blades kept at the inner edge of each ring. */
@@ -236,8 +241,9 @@ export class GrassField {
     ).mul(float(1).sub(smoothstep(R * 0.85, R, dist)));
     const rank = blade.div(N);
     const vis = float(1).sub(smoothstep(keep.mul(0.85), keep, rank)).mul(select(r4.lessThan(presence), float(1), float(0)));
-    // survivors widen as the field thins, and never drop under ~0.8 px
-    const width = max(kindW.div(sqrt(max(keep, 0.15))), this.pixelAngle.mul(dist).mul(0.8));
+    // survivors widen as the field thins, and never drop under ~1.3 px: thinner, a blade flickers
+    // in and out between pixels as the TRAA jitter moves, and the field shimmers like static
+    const width = max(kindW.div(sqrt(max(keep, 0.15))), this.pixelAngle.mul(dist).mul(1.3));
     // Toward the edge of the field blades get shorter and lose their dark roots, so they melt into
     // the ground instead of reading as a carpet of dark dashes from a high camera.
     const far = smoothstep(R * 0.3, R * 0.9, dist);
@@ -269,7 +275,7 @@ export class GrassField {
     const c = opts.colours;
     const base = select(isMeadow, vec3(...c.meadow), select(isBeach, vec3(...c.beach), vec3(...c.sedge))).mul(r3.mul(0.35).add(0.8));
     const tipDry = mix(base, vec3(...c.dry), t.mul(t).mul(r4.mul(0.7).add(0.15)));
-    const col = tipDry.mul(mix(mix(0.6, 1, sqrt(t)), float(1), far.mul(0.8))).mul(float(1).sub(shade.mul(0.3)));
+    const col = tipDry.mul(mix(mix(opts.rootShade ?? 0.6, 1, sqrt(t)), float(1), far.mul(0.8))).mul(float(1).sub(shade.mul(0.3)));
     m.colorNode = varying(col, 'vGrassCol');
     // lit mostly as the ground it covers, a little as the blade: no black backs, no glare
     const nW = normalize(vec3(0, 1, 0).mul(0.6).add(vN.mul(faceDirection).mul(0.4)));
