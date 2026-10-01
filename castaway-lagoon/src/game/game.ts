@@ -570,6 +570,11 @@ export class LagoonGame {
     p.inJeep = true;
     p.swimming = false;
     p.grounded = true;
+    // Nobody drives off with the bonnet up: it is shut on the way round to the door.
+    if (j.bonnetTarget > 0) {
+      j.bonnetTarget = 0;
+      this.events.push({ type: 'jeep', what: 'bonnet' });
+    }
     j.doorTarget.driver = 1;
     this.jeepDoorTimerS = 1.2;
     this.driveSeat();

@@ -463,6 +463,7 @@ describe('jeep', () => {
     run(g, 120);
     expect(j.bonnet).toBeGreaterThan(0.9);
     getIn(g);
+    expect(j.bonnetTarget).toBe(0); // shut before driving off
     run(g, 2, (i, n) => {
       i.toggleLamp = n === 0;
     });
