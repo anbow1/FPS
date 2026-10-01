@@ -175,7 +175,8 @@ export class Pipeline {
     scenePass.setMRT(high ? mrt({ output, normal: packNormalToRGB(normalView), velocity }) : mrt({ output }));
     const colour = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
-    const aa = high ? traa(colour, depth, scenePass.getTextureNode('velocity'), this.camera) : colour;
+    const velocityTex = high ? scenePass.getTextureNode('velocity') : null;
+    const aa = velocityTex ? traa(colour, depth, velocityTex, this.camera) : colour;
 
     // Sun shafts: the sky (reversed depth: 0 at the far plane) smeared radially toward the sun, taps
     // jittered per pixel to trade banding for fine noise, strongest near the sun.
@@ -220,18 +221,26 @@ export class Pipeline {
     lite.outputNode = chain(aa);
     this.lite = lite;
     if (high) {
-      // GTAO at half resolution from the depth and view normals of the same scene pass.
+      // GTAO from the depth and view normals of the same scene pass, applied to the scene colour
+      // BEFORE TRAA, with its noise rotated every frame (useTemporalFiltering) so TRAA averages it
+      // out. Applied after TRAA, as it was, the raw per-pixel noise reached the screen as grain.
+      // Full resolution: the half-resolution path gathers four depths and keeps the min(), which
+      // with this reversed depth buffer (near = 1) is the farthest, not the nearest; on WebGPU
+      // that path drew a line across the middle of the screen (Low, without GTAO, had none).
       const normals = scenePass.getTextureNode('normal');
       const sceneNormal = sample((c) => unpackRGBToNormal(normals.sample(c)));
       const aoPass = ao(depth, sceneNormal, this.camera);
-      aoPass.resolutionScale = 0.5;
+      aoPass.resolutionScale = 1;
+      aoPass.samples.value = 8;
+      aoPass.useTemporalFiltering = true;
       const occl = aoPass.getTextureNode().sample(uv()).r;
       // thermal imagers see heat, not occlusion; the sky (reversed depth: 0 at the far plane) has none
       const onGeometry = smoothstep(0, 1e-6, depth.sample(uv()).r);
       const k = mix(float(1), mix(occl, float(1), this.uThermal).mul(0.75).add(0.25), onGeometry);
+      const occluded = vec4(colour.rgb.mul(k), colour.a);
       const full = new RenderPipeline(this.renderer);
       full.outputColorTransform = false;
-      full.outputNode = chain(vec4(aa.rgb.mul(k), aa.a));
+      full.outputNode = chain(velocityTex ? traa(occluded, depth, velocityTex, this.camera) : occluded);
       this.full = full;
     } else {
       this.full = null;
