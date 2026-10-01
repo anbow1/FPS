@@ -97,7 +97,21 @@ export class Hud {
     this.cross.classList.toggle('focus', f !== null && !busy);
     this.cross.style.opacity = String(1 - eq.adsBlend);
     let prompt = '';
-    if (f && f.kind === 'fire' && !busy && eq.action.kind !== 'examine') {
+    if (game.player.inJeep) {
+      prompt = '<kbd>W</kbd><kbd>S</kbd> Drive · brake · <kbd>A</kbd><kbd>D</kbd> Steer · <kbd>L</kbd> Lights · <kbd>E</kbd> Get out';
+    } else if (f && f.kind === 'jeep' && !busy && eq.action.kind !== 'examine') {
+      const j = game.jeep;
+      prompt =
+        f.model === 'jeepBonnet'
+          ? `<kbd>E</kbd> ${j.bonnetTarget > 0.5 ? 'Close' : 'Open'} the <b>bonnet</b>`
+          : f.model === 'jeepPassenger'
+            ? `<kbd>E</kbd> ${j.doorTarget.passenger > 0.5 ? 'Close' : 'Open'} the <b>door</b>`
+            : '<kbd>E</kbd> Get in the <b>jeep</b>';
+    } else if (game.player.inBoat) {
+      prompt = '<kbd>W</kbd><kbd>S</kbd> Throttle · <kbd>A</kbd><kbd>D</kbd> Tiller · <kbd>E</kbd> Leave the <b>boat</b>';
+    } else if (f && f.kind === 'boat' && !busy && eq.action.kind !== 'examine') {
+      prompt = '<kbd>E</kbd> Board the <b>boat</b>';
+    } else if (f && f.kind === 'fire' && !busy && eq.action.kind !== 'examine') {
       const fire = game.fire;
       prompt = !fire.lit && fire.fuelS > 0 ? '<kbd>E</kbd> Light the <b>fire</b>' : `<kbd>E</kbd> Put a log on the <b>${fire.lit ? 'fire' : 'dead fire'}</b>`;
     } else if (f && f.kind === 'sleep' && !busy && eq.action.kind !== 'examine') {

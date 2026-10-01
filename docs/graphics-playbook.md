@@ -668,6 +668,11 @@ normals stay at full strength over the shallows, because the caustics pass
 splats exactly those, and at half strength in the deep for detail finer than
 the FFT grid. The FFT runs every frame (spectrum, 2·log₂N butterfly passes,
 resolve with mipmaps); its targets are filed under "water" in the pass timer.
+Each pass writes its result through `fragmentNode`, not `colorNode`: the
+colour path clamped every channel at 0 and forced alpha to 1, which turned the
+signed spectrum into garbage (a straight band of nonsense slopes across the
+water in both games). Checked by reading the target back and comparing with a
+CPU DFT of the same spectrum (max difference 2·10⁻⁴).
 
 ---
 ## 8. Phones: budget and stutter-proofing
@@ -891,6 +896,8 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Headless tests only ever exercise WebGL2 | Playwright's headless shell has no WebGPU adapter | full Chromium with `--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader --use-webgpu-adapter=swiftshader --disable-vulkan-surface` gives a software WebGPU adapter: test WGSL there too |
 | Software WebGPU: "A valid external Instance reference no longer exists", device lost at once | Chromium 141 headless loses the device as soon as a canvas context is configured/presented (a bare device without a canvas lives) | test-only init script that replaces `GPUCanvasContext.configure/getCurrentTexture` with an ordinary texture (`benchView.mjs --no-present`): nothing is shown, every shader still compiles and errors still surface |
 | Headless test hangs with an idle browser | a page error stopped loading; the script waits for "ready" | always log `pageerror` and console errors; time out early |
+| A data pass (FFT, simulation) into a float render target gives garbage; one straight band of nonsense across the water | through `colorNode` a node material clamps each channel at 0 and forces alpha to 1 when opaque, so signed data and anything in `.w` are lost | write the result with `material.fragmentNode` (skips the colour and output stages), `transparent: true, blending: NoBlending`; verify against a CPU reference by reading the target back |
+| Read-back rows look mirrored on WebGL only | `readRenderTargetPixelsAsync` flips WebGL rows to match WebGPU | compare with row `N − 1 − y`; `screenCoordinate` and `textureLoad` agree on both backends |
 
 ---
 

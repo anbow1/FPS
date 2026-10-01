@@ -46,6 +46,10 @@ export class Player {
   surface: SurfaceKind = 'sand';
   wadingDepthM = 0;
   sprinting = false;
+  /** Sitting in the boat: the game moves the player with it (game.ts) and step() is not run. */
+  inBoat = false;
+  /** In the jeep's driving seat (game.ts moves the player with it). */
+  inJeep = false;
   /** Floating or diving, not walking. */
   swimming = false;
   /** The eye is below the surface. */

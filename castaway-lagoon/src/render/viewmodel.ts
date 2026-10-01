@@ -1,8 +1,9 @@
-import { CylinderGeometry, Euler, Group, Mesh, Object3D, Quaternion, Vector3 } from 'three/webgpu';
+import { Euler, Group, Mesh, Object3D, Quaternion, Vector3 } from 'three/webgpu';
 import { clamp, damp, smoothstep } from '../core/vec.ts';
-import { LOG, STONE } from '../config.ts';
+import { STONE } from '../config.ts';
 import type { EquipSlot } from '../game/events.ts';
 import { propMaterials } from './propMaterials.ts';
+import { logGeometry } from './props.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { Arm, copyPose, mixPose, POSES } from './arms.ts';
 import { buildKnife, buildRifle, type KnifeModel, type RifleModel, stoneGeometry, WEAPON_MATERIALS } from './weaponModels.ts';
@@ -141,7 +142,7 @@ export class ViewModel {
     this.right.hand.root.add(this.knife.root);
     this.stone.position.set(0, -0.034, -0.058);
     this.right.hand.root.add(this.stone);
-    this.log = new Mesh(new CylinderGeometry(LOG.radiusM, LOG.radiusM * 1.1, LOG.lengthM, 9).rotateZ(Math.PI / 2), propMaterials().logBark);
+    this.log = new Mesh(logGeometry(), propMaterials().logBark);
     this.log.position.set(0, -0.06, -0.07);
     this.right.hand.root.add(this.log);
     this.root.add(this.pivot, this.right.root, this.left.root);

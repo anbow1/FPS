@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENVIRONMENT, FIRE, INTERACT, LAGOON_PLAYER, RIFLE, WEATHER } from '../src/config.ts';
+import { ENVIRONMENT, FIRE, INTERACT, JEEP, LAGOON_PLAYER, RIFLE, WEATHER } from '../src/config.ts';
 import { airMass, computeDaylight, Environment } from '../src/game/environment.ts';
 import type { LagoonEvent } from '../src/game/events.ts';
 import { emptyIntent, LagoonGame, type LagoonIntent, sleepUntil } from '../src/game/game.ts';
@@ -281,7 +281,10 @@ describe('camp fire', () => {
   it('burns down and goes out, takes a log and needs the lighter to relight', () => {
     const g = newGame();
     expect(g.fire.lit).toBe(true);
-    const out = run(g, Math.ceil(60 * (FIRE.startFuelS + 1)));
+    expect(g.fire.fuelS).toBe(FIRE.startFuelS);
+    // the last second of a fire burning down (the whole 300 s is 18 000 game steps)
+    g.fire.fuelS = 1;
+    const out = run(g, 90);
     expect(out.some((e) => e.type === 'fire' && e.what === 'out')).toBe(true);
     expect(g.fire.strength).toBe(0);
     const pit = g.interactables.find((i) => i.kind === 'fire') as Interactable;
@@ -330,6 +333,146 @@ describe('camp fire', () => {
     g.bodies.throwLog({ x: pit.x + 4, y: pit.y + 1.5, z: pit.z }, { x: 0, y: -1, z: 0 });
     run(g, 120);
     expect(g.interactables.some((i) => i.model === 'log' && i.alive)).toBe(true);
+  });
+});
+
+describe('boat', () => {
+  function boardBoat(g: LagoonGame): void {
+    const spot = g.interactables.find((i) => i.kind === 'boat') as Interactable;
+    // stand on the dock beside it (port side) and look down at it
+    const onDock = g.boat.toWorld(-0.3, 0, -1.6, { x: 0, y: 0, z: 0 });
+    g.player.pos.x = onDock.x;
+    g.player.pos.z = onDock.z;
+    lookAt(g, spot, Math.hypot(onDock.x - spot.pos.x, onDock.z - spot.pos.z));
+    // on the dock beside the boat: look down at it and press E
+    run(g, 2, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+  }
+
+  it('floats level at its mooring', () => {
+    const g = newGame();
+    run(g, 300);
+    const b = g.boat;
+    expect(b.grounded).toBe(false);
+    expect(Math.abs(b.pos.y)).toBeLessThan(0.08);
+    expect(Math.abs(b.pitchRad)).toBeLessThan(0.06);
+    expect(Math.abs(b.rollRad)).toBeLessThan(0.06);
+  });
+
+  it('is boarded from the dock, motors at about 5 m/s and turns with the tiller', () => {
+    const g = newGame();
+    boardBoat(g);
+    expect(g.player.inBoat).toBe(true);
+    const b = g.boat;
+    const events = run(g, 60 * 10, (i) => {
+      i.move.moveForward = 1;
+    });
+    expect(events.some((e) => e.type === 'boat' && e.what === 'engineStart')).toBe(true);
+    expect(b.speedMs).toBeGreaterThan(4.3);
+    expect(b.speedMs).toBeLessThan(6.5);
+    // the player rides along, seated
+    expect(Math.hypot(g.player.pos.x - b.pos.x, g.player.pos.z - b.pos.z)).toBeLessThan(1.5);
+    const yaw0 = b.yawRad;
+    run(g, 60 * 2, (i) => {
+      i.move.moveForward = 1;
+      i.move.moveRight = 1;
+    });
+    expect(b.yawRad).toBeLessThan(yaw0 - 0.8); // starboard turn: yaw decreases
+  });
+
+  it('runs aground on the beach instead of climbing it', () => {
+    const g = newGame();
+    boardBoat(g);
+    run(g, 60 * 45, (i) => {
+      i.move.moveForward = 1;
+    });
+    const b = g.boat;
+    expect(heightAt(b.pos.x, b.pos.z)).toBeLessThan(0.1);
+  });
+
+  it('lets the player out onto the dock, or over the side into deep water', () => {
+    const g = newGame();
+    boardBoat(g);
+    run(g, 2, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(g.player.inBoat).toBe(false);
+    expect(g.player.swimming).toBe(false);
+    expect(g.player.pos.y).toBeGreaterThan(0.4); // on the dock deck
+    boardBoat(g);
+    run(g, 60 * 8, (i) => {
+      i.move.moveForward = 1;
+    });
+    run(g, 60 * 4);
+    run(g, 2, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(g.player.inBoat).toBe(false);
+    expect(g.player.swimming).toBe(true);
+  });
+});
+
+describe('jeep', () => {
+  function getIn(g: LagoonGame): void {
+    (g as unknown as { useJeep: (m: string) => void }).useJeep('jeepDriver');
+  }
+
+  it('stays parked, and drives off, turns and brakes once the player is behind the wheel', () => {
+    const g = newGame();
+    const j = g.jeep;
+    const p0 = { ...j.pos };
+    run(g, 120);
+    expect(Math.hypot(j.pos.x - p0.x, j.pos.z - p0.z)).toBeLessThan(0.01);
+    getIn(g);
+    expect(g.player.inJeep).toBe(true);
+    const events = run(g, 90, (i) => {
+      i.move.moveForward = 1;
+    });
+    expect(events.some((e) => e.type === 'jeep' && e.what === 'start')).toBe(true);
+    expect(j.speedMs).toBeGreaterThan(4);
+    // the driver rides along
+    expect(Math.hypot(g.player.pos.x - j.pos.x, g.player.pos.z - j.pos.z)).toBeLessThan(1);
+    const yaw0 = j.yawRad;
+    run(g, 30, (i) => {
+      i.move.moveForward = 1;
+      i.move.moveRight = 1;
+    });
+    expect(j.yawRad).toBeLessThan(yaw0 - 0.1);
+    run(g, 150, (i) => {
+      i.move.moveForward = -1;
+    });
+    expect(j.speedMs).toBeLessThan(0.5);
+  });
+
+  it('will not drive into water deeper than its air intake', () => {
+    const g = newGame();
+    getIn(g);
+    run(g, 60 * 12, (i) => {
+      i.move.moveForward = 1;
+    });
+    const nose = g.jeep.toWorld(JEEP.lengthM * 0.45, 0, 0, { x: 0, y: 0, z: 0 });
+    expect(-heightAt(nose.x, nose.z)).toBeLessThanOrEqual(JEEP.maxWadeM + 0.05);
+  });
+
+  it('switches headlights with L, opens the bonnet, and lets the driver out beside it', () => {
+    const g = newGame();
+    const j = g.jeep;
+    (g as unknown as { useJeep: (m: string) => void }).useJeep('jeepBonnet');
+    run(g, 120);
+    expect(j.bonnet).toBeGreaterThan(0.9);
+    getIn(g);
+    run(g, 2, (i, n) => {
+      i.toggleLamp = n === 0;
+    });
+    expect(j.headlights).toBe(true);
+    run(g, 2, (i, n) => {
+      i.interactPressed = n === 0;
+    });
+    expect(g.player.inJeep).toBe(false);
+    const d = Math.hypot(g.player.pos.x - j.pos.x, g.player.pos.z - j.pos.z);
+    expect(d).toBeGreaterThan(0.8);
+    expect(d).toBeLessThan(2);
   });
 });
 

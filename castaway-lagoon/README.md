@@ -25,7 +25,13 @@ water until the air runs out; take the backpack and the kerosene lamp (L
 lights it; it swings in your hand and goes out in the water); sleep on the
 cot until morning or the golden hour. The camp fire burns down in a few
 minutes: take logs from the stack and throw them on (4, then hold the mouse)
-or put them on with E; a dead fire needs the lighter from the backpack. Swim too far and a current carries
+or put them on with E; a dead fire needs the lighter from the backpack.
+The dinghy at the end of the dock takes you out (E to board or leave, W/S
+throttle, A/D tiller): it floats on the same waves the water is drawn with,
+leaves a wake, and runs aground on the sand. The old jeep beside the shelter
+drives on the beach (E at the driver's door, W/S drive and brake, A/D steer,
+L headlights): it pitches and rolls over the dunes, drags in soft sand,
+stops at deep water; the bonnet and the passenger door open with E. Swim too far and a current carries
 you back.
 
 | | |
@@ -33,6 +39,8 @@ you back.
 | Move / sprint / jump · swim up | WASD · Shift · Space |
 | Dive (hold, in deep water) | C |
 | Lamp on / off | L |
+| Boat: board or leave · throttle · tiller | E · W/S · A/D |
+| Jeep: get in or out · drive / brake · steer · headlights | E · W/S · A/D · L |
 | Interact / pick up / harvest / examine | E |
 | Shoot · slash · throw (hold to wind up) | Mouse 1 |
 | Aim the rifle | Mouse 2 |
@@ -110,7 +118,9 @@ pick up and throw a stone into the lagoon, open the crate, harvest a plant,
 take the rifle, fire, reload, aim, slash with the knife. `npm test` covers
 the logic (terrain, inventory, stones and skipping, rifle, crate, harvest,
 examine, swimming, diving and air, the border current, backpack, lamp,
-sleep, the camp fire and thrown firewood, daylight and weather).
+sleep, the camp fire and thrown firewood, the boat
+(floating, speed, turning, grounding, getting in and out), the jeep (parked,
+driving, turning, braking, deep water, lights, bonnet, getting out), daylight and weather).
 
 Known gaps:
 

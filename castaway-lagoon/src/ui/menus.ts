@@ -60,6 +60,8 @@ const CONTROLS: readonly [string, string][] = [
   ['C', 'Dive (hold, in deep water)'],
   ['E', 'Interact · pick up · sleep on the cot'],
   ['L', 'Lamp on / off'],
+  ['E · W/S · A/D', 'Boat: board or leave · throttle · tiller'],
+  ['E · W/S · A/D · L', 'Jeep: get in or out · drive · steer · headlights'],
   ['LMB', 'Shoot · slash · throw (hold to wind up)'],
   ['RMB', 'Aim the rifle'],
   ['R', 'Reload'],

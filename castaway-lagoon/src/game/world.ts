@@ -49,7 +49,7 @@ export interface RockInstance {
   moss: number; // 0..1: jungle rocks are furred with moss, surf-washed ones are bare
 }
 
-export type InteractableKind = 'pickup' | 'harvest' | 'crate' | 'examine' | 'sleep' | 'fire';
+export type InteractableKind = 'pickup' | 'harvest' | 'crate' | 'examine' | 'sleep' | 'fire' | 'boat' | 'jeep';
 
 export interface Interactable {
   id: number;

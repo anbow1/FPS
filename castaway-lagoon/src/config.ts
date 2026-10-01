@@ -47,6 +47,73 @@ export const LAGOON_PLAYER = {
   maxPitchRad: 1.45,
 } as const;
 
+/**
+ * The dinghy (game/boat.ts): a 3.6 m aluminium open boat with a 6 hp outboard, rider included in
+ * the mass. Drag and thrust are tuned by hand for ~5.5 m/s (11 kn) flat out and a turning circle of
+ * a few boat lengths; the hydrostatics (waterplane, ρ·g) are physical.
+ */
+export const BOAT = {
+  lengthM: 3.6,
+  beamM: 1.5,
+  massKg: 260,
+  /** Share of length × beam that is waterplane (a pointed bow). */
+  waterplaneFraction: 0.7,
+  /** From the reference point (still waterline) down to the keel when floating level… */
+  keelBelowRefM: 0.08,
+  /** …and how deep the hull is: buoyancy stops growing past this immersion. */
+  hullDepthM: 0.45,
+  heaveDamping: 5200, // N·s/m, all points together: about 0.3 of critical
+  angularDamping: 2.2, // 1/s on pitch and roll rates
+  maxThrustN: 900,
+  propSpeedMs: 9,
+  reverseFraction: 0.4,
+  surgeDragNs2m2: 11,
+  surgeDragNsm: 25,
+  swayDragNs2m2: 600,
+  swayDragNsm: 300,
+  yawDamping: 420,
+  rudderNmPerMs2: 45,
+  maxTillerRad: 0.6,
+  squatNmPerKgMs: 0.35,
+  /** Seat on the aft thwart, by the tiller: along, up (above the reference point), across. */
+  seat: { along: -1.1, up: 0.28, across: 0 },
+  seatedEyeM: 0.8,
+} as const;
+
+/**
+ * The old jeep (game/jeep.ts): a short-wheelbase 4×4 of about 1.1 t and 60 hp. Rolling resistance
+ * and grip are typical of soft beach sand against firm turf; the rest is tuned by hand.
+ */
+export const JEEP = {
+  lengthM: 3.4,
+  widthM: 1.6,
+  wheelbaseM: 2.1,
+  trackM: 1.3,
+  massKg: 1100,
+  powerW: 45000,
+  peakTractionN: 5500,
+  brakeN: 9000,
+  maxSpeedMs: 17,
+  maxReverseMs: 4,
+  rollingSand: 0.09,
+  rollingFirm: 0.03,
+  gripSand: 0.6,
+  gripFirm: 0.85,
+  aeroNs2m2: 1.2,
+  maxSteerRad: 0.6,
+  /** From the ground to the body's reference point (the floor, roughly over the axles). */
+  rideHeightM: 0.62,
+  wheelRadiusM: 0.36,
+  leanPerMs2: 0.012,
+  /** Water deeper than this at the nose would reach the air intake. */
+  maxWadeM: 0.55,
+  /** Driver's seat (left-hand drive): along, up from the reference point, across (+ right). */
+  seat: { along: -0.2, up: 0.12, across: -0.38 },
+  seatedEyeM: 0.8,
+  /** Each headlight's peak intensity (cd): an old sealed-beam lamp on high beam. */
+  headlightCd: 20000,
+} as const;
+
 /** Firewood: a split log ~45 cm long, thrown two-handed (game/bodies.ts). */
 export const LOG = {
   radiusM: 0.07,

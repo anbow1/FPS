@@ -1,18 +1,20 @@
 import { Rng } from '../core/rng.ts';
-import { FIRE, INTERACT, KNIFE, LAGOON_PLAYER, LOG, RIFLE, STONE, TIME_OF_DAY, type TimeOfDayId, type WeatherId } from '../config.ts';
+import { BOAT, FIRE, INTERACT, JEEP, KNIFE, LAGOON_PLAYER, LOG, RIFLE, STONE, TIME_OF_DAY, type TimeOfDayId, WATER_LEVEL_M, type WeatherId } from '../config.ts';
 import { Bodies, type BodyRest, knockCan } from './bodies.ts';
 import { Bullets } from './bullets.ts';
 import { newHit, type RayHit } from './colliders.ts';
 import { Environment } from './environment.ts';
+import { Boat } from './boat.ts';
 import { Campfire } from './fire.ts';
-import { FURNITURE, outpostToWorld, OUTPOST } from './outpost.ts';
+import { Jeep } from './jeep.ts';
+import { DOCK, FURNITURE, outpostToWorld, OUTPOST } from './outpost.ts';
 import { type ActionKind, Equipment, type Triggers } from './equipment.ts';
 import { type EquipSlot, EventQueue, type P3 } from './events.ts';
 import { Inventory } from './inventory.ts';
 import { ITEMS } from './items.ts';
 import { type MoveIntent, Player } from './player.ts';
 import { heightAt } from './terrain.ts';
-import { waveScale } from './waves.ts';
+import { waterSurfaceY, waveScale } from './waves.ts';
 import { buildWorld, crateContents, type Interactable, type LagoonWorld } from './world.ts';
 
 // The lagoon's game logic, headless (rules §10: no THREE here). One fixed
@@ -71,6 +73,13 @@ export class LagoonGame {
   readonly bullets: Bullets;
   timeSeconds = 0;
   readonly fire = new Campfire();
+  readonly boat: Boat;
+  private boatSpot: Interactable | null = null;
+  readonly jeep: Jeep;
+  /** Driver's door, passenger's door and bonnet: where E reaches them, moved with the jeep. */
+  private readonly jeepSpots: Interactable[] = [];
+  /** The driver's door swings shut this long after getting in or out. */
+  private jeepDoorTimerS = 0;
   /** Centre of the fire pit on the ground, world space. */
   readonly firePitPos: P3;
   /** The carried kerosene lamp is burning. */
@@ -94,6 +103,25 @@ export class LagoonGame {
     this.bullets = new Bullets(this.world.collision, this.events);
     this.firePitPos = outpostToWorld(FURNITURE.firePit.x, -OUTPOST.deckHeightM, FURNITURE.firePit.z, { x: 0, y: 0, z: 0 });
     this.firePitPos.y = heightAt(this.firePitPos.x, this.firePitPos.z);
+    // Moored alongside the end of the dock, on its starboard side, bow out.
+    const s = Math.sin(DOCK.yawRad);
+    const c = Math.cos(DOCK.yawRad);
+    const along = DOCK.lengthM - 2.2;
+    const off = DOCK.halfWidthM + BOAT.beamM * 0.5 + 0.35;
+    this.boat = new Boat({ x: DOCK.x - s * along + c * off, y: 0, z: DOCK.z - c * along - s * off }, DOCK.yawRad);
+    this.addInteractable({ kind: 'boat', model: 'none', item: null, count: 0, pos: { ...this.boat.pos }, yawRad: 0, radiusM: 1.4, name: 'Boat' });
+    this.boatSpot = this.world.interactables[this.world.interactables.length - 1] ?? null;
+    // Parked beside the shelter, nose toward the lagoon.
+    this.jeep = new Jeep(outpostToWorld(5.8, 0, -0.4, { x: 0, y: 0, z: 0 }), OUTPOST.yawRad);
+    for (const [model, name] of [
+      ['jeepDriver', 'Jeep'],
+      ['jeepPassenger', "Jeep's door"],
+      ['jeepBonnet', 'Bonnet'],
+    ] as const) {
+      this.addInteractable({ kind: 'jeep', model, item: null, count: 0, pos: { x: 0, y: 0, z: 0 }, yawRad: 0, radiusM: 0.45, name });
+      this.jeepSpots.push(this.world.interactables[this.world.interactables.length - 1] as Interactable);
+    }
+    this.placeJeepSpots();
   }
 
   get interactables(): readonly Interactable[] {
@@ -120,7 +148,19 @@ export class LagoonGame {
       intent.move.jump = false;
     }
     const water = { timeS: this.timeSeconds, waveScale: waveScale(this.env.weather.rainRate, this.env.weather.windMs) };
-    this.player.step({ ...intent.move, slowed }, dt, this.world.collision, this.events, water);
+    const inBoat = this.player.inBoat;
+    const inJeep = this.player.inJeep;
+    this.jeep.occupied = inJeep;
+    this.jeep.step(inJeep ? { throttle: intent.move.moveForward, steer: intent.move.moveRight } : { throttle: 0, steer: 0 }, dt, this.world.collision, this.events);
+    this.placeJeepSpots();
+    this.jeepDoorTimerS = Math.max(0, this.jeepDoorTimerS - dt);
+    if (this.jeepDoorTimerS === 0) this.jeep.doorTarget.driver = 0;
+    this.boat.occupied = inBoat;
+    this.boat.step(inBoat ? { throttle: intent.move.moveForward, steer: intent.move.moveRight } : { throttle: 0, steer: 0 }, dt, water.timeS, water.waveScale, this.world.collision, this.events);
+    if (inBoat) this.ride();
+    else if (inJeep) this.driveSeat();
+    else this.player.step({ ...intent.move, slowed }, dt, this.world.collision, this.events, water);
+    if (this.boatSpot) this.boat.toWorld(-0.3, 0.2, 0, this.boatSpot.pos);
     // Both hands are for swimming: whatever was held goes on the back.
     if (this.player.swimming && eq.slot !== 'hands' && eq.action.kind !== 'lower') {
       eq.finish();
@@ -130,8 +170,11 @@ export class LagoonGame {
     this.player.eye(this.eye);
     this.player.forward(this.fwd);
 
-    // The lamp: L lights it or puts it out; a dunking puts it out.
-    if (intent.toggleLamp && this.inventory.has('lamp') && !this.player.underwater) this.setLamp(!this.lampLit);
+    // L: the headlights while driving, otherwise the lamp; a dunking puts the lamp out.
+    if (intent.toggleLamp && this.player.inJeep) {
+      this.jeep.headlights = !this.jeep.headlights;
+      this.events.push({ type: 'jeep', what: 'lights' });
+    } else if (intent.toggleLamp && this.inventory.has('lamp') && !this.player.underwater) this.setLamp(!this.lampLit);
     if (this.lampLit && this.player.underwater) {
       this.setLamp(false);
       this.events.push({ type: 'message', text: 'The lamp went out' });
@@ -214,6 +257,14 @@ export class LagoonGame {
 
   private interact(): void {
     const eq = this.equipment;
+    if (this.player.inBoat) {
+      this.leaveBoat();
+      return;
+    }
+    if (this.player.inJeep) {
+      this.leaveJeep();
+      return;
+    }
     if (eq.action.kind === 'examine') {
       eq.finish();
       return;
@@ -231,6 +282,14 @@ export class LagoonGame {
       this.tendFire();
       return;
     }
+    if (it.kind === 'boat') {
+      this.board();
+      return;
+    }
+    if (it.kind === 'jeep') {
+      this.useJeep(it.model);
+      return;
+    }
     if (it.kind === 'examine') {
       eq.start('examine', Number.POSITIVE_INFINITY, it.id);
       this.events.push({ type: 'examine', id: it.id, title: it.name, text: it.text });
@@ -245,8 +304,8 @@ export class LagoonGame {
   private select(slot: EquipSlot): void {
     const eq = this.equipment;
     if (HANDS_ACTIONS.includes(eq.action.kind) || eq.action.kind === 'windup' || eq.action.kind === 'throw') return;
-    if (this.player.swimming && slot !== 'hands') {
-      this.events.push({ type: 'message', text: 'Not while swimming' });
+    if ((this.player.swimming || this.player.inJeep) && slot !== 'hands') {
+      this.events.push({ type: 'message', text: this.player.inJeep ? 'Not while driving' : 'Not while swimming' });
       return;
     }
     const inv = this.inventory;
@@ -405,6 +464,158 @@ export class LagoonGame {
     if (lit === this.lampLit) return;
     this.lampLit = lit;
     this.events.push({ type: 'lamp', lit });
+  }
+
+  private board(): void {
+    const p = this.player;
+    p.inBoat = true;
+    p.swimming = false;
+    p.underwater = false;
+    p.gasping = false;
+    p.grounded = true;
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    this.ride();
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    this.events.push({ type: 'boat', what: 'board' });
+  }
+
+  /** Seated at the tiller: the player moves and turns with the hull. */
+  private ride(): void {
+    const p = this.player;
+    const b = this.boat;
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    const seat = BOAT.seat;
+    b.toWorld(seat.along, seat.up, seat.across, p.pos);
+    p.pos.y += BOAT.seatedEyeM - LAGOON_PLAYER.eyeHeightM;
+    p.yawRad += b.yawRad - b.prevYawRad;
+    p.vel.x = b.vel.x;
+    p.vel.y = b.vel.y;
+    p.vel.z = b.vel.z;
+    p.surface = 'wood';
+    p.wadingDepthM = 0;
+    p.sprinting = false;
+  }
+
+  /** Step out over the side onto the dock or the shore if there is one, into the water if not. */
+  private leaveBoat(): void {
+    const p = this.player;
+    const b = this.boat;
+    const out = { x: 0, y: 0, z: 0 };
+    let best: { x: number; y: number; z: number } | null = null;
+    // The higher side wins: the dock over wading water, wading water over swimming.
+    for (const across of [BOAT.beamM * 0.5 + 0.7, -(BOAT.beamM * 0.5 + 0.7)]) {
+      b.toWorld(-0.3, 0, across, out);
+      const ground = this.world.collision.groundAt(out.x, out.z, WATER_LEVEL_M + 1, 1.2);
+      if (ground > WATER_LEVEL_M - LAGOON_PLAYER.swimDepthM + 0.1 && (!best || ground > best.y)) best = { x: out.x, y: ground, z: out.z };
+    }
+    p.inBoat = false;
+    p.vel.x = p.vel.y = p.vel.z = 0;
+    if (best) {
+      p.pos.x = best.x;
+      p.pos.y = best.y;
+      p.pos.z = best.z;
+      p.grounded = true;
+    } else {
+      // Over the side into deep water: swimming right away.
+      b.toWorld(-0.3, 0, BOAT.beamM * 0.5 + 0.7, out);
+      const depth = WATER_LEVEL_M - heightAt(out.x, out.z);
+      const surf = waterSurfaceY(out.x, out.z, this.timeSeconds, waveScale(this.env.weather.rainRate, this.env.weather.windMs), depth);
+      p.pos.x = out.x;
+      p.pos.z = out.z;
+      p.pos.y = Math.max(heightAt(out.x, out.z), surf - LAGOON_PLAYER.eyeHeightM + LAGOON_PLAYER.floatEyeAboveWaterM);
+      p.swimming = depth > LAGOON_PLAYER.swimDepthM;
+      p.grounded = !p.swimming;
+    }
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    this.events.push({ type: 'boat', what: 'leave' });
+  }
+
+  /** Door and bonnet handles follow the jeep: the driver's door on the left, the bonnet at the nose. */
+  private placeJeepSpots(): void {
+    const j = this.jeep;
+    const [driver, passenger, bonnet] = this.jeepSpots;
+    if (driver) j.toWorld(-0.1, 0.35, -JEEP.widthM / 2 - 0.1, driver.pos);
+    if (passenger) j.toWorld(-0.1, 0.35, JEEP.widthM / 2 + 0.1, passenger.pos);
+    if (bonnet) j.toWorld(JEEP.lengthM / 2 - 0.25, 0.45, 0, bonnet.pos);
+  }
+
+  private useJeep(model: string): void {
+    const j = this.jeep;
+    if (model === 'jeepBonnet') {
+      j.bonnetTarget = j.bonnetTarget > 0.5 ? 0 : 1;
+      this.events.push({ type: 'jeep', what: 'bonnet' });
+      return;
+    }
+    if (model === 'jeepPassenger') {
+      j.doorTarget.passenger = j.doorTarget.passenger > 0.5 ? 0 : 1;
+      this.events.push({ type: 'jeep', what: 'door' });
+      return;
+    }
+    // In behind the wheel: the door opens, the tool goes away, the door swings shut.
+    const p = this.player;
+    const eq = this.equipment;
+    if (eq.slot !== 'hands') {
+      eq.finish();
+      eq.switchTo('hands');
+      this.events.push({ type: 'equip', slot: 'hands' });
+    }
+    p.inJeep = true;
+    p.swimming = false;
+    p.grounded = true;
+    j.doorTarget.driver = 1;
+    this.jeepDoorTimerS = 1.2;
+    this.driveSeat();
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    this.events.push({ type: 'jeep', what: 'enter' });
+  }
+
+  /** Behind the wheel: the player moves and turns with the jeep. */
+  private driveSeat(): void {
+    const p = this.player;
+    const j = this.jeep;
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    const seat = JEEP.seat;
+    j.toWorld(seat.along, seat.up, seat.across, p.pos);
+    p.pos.y += JEEP.seatedEyeM - LAGOON_PLAYER.eyeHeightM;
+    p.yawRad += j.yawRad - j.prevYawRad;
+    const { fx, fz } = j.axes();
+    p.vel.x = fx * j.speedMs;
+    p.vel.y = 0;
+    p.vel.z = fz * j.speedMs;
+    p.surface = 'metal';
+    p.wadingDepthM = 0;
+    p.sprinting = false;
+  }
+
+  /** Out of the driver's door onto the ground beside it. */
+  private leaveJeep(): void {
+    const p = this.player;
+    const j = this.jeep;
+    const out = j.toWorld(-0.2, 0, -JEEP.widthM / 2 - 0.55, { x: 0, y: 0, z: 0 });
+    p.inJeep = false;
+    p.pos.x = out.x;
+    p.pos.z = out.z;
+    p.pos.y = this.world.collision.groundAt(out.x, out.z, j.pos.y + 0.5, 1.5);
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    p.vel.x = p.vel.y = p.vel.z = 0;
+    p.grounded = true;
+    j.doorTarget.driver = 1;
+    this.jeepDoorTimerS = 1.2;
+    this.events.push({ type: 'jeep', what: 'exit' });
   }
 
   /** E at the pit: put a log on, or light the wood that is there. */

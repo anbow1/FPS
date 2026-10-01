@@ -414,6 +414,8 @@ function photoTexture(): CanvasTexture {
 
 
 /** A split log lying along x, centred on its middle. */
-function logGeometry(): CylinderGeometry {
-  return new CylinderGeometry(LOG.radiusM, LOG.radiusM * 1.1, LOG.lengthM, 9).rotateZ(Math.PI / 2) as CylinderGeometry;
+export function logGeometry(): CylinderGeometry {
+  const g = new CylinderGeometry(LOG.radiusM, LOG.radiusM * 1.1, LOG.lengthM, 9).rotateZ(Math.PI / 2) as CylinderGeometry;
+  markDry(g, 0); // the bark material reads it: rain darkens a log lying out in the open
+  return g;
 }

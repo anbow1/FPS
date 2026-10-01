@@ -64,6 +64,15 @@ export class Effects {
     scene.add(this.group);
   }
 
+  /** Spray thrown off the bow of the boat, `k` 0–1 with speed. */
+  bowSpray(x: number, y: number, z: number, sideX: number, sideZ: number, k: number): void {
+    for (const s of [-1, 1]) {
+      if (Math.random() > k) continue;
+      const out = 0.8 + Math.random() * 1.2;
+      this.lit.spawn(SPECS.spray, this.v.set(x, y, z), this.w.set(sideX * s * out, 0.8 + Math.random() * 1.6 * k, sideZ * s * out));
+    }
+  }
+
   handle(e: LagoonEvent, game: LagoonGame, camera: Camera): void {
     switch (e.type) {
       case 'splash': {

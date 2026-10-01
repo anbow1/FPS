@@ -2,7 +2,7 @@ import { Group, Quaternion, Vector3 } from 'three/webgpu';
 import { damp } from '../core/vec.ts';
 import { lightColour } from './colour.ts';
 import { AutoExposure } from './exposure.ts';
-import { DAYLIGHT, LAGOON_CAMERA, LAGOON_EXPOSURE, LAGOON_PLAYER, WATER_LEVEL_M } from '../config.ts';
+import { BOAT, DAYLIGHT, LAGOON_CAMERA, LAGOON_EXPOSURE, LAGOON_PLAYER, WATER_LEVEL_M } from '../config.ts';
 import { waterSurfaceY, waveScale } from '../game/waves.ts';
 import { heightAt } from '../game/terrain.ts';
 import type { LagoonEvent } from '../game/events.ts';
@@ -27,6 +27,8 @@ import { LagoonLighting } from './lighting.ts';
 import { LagoonStage, type StageSettings } from './stage.ts';
 import { U } from './uniforms.ts';
 import { buildWater, placeWater } from './water.ts';
+import { BoatView } from './boat.ts';
+import { JeepView } from './jeep.ts';
 import { createRipples } from './waterFx.ts';
 import type { RippleField } from './rippleField.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
@@ -65,6 +67,9 @@ export class LagoonView {
   private readonly eye = new Vector3();
   /** The carried lamp hangs from this pivot, which follows the left hand (swingLamp). */
   private readonly lampCarry = new Group();
+  private readonly boat = new BoatView();
+  private readonly jeep = new JeepView();
+  private readonly boatTmp = { x: 0, y: 0, z: 0 };
   private readonly lampAnchor = new Vector3();
   private readonly lampPrevAnchor = new Vector3();
   private readonly lampPrevVel = new Vector3();
@@ -123,7 +128,7 @@ export class LagoonView {
     stage.scene.add(buildRocks(game.world.rocks));
     await progress('Building the shelter', 0.47);
     this.outpost = buildOutpost();
-    stage.scene.add(this.outpost.group, this.outpost.dock, this.lampCarry);
+    stage.scene.add(this.outpost.group, this.outpost.dock, this.lampCarry, this.boat.group, this.jeep.group);
     this.props = new Props(game);
     stage.scene.add(this.props.group);
     this.viewModel = new ViewModel();
@@ -183,7 +188,11 @@ export class LagoonView {
     this.eye.x += sideX * Math.sin(phase) * bob * 0.5;
     this.eye.z += sideZ * Math.sin(phase) * bob * 0.5;
     cam.position.copy(this.eye);
-    cam.rotation.set(p.pitchRad - pendingPitchRad + this.cameraPunchRad, p.yawRad - pendingYawRad, Math.sin(phase) * LAGOON_CAMERA.headRollRad * this.bobK);
+    // Seated in the boat the head rides its roll and half its pitch.
+    // Driving, the body's pitch and roll come through the seat the same way.
+    const boatRoll = p.inBoat ? -game.boat.rollRad * 0.8 : p.inJeep ? -game.jeep.rollRad * 0.8 : 0;
+    const boatPitch = p.inBoat ? game.boat.pitchRad * 0.5 : p.inJeep ? game.jeep.pitchRad * 0.5 : 0;
+    cam.rotation.set(p.pitchRad - pendingPitchRad + this.cameraPunchRad + boatPitch, p.yawRad - pendingYawRad, Math.sin(phase) * LAGOON_CAMERA.headRollRad * this.bobK + boatRoll);
     cam.updateMatrixWorld();
   }
 
@@ -194,6 +203,8 @@ export class LagoonView {
     this.bobK = damp(this.bobK, p.grounded ? Math.min(1.4, p.speedMs / LAGOON_PLAYER.walkSpeedMs) : 0, 10, dt);
     this.landDip = damp(this.landDip, 0, 9, dt);
     this.placeCamera(game, alpha, pendingYawRad, pendingPitchRad);
+    this.boat.update(game.boat, alpha, dt);
+    this.jeep.update(game.jeep, alpha, this.lighting.preExposure);
     this.swingLamp(game, dt);
     const env = game.env;
     U.time.value = game.timeSeconds + alpha / 60;
@@ -232,7 +243,8 @@ export class LagoonView {
     this.cpu.lap('streaming');
     // Wading and swimming push a wake that grows with speed (per 1/60 s, so frame rate does not matter).
     const wadeSpeed = Math.hypot(p.vel.x, p.vel.z);
-    if (p.pos.y < WATER_LEVEL_M - 0.05 && wadeSpeed > 0.2) this.ripples.disturb(p.pos.x, p.pos.z, 0.3, Math.min(0.004, wadeSpeed * 0.0015) * dt * 60);
+    if (!p.inBoat && !p.inJeep && p.pos.y < WATER_LEVEL_M - 0.05 && wadeSpeed > 0.2) this.ripples.disturb(p.pos.x, p.pos.z, 0.3, Math.min(0.004, wadeSpeed * 0.0015) * dt * 60);
+    this.wake(game, dt);
     this.ripples.update(dt, this.stage.camera.position.x, this.stage.camera.position.z);
     const d = env.daylight;
     const lightDir = d.night > 0.5 ? d.moonDir : d.sunDir;
@@ -269,6 +281,24 @@ export class LagoonView {
     this.outpost.lantern.color.setRGB(lamp.r, lamp.g, lamp.b);
     this.outpost.fire.color.setRGB(fire.r, fire.g, fire.b);
     this.lampOn = lampOn;
+  }
+
+  /** The boat's bow wave and wake in the ripple field, and spray off the bow at speed. */
+  private wake(game: LagoonGame, dt: number): void {
+    const b = game.boat;
+    const speed = Math.hypot(b.vel.x, b.vel.z);
+    if (speed < 0.4 || b.grounded) return;
+    const k = dt * 60;
+    const t = this.boatTmp;
+    b.toWorld(BOAT.lengthM * 0.4, 0, 0, t);
+    this.ripples.disturb(t.x, t.z, 0.6, Math.min(0.005, speed * 0.001) * k);
+    b.toWorld(-BOAT.lengthM * 0.55, 0, 0, t);
+    this.ripples.disturb(t.x, t.z, 0.45, Math.min(0.008, speed * 0.0012 + Math.abs(b.throttle) * 0.0015) * k);
+    if (speed > 2.5) {
+      const { rx, rz } = b.axes();
+      b.toWorld(BOAT.lengthM * 0.35, 0.05, 0, t);
+      this.effects.bowSpray(t.x, t.y, t.z, rx, rz, Math.min(1, (speed - 2.5) / 3) * dt * 20);
+    }
   }
 
   /** 0..1: whether the lantern is lit. */

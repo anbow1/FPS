@@ -42,7 +42,9 @@ export type LagoonEvent =
   | { type: 'message'; text: string }
   | { type: 'sleep'; until: TimeOfDayId }
   | { type: 'lamp'; lit: boolean }
-  | { type: 'fire'; what: 'fed' | 'lit' | 'out' };
+  | { type: 'fire'; what: 'fed' | 'lit' | 'out' }
+  | { type: 'boat'; what: 'board' | 'leave' | 'engineStart' | 'bump' | 'ground' }
+  | { type: 'jeep'; what: 'enter' | 'exit' | 'start' | 'bump' | 'door' | 'bonnet' | 'lights' };
 
 export class EventQueue {
   private items: LagoonEvent[] = [];

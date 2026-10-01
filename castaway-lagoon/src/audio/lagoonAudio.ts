@@ -38,6 +38,10 @@ export class LagoonAudio {
   private readonly cicadas;
   private readonly crickets;
   private readonly fireBed;
+  /** The outboard: a buzzing two-stroke (saw + sub-octave through a low-pass) and exhaust noise, placed at the transom. */
+  /** The jeep: a four-cylinder growl (two firings per turn), built like the outboard's voice. */
+  private jeepEngine: { osc: OscillatorNode; sub: OscillatorNode; tone: GainNode; hiss: { gain: GainNode; filter: BiquadFilterNode }; pan: PannerNode } | null = null;
+  private engine: { osc: OscillatorNode; sub: OscillatorNode; tone: GainNode; hiss: { gain: GainNode; filter: BiquadFilterNode }; pan: PannerNode } | null = null;
   private readonly cicadaLfo: OscillatorNode;
   private birdTimer = 2;
   private frogTimer = 3;
@@ -98,6 +102,8 @@ export class LagoonAudio {
     s.setListener(eye, forward);
     s.muffle(game.player.underwater);
     const now = s.now;
+    this.updateEngine(game, now);
+    this.updateJeep(game, now);
     const env = game.env;
     const w = env.weather;
     const night = env.daylight.night;
@@ -255,6 +261,32 @@ export class LagoonAudio {
         } else this.s.noiseBurst(out, when, { type: 'bandpass', freq: 1100, q: 0.7, gain: 0.05, attack: 0.03, decay: 0.25 });
         break;
       }
+      case 'jeep': {
+        const at = game.jeep.toWorld(0, 0.4, 0, { x: 0, y: 0, z: 0 });
+        const { out, when } = this.s.voice(at, 0.1, 2);
+        if (e.what === 'start') {
+          // Starter motor whirr, then it catches.
+          this.s.tone(out, when, { type: 'sawtooth', freq: 55, to: 80, gain: 0.06, attack: 0.02, decay: 0.7 });
+          this.s.noiseBurst(out, when + 0.7, { type: 'lowpass', freq: 300, gain: 0.25, attack: 0.005, decay: 0.2, buffer: this.s.brown });
+        } else if (e.what === 'door' || e.what === 'enter' || e.what === 'exit') this.s.noiseBurst(out, when + 0.9, { type: 'bandpass', freq: 700, q: 1.2, gain: 0.2, attack: 0.002, decay: 0.08 });
+        else if (e.what === 'bonnet') this.s.noiseBurst(out, when, { type: 'bandpass', freq: 1200, q: 2, gain: 0.12, attack: 0.01, decay: 0.3 });
+        else if (e.what === 'lights') this.s.noiseBurst(out, when, { type: 'highpass', freq: 3000, gain: 0.05, attack: 0.001, decay: 0.01 });
+        else this.s.noiseBurst(out, when, { type: 'lowpass', freq: 200, gain: 0.35, attack: 0.002, decay: 0.25, buffer: this.s.brown });
+        break;
+      }
+      case 'boat': {
+        const b = game.boat;
+        const at = b.toWorld(0, 0.2, 0, { x: 0, y: 0, z: 0 });
+        const { out, when } = this.s.voice(at, 0.1, 2);
+        if (e.what === 'engineStart') {
+          // Pull cord, a cough, then it runs.
+          this.s.noiseBurst(out, when, { type: 'bandpass', freq: 600, q: 1, gain: 0.12, attack: 0.02, decay: 0.25 });
+          this.s.noiseBurst(out, when + 0.35, { type: 'lowpass', freq: 400, gain: 0.25, attack: 0.005, decay: 0.12, buffer: this.s.brown });
+        } else if (e.what === 'bump') this.s.noiseBurst(out, when, { type: 'lowpass', freq: 250, gain: 0.35, attack: 0.002, decay: 0.2, buffer: this.s.brown });
+        else if (e.what === 'ground') this.s.noiseBurst(out, when, { type: 'bandpass', freq: 900, q: 0.6, gain: 0.2, attack: 0.02, decay: 0.6 });
+        else this.s.noiseBurst(out, when, { type: 'lowpass', freq: 350, gain: 0.12, attack: 0.01, decay: 0.15, buffer: this.s.brown });
+        break;
+      }
       case 'swimStroke':
         this.stroke(e.pos, e.underwater, e.fast);
         break;
@@ -399,6 +431,69 @@ export class LagoonAudio {
       const f = 500 + Math.random() * 900;
       s.tone(out, when + 0.05 + Math.random() * 0.25, { type: 'sine', freq: f, to: f * 1.6, gain: 0.03 * k, attack: 0.002, decay: 0.06 });
     }
+  }
+
+  private engineVoice(lowpassHz: number): { osc: OscillatorNode; sub: OscillatorNode; tone: GainNode; hiss: { gain: GainNode; filter: BiquadFilterNode }; pan: PannerNode } {
+    const s = this.s;
+    const ctx = s.ctx;
+    const pan = ctx.createPanner();
+    pan.panningModel = 'HRTF';
+    pan.distanceModel = 'inverse';
+    pan.refDistance = 3;
+    pan.connect(s.world);
+    const tone = ctx.createGain();
+    tone.gain.value = 0;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = lowpassHz;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    const sub = ctx.createOscillator();
+    sub.type = 'square';
+    osc.connect(lp);
+    sub.connect(lp);
+    lp.connect(tone).connect(pan);
+    osc.start();
+    sub.start();
+    return { osc, sub, tone, hiss: s.bed(s.pink, 'bandpass', 500, 0.8, pan), pan };
+  }
+
+  private updateJeep(game: LagoonGame, now: number): void {
+    const j = game.jeep;
+    if (!j.engineRunning && !this.jeepEngine) return;
+    this.jeepEngine ??= this.engineVoice(500);
+    const e = this.jeepEngine;
+    const at = j.toWorld(-1.1, 0.2, 0, { x: 0, y: 0, z: 0 });
+    e.pan.positionX.setTargetAtTime(at.x, now, 0.05);
+    e.pan.positionY.setTargetAtTime(at.y, now, 0.05);
+    e.pan.positionZ.setTargetAtTime(at.z, now, 0.05);
+    // ~750 rpm idle to ~4000: two firings per turn on a four-cylinder.
+    const hz = 25 + j.rpm * 110;
+    e.osc.frequency.setTargetAtTime(hz, now, 0.1);
+    e.sub.frequency.setTargetAtTime(hz / 2, now, 0.1);
+    const on = j.engineRunning ? 1 : 0;
+    e.tone.gain.setTargetAtTime(on * (0.07 + 0.08 * j.rpm), now, 0.15);
+    e.hiss.gain.gain.setTargetAtTime(on * (0.015 + 0.04 * j.rpm), now, 0.15);
+    e.hiss.filter.frequency.setTargetAtTime(300 + j.rpm * 900, now, 0.15);
+  }
+
+  private updateEngine(game: LagoonGame, now: number): void {
+    const b = game.boat;
+    if (!b.engineRunning && !this.engine) return;
+    this.engine ??= this.engineVoice(900);
+    const e = this.engine;
+    const stern = b.toWorld(-2, 0.3, 0, { x: 0, y: 0, z: 0 });
+    e.pan.positionX.setTargetAtTime(stern.x, now, 0.05);
+    e.pan.positionY.setTargetAtTime(stern.y, now, 0.05);
+    e.pan.positionZ.setTargetAtTime(stern.z, now, 0.05);
+    // Firing rate: ~1100 rpm idle to ~5500 flat out on a single-cylinder two-stroke (one bang per turn).
+    const hz = 18 + b.rpm * 74;
+    e.osc.frequency.setTargetAtTime(hz, now, 0.08);
+    e.sub.frequency.setTargetAtTime(hz / 2, now, 0.08);
+    const on = b.engineRunning ? 1 : 0;
+    e.tone.gain.setTargetAtTime(on * (0.05 + 0.09 * b.rpm), now, 0.1);
+    e.hiss.gain.gain.setTargetAtTime(on * (0.02 + 0.06 * b.rpm), now, 0.1);
+    e.hiss.filter.frequency.setTargetAtTime(500 + b.rpm * 1400, now, 0.1);
   }
 
   /** One stroke: a soft slosh at the surface, a muffled push and a few bubbles under it. */
