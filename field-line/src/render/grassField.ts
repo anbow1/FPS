@@ -196,7 +196,12 @@ export class GrassField {
     const q1 = select(swap, q0.yx, q0);
     const mx = mod(floor(o.div(2)), 2);
     const mz = floor(o.div(4));
-    const q = vec2(mix(q1.x, float(1).sub(q1.x), mx), mix(q1.y, float(1).sub(q1.y), mz));
+    const qm = vec2(mix(q1.x, float(1).sub(q1.x), mx), mix(q1.y, float(1).sub(q1.y), mz));
+    // A random toroidal shift per tile (a Cranley–Patterson rotation): the set stays evenly spread,
+    // but no two tiles share their rows. With the 8 orientations alone, every tile repeated the same
+    // lattice and from a few metres up the meadow read as a fixed screen-door pattern.
+    const shift = vec2(hash(tile.x.mul(12.9898).add(tile.y.mul(78.233))), hash(tile.x.mul(39.346).add(tile.y.mul(11.135)).add(5.1)));
+    const q = fract(qm.add(shift));
     const seed = blade.add(tile.x.mul(3.17)).add(tile.y.mul(7.31));
     const r1 = hash(seed);
     const r2 = hash(seed.add(11.3));
@@ -233,7 +238,10 @@ export class GrassField {
     const vis = float(1).sub(smoothstep(keep.mul(0.85), keep, rank)).mul(select(r4.lessThan(presence), float(1), float(0)));
     // survivors widen as the field thins, and never drop under ~0.8 px
     const width = max(kindW.div(sqrt(max(keep, 0.15))), this.pixelAngle.mul(dist).mul(0.8));
-    const H = kindH.mul(vis);
+    // Toward the edge of the field blades get shorter and lose their dark roots, so they melt into
+    // the ground instead of reading as a carpet of dark dashes from a high camera.
+    const far = smoothstep(R * 0.3, R * 0.9, dist);
+    const H = kindH.mul(vis).mul(float(1).sub(far.mul(0.45)));
     // lean, wind gusts travelling across the field, flutter, trampling
     const a = r2.mul(Math.PI * 2);
     const dir = vec2(cos(a), sin(a));
@@ -261,7 +269,7 @@ export class GrassField {
     const c = opts.colours;
     const base = select(isMeadow, vec3(...c.meadow), select(isBeach, vec3(...c.beach), vec3(...c.sedge))).mul(r3.mul(0.35).add(0.8));
     const tipDry = mix(base, vec3(...c.dry), t.mul(t).mul(r4.mul(0.7).add(0.15)));
-    const col = tipDry.mul(mix(0.6, 1, sqrt(t))).mul(float(1).sub(shade.mul(0.3)));
+    const col = tipDry.mul(mix(mix(0.6, 1, sqrt(t)), float(1), far.mul(0.8))).mul(float(1).sub(shade.mul(0.3)));
     m.colorNode = varying(col, 'vGrassCol');
     // lit mostly as the ground it covers, a little as the blade: no black backs, no glare
     const nW = normalize(vec3(0, 1, 0).mul(0.6).add(vN.mul(faceDirection).mul(0.4)));
