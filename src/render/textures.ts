@@ -118,7 +118,9 @@ export function makeSmokeSprite(seed: number): THREE.CanvasTexture {
       const dy = (y - S / 2 + 0.5) / (S / 2);
       const d = Math.sqrt(dx * dx + dy * dy);
       const v = n[y * S + x]!;
-      let a = Math.max(0, 1 - d * (0.8 + v * 0.7));
+      // noisy edge inside the circle, and always 0 at its rim: the old falloff left ~0.2 at the
+      // middle of each side where the noise was low, so dense smoke drew its square outline
+      let a = Math.max(0, 1 - d * (0.8 + v * 0.7)) * Math.min(1, Math.max(0, (1 - d) * 4));
       a = a * a * (3 - 2 * a);
       const i = (y * S + x) * 4;
       const shade = 200 + v * 55;

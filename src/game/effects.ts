@@ -78,8 +78,10 @@ function makePool(max: number, additive: boolean, spriteTex: THREE.Texture): Poo
     mat.colorNode = mix(col.mul(PU.emissive), vec3(1.2), G.uThermal).mul(a);
     mat.opacityNode = float(1);
   } else {
-    // thermal imagers see through most smoke and dust
-    const a = t.a.mul(alpha).mul(mix(1, 0.25, G.uThermal));
+    // thermal imagers see through most smoke and dust. The round falloff keeps the quad's edge
+    // invisible however the noise in the sprite's alpha comes out (without it dense smoke showed squares).
+    const d = length(uv().sub(0.5)).mul(2);
+    const a = t.a.mul(alpha).mul(mix(1, 0.25, G.uThermal)).mul(float(1).sub(smoothstep(0.55, 1, d)));
     // cheap volumetric lighting: ambient + forward-scattered sun, darker in dense cores
     const light = PU.ambient.mul(1.6).add(PU.sun.mul(t.r.mul(0.25).add(0.35)));
     const lit = col.mul(light).mul(t.r.mul(0.3).add(0.7));
