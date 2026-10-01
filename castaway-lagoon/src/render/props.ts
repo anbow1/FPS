@@ -5,6 +5,7 @@ import type { Interactable } from '../game/world.ts';
 import { card, merge, rand } from './meshkit.ts';
 import { markDry } from './outpost.ts';
 import { propMaterials } from './propMaterials.ts';
+import { PROP_MODELS } from './propModels.ts';
 import { buildKnife, buildRifle, shellGeometry, stoneGeometry, WEAPON_MATERIALS } from './weaponModels.ts';
 import { addSway, leafMaterial } from './foliageMaterials.ts';
 
@@ -112,6 +113,7 @@ export class Props {
   }
 
   private build(it: Interactable): Object3D {
+    if (!PROP_MODELS.has(it.model)) throw new Error(`no prop model for '${it.model}' (add it to render/propModels.ts and below)`);
     const M = propMaterials();
     const g = new Group();
     g.name = `prop-${it.model}`;
@@ -262,7 +264,10 @@ export class Props {
       }
       case 'woodpile': // the stack itself is part of the outpost
       case 'lantern': // drawn by the outpost, which carries it once taken (render/outpost.ts)
-      case 'none': // a place to use, not a thing: the cot
+      case 'none': // a place to use, not a thing: the cot, the boat
+      case 'jeepDriver': // the jeep's handles, drawn with the jeep (render/jeep.ts)
+      case 'jeepPassenger':
+      case 'jeepBonnet':
         break;
       default:
         throw new Error(`no prop model for '${it.model}'`);

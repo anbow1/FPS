@@ -7,6 +7,7 @@ import { Inventory } from '../src/game/inventory.ts';
 import { heightAt, LAGOON_CENTRE, surfaceAt } from '../src/game/terrain.ts';
 import type { Interactable } from '../src/game/world.ts';
 import { Rng } from '../src/core/rng.ts';
+import { PROP_MODELS } from '../src/render/propModels.ts';
 import { EventQueue } from '../src/game/events.ts';
 
 const DT = 1 / 60;
@@ -473,6 +474,17 @@ describe('jeep', () => {
     const d = Math.hypot(g.player.pos.x - j.pos.x, g.player.pos.z - j.pos.z);
     expect(d).toBeGreaterThan(0.8);
     expect(d).toBeLessThan(2);
+  });
+});
+
+describe('render contract', () => {
+  it('knows how to draw (or deliberately not draw) every interactable a new game has', () => {
+    // An unknown model throws while the props are built and the game never finishes loading.
+    for (const time of ['noon', 'night'] as const) {
+      const g = new LagoonGame(1234, time, 'clear');
+      const unknown = g.interactables.filter((i) => !PROP_MODELS.has(i.model)).map((i) => i.model);
+      expect(unknown).toEqual([]);
+    }
   });
 });
 
