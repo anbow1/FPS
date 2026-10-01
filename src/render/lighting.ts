@@ -198,7 +198,10 @@ export class Lighting {
     this.sun = new DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.00025;
-    this.sun.shadow.normalBias = 0.045;
+    // Along the surface normal, in metres. It has to cover the coarsest cascade: texels there are
+    // ~0.3 m (600 m over 2048 px), and at 0.045 m slopes turned away from the sun shadowed
+    // themselves in blocky squares. 0.12 m still keeps the hull's shadow touching its tracks.
+    this.sun.shadow.normalBias = 0.12;
     const px = quality === 'high' ? 2048 : 1024;
     this.sun.shadow.mapSize.set(px, px);
     // Cascades instead of one 4096² map around the tank: crisp near the hull, still shadowed at range.

@@ -19,6 +19,7 @@ import {
   mix,
   mod,
   normalize,
+  positionWorld,
   pow,
   select,
   sin,
@@ -277,6 +278,13 @@ export class GrassField {
     const tipDry = mix(base, vec3(...c.dry), t.mul(t).mul(r4.mul(0.7).add(0.15)));
     const col = tipDry.mul(mix(mix(opts.rootShade ?? 0.6, 1, sqrt(t)), float(1), far.mul(0.8))).mul(float(1).sub(shade.mul(0.3)));
     m.colorNode = varying(col, 'vGrassCol');
+    // Shadow lookups from a point lifted above the blade. A blade's lower half sits right at the
+    // terrain's own depth in the sun's shadow map, so it shadowed itself at random: fine grain
+    // in the near cascade, blocky squares in the coarse far one, and a straight line on the ground
+    // where the cascades meet. The lift grows with distance like the cascade texels; it is far
+    // smaller than a tree or a hull, so their shadows still fall on the grass.
+    const shadowLift = length(positionWorld.xz.sub(cameraPosition.xz)).mul(0.01).add(0.35);
+    m.receivedShadowPositionNode = positionWorld.add(vec3(0, shadowLift, 0));
     // lit mostly as the ground it covers, a little as the blade: no black backs, no glare
     const nW = normalize(vec3(0, 1, 0).mul(0.6).add(vN.mul(faceDirection).mul(0.4)));
     m.normalNode = normalize(cameraViewMatrix.mul(vec4(nW, 0)).xyz);
