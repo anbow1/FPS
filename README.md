@@ -22,6 +22,11 @@ graphics rules of all three games (Field Line, Castaway Lagoon, Tanks) as a
 fill-in template (Polish) to copy into a new game: architecture, light,
 materials, vegetation, water, stutter, measurement, presets, acceptance.
 
+**[docs/game-specs/](docs/game-specs/)** — one build spec per game (Field Line,
+Castaway Lagoon, Tanks) for testing how well other models build a game: the
+brief to hand over, reference screenshots of the target look, budgets, a
+build order, and for the grader the verification steps and a 100-point rubric.
+
 **[docs/graphics-playbook.md](docs/graphics-playbook.md)** — every graphics
 technique used in both games (renderer and light units, procedural textures,
 terrain, sky, vegetation and streaming, water, shore waves, swash, caustics),
