@@ -1,11 +1,11 @@
-import { attribute, float, int, max, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3 } from 'three/tsl';
+import { attribute, cos, float, fwidth, int, length, max, mix, normalMap, normalWorld, positionWorld, sin, smoothstep, texture, vec2, vec3 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, type DataArrayTexture, Group, Mesh, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { fbm2 } from '../core/noise.ts';
 import { WATER_LEVEL_M } from '../config.ts';
 import { beachWidth, cliffiness, heightAt, LAGOON_CENTRE, normalAt, shoreDistance } from '../game/terrain.ts';
 import type { LagoonWorld } from '../game/world.ts';
 import { noiseMap, terrainArray } from './textures.ts';
-import { swash } from './shoreWaves.ts';
+import { shorePhase, swash } from './shoreWaves.ts';
 import { type Caustics, causticAt } from './caustics.ts';
 import { U } from './uniforms.ts';
 
@@ -328,6 +328,38 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   rough = mix(rough, float(0.75), foamy);
   nTex = mix(nTex, vec3(0.5, 0.5, 1), max(max(puddle, film), wet.mul(0.4)));
 
+  // Wave-formed ripples on the shallow sand, after ClearWater6.1's sand_relief (SamG-Coder,
+  // MIT): crests run across the swell (shoreField's propagation direction) about 20 cm apart,
+  // wandering where a slow noise bends the phase, with a weaker oblique family that breaks them
+  // into ladder ripples. Height h = A(cos φ + 0.18 cos(2φ + 0.6)), sharp crests over flat
+  // troughs; the normal comes from its analytic slope, not a texture, so it never tiles. Only
+  // where the swell's orbital motion reaches the bed (exposed, 0.1–4 m deep), and faded out
+  // where a pixel spans a good part of a ripple, so it cannot shimmer in the distance.
+  const depth = max(float(WATER_LEVEL_M).sub(p.y), 0);
+  const ph = shorePhase(p.xz);
+  const across = vec2(ph.dir.y.negate(), ph.dir.x);
+  const oblique = ph.dir.mul(0.9).add(across.mul(0.44));
+  const bend = texture(noise, p.xz.div(9)).g.mul(7);
+  const RIPPLE_K = 31; // rad/m: 0.2 m wavelength
+  const OBLIQUE_K = 26;
+  const RIPPLE_AMP_M = 0.014;
+  const phi1 = p.xz.dot(ph.dir).mul(RIPPLE_K).add(bend);
+  const phi2 = p.xz.dot(oblique).mul(OBLIQUE_K).add(bend.mul(0.6)).add(1.7);
+  /** dh/dφ of one ripple family, per metre of amplitude. */
+  const ridgeSlope = (phi: Node<'float'>): Node<'float'> => sin(phi).add(sin(phi.mul(2).add(0.6)).mul(0.36)).negate();
+  const footprintM = max(length(fwidth(p.xz)), 1e-4);
+  const ripple = kS
+    .mul(smoothstep(0.1, 0.4, depth))
+    .mul(float(1).sub(smoothstep(3, 6, depth)))
+    .mul(smoothstep(0.05, 0.5, ph.exposure))
+    .mul(float(1).div(footprintM.mul(footprintM).mul(600).add(1)));
+  const gradH = ph.dir.mul(ridgeSlope(phi1).mul(RIPPLE_K)).add(oblique.mul(ridgeSlope(phi2).mul(OBLIQUE_K * 0.35))).mul(RIPPLE_AMP_M);
+  // Tangent space: x along +X, y along −Z, so the normal tilts by (−∂h/∂x, +∂h/∂z).
+  nTex = nTex.add(vec3(gradH.x.negate(), gradH.y, 0).mul(ripple.mul(0.5)));
+  // Darker shell grit and heavy minerals settle in the troughs.
+  const crest = cos(phi1).add(cos(phi1.mul(2).add(0.6)).mul(0.18));
+  albedo = albedo.mul(float(1).sub(float(1).sub(crest).mul(0.06).mul(ripple)));
+
   m.colorNode = albedo;
   m.roughnessNode = rough;
   m.metalnessNode = float(0);
@@ -337,9 +369,10 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
 
   // Caustics on the lagoon floor, splatted from the water's own ripples (caustics.ts): the
   // sun's direct light on the floor is scaled by the light concentration, fading with depth.
-  const depth = max(float(WATER_LEVEL_M).sub(p.y), 0);
   const focus = causticAt(caustics, p, depth).sub(1);
-  const sunOnFloor = U.sunIrradiance.mul(max(normalWorld.dot(U.sunDir), 0)).mul(float(1).sub(U.cloudCover.mul(0.8)));
+  // The ripples tilt the facets the focused light falls on, so the caustics take their slope too.
+  const floorN = normalWorld.sub(vec3(gradH.x, 0, gradH.y).mul(ripple)).normalize();
+  const sunOnFloor = U.sunIrradiance.mul(max(floorN.dot(U.sunDir), 0)).mul(float(1).sub(U.cloudCover.mul(0.8)));
   const caustic = focus.mul(smoothstep(0.03, 0.3, depth)).mul(depth.mul(-0.22).exp()).mul(1.25);
   m.emissiveNode = albedo.mul(sunOnFloor).mul(caustic.div(Math.PI));
   return m;

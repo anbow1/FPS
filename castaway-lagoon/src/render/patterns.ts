@@ -39,20 +39,28 @@ export function sand(): TexelSampler {
     const ripple = 0.5 + 0.5 * Math.sin((v * 11 + warp * 2.2 + tileFbm(u * 6, v * 6, 6, 2, 9) * 0.6) * Math.PI * 2);
     const patch = tileFbm(u * 2, v * 2, 2, 3, 11);
     const grain = tileNoise(u * 256, v * 256, 256, 13);
+    // One fragment per 5 cm cell at most: a rotated, soft-edged ellipse placed and sized at
+    // random inside it. Filling the whole cell drew the fragments as little squares.
     const cellX = Math.floor(u * 64);
     const cellY = Math.floor(v * 64);
     const h = hash2(cellX, cellY, 17);
-    let c = mixRgb(base, warm, patch);
-    let k = 0.93 + grain * 0.12 + ripple * 0.03;
-    if (h > 0.985) {
-      c = shell;
-      k = 1;
-    } else if (h < 0.012) {
-      c = speck;
-      k = 1;
+    const isShell = h > 0.985;
+    let fragment = 0;
+    if (isShell || h < 0.012) {
+      const dx = u * 64 - cellX - (0.3 + 0.4 * hash2(cellX, cellY, 23));
+      const dy = v * 64 - cellY - (0.3 + 0.4 * hash2(cellX, cellY, 29));
+      const angle = hash2(cellX, cellY, 31) * Math.PI;
+      const along = dx * Math.cos(angle) + dy * Math.sin(angle);
+      const across = (dy * Math.cos(angle) - dx * Math.sin(angle)) * (isShell ? 1.9 : 1.2);
+      const radius = (isShell ? 0.2 : 0.12) + 0.16 * hash2(cellX, cellY, 37);
+      const d = Math.sqrt(along * along + across * across) / radius;
+      fragment = Math.min(1, Math.max(0, (1 - d) * 4));
     }
-    put(t, c, k);
-    t.height = ripple * 0.22 + grain * 0.4 + (h > 0.985 ? 0.25 : 0);
+    const sandColour = mixRgb(base, warm, patch);
+    const c = mixRgb(sandColour, isShell ? shell : speck, fragment);
+    const k = 0.93 + grain * 0.12 + ripple * 0.03;
+    put(t, c, k + (1 - k) * fragment);
+    t.height = ripple * 0.22 + grain * 0.4 + (isShell ? 0.25 * fragment : 0);
     t.rough = 0.93 - grain * 0.04;
     t.ao = 0.85 + ripple * 0.15;
   };
