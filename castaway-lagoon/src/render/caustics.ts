@@ -31,7 +31,11 @@ import { U } from './uniforms.ts';
 // water surface shows (not a scrolling texture).
 //
 // Two focal planes are drawn (R shallow, G deep); the ground blends them by
-// its real depth and looks the result up where its sun ray entered the water.
+// its real depth and looks the result up where its sun ray entered the water,
+// once per colour: water's index runs from 1.329 (red) to 1.337 (blue), so each
+// colour enters at a slightly different point and the bright lines grow thin
+// coloured fringes with depth (dispersion as in ClearWater6.1's caustics,
+// SamG-Coder, MIT). Their focus differs by under 1 %, so one tile serves all three.
 // The grid covers the tile plus a margin: light refracted in from beyond the
 // tile edge lands inside it, so the tile repeats seamlessly.
 
@@ -42,6 +46,8 @@ const PLANES_M = [1.2, 3.0] as const;
 const MARGIN = 0.25;
 const CAUSTIC_SLOPE_GAIN = 1.5;
 const WATER_IOR = 1.333;
+/** Water's index of refraction for red, green and blue light (≈ 650, 550, 450 nm). */
+const WATER_IOR_RGB = [1.3291, 1.333, 1.3369] as const;
 
 /**
  * The water's detail slope at ripple-tile coordinate q (the same two scrolling
@@ -59,10 +65,10 @@ export function rippleSlope(q: Node<'vec2'>, level: boolean): Node<'vec2'> {
 }
 
 /** Refracted sun ray under a surface with slope (sx, sz): horizontal travel per metre of depth. */
-function refractedShift(slope: Node<'vec2'>): Node<'vec2'> {
+function refractedShift(slope: Node<'vec2'>, ior: number = WATER_IOR): Node<'vec2'> {
   const N = vec3(slope.x, 1, slope.y.negate()).normalize();
   const L = U.sunDir.normalize();
-  const R = refract(L.negate(), N, 1 / WATER_IOR);
+  const R = refract(L.negate(), N, 1 / ior);
   return R.xz.div(max(R.y.negate(), 0.2));
 }
 
@@ -72,7 +78,9 @@ export class Caustics {
   private readonly camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   constructor(quality: 'high' | 'low') {
-    const px = quality === 'high' ? 256 : 128;
+    // On High the tile is 512 px (2 cm texels), fine enough for the network to stay sharp a
+    // metre from a diver's mask and for the dispersion fringes to show.
+    const px = quality === 'high' ? 512 : 128;
     this.target = new RenderTarget(px, px, { type: HalfFloatType, depthBuffer: false });
     const tex = this.target.texture;
     tex.wrapS = RepeatWrapping;
@@ -80,7 +88,7 @@ export class Caustics {
     tex.magFilter = LinearFilter;
     tex.minFilter = LinearFilter;
     tex.generateMipmaps = false;
-    const cells = Math.ceil((quality === 'high' ? 128 : 64) * (1 + 2 * MARGIN));
+    const cells = Math.ceil((quality === 'high' ? 192 : 64) * (1 + 2 * MARGIN));
     // Tile coordinates −MARGIN … 1 + MARGIN.
     const grid = new PlaneGeometry(1 + 2 * MARGIN, 1 + 2 * MARGIN, cells, cells).translate(0.5, 0.5, 0);
     PLANES_M.forEach((depthM, i) => {
@@ -134,13 +142,16 @@ export class Caustics {
 }
 
 /**
- * Caustic light factor (mean ≈ 1) on the floor at world point p, `depth`
- * metres under the surface: looked up where the floor's sun ray entered the
- * water, blended between the two focal planes.
+ * Caustic light factor per colour (mean ≈ 1) on the floor at world point p,
+ * `depth` metres under the surface: looked up where the floor's sun ray of
+ * that colour entered the water, blended between the two focal planes.
  */
-export function causticAt(caustics: Caustics, p: Node<'vec3'>, depth: Node<'float'>): Node<'float'> {
-  const entry = p.xz.sub(refractedShift(vec2(0, 0)).mul(depth));
-  const c = texture(caustics.target.texture, entry.div(CAUSTIC_TILE_M));
+export function causticAt(caustics: Caustics, p: Node<'vec3'>, depth: Node<'float'>): Node<'vec3'> {
   const k = depth.sub(PLANES_M[0]).div(PLANES_M[1] - PLANES_M[0]).clamp(0, 1);
-  return mix(c.r, c.g, k);
+  const at = (ior: number): Node<'float'> => {
+    const entry = p.xz.sub(refractedShift(vec2(0, 0), ior).mul(depth));
+    const c = texture(caustics.target.texture, entry.div(CAUSTIC_TILE_M));
+    return mix(c.r, c.g, k);
+  };
+  return vec3(at(WATER_IOR_RGB[0]), at(WATER_IOR_RGB[1]), at(WATER_IOR_RGB[2]));
 }
