@@ -1,4 +1,4 @@
-import { attribute, cameraPosition, clamp, dot, exp, float, length, max, mix, normalize, positionLocal, positionWorld, pow, reflect, screenUV, smoothstep, sqrt, transformNormalToView, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
+import { attribute, cameraPosition, clamp, dot, exp, float, fwidth, length, max, mix, normalize, positionLocal, positionWorld, pow, reflect, screenUV, smoothstep, sqrt, transformNormalToView, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, Mesh, MeshPhysicalNodeMaterial } from 'three/webgpu';
 import { LAKE_WAVES } from '../config.ts';
 import { lakeRadius, type Lake } from '../maps/lake.ts';
@@ -132,7 +132,11 @@ function lakeMaterial(field: ShoreField, ripples: RippleField): MeshPhysicalNode
   const forest = vec3(0.028, 0.045, 0.03).mul(W.skyIrradiance.add(W.sunIrradiance.mul(0.25)).div(Math.PI));
 
   m.colorNode = vec3(0.78, 0.8, 0.78).mul(foam);
-  m.roughnessNode = mix(float(0.04), float(0.85), foam);
+  // Rougher where a pixel covers many ripples (after ClearWater6.1 by SamG-Coder, MIT): the sun's
+  // highlight widens into a soft path instead of aliasing into flickering single pixels far out.
+  const footprintM = max(length(fwidth(p.xz)), 1e-4);
+  const farRough = float(1).sub(float(1).div(footprintM.mul(footprintM).mul(800).add(1)));
+  m.roughnessNode = mix(farRough.mul(0.18).add(0.04), float(0.85), foam);
   m.specularIntensityNode = float(1).sub(foam).mul(float(1).sub(treeline));
   m.emissiveNode = transmitted.mul(float(1).sub(fresnel)).add(forest.mul(fresnel).mul(treeline)).mul(float(1).sub(foam));
   // The thin edge fades into the wet bank behind it.

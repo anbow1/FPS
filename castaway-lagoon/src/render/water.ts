@@ -1,6 +1,7 @@
-import { cameraPosition, clamp, cos, dot, frontFacing, select, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
+import { cameraPosition, clamp, cos, dot, frontFacing, fwidth, select, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, DataTexture, DataUtils, DoubleSide, HalfFloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, type Node, RedFormat, type Vector3 } from 'three/webgpu';
 import { OceanFFT } from './ocean.ts';
+import { waveWarp } from './waveWarp.ts';
 import { hexToLinear } from './colour.ts';
 import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
 import { SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
@@ -167,9 +168,13 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT): MeshBasicNodeMat
   // Wind sea from the FFT (a height gradient, like the ripple field) over deep water; the tiled
   // ripples stay at half strength there for detail finer than the FFT grid.
   const L = WAVES.openSea.patchM;
-  const fftA = texture(ocean.surface.texture, p.xz.div(L)).yz;
-  const fftB = texture(ocean.surface.texture, vec2(p.x.mul(0.8).add(p.z.mul(0.6)), p.z.mul(0.8).sub(p.x.mul(0.6))).div(L * 0.41).add(0.37)).yz;
-  const fft = fftA.add(vec2(fftB.x.mul(0.8).sub(fftB.y.mul(0.6)), fftB.x.mul(0.6).add(fftB.y.mul(0.8))).mul(0.12)).mul(sqrt(U.waveScale));
+  // Both copies are read through one smooth domain warp (waveWarp.ts), so the 64 m patch shows
+  // no period even across the whole open sea; the slope goes back through the warp's Jacobian.
+  const warp = waveWarp(p.xz, L * 4, L * 0.7, 17);
+  const q = warp.lookup;
+  const fftA = texture(ocean.surface.texture, q.div(L)).yz;
+  const fftB = texture(ocean.surface.texture, vec2(q.x.mul(0.8).add(q.y.mul(0.6)), q.y.mul(0.8).sub(q.x.mul(0.6))).div(L * 0.41).add(0.37)).yz;
+  const fft = warp.slope(fftA.add(vec2(fftB.x.mul(0.8).sub(fftB.y.mul(0.6)), fftB.x.mul(0.6).add(fftB.y.mul(0.8))).mul(0.12))).mul(sqrt(U.waveScale));
   const open = smoothstep(2.5, WAVES.openSea.fullDepthM, depth);
   const slope = detail.mul(float(1).sub(open.mul(0.5))).add(rain);
   // The ripple field and the FFT give height gradients: the normal leans against them.
@@ -180,8 +185,14 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT): MeshBasicNodeMat
   const fresnel = float(0.02).add(float(0.98).mul(pow(float(1).sub(NdotV), float(5))));
   const R = reflect(V.negate(), N);
   const Rup = normalize(vec3(R.x, max(R.y, 0.004), R.z));
-  // Glitter: a tight lobe of the sun (or moon) seen in the ripples.
-  const glint = pow(max(dot(Rup, U.sunDir), 0), 900).mul(8).add(pow(max(dot(Rup, U.sunDir), 0), 120).mul(0.35));
+  // Glitter: a lobe of the sun (or moon) seen in the ripples, sharp where a pixel covers less
+  // than one ripple and broader where it covers many (after ClearWater6.1 by SamG-Coder, MIT).
+  // The amplitude scales with the exponent, so the lobe keeps its energy: far water shows a soft
+  // sun path instead of single pixels flickering on and off.
+  const footprintM = max(length(fwidth(p.xz)), 1e-4);
+  const glintPower = mix(float(90), float(900), float(1).div(footprintM.mul(footprintM).mul(800).add(1)));
+  const sunCos = max(dot(Rup, U.sunDir), 0);
+  const glint = pow(sunCos, glintPower).mul(glintPower.mul(8 / 900)).add(pow(sunCos, 120).mul(0.35));
   const reflection = skyRadiance(Rup, float(1))
     .add(U.sunIrradiance.mul(glint).mul(float(1).sub(U.cloudCover.mul(0.9))))
     .add(U.moonRadiance.mul(pow(max(dot(Rup, U.moonDir), 0), 300).mul(0.02)));
