@@ -609,6 +609,13 @@ After Evan Wallace's *WebGL Water* (also Tidewater's approach):
    reads to match WebGPU), and make the grid `DoubleSide` (the flip reverses the
    winding, and refraction can fold triangles).
 6. Vertex-stage texture reads need `.level(0)` (WGSL has no implicit LOD there).
+7. High draws the lagoon's tile at 512² from a 192-cell grid (2 cm texels): at
+   256² the network smeared into blobs a metre from a diver's mask.
+8. Dispersion (lagoon): the floor looks the tile up **once per colour**, each at
+   the entry point of that colour's sun ray (water's index 1.3291 red, 1.333
+   green, 1.3369 blue). The focal depth differs by under 1 %, so one tile serves
+   all three; only the entry point moves, giving thin coloured fringes that grow
+   with depth. Not worth it in Field Line's 0.4–1.2 m lake (fringes < 0.6 cm).
 
 ### 7.7 Interactive ripples (`render/rippleField.ts`, shared by all three games)
 
@@ -673,6 +680,84 @@ colour path clamped every channel at 0 and forced alpha to 1, which turned the
 signed spectrum into garbage (a straight band of nonsense slopes across the
 water in both games). Checked by reading the target back and comparing with a
 CPU DFT of the same spectrum (max difference 2·10⁻⁴).
+
+**Domain warp against tiling** (`render/waveWarp.ts`, shared file for file by
+the lagoon and Tanks; after ClearWater6.1's `wave_warp`, SamG-Coder, MIT). Even
+two rotated lookups of a 64 m patch show their period as a grid towards the
+horizon. Look the patch up at `xz + (n₁ − ½, n₂ − ½)·A` instead, with n₁, n₂ two
+C²-continuous (quintic) value noises over cells four patches wide and A ≈ 0.7 of
+the patch, and carry the slope through the warp's Jacobian
+`(I + A·∇n)ᵀ` so the normals still belong to the drawn surface. Cost: eight
+hashes and a few multiplies per pixel.
+
+### 7.10 Sun glints by pixel footprint
+
+A fixed specular exponent either sparkles (single pixels flicker on and off far
+out) or is dull near the swimmer. Take the footprint `f = |fwidth(p.xz)|` (metres
+of water per pixel) and set the exponent to `mix(90, 900, 1/(1 + 800 f²))`,
+scaling the lobe's amplitude with the exponent so its energy stays constant:
+a tight star close by, a soft glitter path far out, no aliasing in between
+(ClearWater6.1). On a lit material (Field Line's lake) do the same through the
+roughness: `0.04 + 0.18 · (1 − 1/(1 + 800 f²))`.
+
+### 7.11 Sand ripples on the shallow bed (lagoon `render/ground.ts`)
+
+Wave-formed ripples about 20 cm apart, after ClearWater6.1's `sand_relief`:
+`h = A(cos φ + 0.18 cos(2φ + 0.6))` (sharp crests, flat troughs) with
+φ = k·(xz·d) + bend, d the swell's propagation direction from the baked shore
+field, bend a slow noise, plus a weaker family 26° off. The normal comes from the
+analytic gradient (never tiles); weight it by sand coverage, 0.1–4 m depth,
+swell exposure and `1/(1 + 600 f²)` so it cannot shimmer. Under water the
+caustic light dominates, so tilt the caustics' N·L by the same gradient, or the
+ripples barely show.
+
+### 7.12 Screen-space reflection on water (`render/screenReflection.ts`, High only)
+
+The sky alone is a poor mirror: at the grazing angles where Fresnel makes water
+most reflective, the palms, pines, rocks and boats belong in it. The water is
+drawn after the opaque scene, so it can march its own reflected ray: 20 points
+along it in world space (0.3 m growing ×1.45, out to ~350 m), each projected to
+the screen and compared with a copy of the depth buffer; a point less than a
+step's thickness behind the scene is a hit, refined by 4 bisections; the scene
+colour there is the reflection, faded over the last tenth of the screen edge and
+mixed over the analytic sky by its weight. Rules learnt:
+
+- **Unroll it**, no `Break`: WGSL forbids implicit-LOD sampling in non-uniform
+  control flow. Only assignments go inside `If`.
+- **The depth copy must match the depth buffer's format.** three's shared
+  `viewportDepthTexture()` copy is `depth24plus`; a reversed depth buffer is
+  `depth32float`, and every frame's copy then fails ("Source and destination
+  formats do not match"). Construct `new ViewportDepthTextureNode(uv, null, t)`
+  with your own `DepthTexture` whose `type = FloatType` when
+  `builder.renderer.reversedDepthBuffer`.
+- **One base depth node, sampled through `.sample(uv)` clones.** Each viewport
+  texture node keeps its own copy of the framebuffer when drawing into a render
+  target, so 24 separate nodes meant 24 copies and 24 texture bindings (WebGPU
+  allows 16 per stage: the water pipeline was invalid). Clones made by
+  `.sample()` share their base node's copy and binding.
+- **Capture loop values before `If`.** TSL runs an `If` body later, when the
+  shader is built, so a JS `let` changed by the unrolling loop is read at its
+  final value in every branch (all twenty branches stored the last step's
+  bounds and no hit ever refined). Copy it into a `const` inside the loop body.
+  Likewise freeze a bisection midpoint with `.toVar()` before reassigning the
+  bounds it is made of.
+- `perspectiveDepthToViewZ` already handles reversed depth.
+- Thickness grows with the step (`max(0.5 m, 1.2 × step)`) so thin trunks are
+  hit but a ray passing far behind a foreground rock does not pick it up.
+- **Check that the refined point lies on the surface.** A true intersection
+  converges: ray depth and scene depth meet. A ray that only passed behind an
+  edge converges onto the depth discontinuity and the gap stays wide; drop the
+  hit when the gap exceeds about the final interval (it painted bright sand
+  patches far out in the water).
+- Debug it with false colour, not by eye: write `found`, the gap, the hit
+  distance or the hit's height into the reflection channels, and show the
+  mirror alone (`mix(under·0.2, reflection, max(fresnel, weight))`). Long
+  vertical streaks of bright objects on rippled water are physical (the
+  ripples tilt the rays), not a bug.
+- Used by the lagoon (water shader), Field Line (lake emissive, the probe's
+  specular scaled by `1 − weight`) and Tanks (lakes).
+- The frame governor switches it off through a uniform (a branch on a uniform
+  is uniform control flow) right after the sun shafts, before resolution.
 
 ---
 ## 8. Phones: budget and stutter-proofing
@@ -898,6 +983,10 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Headless test hangs with an idle browser | a page error stopped loading; the script waits for "ready" | always log `pageerror` and console errors; time out early |
 | A data pass (FFT, simulation) into a float render target gives garbage; one straight band of nonsense across the water | through `colorNode` a node material clamps each channel at 0 and forces alpha to 1 when opaque, so signed data and anything in `.w` are lost | write the result with `material.fragmentNode` (skips the colour and output stages), `transparent: true, blending: NoBlending`; verify against a CPU reference by reading the target back |
 | High preset only, WebGPU: a straight line across the middle of the screen and grain over the ground | GTAO at `resolutionScale < 1` gathers four depths and keeps the min (the farthest with a reversed depth buffer); occlusion multiplied in after TRAA leaves its per-pixel noise un-averaged | GTAO at full resolution (fewer samples), applied to the scene colour before TRAA with `useTemporalFiltering = true` (Tanks `render/pipeline.ts`) |
+| Every frame, WebGPU: `copyFramebufferToTexture: Source and destination formats do not match. depth32float depth24plus` | `viewportDepthTexture()` copies into a shared `depth24plus` texture, but a reversed depth buffer is `depth32float` | own `DepthTexture` with `type = FloatType` passed as the third argument of `ViewportDepthTextureNode` (§7.12) |
+| Water pipeline invalid: "number of sampled textures (32) … exceeds the maximum per-stage limit (16)" after adding a screen-space march | every `viewportDepthTexture()` / viewport texture node keeps its own framebuffer copy and binding | build one base node and read it with `base.sample(uv)` (§7.12) |
+| A branch built in an unrolled JS loop uses the wrong (last) loop value | an `If(cond, () => …)` body runs when the shader is built, after the loop has finished | copy the loop variable into a block-scoped `const` before `If` (§7.12) |
+| Sand (or any splat) shows little squares | a texture sampler that paints whole hash cells (`floor(u·64)`) | draw a rotated soft ellipse inside the cell instead |
 | Read-back rows look mirrored on WebGL only | `readRenderTargetPixelsAsync` flips WebGL rows to match WebGPU | compare with row `N − 1 − y`; `screenCoordinate` and `textureLoad` agree on both backends |
 
 ---
@@ -911,6 +1000,9 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 - **"Real-Time Coastal Simulator"** prompt, hajimetwi3/hajimetwi3-prompt-okiba (MIT) —
   the coastal quality checklist (§10).
 - Evan Wallace, *WebGL Water* — caustics by rasterised photon splatting.
+- **ClearWater6.1 / RTXShowcase** by SamG-Coder (MIT),
+  github.com/SamG-Coder/RTXShowcase — footprint-adaptive glints, the wave-patch
+  domain warp with its Jacobian, sand relief, RGB dispersion in caustics (§7.6, §7.9–7.11).
 - GPU Gems 1 ch. 1 (Gerstner waves), GPU Gems 3 ch. 13 (light scattering).
 - Lagarde & de Rousiers 2014, *Moving Frostbite to PBR* — physical light units,
   pre-exposure.
