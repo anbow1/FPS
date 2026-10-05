@@ -7,6 +7,7 @@ import { OceanFFT } from '../render/ocean';
 import { RippleField } from '../render/rippleField';
 import { linear, PBR } from '../render/palette';
 import { G, vnoise2 } from '../render/nodes';
+import { waveWarp } from '../render/waveWarp';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -93,10 +94,14 @@ export class Water {
     // two FFT layers at different scales and a rotation, so the patch never tiles visibly
     const rot = (p: V2, c: number, s: number): V2 => vec2(p.x.mul(c).add(p.y.mul(s)), p.x.mul(-s).add(p.y.mul(c)));
     const rotT = (p: V2, c: number, s: number): V2 => vec2(p.x.mul(c).sub(p.y.mul(s)), p.x.mul(s).add(p.y.mul(c)));
+    // Every patch lookup goes through one smooth domain warp (waveWarp.ts, after ClearWater6.1):
+    // the 22 m patch shows no period across a lake; slopes return through the warp's Jacobian.
+    const warpOf = (xz: V2) => waveWarp(xz, L * 4, L * 0.7, 23);
     const slopeAt = (xz: V2): V2 => {
-      const a = texture(surfTex, xz.div(L)).yz;
-      const b = texture(surfTex, rot(xz, 0.8, 0.6).div(L * 0.41).add(0.37)).yz;
-      return a.add(rotT(b, 0.8, 0.6).mul(0.12));
+      const w = warpOf(xz);
+      const a = texture(surfTex, w.lookup.div(L)).yz;
+      const b = texture(surfTex, rot(w.lookup, 0.8, 0.6).div(L * 0.41).add(0.37)).yz;
+      return w.slope(a.add(rotT(b, 0.8, 0.6).mul(0.12)));
     };
     const fpWeight = (fp: F, wl: number): F => float(1).sub(smoothstep(0.25 * wl, wl, fp));
     // Shoreline wash after WaterCuda (SamG-Coder, MIT): wave fronts anchored to the depth contour,
@@ -134,10 +139,12 @@ export class Water {
       });
 
       // ---- wave normal: two FFT layers + a close-up chop layer; variance from the mips (LEAN)
-      const A = texture(surfTex, P.xz.div(L));
-      const B = texture(surfTex, rot(P.xz, 0.8, 0.6).div(L * 0.41).add(0.37));
-      const Cm = texture(surfTex, rot(P.xz, 0.28, -0.96).div(L * 0.13).add(0.71));
-      const slope0 = A.yz.add(rotT(B.yz, 0.8, 0.6).mul(0.12)).add(rotT(Cm.yz, 0.28, -0.96).mul(exp(dist.mul(-0.05)).mul(0.13)));
+      const warp = warpOf(P.xz);
+      const Q = warp.lookup;
+      const A = texture(surfTex, Q.div(L));
+      const B = texture(surfTex, rot(Q, 0.8, 0.6).div(L * 0.41).add(0.37));
+      const Cm = texture(surfTex, rot(Q, 0.28, -0.96).div(L * 0.13).add(0.71));
+      const slope0 = warp.slope(A.yz.add(rotT(B.yz, 0.8, 0.6).mul(0.12)).add(rotT(Cm.yz, 0.28, -0.96).mul(exp(dist.mul(-0.05)).mul(0.13))));
       const variance = max(A.w.sub(dot(A.yz, A.yz)), 0).add(max(B.w.sub(dot(B.yz, B.yz)), 0).mul(0.0144));
       // shallow margins are calmer
       const rip = ripples.sample(P.xz);
