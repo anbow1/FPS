@@ -6,6 +6,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PerspectiveCamera
 import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
+import { screenReflectionOn } from './screenReflection.ts';
 import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 
@@ -32,26 +33,31 @@ export interface StageSettings {
 
 const SHAFT_SAMPLES = { high: 40, low: 0 } as const; // low: no shafts (a full-screen 40-tap loop)
 
-/** What the frame governor may give up, cheapest loss first: the shafts' 40-tap loop, then pixels. */
+/** What the frame governor may give up, cheapest loss first: the shafts' 40-tap loop, the lake's reflections, then pixels. */
 export interface GovernorStep {
   shafts: boolean;
+  /** Screen-space reflections on the lake (High only). */
+  reflections: boolean;
   scale: number;
 }
 const GOVERNOR_STEPS: Record<Quality, readonly GovernorStep[]> = {
+  // The lake's reflections go after the shafts and before any resolution: a march per water
+  // pixel, and only where the lake is in view.
   high: [
-    { shafts: true, scale: 1 },
-    { shafts: false, scale: 1 },
-    { shafts: false, scale: 0.87 },
-    { shafts: false, scale: 0.76 },
-    { shafts: false, scale: 0.67 },
-    { shafts: false, scale: 0.58 },
+    { shafts: true, reflections: true, scale: 1 },
+    { shafts: false, reflections: true, scale: 1 },
+    { shafts: false, reflections: false, scale: 1 },
+    { shafts: false, reflections: false, scale: 0.87 },
+    { shafts: false, reflections: false, scale: 0.76 },
+    { shafts: false, reflections: false, scale: 0.67 },
+    { shafts: false, reflections: false, scale: 0.58 },
   ],
   low: [
-    { shafts: false, scale: 1 },
-    { shafts: false, scale: 0.87 },
-    { shafts: false, scale: 0.76 },
-    { shafts: false, scale: 0.67 },
-    { shafts: false, scale: 0.58 },
+    { shafts: false, reflections: false, scale: 1 },
+    { shafts: false, reflections: false, scale: 0.87 },
+    { shafts: false, reflections: false, scale: 0.76 },
+    { shafts: false, reflections: false, scale: 0.67 },
+    { shafts: false, reflections: false, scale: 0.58 },
   ],
 };
 
@@ -116,6 +122,7 @@ export class Stage {
 
   private applyStep(step: GovernorStep): void {
     this.shaftCount.value = step.shafts ? SHAFT_SAMPLES[this.settings.quality] : 0;
+    screenReflectionOn.value = step.reflections ? 1 : 0;
     if (step.scale !== this.dynamicScale) {
       this.dynamicScale = step.scale;
       this.resize();
@@ -126,7 +133,8 @@ export class Stage {
   get governorLabel(): string {
     const s = this.governor.step;
     const shaftsOff = !s.shafts && SHAFT_SAMPLES[this.settings.quality] > 0;
-    return `${Math.round(s.scale * 100)} %${shaftsOff ? ' · shafts off' : ''}`;
+    const reflectionsOff = !s.reflections && this.settings.quality === 'high';
+    return `${Math.round(s.scale * 100)} %${shaftsOff ? ' · shafts off' : ''}${reflectionsOff ? ' · reflections off' : ''}`;
   }
 
   applySettings(s: StageSettings): void {

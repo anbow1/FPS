@@ -5,6 +5,7 @@ import { waveWarp } from './waveWarp.ts';
 import { hexToLinear } from './colour.ts';
 import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
 import { SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
+import { screenReflection } from './screenReflection.ts';
 import { skyRadiance } from './sky.ts';
 import { causticFoamMap } from './textures.ts';
 import { U } from './uniforms.ts';
@@ -39,7 +40,7 @@ export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: Dat
     targetSlope: sea.rmsSlope,
     wind: [Math.cos(dir), Math.sin(dir)],
   });
-  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, ocean));
+  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, ocean, quality));
   mesh.frustumCulled = false;
   mesh.name = 'water';
   mesh.renderOrder = 10;
@@ -97,7 +98,7 @@ export function placeWater(mesh: Mesh, eye: Vector3): void {
   mesh.position.set(Math.round(eye.x / 0.35) * 0.35, WATER_LEVEL_M, Math.round(eye.z / 0.35) * 0.35);
 }
 
-function waterMaterial(depthMap: DataTexture, ocean: OceanFFT): MeshBasicNodeMaterial {
+function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' | 'low'): MeshBasicNodeMaterial {
   // Double-sided: a swimmer sees the surface from below (Snell's window).
   const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true, side: DoubleSide });
   const cf = causticFoamMap();
@@ -193,9 +194,16 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT): MeshBasicNodeMat
   const glintPower = mix(float(90), float(900), float(1).div(footprintM.mul(footprintM).mul(800).add(1)));
   const sunCos = max(dot(Rup, U.sunDir), 0);
   const glint = pow(sunCos, glintPower).mul(glintPower.mul(8 / 900)).add(pow(sunCos, 120).mul(0.35));
-  const reflection = skyRadiance(Rup, float(1))
+  const skyReflection = skyRadiance(Rup, float(1))
     .add(U.sunIrradiance.mul(glint).mul(float(1).sub(U.cloudCover.mul(0.9))))
     .add(U.moonRadiance.mul(pow(max(dot(Rup, U.moonDir), 0), 300).mul(0.02)));
+  // On High the palms, rocks, boat and hills are mirrored too, where the screen holds them
+  // (screenReflection.ts); the sky, sun and moon stay analytic behind them.
+  let reflection: Node<'vec3'> = skyReflection;
+  if (quality === 'high') {
+    const ssr = screenReflection(p, Rup);
+    reflection = mix(skyReflection, ssr.colour, ssr.weight);
+  }
 
   // Refraction: the floor seen through the surface, distorted less where it is shallow.
   const distortion = N.xz.mul(0.045).mul(smoothstep(0.0, 1.5, depth)).div(dist.mul(0.02).add(1));

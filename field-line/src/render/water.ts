@@ -1,5 +1,5 @@
 import { attribute, cameraPosition, clamp, dot, exp, float, fwidth, length, max, mix, normalize, positionLocal, positionWorld, pow, reflect, screenUV, smoothstep, sqrt, transformNormalToView, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
-import { BufferAttribute, BufferGeometry, Mesh, MeshPhysicalNodeMaterial } from 'three/webgpu';
+import { BufferAttribute, BufferGeometry, Mesh, MeshPhysicalNodeMaterial, type Node } from 'three/webgpu';
 import { LAKE_WAVES } from '../config.ts';
 import { lakeRadius, type Lake } from '../maps/lake.ts';
 import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
@@ -7,6 +7,7 @@ import type { RippleField } from './rippleField.ts';
 import { hexToLinear } from './colour.ts';
 import type { ShoreField } from './shoreField.ts';
 import { laceCover, shoreSurface, surfFoam } from './shoreWaves.ts';
+import { screenReflection } from './screenReflection.ts';
 import { W } from './waterUniforms.ts';
 
 // The forest lake's water, ported from Castaway Lagoon's water shader and
@@ -25,7 +26,7 @@ import { W } from './waterUniforms.ts';
 const MESH_R = 1.32;
 
 export function buildLakeWater(lake: Lake, field: ShoreField, ground: (x: number, z: number) => number, quality: 'high' | 'low', ripples: RippleField): Mesh {
-  const mesh = new Mesh(lakeGrid(lake, ground, quality === 'high' ? 0.5 : 1.0), lakeMaterial(field, ripples));
+  const mesh = new Mesh(lakeGrid(lake, ground, quality === 'high' ? 0.5 : 1.0), lakeMaterial(field, ripples, quality));
   mesh.name = 'lake';
   mesh.renderOrder = 10;
   mesh.receiveShadow = true;
@@ -75,7 +76,7 @@ function lakeGrid(lake: Lake, ground: (x: number, z: number) => number, cellM: n
   return g;
 }
 
-function lakeMaterial(field: ShoreField, ripples: RippleField): MeshPhysicalNodeMaterial {
+function lakeMaterial(field: ShoreField, ripples: RippleField, quality: 'high' | 'low'): MeshPhysicalNodeMaterial {
   const m = new MeshPhysicalNodeMaterial({ name: 'lake', transparent: true, depthWrite: true, metalness: 0, ior: 1.333 });
 
   // ── Vertex: depth-aware waves from the shore field.
@@ -130,6 +131,15 @@ function lakeMaterial(field: ShoreField, ripples: RippleField): MeshPhysicalNode
   // A wide transition: a sharp one turned every wave face into a dark stripe (corduroy).
   const treeline = smoothstep(0.32, 0.02, R.y);
   const forest = vec3(0.028, 0.045, 0.03).mul(W.skyIrradiance.add(W.sunIrradiance.mul(0.25)).div(Math.PI));
+  // On High the real pines, bank and hut are mirrored where the screen holds them
+  // (screenReflection.ts); the probe, the sun's highlight and the tree-line colour fill the rest.
+  let mirrored: Node<'float'> = float(0);
+  let mirror: Node<'vec3'> = vec3(0);
+  if (quality === 'high') {
+    const ssr = screenReflection(p, normalize(vec3(R.x, max(R.y, 0.004), R.z)));
+    mirrored = ssr.weight;
+    mirror = ssr.colour;
+  }
 
   m.colorNode = vec3(0.78, 0.8, 0.78).mul(foam);
   // Rougher where a pixel covers many ripples (after ClearWater6.1 by SamG-Coder, MIT): the sun's
@@ -137,8 +147,11 @@ function lakeMaterial(field: ShoreField, ripples: RippleField): MeshPhysicalNode
   const footprintM = max(length(fwidth(p.xz)), 1e-4);
   const farRough = float(1).sub(float(1).div(footprintM.mul(footprintM).mul(800).add(1)));
   m.roughnessNode = mix(farRough.mul(0.18).add(0.04), float(0.85), foam);
-  m.specularIntensityNode = float(1).sub(foam).mul(float(1).sub(treeline));
-  m.emissiveNode = transmitted.mul(float(1).sub(fresnel)).add(forest.mul(fresnel).mul(treeline)).mul(float(1).sub(foam));
+  m.specularIntensityNode = float(1).sub(foam).mul(float(1).sub(treeline)).mul(float(1).sub(mirrored));
+  m.emissiveNode = transmitted
+    .mul(float(1).sub(fresnel))
+    .add(mix(forest.mul(treeline), mirror, mirrored).mul(fresnel))
+    .mul(float(1).sub(foam));
   // The thin edge fades into the wet bank behind it.
   m.opacityNode = smoothstep(0.0, 0.035, vDepth);
   return m;
