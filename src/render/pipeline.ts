@@ -38,6 +38,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, Color, HalfFloatType, type Node,
 import type { QualityPreset } from '../config';
 import { hash12 } from './nodes';
 import { FrameGovernor, PassTimer } from './perf.ts';
+import { screenReflectionOn } from './screenReflection.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 
 /**
@@ -57,16 +58,19 @@ const SHAFT_TAPS = { high: 24, low: 12 } as const;
 interface GovernorStep {
   ao: boolean;
   shafts: boolean;
+  /** Screen-space reflections on the lakes (High only). */
+  reflections: boolean;
   scale: number;
 }
 const GOVERNOR_STEPS: readonly GovernorStep[] = [
-  { ao: true, shafts: true, scale: 1 },
-  { ao: false, shafts: true, scale: 1 },
-  { ao: false, shafts: false, scale: 1 },
-  { ao: false, shafts: false, scale: 0.87 },
-  { ao: false, shafts: false, scale: 0.76 },
-  { ao: false, shafts: false, scale: 0.67 },
-  { ao: false, shafts: false, scale: 0.58 },
+  { ao: true, shafts: true, reflections: true, scale: 1 },
+  { ao: false, shafts: true, reflections: true, scale: 1 },
+  { ao: false, shafts: false, reflections: true, scale: 1 },
+  { ao: false, shafts: false, reflections: false, scale: 1 },
+  { ao: false, shafts: false, reflections: false, scale: 0.87 },
+  { ao: false, shafts: false, reflections: false, scale: 0.76 },
+  { ao: false, shafts: false, reflections: false, scale: 0.67 },
+  { ao: false, shafts: false, reflections: false, scale: 0.58 },
 ];
 
 /** Screen-space crepuscular rays: world direction to the sun and their pre-exposed colour (0 = off). */
@@ -141,6 +145,7 @@ export class Pipeline {
     this.governor = new FrameGovernor(GOVERNOR_STEPS, (s) => {
       this.aoAllowed = s.ao;
       this.shaftsAllowed = s.shafts;
+      screenReflectionOn.value = s.reflections ? 1 : 0;
       this.setRenderScale(s.scale);
       onGovernorChange();
     });
@@ -159,7 +164,7 @@ export class Pipeline {
   /** "87 % · AO off": what the governor currently gives up. */
   get governorLabel(): string {
     const s = this.governor.step;
-    return `${Math.round(s.scale * 100)} %${s.ao ? '' : ' · AO off'}${s.shafts ? '' : ' · shafts off'}`;
+    return `${Math.round(s.scale * 100)} %${s.ao ? '' : ' · AO off'}${s.shafts ? '' : ' · shafts off'}${s.reflections ? '' : ' · reflections off'}`;
   }
 
   setQuality(q: QualityPreset): void {

@@ -7,6 +7,7 @@ import { OceanFFT } from '../render/ocean';
 import { RippleField } from '../render/rippleField';
 import { linear, PBR } from '../render/palette';
 import { G, vnoise2 } from '../render/nodes';
+import { screenReflection } from '../render/screenReflection';
 import { waveWarp } from '../render/waveWarp';
 
 type F = THREE.Node<'float'>;
@@ -159,7 +160,13 @@ export class Water {
       const rr0 = reflect(wd, n);
       const rr = vec3(rr0.x, abs(rr0.y), rr0.z);
       const shoreK = float(1).sub(smoothstep(0.012, 0.1, rr.y));
-      const refl = mix(skyCol(rr), cShore.mul(amb.mul(1.3).add(sunB.mul(0.08))), shoreK.mul(0.85));
+      let refl: V3 = mix(skyCol(rr), cShore.mul(amb.mul(1.3).add(sunB.mul(0.08))), shoreK.mul(0.85));
+      // On High the real far shore, trees and tanks are mirrored where the screen holds them
+      // (screenReflection.ts); the painted treeline above stays as the fallback.
+      if (detail === 'high') {
+        const ssr = screenReflection(P, normalize(vec3(rr.x, max(rr.y, 0.004), rr.z)));
+        refl = mix(refl, ssr.colour, ssr.weight);
+      }
 
       // ---- sun glint: Beckmann, roughness widened by slope variance
       const a2 = variance.mul(1.1).add(0.00025);
