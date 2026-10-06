@@ -17,7 +17,9 @@ export type Action =
   | 'pause'
   | 'quality'
   | 'toneMap'
-  | 'centreStick';
+  | 'centreStick'
+  | 'gear'
+  | 'brake';
 
 // Mouse0 / Mouse2 are the left / right buttons; WheelUp / WheelDown are edges only.
 // Pull = nose up = S / Down, as on a real stick (pull back to climb).
@@ -38,6 +40,8 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   quality: ['KeyO'],
   toneMap: ['KeyT'],
   centreStick: ['Mouse2'],
+  gear: ['KeyG'],
+  brake: ['KeyB'],
 };
 
 const STORAGE_KEY = 'contrail.bindings.v1';

@@ -119,6 +119,35 @@ export interface LimiterConfig {
   pitchRateMaxRadS: number;
 }
 
+export interface GearLeg {
+  /** Attachment in body axes (m); the wheel hangs `travelM` below it when the strut is extended. */
+  x: number;
+  y: number;
+  z: number;
+  travelM: number;
+  /** Share of the aircraft's weight this leg carries at rest. */
+  loadShare: number;
+  nose: boolean;
+}
+
+export interface GearConfig {
+  legs: GearLeg[];
+  /** Strut compression at rest (m) — sets the spring rate. */
+  staticCompressionM: number;
+  /** Damping ratio of each strut. */
+  dampingRatio: number;
+  /** Sink rate above which the gear collapses (m/s). */
+  maxSinkMs: number;
+  /** Extra zero-lift drag with the gear down. */
+  dragCd0: number;
+  /** Seconds to retract or extend. */
+  cycleS: number;
+  /** Lift added by the automatic flaps with the gear down (ΔCL). */
+  flapCl: number;
+  /** Nose-wheel steering angle at full pedal (rad). */
+  steerRad: number;
+}
+
 export interface AircraftConfig {
   id: AircraftId;
   name: string;
@@ -132,6 +161,7 @@ export interface AircraftConfig {
   /** Radar cross-section factor, front / side (1 = ordinary fighter); used by the radar game abstraction later. */
   signatureFront: number;
   signatureSide: number;
+  gear: GearConfig;
 }
 
 const DEG = Math.PI / 180;
@@ -199,6 +229,20 @@ export const AIRCRAFT: Record<AircraftId, AircraftConfig> = {
     // Tuned by hand: seen from ahead it is a fraction of an ordinary fighter; from the side it is ordinary.
     signatureFront: 0.12,
     signatureSide: 1,
+    gear: {
+      legs: [
+        { x: 0, y: -1.65, z: -4.6, travelM: 0.6, loadShare: 0.12, nose: true },
+        { x: 1.6, y: -1.55, z: 0.9, travelM: 0.6, loadShare: 0.44, nose: false },
+        { x: -1.6, y: -1.55, z: 0.9, travelM: 0.6, loadShare: 0.44, nose: false },
+      ],
+      staticCompressionM: 0.14,
+      dampingRatio: 0.55,
+      maxSinkMs: 4.0,
+      dragCd0: 0.018,
+      cycleS: 6,
+      flapCl: 0.35,
+      steerRad: (30 * Math.PI) / 180,
+    },
   },
   talon: {
     id: 'talon',
@@ -264,6 +308,20 @@ export const AIRCRAFT: Record<AircraftId, AircraftConfig> = {
     },
     signatureFront: 1.2,
     signatureSide: 1.4,
+    gear: {
+      legs: [
+        { x: 0, y: -2.25, z: -6.2, travelM: 0.75, loadShare: 0.12, nose: true },
+        { x: 2.2, y: -2.15, z: 1.6, travelM: 0.75, loadShare: 0.44, nose: false },
+        { x: -2.2, y: -2.15, z: 1.6, travelM: 0.75, loadShare: 0.44, nose: false },
+      ],
+      staticCompressionM: 0.16,
+      dampingRatio: 0.55,
+      maxSinkMs: 4.0,
+      dragCd0: 0.02,
+      cycleS: 7,
+      flapCl: 0.35,
+      steerRad: (30 * Math.PI) / 180,
+    },
   },
 };
 

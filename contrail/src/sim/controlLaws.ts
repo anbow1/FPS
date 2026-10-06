@@ -27,10 +27,12 @@ export interface PilotInput {
   throttle: number;
   /** Relaxes the G and AoA limits (overstress possible). */
   limiterRelaxed: boolean;
+  /** Wheel brakes (held). */
+  brake: boolean;
 }
 
 export function neutralInput(): PilotInput {
-  return { pitch: 0, roll: 0, yaw: 0, throttle: 0.7, limiterRelaxed: false };
+  return { pitch: 0, roll: 0, yaw: 0, throttle: 0.7, limiterRelaxed: false, brake: false };
 }
 
 /** What the control laws see of the flight state (body axes: x right, y up, z aft). */
@@ -51,6 +53,8 @@ export interface ControlState {
   yawRate: number;
   thrustN: number;
   massKg: number;
+  /** Weight on wheels: the laws switch to direct control, as real fly-by-wire does on the ground. */
+  onGround: boolean;
 }
 
 /** Control moments the laws ask for, in the same pitch/roll/yaw sense as the rates (N·m). */
@@ -73,6 +77,7 @@ const K_YAW = 5; // 1/s, yaw-rate loop
 const K_BETA = 6; // 1/s², sideslip loop
 const MAX_SIDESLIP_RAD = (8 * Math.PI) / 180;
 const MIN_AOA_RAD = (-15 * Math.PI) / 180;
+const GROUND_PITCH_RATE_RAD_S = (8 * Math.PI) / 180;
 
 /**
  * Natural aerodynamic moments of the airframe (pitch, roll, yaw senses as above):
@@ -119,6 +124,9 @@ export function controlMoments(cfg: AircraftConfig, input: PilotInput, s: Contro
   if (s.loadFactor > gMax && qCmd > s.pitchRate) limiting = true;
   const vectorMoment = cfg.engine.vectorRad > 0 ? s.thrustN * Math.sin(cfg.engine.vectorRad) * cfg.engine.vectorArmM : 0;
   const pitchAvail = qS * a.chordM * a.cmControl + vectorMoment;
+  // On the ground there is no load factor to command: the stick commands a pitch rate for the
+  // rotation (about 8°/s at full stick), so a smooth pull lifts the nose without a tail strike.
+  if (s.onGround) qCmd = stick * GROUND_PITCH_RATE_RAD_S;
   const pitchWanted = inertia.pitch * K_PITCH * (qCmd - s.pitchRate) - natural.pitch;
   out.pitch = clamp(pitchWanted, -pitchAvail, pitchAvail);
   out.pitchAuthority = pitchAvail > 0 ? Math.min(1, Math.abs(pitchWanted) / pitchAvail) : 1;

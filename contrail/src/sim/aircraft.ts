@@ -5,6 +5,7 @@ import { aeroCoefficients, type AeroCoefficients } from './aero.ts';
 import { type AirState, atmosphereAt } from './atmosphere.ts';
 import { controlMoments, type ControlMoments, type ControlState, naturalMoments, type PilotInput } from './controlLaws.ts';
 import { createEngineState, type EngineState, stepEngine } from './engine.ts';
+import { createGearState, gearForces, type GearState, stepGearCycle } from './gear.ts';
 import { createGTolerance, type GTolerance, stepGTolerance } from './gTolerance.ts';
 
 // A six-degree-of-freedom rigid body flown by forces and moments (brief: "forces,
@@ -41,6 +42,7 @@ export class Aircraft {
   storesKg: number;
   readonly engine: EngineState = createEngineState();
   readonly g: GTolerance = createGTolerance();
+  readonly gear: GearState;
   readonly air: AirState = { temperatureK: 288, pressurePa: 101325, densityKgM3: 1.225, speedOfSoundMs: 340 };
   readonly coeff: AeroCoefficients = { lift: 0, drag: 0, separation: 0 };
   readonly controls: ControlMoments = { pitch: 0, roll: 0, yaw: 0, pitchAuthority: 0, limiting: false };
@@ -60,6 +62,7 @@ export class Aircraft {
     this.cfg = AIRCRAFT[id];
     this.fuelKg = this.cfg.mass.internalFuelKg * fuelFraction;
     this.storesKg = storesKg;
+    this.gear = createGearState(this.cfg.gear.legs.length, false);
   }
 
   get massKg(): number {
@@ -76,21 +79,83 @@ export class Aircraft {
     this.prevPosition.copy(this.position);
     this.prevOrientation.copy(this.orientation);
     this.crashed = false;
+    this.resetGear(false);
   }
 
-  step(input: PilotInput, dtS: number, groundHeightM: number): void {
+  /** Height of the main wheels' contact points below the reference point when parked (m). */
+  get wheelDropM(): number {
+    const main = this.cfg.gear.legs.find((l) => !l.nose) ?? this.cfg.gear.legs[0]!;
+    return -(main.y - main.travelM) - this.cfg.gear.staticCompressionM;
+  }
+
+  /** Parks the aircraft on the ground at (x, z) heading `yawRad`, gear down, engine at idle. */
+  placeOnGround(x: number, z: number, yawRad: number, groundM: number): void {
+    const main = this.cfg.gear.legs.find((l) => !l.nose) ?? this.cfg.gear.legs[0]!;
+    // Main wheels resting at their static compression.
+    const y = groundM - (main.y - main.travelM) - this.cfg.gear.staticCompressionM;
+    this.position.set(x, y, z);
+    this.orientation.setFromYawPitchRoll(yawRad, 0, 0);
+    this.velocity.set(0, 0, 0);
+    this.angular.set(0, 0, 0);
+    this.engine.core = 0.05;
+    this.engine.burner = 0;
+    this.prevPosition.copy(this.position);
+    this.prevOrientation.copy(this.orientation);
+    this.crashed = false;
+    this.resetGear(true);
+  }
+
+  private resetGear(down: boolean): void {
+    const g = this.gear;
+    g.position = down ? 1 : 0;
+    g.target = down ? 1 : 0;
+    g.collapsed = false;
+    g.weightOnWheels = down;
+    g.justTouchedDown = false;
+  }
+
+  toggleGear(): void {
+    if (this.gear.weightOnWheels) return;
+    this.gear.target = this.gear.target === 1 ? 0 : 1;
+  }
+
+  step(input: PilotInput, dtS: number, groundAt: (x: number, z: number) => number): void {
     this.prevPosition.copy(this.position);
     this.prevOrientation.copy(this.orientation);
     if (this.crashed) return;
     const n = PHYSICS.substeps;
     const h = dtS / n;
-    for (let i = 0; i < n; i++) this.substep(input, h);
+    this.gear.justTouchedDown = false;
+    for (let i = 0; i < n; i++) this.substep(input, h, groundAt);
+    stepGearCycle(this.cfg, this.gear, dtS);
     stepGTolerance(this.g, this.loadFactor, dtS);
     this.fuelKg = Math.max(0, this.fuelKg - this.engine.fuelFlowKgS * dtS);
-    if (this.position.y < groundHeightM + 1.5) this.crashed = true;
+    if (this.gear.collapsed || this.hullTouches(groundAt)) this.crashed = true;
   }
 
-  private substep(input: PilotInput, h: number): void {
+  /** Nose, tail, wingtips and belly against the ground: any of them touching is a crash. */
+  private hullTouches(groundAt: (x: number, z: number) => number): boolean {
+    const half = this.cfg.aero.spanM / 2;
+    const len = this.cfg.lengthM / 2;
+    // The belly only counts when the wheels are not there to hold it up.
+    const bellyExposed = this.gear.position < 0.999 || this.gear.collapsed;
+    const points: [number, number, number][] = [
+      [0, 0, -len],
+      [0, 0, len],
+      [half, 0, len * 0.2],
+      [-half, 0, len * 0.2],
+    ];
+    if (bellyExposed) points.push([0, -0.9, 0]);
+    for (const [x, y, z] of points) {
+      hull.set(x, y, z);
+      this.orientation.rotate(hull);
+      hull.add(this.position);
+      if (hull.y < groundAt(hull.x, hull.z) + 0.05) return true;
+    }
+    return false;
+  }
+
+  private substep(input: PilotInput, h: number, groundAt: (x: number, z: number) => number): void {
     const cfg = this.cfg;
     const m = this.massKg;
     atmosphereAt(this.position.y, this.air);
@@ -99,9 +164,11 @@ export class Aircraft {
     this.orientation.unrotate(vb);
     const V = Math.max(vb.length(), 0.1);
     const forward = -vb.z;
-    // atan2 keeps the sign right in a tail-slide too (forward < 0).
-    this.alphaRad = Math.atan2(-vb.y, forward);
-    this.betaRad = Math.asin(clamp(vb.x / V, -1, 1));
+    // atan2 keeps the sign right in a tail-slide too (forward < 0). Below a walking pace the
+    // airflow angles mean nothing (parked, taxiing in a crosswind gust): treat them as zero.
+    const flowWeight = clamp((V - 3) / 7, 0, 1);
+    this.alphaRad = Math.atan2(-vb.y, forward) * flowWeight;
+    this.betaRad = Math.asin(clamp(vb.x / V, -1, 1)) * flowWeight;
     this.speedMs = V;
     this.mach = V / this.air.speedOfSoundMs;
     const q = 0.5 * this.air.densityKgM3 * V * V;
@@ -110,6 +177,11 @@ export class Aircraft {
 
     stepEngine(cfg.engine, this.engine, input.throttle, this.air.densityKgM3, this.mach, this.fuelKg > 0, h);
     aeroCoefficients(cfg.aero, this.alphaRad, this.mach, this.coeff);
+    // Gear down: extra drag, and the automatic flaps add lift at approach speeds.
+    const gearDown = this.gear.position;
+    const flap = cfg.gear.flapCl * gearDown * (1 - Math.min(1, Math.max(0, (V - 100) / 40))) * (this.alphaRad > -0.05 ? 1 : 0);
+    this.coeff.lift += flap;
+    this.coeff.drag += cfg.gear.dragCd0 * gearDown + 0.3 * flap * flap;
 
     // Forces in body axes.
     vHat.copy(vb).scale(1 / V);
@@ -148,16 +220,19 @@ export class Aircraft {
     cs.yawRate = -this.angular.y;
     cs.thrustN = this.engine.thrustN;
     cs.massKg = m;
+    cs.onGround = this.gear.weightOnWheels;
     controlMoments(cfg, input, cs, inertia, this.controls);
     naturalMoments(cfg, cs, nat);
     const Mx = this.controls.pitch + nat.pitch;
     const Mz = -(this.controls.roll + nat.roll);
     const My = -(this.controls.yaw + nat.yaw);
 
-    // Translate: body forces to world, plus gravity.
+    // Translate: body forces to world, plus gravity and the gear.
     total.copy(fLift).add(fDrag).add(fSide).add(fThrust);
     this.orientation.rotate(total);
     total.y -= m * PHYSICS.gravityMs2;
+    gearMoment.set(0, 0, 0);
+    gearForces(cfg, this.gear, this.position, this.velocity, this.orientation, this.angular, m, { brake: input.brake, steer: input.yaw }, groundAt, total, gearMoment);
     this.velocity.addScaled(total, h / m);
     this.position.addScaled(this.velocity, h);
 
@@ -168,9 +243,9 @@ export class Aircraft {
     const Ix = inertia.pitch;
     const Iy = inertia.yaw;
     const Iz = inertia.roll;
-    const ax = (Mx - (wy * Iz * wz - wz * Iy * wy)) / Ix;
-    const ay = (My - (wz * Ix * wx - wx * Iz * wz)) / Iy;
-    const az = (Mz - (wx * Iy * wy - wy * Ix * wx)) / Iz;
+    const ax = (Mx + gearMoment.x - (wy * Iz * wz - wz * Iy * wy)) / Ix;
+    const ay = (My + gearMoment.y - (wz * Ix * wx - wx * Iz * wz)) / Iy;
+    const az = (Mz + gearMoment.z - (wx * Iy * wy - wy * Ix * wx)) / Iz;
     this.angular.set(wx + ax * h, wy + ay * h, wz + az * h);
     this.orientation.integrateBodyRate(this.angular.x, this.angular.y, this.angular.z, h);
     this.overstressed = this.loadFactor > cfg.limiter.gMax + 0.5;
@@ -199,6 +274,8 @@ const fSide = new Vec3();
 const fThrust = new Vec3();
 const total = new Vec3();
 const upW = new Vec3();
+const gearMoment = new Vec3();
+const hull = new Vec3();
 const inertia = { roll: 1, pitch: 1, yaw: 1 };
 const nat = { pitch: 0, roll: 0, yaw: 0 };
 const cs: ControlState = {
@@ -214,6 +291,7 @@ const cs: ControlState = {
   yawRate: 0,
   thrustN: 0,
   massKg: 1,
+  onGround: false,
 };
 
 function clamp(x: number, lo: number, hi: number): number {

@@ -15,7 +15,7 @@ const PEDAL_RATE_PER_S = 3;
 const THROTTLE_RATE_PER_S = 0.45;
 
 export class PilotControls {
-  readonly input: PilotInput = { pitch: 0, roll: 0, yaw: 0, throttle: 0.75, limiterRelaxed: false };
+  readonly input: PilotInput = { pitch: 0, roll: 0, yaw: 0, throttle: 0.75, limiterRelaxed: false, brake: false };
   private mouseStick = { x: 0, y: 0 };
   private keyStick = { pitch: 0, roll: 0, yaw: 0 };
   private atDetent = false;
@@ -64,6 +64,7 @@ export class PilotControls {
     if (!this.atDetent) t = Math.min(t, 1);
     this.input.throttle = clamp(t, 0, 1.25);
     if (k.pressed('limiter')) this.input.limiterRelaxed = !this.input.limiterRelaxed;
+    this.input.brake = k.held('brake');
     if (this.override) Object.assign(this.input, this.override);
   }
 

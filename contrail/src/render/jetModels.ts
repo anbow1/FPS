@@ -1,6 +1,6 @@
 import { abs, add, float, fract, fwidth, max, mix, mx_noise_float, positionLocal, smoothstep, uniform, vec3 } from 'three/tsl';
-import { AdditiveBlending, Color, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type BufferGeometry } from 'three/webgpu';
-import type { AircraftId } from '../config.ts';
+import { AdditiveBlending, Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type BufferGeometry } from 'three/webgpu';
+import { AIRCRAFT, type AircraftId } from '../config.ts';
 import { lathe, loft, type Section, surface } from './airframe.ts';
 
 // Procedural models of the two aircraft, built to the scale sheet
@@ -24,6 +24,8 @@ export interface JetModel {
   wingtips: [number, number, number][];
   /** Pilot's eye in model space. */
   eye: [number, number, number];
+  /** One group per gear leg (pivot at the attachment), with the strut and wheel. */
+  gearLegs: { pivot: Group; strut: Mesh; wheel: Mesh; travelM: number; nose: boolean }[];
 }
 
 const srgb = (hex: number): Color => new Color(hex);
@@ -80,7 +82,35 @@ function mesh(g: BufferGeometry, m: MeshStandardNodeMaterial | MeshPhysicalNodeM
 }
 
 export function buildJet(id: AircraftId): JetModel {
-  return id === 'wraith' ? buildWraith() : buildTalon();
+  const model = id === 'wraith' ? buildWraith() : buildTalon();
+  // Landing gear from the logic's leg positions (config.ts), so the wheels sit where the springs act.
+  const metal = new MeshStandardNodeMaterial({ name: 'gear leg', color: srgb(0xc6c6c8), roughness: 0.35, metalness: 1 });
+  const tyre = new MeshStandardNodeMaterial({ name: 'tyre', color: srgb(0x2c2c2e), roughness: 0.86, metalness: 0 });
+  for (const leg of AIRCRAFT[id].gear.legs) {
+    const pivot = new Group();
+    pivot.position.set(leg.x, leg.y, leg.z);
+    const strut = mesh(new CylinderGeometry(0.07, 0.09, 1, 10), metal);
+    const r = leg.nose ? 0.3 : 0.42;
+    const wheel = mesh(new CylinderGeometry(r, r, leg.nose ? 0.18 : 0.3, 18).rotateZ(Math.PI / 2), tyre);
+    pivot.add(strut, wheel);
+    model.root.add(pivot);
+    model.gearLegs.push({ pivot, strut, wheel, travelM: leg.travelM, nose: leg.nose });
+  }
+  return model;
+}
+
+/** Gear position 0 (up) … 1 (down) and per-leg compression (m). */
+export function poseGear(model: JetModel, position: number, compression: readonly number[]): void {
+  model.gearLegs.forEach((leg, i) => {
+    leg.pivot.visible = position > 0.02;
+    // Retracts by swinging forward (mains) or aft (nose) into the bays.
+    leg.pivot.rotation.x = (1 - position) * (leg.nose ? -1.5 : 1.5);
+    const extension = leg.travelM - (compression[i] ?? 0);
+    const radius = leg.nose ? 0.3 : 0.42;
+    leg.strut.scale.y = Math.max(0.05, extension);
+    leg.strut.position.y = -extension / 2;
+    leg.wheel.position.y = -extension + radius;
+  });
 }
 
 function buildWraith(): JetModel {
@@ -163,6 +193,7 @@ function buildWraith(): JetModel {
       [-5.35, 0.0, 1.6],
     ],
     eye: [0, 1.05, -4.1],
+    gearLegs: [],
   };
 }
 
@@ -239,6 +270,7 @@ function buildTalon(): JetModel {
       [-7.65, -0.15, 5.0],
     ],
     eye: [0, 1.45, -6.0],
+    gearLegs: [],
   };
 }
 

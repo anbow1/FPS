@@ -12,7 +12,7 @@ const DEG = Math.PI / 180;
 function fly(ac: Aircraft, seconds: number, input = neutralInput(), each?: (ac: Aircraft) => void): void {
   const steps = Math.round(seconds / PHYSICS.stepSeconds);
   for (let i = 0; i < steps; i++) {
-    ac.step(input, PHYSICS.stepSeconds, -1000);
+    ac.step(input, PHYSICS.stepSeconds, () => -1000);
     each?.(ac);
   }
 }
