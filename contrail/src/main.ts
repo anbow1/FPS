@@ -5,7 +5,8 @@ import { Input } from './core/input.ts';
 import { FixedLoop } from './core/loop.ts';
 import { CameraRig } from './render/cameraRig.ts';
 import { ForceArrows } from './render/forceArrows.ts';
-import { buildGreyWorld, NOON } from './render/greyWorld.ts';
+import { Atmosphere } from './render/atmosphere.ts';
+import { type PresetId, SkyLighting } from './render/lighting.ts';
 import { buildJet, poseGear, poseSurfaces } from './render/jetModels.ts';
 import { buildAirbase, RUNWAY, THRESHOLD_36_Z } from './render/airbase.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
@@ -41,9 +42,15 @@ async function main(): Promise<void> {
   await stage.init();
   window.addEventListener('resize', () => stage.resize());
 
-  // Pre-exposure from the preset's EV100 (rules §4.1); lights and sky are authored in lux.
-  const exposure = 1 / (1.2 * Math.pow(2, NOON.ev100));
-  const world = buildGreyWorld(stage.scene, exposure);
+  // Physical sky and light (rules §4.1–4.2): the atmosphere's LUTs, the sun in lux, pre-exposure per preset.
+  const presetParam = params.get('time');
+  const presetId: PresetId = presetParam === 'morning' || presetParam === 'dusk' ? presetParam : 'noon';
+  const atmosphere = new Atmosphere(settings.quality);
+  stage.scene.add(atmosphere.dome);
+  const lighting = new SkyLighting(stage.renderer, atmosphere, presetId);
+  stage.scene.add(lighting.sun, lighting.sun.target);
+  // ?noap turns the aerial perspective off for an A/B comparison.
+  if (!params.has('noap')) stage.setAerialPerspective((colour, uv, distanceM) => atmosphere.applyAerial(colour, uv, distanceM));
   stage.setExposure(1);
   const t0 = performance.now();
   const terrainData = await bakeTerrain((f) => (loading.textContent = `Contrail — shaping 819 km of terrain ${Math.round(f * 100)} %`));
@@ -51,27 +58,13 @@ async function main(): Promise<void> {
   const terrain = new TerrainRenderer(terrainData, await buildTerrainTextures(terrainData));
   console.log(`terrain baked in ${(performance.now() - t0).toFixed(0)} ms`);
   stage.scene.add(terrain.mesh);
-  world.ground.visible = false;
   stage.scene.add(buildAirbase());
-  // The sun's shadow follows the aircraft: self-shadowing and a shadow on the runway (cascades over
-  // the land come with the atmosphere milestone).
-  world.sun.castShadow = true;
-  world.sun.shadow.mapSize.set(2048, 2048);
-  const sc = world.sun.shadow.camera;
-  sc.left = -45;
-  sc.right = 45;
-  sc.top = 45;
-  sc.bottom = -45;
-  sc.near = 1;
-  sc.far = 2000;
-  world.sun.shadow.bias = -0.0004;
-  world.sun.shadow.normalBias = 0.05;
-  const sunDir = world.sun.position.clone().normalize();
   const groundAt = (x: number, z: number): number => Math.max(TERRAIN.seaLevelM, terrainData.heightAt(x, z));
 
   const aircraft = new Aircraft(aircraftId);
   const spawn = (): void => {
-    if (params.get('spawn') === 'air') aircraft.placeInFlight(0, 1500, 12_000, 0, 200);
+    const alt = Number(params.get('alt') ?? 1500);
+    if (params.get('spawn') === 'air') aircraft.placeInFlight(0, alt, 12_000, 0, alt > 6000 ? 260 : 200);
     else {
       aircraft.placeOnGround(0, THRESHOLD_36_Z - 120, 0, RUNWAY.elevationM);
       pilot.input.throttle = 0;
@@ -103,7 +96,7 @@ async function main(): Promise<void> {
   const renderRot = new Quaternion();
   const prevRot = new Quaternion();
   const currRot = new Quaternion();
-  const debugHooks = { aircraft, stage, frames: 0, input: pilot.input, pilot, rig, overlay, terrain };
+  const debugHooks = { aircraft, stage, frames: 0, input: pilot.input, pilot, rig, overlay, terrain, atmosphere };
   (window as unknown as { __contrail: typeof debugHooks }).__contrail = debugHooks;
 
   const loop = new FixedLoop({
@@ -113,6 +106,7 @@ async function main(): Promise<void> {
       if (input.pressed('camera')) rig.next();
       if (input.pressed('debug')) overlay.visible = !overlay.visible;
       if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
+      if (input.pressed('timeOfDay')) lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : 'morning');
       if (input.pressed('quality')) stage.applySettings({ ...settings, quality: (settings.quality = settings.quality === 'high' ? 'low' : 'high') });
       // G-LOC: the pilot is out and the controls go slack.
       const controls = aircraft.g.glocS > 0 ? { ...pilot.input, pitch: 0, roll: 0, yaw: 0 } : pilot.input;
@@ -146,8 +140,6 @@ async function main(): Promise<void> {
       poseSurfaces(model, authority(aircraft.controls.pitch, qS * aircraft.cfg.aero.chordM * aircraft.cfg.aero.cmControl + 1), authority(aircraft.controls.roll, qS * aircraft.cfg.aero.spanM * aircraft.cfg.aero.clControl + 1));
       model.burner.value = aircraft.engine.burner;
       poseGear(model, aircraft.gear.position, aircraft.gear.compression);
-      world.sun.position.copy(renderPos).addScaledVector(sunDir, 800);
-      world.sun.target.position.copy(renderPos);
       rig.update(renderPos, renderRot, model.eye, aircraft.loadFactor, AIRCRAFT[aircraftId].lengthM, frameS);
       stage.camera.updateMatrixWorld();
       hud.clipToCombiner = rig.mode === 'cockpit';
@@ -161,17 +153,22 @@ async function main(): Promise<void> {
       if (pilot.input.brake) warnings.push('BRAKE');
       terrain.update(stage.camera);
       hud.draw(stage.camera, aircraft, pilot.input, { radarAltitudeM: Math.max(0, aircraft.position.y - aircraft.wheelDropM - groundAt(aircraft.position.x, aircraft.position.z)), weaponMode: aircraft.gear.position > 0.99 ? 'GEAR DN' : 'GUN', stores: aircraftId === 'wraith' ? 'GUN 180 SRM 2 MRM 4' : 'GUN 150 SRM 4 MRM 4', warnings });
-      world.sky.position.copy(stage.camera.position);
-      world.ground.position.set(Math.round(stage.camera.position.x / 1000) * 1000, 0, Math.round(stage.camera.position.z / 1000) * 1000);
+      lighting.update(stage.camera, renderPos);
+      stage.scene.environment = lighting.environment;
       stage.greyOut.value = greyOut(aircraft.g);
       stage.redOut.value = aircraft.g.redOut;
       arrows.update(renderPos, aircraft.forces, aircraft.velocity, overlay.visible && rig.mode !== 'cockpit');
-      overlay.update(aircraft, pilot.input, `${stage.backendName} · ${settings.quality} · ${settings.toneMap} · camera ${rig.mode} · terrain ${terrain.nodesDrawn} patches${aircraft.crashed ? ' · CRASHED' : ''}`);
+      overlay.update(aircraft, pilot.input, `${stage.backendName} · ${settings.quality} · ${settings.toneMap} · ${lighting.preset.label} · camera ${rig.mode} · terrain ${terrain.nodesDrawn} patches${aircraft.crashed ? ' · CRASHED' : ''}`);
       if (frameS > 0 && !document.hidden) stage.governor.update(frameS);
       stage.render();
       debugHooks.frames++;
     },
   }, PHYSICS.maxStepsPerFrame);
+  stage.camera.position.set(0, 200, 0);
+  stage.camera.updateMatrixWorld();
+  lighting.update(stage.camera, stage.camera.position);
+  await lighting.prepare(stage.camera);
+  lighting.update(stage.camera, stage.camera.position);
   loading.remove();
   loop.start();
 }

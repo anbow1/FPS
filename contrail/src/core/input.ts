@@ -19,7 +19,8 @@ export type Action =
   | 'toneMap'
   | 'centreStick'
   | 'gear'
-  | 'brake';
+  | 'brake'
+  | 'timeOfDay';
 
 // Mouse0 / Mouse2 are the left / right buttons; WheelUp / WheelDown are edges only.
 // Pull = nose up = S / Down, as on a real stick (pull back to climb).
@@ -42,6 +43,7 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   centreStick: ['Mouse2'],
   gear: ['KeyG'],
   brake: ['KeyB'],
+  timeOfDay: ['KeyK'],
 };
 
 const STORAGE_KEY = 'contrail.bindings.v1';

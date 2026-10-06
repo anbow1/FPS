@@ -2,8 +2,8 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { float, length, mix, mrt, output, pass, pow, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, WebGPURenderer } from 'three/webgpu';
+import { convertToTexture, float, getViewPosition, length, mix, mrt, output, pass, pow, select, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, type Node, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, WebGPURenderer } from 'three/webgpu';
 import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -44,6 +44,8 @@ export class Stage {
   readonly greyOut = uniform(0);
   readonly redOut = uniform(0);
   private dynamicScale = 1;
+  /** Aerial perspective applied to every surface in the scene pass (atmosphere.ts); sky pixels are skipped. */
+  private aerial: ((colour: Node<'vec3'>, uv: Node<'vec2'>, distanceM: Node<'float'>) => Node<'vec3'>) | null = null;
   private pipeline: RenderPipeline | null = null;
   private settings: StageSettings;
 
@@ -74,6 +76,11 @@ export class Stage {
     this.applySettings(this.settings);
   }
 
+  setAerialPerspective(fn: (colour: Node<'vec3'>, uv: Node<'vec2'>, distanceM: Node<'float'>) => Node<'vec3'>): void {
+    this.aerial = fn;
+    this.buildPipeline();
+  }
+
   get backendName(): string {
     const backend: unknown = this.renderer.backend;
     return typeof backend === 'object' && backend !== null && 'isWebGPUBackend' in backend ? 'WebGPU' : 'WebGL2 (fallback)';
@@ -102,7 +109,24 @@ export class Stage {
     const depth = scenePass.getTextureNode('depth');
     const motion = scenePass.getTextureNode('velocity');
     const high = this.settings.quality === 'high';
-    const aa = high ? traa(colour, depth, motion, this.camera) : colour;
+    // Aerial perspective before anti-aliasing, on the HDR scene colour: every surface takes the haze
+    // of the air between it and the eye; the sky (reversed depth 0) already has it.
+    let hazed: Node<'vec4'> = colour;
+    if (this.aerial) {
+      const screen = uv();
+      const d = depth.sample(screen).r;
+      // The scene camera's inverse projection as a uniform: inside a post pass the camera nodes
+      // refer to the full-screen quad's own camera, not the scene's.
+      const viewPos = getViewPosition(screen, d, uniform(this.camera.projectionMatrixInverse));
+      const distanceM = length(viewPos);
+      // Sample the scene colour explicitly: used as `colour.rgb` inside this branch it read black.
+      const sceneRgb = colour.sample(screen).rgb;
+      const withAir = vec4(this.aerial(sceneRgb, screen, distanceM), 1);
+      // TRAA re-samples its input at reprojected positions, so it needs a texture, not an
+      // expression: render the hazed frame to one first.
+      hazed = convertToTexture(select(d.lessThanEqual(0), colour, withAir));
+    }
+    const aa = high ? traa(hazed, depth, motion, this.camera) : hazed;
     const glare = bloom(aa, high ? 0.05 : 0.035, 0.35, 0);
     let lit = aa.add(glare).rgb;
     // G effects: grey-out desaturates and closes a tunnel from the edges; red-out tints red.

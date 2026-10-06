@@ -1,4 +1,4 @@
-import { abs, attribute, cameraPosition, clamp, float, floor, fract, hash, int, ivec2, length, max, min, mix, mx_noise_float, normalize, positionWorld, smoothstep, texture, textureLoad, transformNormalToView, vec2, vec3 } from 'three/tsl';
+import { abs, attribute, cameraPosition, clamp, dot, float, floor, fract, hash, int, ivec2, length, max, min, mix, mx_noise_float, normalize, positionWorld, smoothstep, texture, textureLoad, transformNormalToView, vec2, vec3 } from 'three/tsl';
 import { Box3, BufferAttribute, Color, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, type PerspectiveCamera, type Texture, Vector3 } from 'three/webgpu';
 import { TERRAIN, type TerrainData } from '../sim/terrain.ts';
 import type { TerrainTextures } from './terrainTextures.ts';
@@ -88,7 +88,12 @@ export class TerrainRenderer {
     const odd = fract(gridPos.mul(0.5)).mul(2);
     const world = world0.sub(odd.mul(node.z.div(PATCH)).mul(k));
     const h = heightAt(world);
-    m.positionNode = vec3(world.x, max(h, TERRAIN.seaLevelM), world.y);
+    // The Earth curves away: drop d²/2R below the camera's tangent plane, so from 12 km the
+    // horizon sits at ~390 km where the terrain ring ends (brief) — rendering only, the logic
+    // stays flat (sub-metre within the 100 km play area).
+    const dCam = world.sub(cameraPosition.xz);
+    const drop = dot(dCam, dCam).div(2 * 6_360_000);
+    m.positionNode = vec3(world.x, max(h, TERRAIN.seaLevelM).sub(drop), world.y);
 
     // ---- surface: near maps inside, far maps outside, blended exactly like the heights.
     const P = positionWorld;
