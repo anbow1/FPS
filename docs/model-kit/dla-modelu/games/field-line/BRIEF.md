@@ -2,7 +2,7 @@
 
 This is the task. Build the game described below. The images it refers to are in
 `target-look/` (next to this file) and the binding reference sheets in
-`../reference-sheets/`.
+`../../reference-sheets/`.
 
 ## 1. What to build
 
@@ -27,7 +27,7 @@ Everything is generated in code: geometry, textures, sounds. No downloaded
 models, textures or audio files.
 
 The images in `target-look/` show the quality bar. Match their mood, scale,
-density and light, not their exact layout. The sheets in `../reference-sheets/`
+density and light, not their exact layout. The sheets in `../../reference-sheets/`
 are binding numbers: lighting (lux, EV100, colour temperature), PBR material
 values, human and object scale, ballistics, HUD zones and the performance
 budget.
@@ -169,7 +169,7 @@ sharper):
 | `06_city_square.png` | City square: paving, benches, buildings, street trees | material variety, shadow, distance haze |
 | `contact-sheet.png` | All of the above with captions | — |
 
-Binding numbers (`../reference-sheets/`): `lighting-reference.png`,
+Binding numbers (`../../reference-sheets/`): `lighting-reference.png`,
 `pbr-material-reference.png`, `scale-reference.png`,
 `ballistics-reference.png`, `hud-layout-reference.png`,
 `performance-budget-reference.png`.

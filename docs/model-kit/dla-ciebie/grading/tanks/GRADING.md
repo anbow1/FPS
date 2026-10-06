@@ -1,9 +1,9 @@
 # Tanks — grading guide
 
 For the person evaluating a model's build. Do not give this file to the model:
-it would build to the test. The model gets [BRIEF.md](BRIEF.md), `target-look/`
-and `../reference-sheets/`. Feature IDs and section numbers (§1–§6) below refer
-to the brief. See [../README.md](../README.md) for the protocol.
+it would build to the test. The model gets [BRIEF.md](../../../dla-modelu/games/tanks/BRIEF.md), `target-look/`
+and `dla-modelu/reference-sheets/`. Feature IDs and section numbers (§1–§6) below refer
+to the brief. See [../../README.md](../../README.md) for the protocol.
 
 ## 7. Verification procedure
 

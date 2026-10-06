@@ -2,7 +2,7 @@
 
 This is the task. Build the game described below. The images it refers to are in
 `target-look/` (next to this file) and the binding reference sheets in
-`../reference-sheets/`.
+`../../reference-sheets/`.
 
 ## 1. What to build
 
@@ -18,7 +18,7 @@ Everything is generated in code: terrain, buildings, trees, tanks, textures,
 sounds. No downloaded models, textures or audio files.
 
 The images in `target-look/` show the quality bar. The sheets in
-`../reference-sheets/` are binding: lighting (lux, EV100), PBR materials, scale,
+`../../reference-sheets/` are binding: lighting (lux, EV100), PBR materials, scale,
 ballistics (APFSDS flight times), HUD zones (the tank panel) and the
 performance budget.
 

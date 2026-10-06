@@ -22,10 +22,13 @@ graphics rules of all three games (Field Line, Castaway Lagoon, Tanks) as a
 fill-in template (Polish) to copy into a new game: architecture, light,
 materials, vegetation, water, stutter, measurement, presets, acceptance.
 
-**[docs/game-specs/](docs/game-specs/)** — one build spec per game (Field Line,
-Castaway Lagoon, Tanks) for testing how well other models build a game: the
-brief to hand over, reference screenshots of the target look, budgets, a
-build order, and for the grader the verification steps and a 100-point rubric.
+**[docs/model-kit/](docs/model-kit/)** — a copy-and-paste kit for any coding
+model: the rules (`AGENT.md`, architecture, a graphics quality contract with a
+check for every rule), the reference sheets, the graphics playbook, a ready
+first message (`START.md`), build briefs for five games (Field Line, Castaway
+Lagoon, Tanks, a jet fighter and an attack helicopter simulator) with
+target-look screenshots where they exist, and — for the evaluator only — a
+grading protocol and a 100-point rubric per game. README in Polish.
 
 **[docs/graphics-playbook.md](docs/graphics-playbook.md)** — every graphics
 technique used in both games (renderer and light units, procedural textures,

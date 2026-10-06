@@ -2,7 +2,7 @@
 
 This is the task. Build the game described below. The images it refers to are in
 `target-look/` (next to this file) and the binding reference sheets in
-`../reference-sheets/`.
+`../../reference-sheets/`.
 
 ## 1. What to build
 
@@ -21,7 +21,7 @@ downloaded models, textures or audio files.
 
 The images in `target-look/` show the quality bar. Match their mood, light,
 water colour and density, not their exact layout. The sheets in
-`../reference-sheets/` are binding numbers (lighting, PBR materials, scale, HUD
+`../../reference-sheets/` are binding numbers (lighting, PBR materials, scale, HUD
 layout, performance budget).
 
 ## 2. Platform and hard rules
