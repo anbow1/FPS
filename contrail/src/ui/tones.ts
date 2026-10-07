@@ -14,6 +14,11 @@ export class Tones {
   private lastBlipS = 0;
   muted = false;
 
+  /** The audio context once started (the flight sounds share it). */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
   /** Call from a click or touch handler. */
   start(): void {
     if (this.ctx) {

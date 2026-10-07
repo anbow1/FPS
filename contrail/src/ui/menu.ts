@@ -122,7 +122,7 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
   keys.className = 'keys';
   keys.innerHTML = touch
     ? 'Left thumb: stick (springs back; pitch sense above). Tilt: hold the phone like a yoke, CAL sets hands-off. Left edge: throttle, top fifth = afterburner. Right: fire, weapon, lock, radar, flares, chaff, camera, gear.'
-    : 'Mouse or W/S A/D: stick · Q/E: rudder · Shift/Ctrl or wheel: throttle (again at 100 % = afterburner)<br>Fire: mouse / Space · X weapon · V lock · R radar mode · , . range · PgUp/PgDn antenna · F flares · Z chaff<br>C camera (chase, cockpit, orbit, padlock, missile) · G gear · B brakes · L limiter · K sky · H data · O quality';
+    : 'Mouse or W/S A/D: stick · Q/E: rudder · Shift/Ctrl or wheel: throttle (again at 100 % = afterburner)<br>Fire: mouse / Space · X weapon · V lock · R radar mode · , . range · PgUp/PgDn antenna · F flares · Z chaff<br>C camera (chase, cockpit, orbit, padlock, missile) · M sound · G gear · B brakes · L limiter · K sky · H data · O quality';
   card.append(keys);
   parent.append(root);
   return new Promise((resolve) => {

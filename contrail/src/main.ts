@@ -23,11 +23,12 @@ import { type Combatant, createOrders, type WeaponMode } from './sim/combat.ts';
 import { emChart, formatEmChart } from './sim/em.ts';
 import { greyOut } from './sim/gTolerance.ts';
 import { bakeTerrain, TERRAIN } from './sim/terrain.ts';
-import { gunDirection, gunImpact, MISSILES, predictShot } from './sim/weapons.ts';
+import { GUN, gunDirection, gunImpact, MISSILES, predictShot } from './sim/weapons.ts';
 import { DebugOverlay } from './ui/debugOverlay.ts';
 import { type AttackCue, Hud } from './ui/hud.ts';
 import { chooseOptions, optionsFromParams } from './ui/menu.ts';
 import { SensorDisplays } from './ui/sensors.ts';
+import { FlightSound } from './ui/sound.ts';
 import { Tones } from './ui/tones.ts';
 import { loadControls } from './ui/settings.ts';
 import { TiltSteering } from './ui/tilt.ts';
@@ -187,6 +188,9 @@ async function main(): Promise<void> {
   const pipperTrail: { x: number; y: number; z: number; t: number }[] = [];
   let lastMissile: (typeof game.combat.missiles)[number] | null = null;
   let lastPaintCount = 0;
+  // The flight sounds share the tones' audio context, so they exist once a gesture has started it.
+  let sound: FlightSound | null = null;
+  let muted = params.has('mute');
 
   const debugHooks = { aircraft, game, stage, frames: 0, input: pilot.input, pilot, tilt, rig, overlay, terrain, atmosphere, clouds };
   (window as unknown as { __contrail: typeof debugHooks }).__contrail = debugHooks;
@@ -239,6 +243,15 @@ async function main(): Promise<void> {
         const s = lighting.sunDir;
         sun.set(s.x, s.y, s.z);
         const events = game.step(dtS, orders, groundAt, sun, canSee);
+        if (input.pressed('mute')) muted = !muted;
+        if (!sound && tones.context) sound = new FlightSound(tones.context);
+        if (sound) {
+          const c = stage.camera.position;
+          const ear = new Vec3(c.x, c.y, c.z);
+          for (const m of events.launches) sound.launch(m.position.distanceTo(ear));
+          for (const x of events.explosions) sound.explosion(x.position.distanceTo(ear), x.size);
+          if (events.hits.some((h) => h.targetId === player.id)) sound.hit();
+        }
         if (events.launches.length) {
           for (const m of events.launches) if (m.ownerId === player.id) lastMissile = m;
         }
@@ -332,7 +345,25 @@ async function main(): Promise<void> {
         });
         sensors.draw(radar, player.rwr, aircraft.position.y);
         const paints = [...player.rwr.threats.values()].filter((t) => t.level === 'search').reduce((n, t) => n + Math.round(t.lastS * 10), 0);
+        tones.muted = muted;
         tones.update(player.rwr.worst, paints !== lastPaintCount, seekerState);
+        if (sound) {
+          sound.muted = muted;
+          const alive = player.alive;
+          sound.update({
+            core: alive ? aircraft.engine.core : 0,
+            burner: alive ? aircraft.engine.burner : 0,
+            dynamicPressurePa: alive ? aircraft.dynamicPressurePa : 0,
+            speedMs: aircraft.speedMs,
+            alphaRad: aircraft.alphaRad,
+            gunFiring: alive && orders.trigger && player.stores.gunRounds > 0,
+            gunRoundsPerS: GUN.roundsPerS,
+            cockpit: rig.mode === 'cockpit' || rig.mode === 'padlock',
+            listener: stage.camera.position,
+            listenerVelocity: aircraft.velocity,
+            others: game.combat.fighters.filter((f) => f !== player).map((f) => ({ position: f.aircraft.position, velocity: f.aircraft.velocity, core: f.aircraft.engine.core, burner: f.aircraft.engine.burner, alive: f.alive })),
+          });
+        }
         lastPaintCount = paints;
         status.textContent = game.status();
         const camY = stage.camera.position.y;

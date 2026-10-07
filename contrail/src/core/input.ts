@@ -29,7 +29,8 @@ export type Action =
   | 'rangeUp'
   | 'rangeDown'
   | 'antennaUp'
-  | 'antennaDown';
+  | 'antennaDown'
+  | 'mute';
 
 // Mouse0 / Mouse2 are the left / right buttons; WheelUp / WheelDown are edges only.
 // Pull = nose up = S / Down, as on a real stick (pull back to climb).
@@ -62,6 +63,7 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   rangeDown: ['Comma'],
   antennaUp: ['PageUp'],
   antennaDown: ['PageDown'],
+  mute: ['KeyM'],
 };
 
 const STORAGE_KEY = 'contrail.bindings.v1';

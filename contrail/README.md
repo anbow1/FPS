@@ -30,7 +30,9 @@ the sky.
 
 | | Keyboard and mouse | Touch |
 |---|---|---|
-| Stick | mouse (springs back) or W/S A/D | left thumb, floating stick |
+| Stick | mouse (springs back) or W/S A/D | left thumb, floating stick, or tilt the phone |
+| Pitch sense | menu: up = nose up (default) or up = nose down | same |
+| Tilt steering | — | menu toggle; hold the phone like a yoke (turn = roll, top edge towards you = pull); CAL re-centres |
 | Rudder | Q / E | — |
 | Throttle | Shift / Ctrl or wheel; press again at 100 % for afterburner | lever on the left edge, top fifth = afterburner |
 | Fire | left button / Space | FIRE |
@@ -40,10 +42,12 @@ the sky.
 | Camera (chase, cockpit, orbit, padlock, missile) | C | CAM |
 | Gear / brakes / G-limiter | G / B / L | GEAR / BRK |
 | Sky / quality / tone map / data | K / O / T / H | — |
+| Sound on / off | M | — |
 
 URL options: `?mode=duel|intercept|landing|free`, `&ac=wraith|talon`,
 `&vs=…`, `&ai=easy|normal|hard`, `&time=morning|noon|dusk`, `&q=low`,
-`&autostart`.
+`&autostart`, `&invert=0|1`, `&tilt=0|1`, `&mute`. The pitch and tilt
+choices are remembered on the device.
 
 ## What is modelled
 
@@ -63,6 +67,13 @@ All of it is a game abstraction, with invented numbers tuned to feel right.
   - Terrain masks targets.
   - The stealth type is seen nose-on at about a third of the usual range.
 - **Threat warning.** Shows search, track and launch, by bearing.
+- **Sound.**
+  - Synthesised, with no samples.
+  - Engine whine and rumble follow the core speed; the afterburner roars.
+  - Wind follows dynamic pressure, with buffet at high angle of attack.
+  - Other jets are heard with a Doppler shift.
+  - Explosions arrive after the sound's travel time.
+  - The cockpit muffles everything.
 - **Weapons.**
   - A gun with time of flight and tracers.
   - An infrared missile that flares and the sun can decoy.
