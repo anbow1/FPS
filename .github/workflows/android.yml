@@ -1,4 +1,4 @@
-# Builds both games as Android APKs on every push to main (and on demand),
+# Builds the games as Android APKs on every push to main (and on demand),
 # uploads them as a workflow artifact, and publishes them on a rolling
 # "android-latest" GitHub release so they can be downloaded straight to a phone.
 #
@@ -15,6 +15,7 @@ on:
     paths:
       - 'field-line/**'
       - 'castaway-lagoon/**'
+      - 'contrail/**'
       - 'android/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
@@ -78,7 +79,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete android-latest --yes --cleanup-tag || true
-          gh release create android-latest android/out/field-line.apk android/out/castaway-lagoon.apk \
+          gh release create android-latest android/out/field-line.apk android/out/castaway-lagoon.apk android/out/contrail.apk \
             --title "Android APKs (latest main)" \
             --notes "Built from ${GITHUB_SHA::7} by run ${GITHUB_RUN_NUMBER}. Install on Android 8+ (allow installs from this source). Landscape, on-screen touch controls; a Bluetooth keyboard also works." \
             --target "$GITHUB_SHA"

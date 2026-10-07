@@ -17,12 +17,34 @@ const KNOTS_PER_MS = 1.943_84;
 const FEET_PER_M = 3.280_84;
 const DEG = 180 / Math.PI;
 
+/** Attack symbology: what the radar and the weapon computers say, as world points. */
+export interface AttackCue {
+  /** The designated or locked target's position, if any. */
+  target: { x: number; y: number; z: number } | null;
+  locked: boolean;
+  rangeM: number;
+  closureMs: number;
+  /** The selected weapon would reach (fly-out says so). */
+  inRange: boolean;
+  /** Gun: where the rounds will be at the target's range, and where they were over the last second. */
+  pipper: { x: number; y: number; z: number } | null;
+  pipperTrail: { x: number; y: number; z: number }[];
+  /** Short-range missile seeker: where it looks, and whether it has a tone. */
+  seeker: { x: number; y: number; z: number } | null;
+  seekerTone: boolean;
+  /** Lock acquisition 0…1 (a closing diamond). */
+  lockProgress: number;
+}
+
 export interface HudExtras {
   /** Radar altitude above the ground below (m). */
   radarAltitudeM: number;
   weaponMode: string;
   stores: string;
   warnings: string[];
+  attack?: AttackCue;
+  /** Big centre message (SPLASH, SHOT DOWN…). */
+  message?: string;
 }
 
 export class Hud {
@@ -195,7 +217,111 @@ export class Hud {
       c.strokeRect(w / 2 - tw / 2 + areaW * 0.2, y - 11 * size, tw, 22 * size);
       c.fillText(text, w / 2 + areaW * 0.2, y);
     });
+    if (extras.attack) this.drawAttack(camera, extras.attack, w, h, size, areaW);
+    if (extras.message) {
+      c.textAlign = 'center';
+      c.font = `${Math.round(30 * size + 6)}px ui-monospace, Menlo, Consolas, monospace`;
+      c.fillText(extras.message, w / 2, h * 0.36);
+    }
     c.restore();
+  }
+
+  /** Target box, range and closure, in-range cue, gun pipper with its trail, missile seeker circle. */
+  private drawAttack(camera: PerspectiveCamera, a: AttackCue, w: number, h: number, size: number, areaW: number): void {
+    const c = this.ctx;
+    if (a.target) {
+      const p = this.projectPoint(camera, a.target);
+      const s = 16 * size;
+      if (p) {
+        c.strokeRect(p.x - s, p.y - s, 2 * s, 2 * s);
+        if (a.locked) {
+          c.beginPath();
+          c.moveTo(p.x, p.y - s * 0.6);
+          c.lineTo(p.x + s * 0.6, p.y);
+          c.lineTo(p.x, p.y + s * 0.6);
+          c.lineTo(p.x - s * 0.6, p.y);
+          c.closePath();
+          c.stroke();
+        } else if (a.lockProgress > 0) {
+          // Acquiring: a diamond closing in on the box.
+          const k = 1 + (1 - a.lockProgress) * 2.5;
+          c.beginPath();
+          c.moveTo(p.x, p.y - s * k);
+          c.lineTo(p.x + s * k, p.y);
+          c.lineTo(p.x, p.y + s * k);
+          c.lineTo(p.x - s * k, p.y);
+          c.closePath();
+          c.stroke();
+        }
+      } else {
+        // Off the screen: an arrow at the edge pointing to it.
+        const v = this.tmp.set(a.target.x, a.target.y, a.target.z).sub(camera.position).normalize();
+        const right = this.right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        const up = this.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        const ang = Math.atan2(-v.dot(up), v.dot(right));
+        const r = Math.min(w, h) * 0.32;
+        const ax = w / 2 + Math.cos(ang) * r;
+        const ay = h / 2 + Math.sin(ang) * r;
+        c.beginPath();
+        c.moveTo(ax + Math.cos(ang) * 14 * size, ay + Math.sin(ang) * 14 * size);
+        c.lineTo(ax + Math.cos(ang + 2.5) * 10 * size, ay + Math.sin(ang + 2.5) * 10 * size);
+        c.lineTo(ax + Math.cos(ang - 2.5) * 10 * size, ay + Math.sin(ang - 2.5) * 10 * size);
+        c.closePath();
+        c.stroke();
+      }
+      // Range (nautical miles) and closure (knots) under the weapon box.
+      const br = w / 2 + areaW * (this.clipToCombiner ? 0.17 : 0.4);
+      const y = (this.clipToCombiner ? h * 0.6 : h * 0.8) - 50 * size;
+      c.textAlign = 'right';
+      c.fillText(`${(a.rangeM / 1852).toFixed(1)} NM  Vc ${Math.round(a.closureMs * 1.943_84)}`, br, y);
+      if (a.inRange) {
+        c.textAlign = 'center';
+        const flash = Math.floor(performance.now() / 250) % 2 === 0;
+        if (flash) c.fillText('SHOOT', w / 2, h * 0.62);
+        c.fillText('IN RNG', w / 2, h * 0.66);
+      }
+    }
+    // Gun pipper: a ring with a centre dot, and the bullet-time trail of where earlier bursts went.
+    if (a.pipper) {
+      const p = this.projectPoint(camera, a.pipper);
+      if (p) {
+        c.beginPath();
+        c.arc(p.x, p.y, 22 * size, 0, Math.PI * 2);
+        c.moveTo(p.x + 2 * size, p.y);
+        c.arc(p.x, p.y, 2 * size, 0, Math.PI * 2);
+        c.stroke();
+      }
+      c.beginPath();
+      for (const q of a.pipperTrail) {
+        const t = this.projectPoint(camera, q);
+        if (t) {
+          c.moveTo(t.x + 1.5 * size, t.y);
+          c.arc(t.x, t.y, 1.5 * size, 0, Math.PI * 2);
+        }
+      }
+      c.stroke();
+    }
+    // Missile seeker: a large circle where the seeker looks; doubled when it has a tone.
+    if (a.seeker) {
+      const p = this.projectPoint(camera, a.seeker);
+      if (p) {
+        c.beginPath();
+        c.arc(p.x, p.y, 30 * size, 0, Math.PI * 2);
+        if (a.seekerTone) {
+          c.moveTo(p.x + 36 * size, p.y);
+          c.arc(p.x, p.y, 36 * size, 0, Math.PI * 2);
+        }
+        c.stroke();
+      }
+    }
+  }
+
+  /** Screen position of a world point, or null behind the camera. */
+  private projectPoint(camera: PerspectiveCamera, p: { x: number; y: number; z: number }): { x: number; y: number } | null {
+    const d = this.tmp.set(p.x, p.y, p.z).sub(camera.position);
+    if (d.dot(this.camFwd) < 1) return null;
+    const t = this.tmp.set(p.x, p.y, p.z).project(camera);
+    return { x: ((t.x + 1) / 2) * window.innerWidth, y: ((1 - t.y) / 2) * window.innerHeight };
   }
 
   /** Screen position (CSS px) of a world direction from the camera, or null behind it. */

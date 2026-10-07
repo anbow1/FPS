@@ -1,57 +1,72 @@
-import { Quaternion, Vector3 } from 'three/webgpu';
+import { Vector3 } from 'three/webgpu';
+import { Game } from './app/game.ts';
 import { PilotControls } from './app/pilot.ts';
-import { AIRCRAFT, type AircraftId, PHYSICS } from './config.ts';
-import { Input } from './core/input.ts';
+import { AIRCRAFT, PHYSICS } from './config.ts';
+import { DEFAULT_BINDINGS, Input } from './core/input.ts';
 import { FixedLoop } from './core/loop.ts';
-import { CameraRig } from './render/cameraRig.ts';
-import { ForceArrows } from './render/forceArrows.ts';
+import { Rng } from './core/rng.ts';
+import { Vec3 } from './core/vec.ts';
+import { buildAirbase } from './render/airbase.ts';
 import { Atmosphere } from './render/atmosphere.ts';
-import { type PresetId, SkyLighting } from './render/lighting.ts';
+import { CameraRig } from './render/cameraRig.ts';
 import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
-import { bakeCloudData } from './sim/cloudField.ts';
-import { buildJet, EMISSIVE_EXPOSURE, poseGear, poseSurfaces } from './render/jetModels.ts';
-import { CONTRAIL, contrailStrength, Trails, VAPOUR, vapourStrength } from './render/trails.ts';
-import { atmosphereAt } from './sim/atmosphere.ts';
-import { buildAirbase, RUNWAY, THRESHOLD_36_Z } from './render/airbase.ts';
+import { CombatView } from './render/combatView.ts';
+import { ForceArrows } from './render/forceArrows.ts';
+import { EMISSIVE_EXPOSURE } from './render/jetModels.ts';
+import { JetView } from './render/jetView.ts';
+import { SkyLighting } from './render/lighting.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
-import { Aircraft } from './sim/aircraft.ts';
-import { greyOut } from './sim/gTolerance.ts';
-import { DebugOverlay } from './ui/debugOverlay.ts';
-import { Hud } from './ui/hud.ts';
-import { emChart, formatEmChart } from './sim/em.ts';
-import { bakeTerrain, TERRAIN } from './sim/terrain.ts';
-import { buildTerrainTextures } from './render/terrainTextures.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
+import { buildTerrainTextures } from './render/terrainTextures.ts';
+import { bakeCloudData, lineTransmittance } from './sim/cloudField.ts';
+import { type Combatant, createOrders, type WeaponMode } from './sim/combat.ts';
+import { emChart, formatEmChart } from './sim/em.ts';
+import { greyOut } from './sim/gTolerance.ts';
+import { bakeTerrain, TERRAIN } from './sim/terrain.ts';
+import { gunDirection, gunImpact, MISSILES, predictShot } from './sim/weapons.ts';
+import { DebugOverlay } from './ui/debugOverlay.ts';
+import { type AttackCue, Hud } from './ui/hud.ts';
+import { chooseOptions, optionsFromParams } from './ui/menu.ts';
+import { SensorDisplays } from './ui/sensors.ts';
+import { Tones } from './ui/tones.ts';
+import { FlightTouchControls } from './ui/touch.ts';
 
-// Contrail — milestone 1: the flight model in a grey sky with a debug overlay
-// of every force (brief, build order step 1). Free flight; the aircraft is
-// chosen with ?ac=wraith|talon. Controls: mouse or W/S A/D stick, Q/E pedals,
-// Shift/Ctrl throttle (press again at 100 % for afterburner), L limiter,
-// C camera, H overlay, O quality, T tone map.
+// Contrail — a stealth fighter against a heavy twin in a physical sky. The
+// start menu picks the mode, the aircraft on each side, the AI's difficulty
+// and the sky; then the world loads: terrain, clouds, airbase, both jets.
+// Each fixed step reads the pilot's controls into the same `Orders` the AI
+// gives, steps the combat simulation (flight models, radars, warning
+// receivers, weapons) and the mode's rules; each frame draws the jets, the
+// missiles and smoke, the HUD with its attack symbology, and the radar and
+// threat-warning displays.
 
 const params = new URLSearchParams(location.search);
-const aircraftId: AircraftId = params.get('ac') === 'talon' ? 'talon' : 'wraith';
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('view');
   const ui = document.getElementById('ui');
   if (!(canvas instanceof HTMLCanvasElement) || !ui) throw new Error('index.html must contain canvas#view and div#ui');
+  const input = new Input(canvas);
+  const skipMenu = params.has('autostart') || params.has('spawn');
+  const opts = skipMenu ? optionsFromParams(params) : await chooseOptions(ui, optionsFromParams(params), input.touch);
+  const tones = new Tones();
+  // Browsers allow audio only after a gesture: the menu's FLY click is one (headless runs skip it).
+  if (!skipMenu) tones.start();
+
   const loading = document.createElement('div');
   loading.className = 'loading';
   loading.textContent = 'Contrail — loading';
   ui.appendChild(loading);
 
-  const settings: StageSettings = { quality: params.get('q') === 'low' ? 'low' : 'high', renderScale: 1, toneMap: params.get('tm') === 'agx' ? 'agx' : 'aces' };
+  const settings: StageSettings = { quality: params.get('q') === 'low' || (params.get('q') === null && input.touch) ? 'low' : 'high', renderScale: 1, toneMap: params.get('tm') === 'agx' ? 'agx' : 'aces' };
   const stage = new Stage(canvas, settings);
   await stage.init();
   window.addEventListener('resize', () => stage.resize());
 
   // Physical sky and light (rules §4.1–4.2): the atmosphere's LUTs, the sun in lux, pre-exposure per preset.
-  const presetParam = params.get('time');
-  const presetId: PresetId = presetParam === 'morning' || presetParam === 'dusk' ? presetParam : 'noon';
   const atmosphere = new Atmosphere(settings.quality);
   stage.scene.add(atmosphere.dome);
-  const lighting = new SkyLighting(stage.renderer, atmosphere, presetId);
+  const lighting = new SkyLighting(stage.renderer, atmosphere, opts.time);
   stage.scene.add(lighting.sun, lighting.sun.target);
   // ?noap turns the aerial perspective off for an A/B comparison.
   if (!params.has('noap')) stage.setAerialPerspective((colour, uv, distanceM) => atmosphere.applyAerial(colour, uv, distanceM));
@@ -77,145 +92,251 @@ async function main(): Promise<void> {
   stage.scene.add(buildAirbase());
   const groundAt = (x: number, z: number): number => Math.max(TERRAIN.seaLevelM, terrainData.heightAt(x, z));
 
-  const aircraft = new Aircraft(aircraftId);
-  const spawn = (): void => {
-    const alt = Number(params.get('alt') ?? 1500);
-    if (params.get('spawn') === 'air') aircraft.placeInFlight(0, alt, 12_000, 0, alt > 6000 ? 260 : 200);
-    else {
-      aircraft.placeOnGround(0, THRESHOLD_36_Z - 120, 0, RUNWAY.elevationM);
-      pilot.input.throttle = 0;
-    }
-    trails.clear();
-  };
-  const model = buildJet(aircraftId);
-  stage.scene.add(model.root);
+  // ---- the game and its pictures
+  loading.textContent = 'Contrail — rolling out the aircraft';
+  const rng = new Rng(Number(params.get('seed') ?? Date.now() % 1_000_000));
+  const game = new Game(opts, () => rng.next());
+  const player = game.player;
+  const aircraft = player.aircraft;
+  const views = new Map<number, JetView>();
+  for (const f of game.combat.fighters) views.set(f.id, new JetView(f.kind, stage.scene, atmosphere));
+  const playerView = views.get(player.id)!;
+  const combatView = new CombatView(stage.scene, atmosphere);
   // Cloud shadows on the ground, the airbase and the aircraft (the sun light only).
   if (!params.has('nocloudshadow')) clouds.shadeReceivers(stage.scene, settings.quality === 'high' ? 4 : 2);
-  // Contrails from each nozzle, vapour from each wingtip, in one draw.
-  const trails = new Trails(atmosphere, [...model.nozzles.map(() => ({ style: CONTRAIL })), ...model.wingtips.map(() => ({ style: VAPOUR }))]);
-  stage.scene.add(trails.mesh);
-  const emitters = [...model.nozzles, ...model.wingtips].map(() => new Vector3());
-  const emitterStrength = emitters.map(() => 0);
-  const air = atmosphereAt(0);
-  let trailClockS = 0;
   const arrows = new ForceArrows();
   stage.scene.add(arrows.mesh);
 
-  const input = new Input(canvas);
+  // ---- controls and displays
   const pilot = new PilotControls(input);
-  spawn();
   const rig = new CameraRig(stage.camera);
   const hudLayer = document.getElementById('hud') ?? ui;
   const hud = new Hud(hudLayer);
+  const sensors = new SensorDisplays(hudLayer);
   const overlay = new DebugOverlay(ui);
+  overlay.visible = false;
+  const status = document.createElement('div');
+  status.className = 'status';
+  ui.appendChild(status);
   const banner = document.createElement('div');
   banner.className = 'banner';
-  banner.textContent = 'Click to fly — mouse or W/S A/D stick · Q/E pedals and nose wheel · Shift/Ctrl throttle (again at 100 % = afterburner) · B brakes · G gear · L limiter · C camera · H data';
+  banner.textContent = input.touch ? 'Tap to fly' : 'Click to fly — Esc frees the mouse';
   ui.appendChild(banner);
-  canvas.addEventListener('click', () => input.requestLock());
+  const startFlying = (): void => {
+    tones.start();
+    input.requestLock();
+  };
+  canvas.addEventListener('click', startFlying);
+  banner.addEventListener('click', startFlying);
   input.onLockChange = (locked) => (banner.style.display = locked ? 'none' : 'block');
+  let touch: FlightTouchControls | null = null;
+  if (input.touch) {
+    const b = (code: string): string => code;
+    touch = new FlightTouchControls(input, [
+      { code: b(DEFAULT_BINDINGS.fire[1]!), label: 'FIRE', col: 0, row: 0, mode: 'hold', big: true },
+      { code: b(DEFAULT_BINDINGS.weapon[0]!), label: 'WPN', col: 1.5, row: 0, mode: 'tap' },
+      { code: b(DEFAULT_BINDINGS.flare[0]!), label: 'FLR', col: 2.5, row: 0, mode: 'hold' },
+      { code: b(DEFAULT_BINDINGS.chaff[0]!), label: 'CHF', col: 3.5, row: 0, mode: 'hold' },
+      { code: b(DEFAULT_BINDINGS.designate[0]!), label: 'LOCK', col: 0, row: 1.5, mode: 'tap' },
+      { code: b(DEFAULT_BINDINGS.radarMode[0]!), label: 'RDR', col: 1, row: 1.5, mode: 'tap' },
+      { code: b(DEFAULT_BINDINGS.rangeUp[0]!), label: 'RNG', col: 2, row: 1.5, mode: 'tap' },
+      { code: b(DEFAULT_BINDINGS.camera[0]!), label: 'CAM', col: 0, row: 2.5, mode: 'tap' },
+      { code: b(DEFAULT_BINDINGS.gear[0]!), label: 'GEAR', col: 1, row: 2.5, mode: 'tap' },
+      { code: b(DEFAULT_BINDINGS.brake[0]!), label: 'BRK', col: 2, row: 2.5, mode: 'hold' },
+    ]);
+    touch.setThrottle(aircraft.gear.weightOnWheels ? 0 : 0.8);
+    canvas.addEventListener('pointerdown', startFlying);
+  }
 
-  console.log(formatEmChart(aircraftId, emChart(aircraftId, [0, 3000, 6000, 9000, 12_000], [100, 150, 200, 250, 300, 350, 400, 450, 500])));
+  console.log(formatEmChart(opts.player, emChart(opts.player, [0, 3000, 6000, 9000, 12_000], [100, 150, 200, 250, 300, 350, 400, 450, 500])));
 
-  let crashTimerS = 0;
-  const renderPos = new Vector3();
-  const renderRot = new Quaternion();
-  const prevRot = new Quaternion();
-  const currRot = new Quaternion();
-  const debugHooks = { aircraft, stage, frames: 0, input: pilot.input, pilot, rig, overlay, terrain, atmosphere, clouds };
+  // The pilot's eyes for the AI: within 12 km (4 km behind), never through cloud.
+  const canSee = (from: Combatant, to: Combatant): boolean => {
+    const a = from.aircraft.position;
+    const b = to.aircraft.position;
+    const d = a.distanceTo(b);
+    if (d > 12_000) return false;
+    const fwd = from.aircraft.orientation.rotate(new Vec3(0, 0, -1));
+    const dir = new Vec3().subVectors(b, a).scale(1 / Math.max(d, 1));
+    if (fwd.dot(dir) < -0.5 && d > 4000) return false;
+    const w = clouds.windOffset.value;
+    return lineTransmittance(clouds.data, clouds.layer, a.x, a.y, a.z, b.x, b.y, b.z, w.x, w.y) > 0.3;
+  };
+
+  // ---- the pilot's weapon state
+  const orders = createOrders();
+  let weapon: WeaponMode = 'gun';
+  const RANGE_SCALES_M = [18_520, 37_040, 74_080, 148_160];
+  let rangeIndex = 2;
+  player.radar.rangeScaleM = RANGE_SCALES_M[rangeIndex]!;
+  const sun = new Vec3();
+  let inRange = false;
+  let envelopeTimerS = 0;
+  const pipperTrail: { x: number; y: number; z: number; t: number }[] = [];
+  let lastMissile: (typeof game.combat.missiles)[number] | null = null;
+  let lastPaintCount = 0;
+
+  const debugHooks = { aircraft, game, stage, frames: 0, input: pilot.input, pilot, rig, overlay, terrain, atmosphere, clouds };
   (window as unknown as { __contrail: typeof debugHooks }).__contrail = debugHooks;
+  let clockS = 0;
 
-  const loop = new FixedLoop({
-    step: (dtS) => {
-      pilot.update(dtS, rig.mode !== 'orbit');
-      if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
-      if (input.pressed('camera')) rig.next();
-      if (input.pressed('debug')) overlay.visible = !overlay.visible;
-      if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
-      if (input.pressed('timeOfDay')) {
-        lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : 'morning');
-        applyPresetClouds();
-      }
-      if (input.pressed('quality')) {
-        settings.quality = settings.quality === 'high' ? 'low' : 'high';
-        clouds.quality = CLOUD_QUALITY[settings.quality];
-        stage.applySettings({ ...settings });
-      }
-      // G-LOC: the pilot is out and the controls go slack.
-      const controls = aircraft.g.glocS > 0 ? { ...pilot.input, pitch: 0, roll: 0, yaw: 0 } : pilot.input;
-      if (input.pressed('gear')) aircraft.toggleGear();
-      aircraft.step(controls, dtS, groundAt);
-      if (aircraft.crashed) {
-        crashTimerS += dtS;
-        if (crashTimerS > 2) {
-          spawn();
-          crashTimerS = 0;
+  const loop = new FixedLoop(
+    {
+      step: (dtS) => {
+        pilot.update(dtS, rig.mode !== 'orbit');
+        if (touch) pilot.setTouch(touch.stick, touch.throttle);
+        if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
+        if (input.pressed('camera')) rig.next();
+        if (input.pressed('debug')) overlay.visible = !overlay.visible;
+        if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
+        if (input.pressed('timeOfDay')) {
+          lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : 'morning');
+          applyPresetClouds();
         }
-      }
-      input.endStep();
+        if (input.pressed('quality')) {
+          settings.quality = settings.quality === 'high' ? 'low' : 'high';
+          clouds.quality = CLOUD_QUALITY[settings.quality];
+          stage.applySettings({ ...settings });
+        }
+        if (input.pressed('gear')) aircraft.toggleGear();
+        // Weapons and sensors.
+        if (input.pressed('weapon')) weapon = weapon === 'gun' ? 'srm' : weapon === 'srm' ? 'mrm' : 'gun';
+        if (input.pressed('rangeUp')) rangeIndex = (rangeIndex + 1) % RANGE_SCALES_M.length;
+        if (input.pressed('rangeDown')) rangeIndex = (rangeIndex + RANGE_SCALES_M.length - 1) % RANGE_SCALES_M.length;
+        player.radar.rangeScaleM = RANGE_SCALES_M[rangeIndex]!;
+        const radar = player.radar;
+        if (input.held('antennaUp')) radar.antennaElRad = Math.min(0.5, radar.antennaElRad + 0.17 * dtS);
+        if (input.held('antennaDown')) radar.antennaElRad = Math.max(-0.5, radar.antennaElRad - 0.17 * dtS);
+        // With a designated target the antenna follows it.
+        const tgt = radar.target;
+        if (tgt) {
+          const d = new Vec3().subVectors(tgt.position, aircraft.position);
+          radar.antennaElRad = Math.atan2(d.y, Math.hypot(d.x, d.z));
+        }
+        // G-LOC: the pilot is out and the controls go slack.
+        Object.assign(orders.flight, aircraft.g.glocS > 0 ? { ...pilot.input, pitch: 0, roll: 0, yaw: 0 } : pilot.input);
+        orders.weapon = weapon;
+        orders.trigger = weapon === 'gun' && input.held('fire');
+        orders.launch = weapon !== 'gun' && input.pressed('fire');
+        orders.flare = input.held('flare');
+        orders.chaff = input.held('chaff');
+        orders.designate = input.pressed('designate');
+        orders.cycleRadar = input.pressed('radarMode');
+        orders.breakLock = false;
+        const s = lighting.sunDir;
+        sun.set(s.x, s.y, s.z);
+        const events = game.step(dtS, orders, groundAt, sun, canSee);
+        if (events.launches.length) {
+          for (const m of events.launches) if (m.ownerId === player.id) lastMissile = m;
+        }
+        if (!player.alive && player.deadS < 0.1) for (const v of views.values()) v.reset();
+        // Weapon envelope twice a second (a fly-out is not free).
+        envelopeTimerS -= dtS;
+        if (envelopeTimerS <= 0) {
+          envelopeTimerS = 0.5;
+          inRange = false;
+          const t = radar.target ? game.combat.get(radar.target.id) : undefined;
+          if (weapon === 'mrm' && radar.locked && t) inRange = predictShot(MISSILES.mrm, aircraft.position, aircraft.velocity, t.body).hit;
+          if (weapon === 'srm') {
+            const st = game.combat.launchTarget(player, 'srm');
+            inRange = !!st && predictShot(MISSILES.srm, aircraft.position, aircraft.velocity, st.body).hit;
+          }
+          if (weapon === 'gun' && t) inRange = t.aircraft.position.distanceTo(aircraft.position) < 1200;
+        }
+        input.endStep();
+      },
+      render: (alpha, frameS) => {
+        clockS += frameS;
+        const high = settings.quality === 'high';
+        EMISSIVE_EXPOSURE.value = lighting.exposure;
+        const frame = { alpha, frameS, clockS, eye: stage.camera.position, humidity: lighting.preset.humidity, highQuality: high };
+        for (const f of game.combat.fighters) views.get(f.id)!.update(f.aircraft, frame, f === player ? rig.mode !== 'cockpit' && rig.mode !== 'padlock' : true);
+        // Cameras: padlock on the radar's target (or the nearest enemy), missile cam on our last missile.
+        const radar = player.radar;
+        const tgtFighter = radar.target ? game.combat.get(radar.target.id) : game.combat.fighters.find((f) => f !== player && f.alive);
+        const padlock = tgtFighter ? views.get(tgtFighter.id)!.renderPos : null;
+        if (lastMissile && !game.combat.missiles.includes(lastMissile)) lastMissile = null;
+        const missile = lastMissile ? { position: new Vector3(lastMissile.position.x, lastMissile.position.y, lastMissile.position.z), velocity: new Vector3(lastMissile.velocity.x, lastMissile.velocity.y, lastMissile.velocity.z) } : null;
+        rig.update(playerView.renderPos, playerView.renderRot, playerView.model.eye, aircraft.loadFactor, AIRCRAFT[opts.player].lengthM, frameS, { padlock, missile });
+        stage.camera.updateMatrixWorld();
+        combatView.update(game.combat, clockS, stage.camera.position);
+        hud.clipToCombiner = rig.mode === 'cockpit';
+        const warnings: string[] = [];
+        if (aircraft.g.glocS > 0) warnings.push('G-LOC');
+        if (aircraft.overstressed) warnings.push('OVER G');
+        if (aircraft.coeff.separation > 0.3 && aircraft.speedMs > 20) warnings.push('ALPHA');
+        if (pilot.input.limiterRelaxed) warnings.push('LIM OFF');
+        if (aircraft.fuelKg < 800) warnings.push('FUEL');
+        if (aircraft.gear.position > 0 && aircraft.gear.position < 1) warnings.push('GEAR');
+        if (pilot.input.brake) warnings.push('BRAKE');
+        if (player.rwr.worst === 'launch') warnings.push('MISSILE');
+        terrain.update(stage.camera);
+        // Attack symbology.
+        const st = player.stores;
+        const attack: AttackCue = { target: null, locked: radar.locked, rangeM: 0, closureMs: 0, inRange, pipper: null, pipperTrail: [], seeker: null, seekerTone: false, lockProgress: radar.mode === 'stt' ? radar.lockProgress : 0 };
+        const tc = radar.target;
+        if (tc && player.alive) {
+          const tf = game.combat.get(tc.id);
+          const p = tf ? views.get(tf.id)!.renderPos : tc.position;
+          attack.target = { x: p.x, y: p.y, z: p.z };
+          attack.rangeM = tc.rangeM;
+          attack.closureMs = tc.closureMs;
+        }
+        let seekerState: 'off' | 'search' | 'tone' = 'off';
+        if (player.alive && weapon === 'gun') {
+          const range = tc && tc.rangeM < 1800 ? tc.rangeM : 700;
+          const dir = gunDirection(aircraft.orientation);
+          const { point, tofS } = gunImpact(aircraft.position, aircraft.velocity, dir, range);
+          // In the shooter's frame: where the stream will be relative to the jet as it flies on.
+          const pp = { x: point.x - aircraft.velocity.x * tofS, y: point.y - aircraft.velocity.y * tofS, z: point.z - aircraft.velocity.z * tofS };
+          attack.pipper = pp;
+          pipperTrail.push({ ...pp, t: clockS });
+          while (pipperTrail.length && clockS - pipperTrail[0]!.t > 1) pipperTrail.shift();
+          attack.pipperTrail = pipperTrail;
+        }
+        if (player.alive && weapon === 'srm' && st.srm > 0) {
+          const t = game.combat.launchTarget(player, 'srm');
+          if (t) {
+            const p = views.get(t.id)!.renderPos;
+            attack.seeker = { x: p.x, y: p.y, z: p.z };
+            attack.seekerTone = true;
+            seekerState = 'tone';
+          } else {
+            const fwd = aircraft.orientation.rotate(new Vec3(0, 0, -2000)).add(aircraft.position);
+            attack.seeker = { x: fwd.x, y: fwd.y, z: fwd.z };
+            seekerState = 'search';
+          }
+        }
+        const weaponLabel = weapon === 'gun' ? `GUN ${st.gunRounds}` : weapon === 'srm' ? `SRM ${st.srm}` : `MRM ${st.mrm}`;
+        hud.draw(stage.camera, aircraft, pilot.input, {
+          radarAltitudeM: Math.max(0, aircraft.position.y - aircraft.wheelDropM - groundAt(aircraft.position.x, aircraft.position.z)),
+          weaponMode: aircraft.gear.position > 0.99 && weapon === 'gun' ? 'GEAR DN' : weaponLabel,
+          stores: `G${st.gunRounds} S${st.srm} M${st.mrm} F${st.flares} C${st.chaff}`,
+          warnings,
+          attack,
+          message: game.message,
+        });
+        sensors.draw(radar, player.rwr, aircraft.position.y);
+        const paints = [...player.rwr.threats.values()].filter((t) => t.level === 'search').reduce((n, t) => n + Math.round(t.lastS * 10), 0);
+        tones.update(player.rwr.worst, paints !== lastPaintCount, seekerState);
+        lastPaintCount = paints;
+        status.textContent = game.status();
+        const camY = stage.camera.position.y;
+        lighting.setCloudCover(clouds.layer.coverage, camY < clouds.layer.baseM ? 'below' : camY > clouds.layer.topM ? 'above' : 'inside');
+        lighting.update(stage.camera, playerView.renderPos);
+        clouds.update(frameS, stage.camera.position, high);
+        stage.scene.environment = lighting.environment;
+        stage.greyOut.value = greyOut(aircraft.g);
+        stage.redOut.value = aircraft.g.redOut;
+        arrows.update(playerView.renderPos, aircraft.forces, aircraft.velocity, overlay.visible && rig.mode !== 'cockpit');
+        overlay.update(aircraft, pilot.input, `${stage.backendName} · ${settings.quality} · ${settings.toneMap} · ${lighting.preset.label} · camera ${rig.mode} · terrain ${terrain.nodesDrawn} patches · radar ${radar.mode} · AI ${game.ais.map((a) => a.state).join('/')}`);
+        if (frameS > 0 && !document.hidden) stage.governor.update(frameS);
+        stage.render();
+        debugHooks.frames++;
+      },
     },
-    render: (alpha, frameS) => {
-      renderPos.set(
-        aircraft.prevPosition.x + (aircraft.position.x - aircraft.prevPosition.x) * alpha,
-        aircraft.prevPosition.y + (aircraft.position.y - aircraft.prevPosition.y) * alpha,
-        aircraft.prevPosition.z + (aircraft.position.z - aircraft.prevPosition.z) * alpha,
-      );
-      const po = aircraft.prevOrientation;
-      const co = aircraft.orientation;
-      prevRot.set(po.x, po.y, po.z, po.w);
-      currRot.set(co.x, co.y, co.z, co.w);
-      renderRot.slerpQuaternions(prevRot, currRot, alpha);
-      model.root.position.copy(renderPos);
-      model.root.quaternion.copy(renderRot);
-      model.root.visible = rig.mode !== 'cockpit';
-      const authority = (m: number, a: number): number => (a > 0 ? m / a : 0);
-      const qS = aircraft.dynamicPressurePa * aircraft.cfg.aero.wingAreaM2;
-      poseSurfaces(model, { pitch: authority(aircraft.controls.pitch, qS * aircraft.cfg.aero.chordM * aircraft.cfg.aero.cmControl + 1), roll: authority(aircraft.controls.roll, qS * aircraft.cfg.aero.spanM * aircraft.cfg.aero.clControl + 1), yaw: authority(aircraft.controls.yaw, qS * aircraft.cfg.aero.spanM * aircraft.cfg.aero.clControl + 1), alphaRad: aircraft.alphaRad, gearDown: aircraft.gear.position > 0.5 });
-      model.burner.value = aircraft.engine.burner;
-      model.heat.value = Math.min(1, aircraft.engine.core * 0.7 + aircraft.engine.burner * 0.6);
-      for (const m of model.shimmer) m.visible = settings.quality === 'high';
-      EMISSIVE_EXPOSURE.value = lighting.exposure;
-      poseGear(model, aircraft.gear.position, aircraft.gear.compression);
-      rig.update(renderPos, renderRot, model.eye, aircraft.loadFactor, AIRCRAFT[aircraftId].lengthM, frameS);
-      stage.camera.updateMatrixWorld();
-      hud.clipToCombiner = rig.mode === 'cockpit';
-      const warnings: string[] = [];
-      if (aircraft.g.glocS > 0) warnings.push('G-LOC');
-      if (aircraft.overstressed) warnings.push('OVER G');
-      if (aircraft.coeff.separation > 0.3 && aircraft.speedMs > 20) warnings.push('ALPHA');
-      if (pilot.input.limiterRelaxed) warnings.push('LIM OFF');
-      if (aircraft.fuelKg < 800) warnings.push('FUEL');
-      if (aircraft.gear.position > 0 && aircraft.gear.position < 1) warnings.push('GEAR');
-      if (pilot.input.brake) warnings.push('BRAKE');
-      terrain.update(stage.camera);
-      hud.draw(stage.camera, aircraft, pilot.input, { radarAltitudeM: Math.max(0, aircraft.position.y - aircraft.wheelDropM - groundAt(aircraft.position.x, aircraft.position.z)), weaponMode: aircraft.gear.position > 0.99 ? 'GEAR DN' : 'GUN', stores: aircraftId === 'wraith' ? 'GUN 180 SRM 2 MRM 4' : 'GUN 150 SRM 4 MRM 4', warnings });
-      const camY = stage.camera.position.y;
-      lighting.setCloudCover(clouds.layer.coverage, camY < clouds.layer.baseM ? 'below' : camY > clouds.layer.topM ? 'above' : 'inside');
-      lighting.update(stage.camera, renderPos);
-      clouds.update(frameS, stage.camera.position, settings.quality === 'high');
-      // Trails: emitter positions from the rendered transform; contrails a little behind the nozzle.
-      trailClockS += frameS;
-      model.root.updateMatrixWorld();
-      atmosphereAt(renderPos.y, air);
-      const humidity = lighting.preset.humidity;
-      const thrust = Math.min(1, aircraft.engine.core + aircraft.engine.burner * 0.5);
-      const nN = model.nozzles.length;
-      [...model.nozzles, ...model.wingtips].forEach(([x, y, z], k) => {
-        emitters[k]!.set(x, y, k < nN ? z + 2 : z);
-        model.root.localToWorld(emitters[k]!);
-        emitterStrength[k] = aircraft.crashed ? 0 : k < nN ? contrailStrength(air.temperatureK, humidity, thrust) : vapourStrength(aircraft.loadFactor, aircraft.speedMs, renderPos.y, humidity);
-      });
-      trails.update(trailClockS, emitters, emitterStrength, stage.camera.position);
-      stage.scene.environment = lighting.environment;
-      stage.greyOut.value = greyOut(aircraft.g);
-      stage.redOut.value = aircraft.g.redOut;
-      arrows.update(renderPos, aircraft.forces, aircraft.velocity, overlay.visible && rig.mode !== 'cockpit');
-      overlay.update(aircraft, pilot.input, `${stage.backendName} · ${settings.quality} · ${settings.toneMap} · ${lighting.preset.label} · camera ${rig.mode} · terrain ${terrain.nodesDrawn} patches${aircraft.crashed ? ' · CRASHED' : ''}`);
-      if (frameS > 0 && !document.hidden) stage.governor.update(frameS);
-      stage.render();
-      debugHooks.frames++;
-    },
-  }, PHYSICS.maxStepsPerFrame);
+    PHYSICS.maxStepsPerFrame,
+  );
   stage.camera.position.set(0, 200, 0);
   stage.camera.updateMatrixWorld();
   lighting.update(stage.camera, stage.camera.position);

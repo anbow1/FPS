@@ -23,6 +23,9 @@ export class PilotControls {
   override: Partial<Pick<PilotInput, 'pitch' | 'roll' | 'yaw' | 'throttle'>> | null = null;
   /** Mouse movement of the last step (px): the orbit camera uses it when the mouse is not flying. */
   readonly delta = { dx: 0, dy: 0 };
+  /** The on-screen stick while a thumb is on it, and the on-screen throttle lever (touch play). */
+  private touchStick: { x: number; y: number } | null = null;
+  private touchThrottle: number | null = null;
 
   constructor(private readonly keys: Input) {}
 
@@ -42,6 +45,8 @@ export class PilotControls {
     const recentre = Math.exp(-MOUSE_RECENTRE_PER_S * dtS);
     this.mouseStick.x *= recentre;
     this.mouseStick.y *= recentre;
+    // A thumb on the on-screen stick holds it where it is (no spring while touched).
+    if (this.touchStick) this.mouseStick = { x: this.touchStick.x, y: this.touchStick.y };
     if (k.pressed('centreStick')) this.mouseStick = { x: 0, y: 0 };
 
     const toward = (current: number, target: number, rate: number): number => current + Math.sign(target - current) * Math.min(Math.abs(target - current), rate * dtS);
@@ -62,16 +67,20 @@ export class PilotControls {
     if (k.held('throttleDown')) t -= THROTTLE_RATE_PER_S * dtS;
     if (t <= 0.999) this.atDetent = false;
     if (!this.atDetent) t = Math.min(t, 1);
+    if (this.touchThrottle !== null) t = this.touchThrottle;
     this.input.throttle = clamp(t, 0, 1.25);
     if (k.pressed('limiter')) this.input.limiterRelaxed = !this.input.limiterRelaxed;
     this.input.brake = k.held('brake');
     if (this.override) Object.assign(this.input, this.override);
   }
 
-  /** Touch: the on-screen stick (−1…1 each) and throttle lever (0…1.25) set the input directly. */
-  setTouch(stickX: number, stickY: number, throttle: number): void {
-    this.mouseStick = { x: clamp(stickX, -1, 1), y: clamp(stickY, -1, 1) };
-    this.input.throttle = clamp(throttle, 0, 1.25);
+  /**
+   * Touch: the on-screen stick (−1…1 each, or null when the thumb is off it — it then springs back like
+   * the mouse stick) and the throttle lever (0…1.25, past 1 = reheat; null = keys and wheel only).
+   */
+  setTouch(stick: { x: number; y: number } | null, throttle: number | null): void {
+    this.touchStick = stick ? { x: clamp(stick.x, -1, 1), y: clamp(stick.y, -1, 1) } : null;
+    this.touchThrottle = throttle === null ? null : clamp(throttle, 0, 1.25);
   }
 }
 

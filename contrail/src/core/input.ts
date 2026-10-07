@@ -20,7 +20,16 @@ export type Action =
   | 'centreStick'
   | 'gear'
   | 'brake'
-  | 'timeOfDay';
+  | 'timeOfDay'
+  | 'weapon'
+  | 'designate'
+  | 'radarMode'
+  | 'flare'
+  | 'chaff'
+  | 'rangeUp'
+  | 'rangeDown'
+  | 'antennaUp'
+  | 'antennaDown';
 
 // Mouse0 / Mouse2 are the left / right buttons; WheelUp / WheelDown are edges only.
 // Pull = nose up = S / Down, as on a real stick (pull back to climb).
@@ -44,6 +53,15 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   gear: ['KeyG'],
   brake: ['KeyB'],
   timeOfDay: ['KeyK'],
+  weapon: ['KeyX'],
+  designate: ['KeyV'],
+  radarMode: ['KeyR'],
+  flare: ['KeyF'],
+  chaff: ['KeyZ'],
+  rangeUp: ['Period'],
+  rangeDown: ['Comma'],
+  antennaUp: ['PageUp'],
+  antennaDown: ['PageDown'],
 };
 
 const STORAGE_KEY = 'contrail.bindings.v1';

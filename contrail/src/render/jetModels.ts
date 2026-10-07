@@ -207,7 +207,7 @@ function stab(root: Group, hinges: Hinge[], sf: Surface, mat: Material): void {
 }
 
 /** A short-range or medium-range missile, nose towards −z, centred on its body axis. */
-function missile(lengthM: number, radiusM: number, finSpanM: number, bands: Material, body: Material, seeker: Material): Group {
+export function missile(lengthM: number, radiusM: number, finSpanM: number, bands: Material, body: Material, seeker: Material): Group {
   const g = new Group();
   const L = lengthM;
   const r = radiusM;

@@ -1,13 +1,21 @@
 import { type PerspectiveCamera, Quaternion, Vector3 } from 'three/webgpu';
 
-// Cameras (brief: cockpit, chase, free orbit; padlock and missile cam arrive
-// with the radar and the weapons). The chase camera hangs on a damped spring
-// arm behind the jet and follows its attitude with a lag, so manoeuvres read;
-// the cockpit camera sits at the pilot's eye and the head sags under G; the
-// orbit camera turns round the jet with the mouse.
+// Cameras (brief: cockpit, chase, free orbit, padlock, missile cam). The chase
+// camera hangs on a damped spring arm behind the jet and follows its attitude
+// with a lag, so manoeuvres read; the cockpit camera sits at the pilot's eye
+// and the head sags under G; the orbit camera turns round the jet with the
+// mouse; the padlock camera keeps the pilot's head turned to the tracked
+// target (the head can turn ~160° either way, no further); the missile camera
+// rides behind the last missile launched until it is gone.
 
-export type CameraMode = 'chase' | 'cockpit' | 'orbit';
-export const CAMERA_MODES: readonly CameraMode[] = ['chase', 'cockpit', 'orbit'];
+export type CameraMode = 'chase' | 'cockpit' | 'orbit' | 'padlock' | 'missile';
+export const CAMERA_MODES: readonly CameraMode[] = ['chase', 'cockpit', 'orbit', 'padlock', 'missile'];
+
+/** What the padlock and missile cameras look at, when there is something. */
+export interface CameraFocus {
+  padlock: Vector3 | null;
+  missile: { position: Vector3; velocity: Vector3 } | null;
+}
 
 const CHASE_ATTITUDE_RATE = 5; // 1/s, tuned by hand: lag enough to see the roll, not so much it feels loose
 const DEG = Math.PI / 180;
@@ -29,8 +37,33 @@ export class CameraRig {
   constructor(private readonly camera: PerspectiveCamera) {}
 
   /** `jetPos` / `jetRot`: interpolated render transform; `eye`: pilot's eye in model space; `loadFactor` for the head. */
-  update(jetPos: Vector3, jetRot: Quaternion, eye: [number, number, number], loadFactor: number, lengthM: number, dtS: number): void {
+  update(jetPos: Vector3, jetRot: Quaternion, eye: [number, number, number], loadFactor: number, lengthM: number, dtS: number, focus: CameraFocus = { padlock: null, missile: null }): void {
     const cam = this.camera;
+    if (this.mode === 'missile' && focus.missile) {
+      // Behind and a little above the missile, looking along its flight.
+      const v = this.tmp2.copy(focus.missile.velocity).normalize();
+      cam.position.copy(focus.missile.position).addScaledVector(v, -7).add(this.tmp.set(0, 1.2, 0));
+      this.look.copy(focus.missile.position).addScaledVector(v, 30);
+      cam.up.set(0, 1, 0);
+      cam.lookAt(this.look);
+      cam.fov = 55;
+      cam.near = 0.2;
+      cam.updateProjectionMatrix();
+      return;
+    }
+    if (this.mode === 'padlock') {
+      // From the eye towards the target; with nothing tracked, straight ahead.
+      this.tmp.set(eye[0], eye[1], eye[2]).applyQuaternion(jetRot).add(jetPos);
+      cam.position.copy(this.tmp);
+      this.tmp2.set(0, 1, 0).applyQuaternion(jetRot);
+      cam.up.copy(this.tmp2);
+      if (focus.padlock) cam.lookAt(focus.padlock);
+      else cam.quaternion.copy(jetRot);
+      cam.fov = 70;
+      cam.near = 0.05;
+      cam.updateProjectionMatrix();
+      return;
+    }
     if (this.first) {
       this.smoothed.copy(jetRot);
       this.first = false;

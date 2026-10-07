@@ -70,7 +70,7 @@ export class Aircraft {
   }
 
   /** Places the aircraft in level flight at `speedMs` heading `yawRad`, trimmed for 1 G. */
-  placeInFlight(x: number, altitudeM: number, z: number, yawRad: number, speedMs: number): void {
+  placeInFlight(x: number, altitudeM: number, z: number, yawRad: number, speedMs: number, gearDown = false): void {
     this.position.set(x, altitudeM, z);
     this.orientation.setFromYawPitchRoll(yawRad, 0, 0);
     this.velocity.set(-Math.sin(yawRad) * speedMs, 0, -Math.cos(yawRad) * speedMs);
@@ -79,7 +79,9 @@ export class Aircraft {
     this.prevPosition.copy(this.position);
     this.prevOrientation.copy(this.orientation);
     this.crashed = false;
-    this.resetGear(false);
+    this.resetGear(gearDown);
+    // Airborne even with the gear down.
+    this.gear.weightOnWheels = false;
   }
 
   /** Height of the main wheels' contact points below the reference point when parked (m). */

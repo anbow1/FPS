@@ -35,6 +35,10 @@ android {
             dimension = "game"
             applicationId = "io.github.anbow1.castawaylagoon"
         }
+        create("contrail") {
+            dimension = "game"
+            applicationId = "io.github.anbow1.contrail"
+        }
     }
 
     signingConfigs {

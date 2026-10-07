@@ -9,8 +9,8 @@ import { inNotch, type RadarBody } from './radar.ts';
 //   gun    rounds with a real time of flight: muzzle velocity plus the
 //          shooter's, gravity and drag; every fifth a tracer. A burst limit.
 //   SRM    infrared missile: a seeker cone off the nose, short hot motor,
-//          high G, proportional navigation; decoyed by flares (worse when the
-//          target is not in reheat) and by the sun near the line of sight.
+//          high G, proportional navigation; decoyed by flares and by the sun
+//          near the line of sight.
 //   MRM    radar missile: guided on the launcher's track while the launcher
 //          holds the lock, active on its own seeker for the last 15 km; a long
 //          motor but a lot of drag, so a shot at maximum range arrives slow and
@@ -181,8 +181,9 @@ export class Missile {
         const dl = new Vec3().subVectors(d.position, this.position);
         const dr = dl.length();
         if (dr > s.seekerRangeM || fwd.dot(dl.scale(1 / dr)) < Math.cos(s.seekerHalfRad)) continue;
-        // A target in reheat outshines a flare; a notching target makes chaff convincing.
-        let p = s.kind === 'srm' ? 0.06 : 0.05;
+        // About a one-in-four chance per decoy over its effective first half-second; a notching
+        // target makes chaff far more convincing.
+        let p = s.kind === 'srm' ? 0.011 : 0.009;
         if (s.kind === 'mrm' && inNotch(this.position, target)) p *= 3;
         if (rand() < p * dtS * 60) this.decoyed = d;
       }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds both games for the web, bundles each into its Android flavour, and
-# assembles two release APKs into android/out/. Needs Node 22, JDK 17 and the
+# Builds the games for the web, bundles each into its Android flavour, and
+# assembles one release APK per game into android/out/. Needs Node 22, JDK 17 and the
 # Android SDK (ANDROID_HOME, or sdk.dir in android/local.properties).
 # Bash only; on Windows run it from Git Bash or WSL.
 set -euo pipefail
@@ -20,6 +20,7 @@ bundle() { # <game folder> <flavour>
 
 bundle field-line fieldLine
 bundle castaway-lagoon castawayLagoon
+bundle contrail contrail
 
 echo "── Android: assembleRelease"
 cd "$android"
@@ -28,4 +29,5 @@ if [ -x ./gradlew ]; then ./gradlew --no-daemon assembleRelease; else gradle --n
 mkdir -p out
 cp app/build/outputs/apk/fieldLine/release/app-fieldLine-release.apk out/field-line.apk
 cp app/build/outputs/apk/castawayLagoon/release/app-castawayLagoon-release.apk out/castaway-lagoon.apk
+cp app/build/outputs/apk/contrail/release/app-contrail-release.apk out/contrail.apk
 ls -l out/*.apk
