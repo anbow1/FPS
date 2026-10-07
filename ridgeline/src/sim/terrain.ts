@@ -173,6 +173,40 @@ export function sourceCover(x: number, z: number, h: number, slope: number, out:
   return out;
 }
 
+/**
+ * Normal and land-cover texels (RGBA8 each) for rows j0…j1 of a baked grid. `grid` holds rows from
+ * `row0` on (a band plus one row either side is enough), so worker threads get only their slice.
+ */
+export function bakeMapRows(grid: Float32Array, row0: number, res: number, sizeM: number, j0: number, j1: number): { normal: Uint8Array; cover: Uint8Array } {
+  const n = (j1 - j0) * res * 4;
+  const normal = new Uint8Array(n);
+  const cover = new Uint8Array(n);
+  const cell = sizeM / res;
+  const lc: LandCover = { forest: 0, rock: 0, snow: 0, water: 0, river: 0 };
+  const rows = grid.length / res;
+  const h = (i: number, j: number): number => grid[Math.min(rows - 1, Math.max(0, Math.min(res - 1, Math.max(0, j)) - row0)) * res + Math.min(res - 1, Math.max(0, i))]!;
+  for (let j = j0; j < j1; j++) {
+    const z = -sizeM / 2 + (j + 0.5) * cell;
+    for (let i = 0; i < res; i++) {
+      const x = -sizeM / 2 + (i + 0.5) * cell;
+      const dx = (h(i + 1, j) - h(i - 1, j)) / (2 * cell);
+      const dz = (h(i, j + 1) - h(i, j - 1)) / (2 * cell);
+      const inv = 1 / Math.hypot(dx, 1, dz);
+      const k = ((j - j0) * res + i) * 4;
+      normal[k] = Math.round((-dx * inv * 0.5 + 0.5) * 255);
+      normal[k + 1] = Math.round((inv * 0.5 + 0.5) * 255);
+      normal[k + 2] = Math.round((-dz * inv * 0.5 + 0.5) * 255);
+      normal[k + 3] = 255;
+      sourceCover(x, z, h(i, j), 1 - inv, lc);
+      cover[k] = Math.round(lc.forest * 255);
+      cover[k + 1] = Math.round(lc.rock * 255);
+      cover[k + 2] = Math.round(lc.snow * 255);
+      cover[k + 3] = Math.round(Math.max(lc.water, lc.river) * 255);
+    }
+  }
+  return { normal, cover };
+}
+
 /** The baked grids and the one bilinear lookup everybody uses. */
 export class TerrainData {
   constructor(
@@ -221,8 +255,98 @@ export async function bakeGrid(res: number, sizeM: number, detail: number, onPro
   return out;
 }
 
+/**
+ * Bakes one grid on worker threads, a band of rows each (the same source function, so the result is
+ * bit-identical to `bakeGrid`); falls back to the main thread where workers are unavailable (tests).
+ */
+/** Runs `bands` jobs on a few module workers; `job(b)` makes band b's message, `take(b, data)` stores the reply. */
+async function onWorkers<T>(bands: number, job: (b: number) => { msg: object; transfer?: Transferable[] }, take: (b: number, data: T) => void, onProgress?: (f: number) => void): Promise<void> {
+  const threads = Math.max(2, Math.min(8, (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4));
+  let next = 0;
+  let done = 0;
+  const run = (): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const w = new Worker(new URL('./terrainWorker.ts', import.meta.url), { type: 'module' });
+      const send = (): void => {
+        if (next >= bands) {
+          w.terminate();
+          resolve();
+          return;
+        }
+        const b = next++;
+        w.onmessage = (e: MessageEvent<T>): void => {
+          take(b, e.data);
+          done++;
+          onProgress?.(done / bands);
+          send();
+        };
+        const { msg, transfer } = job(b);
+        w.postMessage(msg, transfer ?? []);
+      };
+      w.onerror = (e): void => {
+        w.terminate();
+        reject(new Error(`terrain worker failed: ${e.message}`));
+      };
+      send();
+    });
+  await Promise.all(Array.from({ length: Math.min(threads, bands) }, run));
+}
+
+/** Bakes one grid on worker threads, a band of rows each — bit-identical to `bakeGrid`. */
+async function bakeGridParallel(res: number, sizeM: number, detail: number, onProgress?: (f: number) => void): Promise<Float32Array> {
+  const out = new Float32Array(res * res);
+  const bands = 32;
+  const rows = Math.ceil(res / bands);
+  await onWorkers<Float32Array>(
+    bands,
+    (b) => ({ msg: { kind: 'heights', res, sizeM, detail, j0: b * rows, j1: Math.min(res, (b + 1) * rows) } }),
+    (b, data) => out.set(data, b * rows * res),
+    onProgress,
+  );
+  return out;
+}
+
+/** Normal and cover maps of a grid on worker threads (each gets its band of rows plus a border row). */
+export async function bakeMapsParallel(grid: Float32Array, res: number, sizeM: number, onProgress?: (f: number) => void): Promise<{ normal: Uint8Array; cover: Uint8Array }> {
+  if (typeof Worker === 'undefined') return bakeMapRows(grid, 0, res, sizeM, 0, res);
+  const normal = new Uint8Array(res * res * 4);
+  const cover = new Uint8Array(res * res * 4);
+  const bands = 32;
+  const rows = Math.ceil(res / bands);
+  await onWorkers<{ normal: Uint8Array; cover: Uint8Array }>(
+    bands,
+    (b) => {
+      const j0 = b * rows;
+      const j1 = Math.min(res, j0 + rows);
+      const r0 = Math.max(0, j0 - 1);
+      const slice = grid.slice(r0 * res, Math.min(res, j1 + 1) * res);
+      return { msg: { kind: 'maps', res, sizeM, j0, j1, row0: r0, grid: slice }, transfer: [slice.buffer] };
+    },
+    (b, data) => {
+      normal.set(data.normal, b * rows * res * 4);
+      cover.set(data.cover, b * rows * res * 4);
+    },
+    onProgress,
+  );
+  return { normal, cover };
+}
+
 export async function bakeTerrain(onProgress?: (f: number) => void): Promise<TerrainData> {
-  const near = await bakeGrid(TERRAIN.nearRes, TERRAIN.nearSizeM, 1, (f) => onProgress?.(f * 0.75));
-  const far = await bakeGrid(TERRAIN.farRes, TERRAIN.farSizeM, 0, (f) => onProgress?.(0.75 + f * 0.25));
-  return new TerrainData(near, far);
+  if (typeof Worker === 'undefined') {
+    const near = await bakeGrid(TERRAIN.nearRes, TERRAIN.nearSizeM, 1, (f) => onProgress?.(f * 0.75));
+    const far = await bakeGrid(TERRAIN.farRes, TERRAIN.farSizeM, 0, (f) => onProgress?.(0.75 + f * 0.25));
+    return new TerrainData(near, far);
+  }
+  const t0 = performance.now();
+  try {
+    const [near, far] = await Promise.all([bakeGridParallel(TERRAIN.nearRes, TERRAIN.nearSizeM, 1, (f) => onProgress?.(f * 0.85)), bakeGridParallel(TERRAIN.farRes, TERRAIN.farSizeM, 0)]);
+    console.log(`terrain grids baked on workers in ${(performance.now() - t0).toFixed(0)} ms`);
+    return new TerrainData(near, far);
+  } catch (err) {
+    // A WebView without module workers: bake here, slower but the same.
+    console.warn(err);
+    const near = await bakeGrid(TERRAIN.nearRes, TERRAIN.nearSizeM, 1, (f) => onProgress?.(f * 0.75));
+    const far = await bakeGrid(TERRAIN.farRes, TERRAIN.farSizeM, 0, (f) => onProgress?.(0.75 + f * 0.25));
+    return new TerrainData(near, far);
+  }
 }

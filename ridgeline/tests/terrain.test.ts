@@ -53,3 +53,21 @@ describe('terrain', () => {
     expect(blocked).toBeGreaterThan(n / 2);
   });
 });
+
+describe('terrain maps', () => {
+  it('bakes the same normal and cover texels from bands with border rows as from the whole grid', async () => {
+    const { bakeMapRows } = await import('../src/sim/terrain.ts');
+    const res = 64;
+    const size = 6400;
+    const grid = await bakeGrid(res, size, 1);
+    const whole = bakeMapRows(grid, 0, res, size, 0, res);
+    const rows = 10;
+    for (let j0 = 0; j0 < res; j0 += rows) {
+      const j1 = Math.min(res, j0 + rows);
+      const r0 = Math.max(0, j0 - 1);
+      const band = bakeMapRows(grid.slice(r0 * res, Math.min(res, j1 + 1) * res), r0, res, size, j0, j1);
+      expect(Array.from(band.normal)).toEqual(Array.from(whole.normal.subarray(j0 * res * 4, j1 * res * 4)));
+      expect(Array.from(band.cover)).toEqual(Array.from(whole.cover.subarray(j0 * res * 4, j1 * res * 4)));
+    }
+  });
+});
