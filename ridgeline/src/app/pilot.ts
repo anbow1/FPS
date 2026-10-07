@@ -15,6 +15,10 @@ import { type HeliInput, neutralHeliInput } from '../sim/helicopter.ts';
 //   pedals      Q / E, ramped, around their trimmed position;
 //   toggles     SAS (Z), engines (I: cut them for autorotation practice),
 //               wheel brakes (B, held).
+//
+// With SAS on (the default) the flight computer reads the cyclic as an
+// attitude and the pedals as a yaw rate (see sim/helicopter.ts), so a released
+// stick levels the aircraft and released pedals hold the heading.
 
 const MOUSE_STICK_PER_PX = 0.0035;
 const MOUSE_RECENTRE_PER_S = 1.2;
@@ -84,7 +88,8 @@ export class PilotControls {
       // The stick stays where it is, now as the neutral: mouse and key deflections fold into the trim.
       this.trim.x = i.cyclicX;
       this.trim.y = i.cyclicY;
-      this.trim.pedal = i.pedal;
+      // Under SAS a trimmed pedal would be a standing turn: the computer already holds the heading.
+      this.trim.pedal = i.sas ? 0 : i.pedal;
       this.mouse = { x: 0, y: 0 };
       this.keys = { x: 0, y: 0, pedal: 0 };
     }

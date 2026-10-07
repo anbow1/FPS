@@ -1,4 +1,4 @@
-import { type HeliConfig, PHYSICS } from '../config.ts';
+import { type HeliConfig, PHYSICS, SAS } from '../config.ts';
 import { Quat } from '../core/quat.ts';
 import { clamp, smoothstep, Vec3 } from '../core/vec.ts';
 import { type AirState, atmosphereAt } from './atmosphere.ts';
@@ -37,6 +37,13 @@ import { type AirState, atmosphereAt } from './atmosphere.ts';
 // the pedals follow — "the whole feel of the machine". Its thrust also pushes
 // the whole aircraft sideways (the drift a hover needs a little cyclic for).
 //
+// SAS on, the controls go through a flight control computer instead (the
+// attack helicopters' attitude and heading hold): the cyclic commands an
+// attitude, the pedals a yaw rate, and the computer works the rotor to get
+// them — with the tail rotor fed forward from the main rotor torque, so a
+// collective change no longer swings the nose. At hover speeds the attitude
+// reference also leans against the drift. SAS off is the bare airframe.
+//
 // Body axes are three.js': x right, y up, −z forward. Angular rates: x pitch up,
 // y yaw left, z roll left.
 
@@ -48,7 +55,7 @@ export interface HeliInput {
   cyclicY: number;
   /** Pedals −1 (left) … 1 (right). */
   pedal: number;
-  /** Stability augmentation: rate damping in all three axes. */
+  /** Stability augmentation: attitude hold (cyclic) and heading hold (pedals); off flies the bare airframe. */
   sas: boolean;
   engines: boolean;
   brake: boolean;
@@ -89,7 +96,7 @@ export interface EngineState {
   fuelFlowKgS: number;
 }
 
-const scratch = { v: new Vec3(), n: new Vec3(), f: new Vec3(), m: new Vec3(), r: new Vec3(), w: new Vec3(), t: new Vec3() };
+const scratch = { a: new Vec3(), b: new Vec3(), v: new Vec3(), n: new Vec3(), f: new Vec3(), m: new Vec3(), r: new Vec3(), w: new Vec3(), t: new Vec3() };
 
 export class Helicopter {
   readonly position = new Vec3();
@@ -123,6 +130,8 @@ export class Helicopter {
   touchdownSinkMs = 0;
   private wasOnGround = true;
   private shakePhase = 0;
+  /** The SAS integrators (cyclic and pedal units). */
+  private readonly hold = { pitch: 0, roll: 0, yaw: 0 };
 
   constructor(readonly cfg: HeliConfig) {
     this.fuelKg = cfg.fuelKg;
@@ -187,6 +196,7 @@ export class Helicopter {
     this.engine.running = true;
     this.engine.powerW = 0;
     this.crashed = false;
+    this.hold.pitch = this.hold.roll = this.hold.yaw = 0;
   }
 
   /** One fixed step: `groundAt(x, z)` gives the surface height (terrain or water). */
@@ -232,14 +242,10 @@ export class Helicopter {
     const rho = this.air.densityKgM3;
     const m = this.massKg;
 
-    // ---- stability augmentation: rate damping with limited authority, summed into the controls
+    // ---- stability augmentation: the pilot's controls become attitude and yaw-rate commands
     const a = this.applied;
     Object.assign(a, input);
-    if (input.sas) {
-      a.cyclicY = input.cyclicY - clamp(w.x * 0.9, -0.18, 0.18);
-      a.cyclicX = input.cyclicX + clamp(w.z * 0.5, -0.18, 0.18);
-      a.pedal = input.pedal + clamp(w.y * 1.6, -0.3, 0.3);
-    }
+    if (input.sas) this.augment(input, a, rho, h);
     a.cyclicX = clamp(a.cyclicX, -1, 1);
     a.cyclicY = clamp(a.cyclicY, -1, 1);
     a.pedal = clamp(a.pedal, -1, 1);
@@ -443,6 +449,53 @@ export class Helicopter {
     q.integrateBodyRate(w.x, w.y, w.z, h);
 
     this.vibration = clamp(Math.max(rbs, vrs, 0.25 * r.translational * (1 - r.translational) * 4 * 0.5), 0, 1);
+  }
+
+  /** Attitude hold on the cyclic, heading hold on the pedals: writes the rotor's controls into `a`. */
+  private augment(input: HeliInput, a: HeliInput, rho: number, h: number): void {
+    const cfg = this.cfg;
+    const q = this.orientation;
+    const w = this.angular;
+    const hold = this.hold;
+    const fwd = q.rotate(scratch.a.set(0, 0, -1));
+    const right = q.rotate(scratch.b.set(1, 0, 0));
+    const pitch = Math.asin(clamp(fwd.y, -1, 1));
+    const roll = Math.asin(clamp(-right.y, -1, 1));
+    const heading = Math.atan2(-fwd.x, -fwd.z);
+    const vF = -(Math.sin(heading) * this.velocity.x + Math.cos(heading) * this.velocity.z);
+    const vR = Math.cos(heading) * this.velocity.x - Math.sin(heading) * this.velocity.z;
+    // Sitting on the wheels the gear holds the attitude: the stick passes straight through and nothing winds up.
+    if (this.onGround) {
+      hold.pitch = hold.roll = hold.yaw = 0;
+      a.cyclicY = input.cyclicY - w.x * 0.5;
+      a.cyclicX = input.cyclicX + w.z * 0.4;
+    } else {
+      // The lean is against the drift from the speed the stick asks for, so a held stick still accelerates out of the hover.
+      const slow = 1 - smoothstep(8, 16, Math.hypot(vF, vR));
+      const lean = (dv: number): number => slow * clamp(SAS.driftGainRadPerMs * dv, -SAS.driftMaxRad, SAS.driftMaxRad);
+      const pitchCmd = input.cyclicY * SAS.pitchMaxRad + lean(vF + input.cyclicY * SAS.stickSpeedMs);
+      const rollCmd = input.cyclicX * SAS.rollMaxRad - lean(vR - input.cyclicX * SAS.stickSpeedMs);
+      const ePitch = pitchCmd - pitch;
+      const eRoll = rollCmd - roll;
+      const lim = SAS.integralLimit;
+      hold.pitch = clamp(hold.pitch + SAS.attitudeIntegral * ePitch * h, -lim, lim);
+      hold.roll = clamp(hold.roll + SAS.attitudeIntegral * eRoll * h, -lim, lim);
+      // Roll-right rate is −ω_z.
+      a.cyclicY = SAS.pitchRateGain * (SAS.attitudeGain * ePitch - w.x) + hold.pitch;
+      a.cyclicX = SAS.rollRateGain * (SAS.attitudeGain * eRoll + w.z) + hold.roll;
+    }
+    // Yaw: the tail rotor thrust that cancels the main rotor torque, plus a rate loop with an integral (the heading hold).
+    // At speed a centred pedal asks for the coordinated turn rate of the bank instead of none, so the nose follows a turn.
+    const t = cfg.tail;
+    const omegaFrac = this.rotor.omegaRadS / cfg.rotor.omegaRadS;
+    const unit = t.maxThrustN * (rho / 1.225) * omegaFrac * omegaFrac;
+    const needPitch = (cfg.rotor.direction * this.rotor.torqueNm) / t.armM / Math.max(unit, 1);
+    const feedForward = (2 * (needPitch - t.pitchLeft)) / (t.pitchRight - t.pitchLeft) - 1;
+    const turn = smoothstep(12, 25, vF) * ((PHYSICS.gravityMs2 * Math.sin(roll)) / Math.max(vF, 12));
+    const yawCmd = -input.pedal * SAS.yawRateMaxRadS - turn;
+    const eYaw = w.y - yawCmd;
+    hold.yaw = this.onGround ? 0 : clamp(hold.yaw + SAS.yawIntegral * eYaw * h, -0.8, 0.8);
+    a.pedal = feedForward + SAS.yawRateGain * eYaw + hold.yaw;
   }
 
   crash(): void {

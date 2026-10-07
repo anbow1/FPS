@@ -25,7 +25,9 @@ interface Goal {
 }
 
 /** The test pilot: one step of PD control towards the goal. Returns the input it flew. */
-function fly(h: Helicopter, goal: Goal, inp: HeliInput, heading0: number): HeliInput {
+function fly(h: Helicopter, goal: Goal, inp: HeliInput, heading0: number, yaw: { trim: number }): HeliInput {
+  // The test pilot flies the bare airframe: these tests are about the rotor, not the flight control computer.
+  inp.sas = false;
   const att = attitude(h);
   const w = h.angular;
   // Velocity in heading axes.
@@ -44,7 +46,9 @@ function fly(h: Helicopter, goal: Goal, inp: HeliInput, heading0: number): HeliI
   inp.cyclicX = Math.max(-1, Math.min(1, 3 * (rollTarget - att.roll) + 1.0 * w.z));
   let dh = att.heading - heading0;
   dh = Math.atan2(Math.sin(dh), Math.cos(dh));
-  inp.pedal = goal.pedal ?? Math.max(-1, Math.min(1, inp.pedal + (2.0 * dh + 2.5 * w.y) * PHYSICS.stepSeconds * 2));
+  // Pedals: a slow integral trim on heading plus rate damping (the bare airframe has next to none in yaw).
+  yaw.trim = Math.max(-1, Math.min(1, yaw.trim + (2.0 * dh + 2.5 * w.y) * PHYSICS.stepSeconds * 2));
+  inp.pedal = goal.pedal ?? Math.max(-1, Math.min(1, yaw.trim + 1.6 * w.y));
   if (goal.collective !== undefined) inp.collective = goal.collective;
   else if (goal.vy !== undefined) inp.collective = Math.max(0, Math.min(1, inp.collective + (goal.vy - h.velocity.y) * 0.02 - 0.02 * 0));
   return inp;
@@ -52,9 +56,10 @@ function fly(h: Helicopter, goal: Goal, inp: HeliInput, heading0: number): HeliI
 
 function run(h: Helicopter, seconds: number, goal: Goal, inp: HeliInput, ground = flat): HeliInput {
   const heading0 = attitude(h).heading;
+  const yaw = { trim: inp.pedal };
   const steps = Math.round(seconds / PHYSICS.stepSeconds);
   for (let i = 0; i < steps; i++) {
-    fly(h, goal, inp, heading0);
+    fly(h, goal, inp, heading0, yaw);
     h.step(inp, ground);
   }
   return inp;
@@ -158,6 +163,60 @@ describe('rotorcraft flight model', () => {
     run(h, 0.5, { vy: 0, speed: 95 }, inp);
     expect(h.rotor.bladeStall).toBeGreaterThan(0.5);
     expect(h.vibration).toBeGreaterThan(0.5);
+  });
+
+  it('holds heading and a level attitude through collective changes with SAS on, hands off', () => {
+    for (const id of ['warden', 'bulat'] as const) {
+      const h = new Helicopter(HELICOPTERS[id]);
+      h.placeInFlight(0, 600, 0, 0, 0);
+      const inp: HeliInput = { ...neutralHeliInput(), brake: false };
+      // Snatch the lever from a sink to a hard climb and back: the bare airframe spins at over 100 °/s here.
+      for (const collective of [0.35, 0.75, 0.45, 0.7]) {
+        inp.collective = collective;
+        for (let i = 0; i < 4 / PHYSICS.stepSeconds; i++) {
+          h.step(inp, flat);
+          expect(Math.abs(h.angular.y)).toBeLessThan(0.15);
+        }
+      }
+      const att = attitude(h);
+      expect(Math.abs(att.heading)).toBeLessThan(0.1);
+      expect(Math.abs(att.pitch)).toBeLessThan(0.08);
+      expect(Math.abs(att.roll)).toBeLessThan(0.1);
+      expect(h.velocity.lengthXZ()).toBeLessThan(3);
+    }
+  });
+
+  it('turns cyclic into a held attitude and pedals into a yaw rate with SAS on', () => {
+    for (const id of ['warden', 'bulat'] as const) {
+      const h = new Helicopter(HELICOPTERS[id]);
+      h.placeInFlight(0, 600, 0, 0, 0);
+      const inp: HeliInput = { ...neutralHeliInput(), collective: 0.52, brake: false, cyclicX: 0.5 };
+      let peak = 0;
+      for (let i = 0; i < 2 / PHYSICS.stepSeconds; i++) {
+        h.step(inp, flat);
+        peak = Math.max(peak, attitude(h).roll);
+      }
+      // Half stick: about half the 29° bank limit (plus the lean towards the speed it asks for), without overshooting into a roll-over.
+      expect(attitude(h).roll).toBeGreaterThan(0.25);
+      expect(peak).toBeLessThan(0.55);
+      // Let go: it rolls back, leans against the drift it picked up, and comes to a near hover by itself.
+      inp.cyclicX = 0;
+      for (let i = 0; i < 12 / PHYSICS.stepSeconds; i++) {
+        h.step(inp, flat);
+        // No swing through to the other side beyond the lean.
+        expect(attitude(h).roll).toBeGreaterThan(-0.2);
+        if (i * PHYSICS.stepSeconds > 1.5) expect(attitude(h).roll).toBeLessThan(0.1);
+      }
+      expect(h.velocity.lengthXZ()).toBeLessThan(2.5);
+      // Half right pedal: a steady turn on the spot near half the 46 °/s limit, then the heading holds when released.
+      inp.pedal = 0.5;
+      for (let i = 0; i < 3 / PHYSICS.stepSeconds; i++) h.step(inp, flat);
+      expect(-h.angular.y).toBeGreaterThan(0.3);
+      expect(-h.angular.y).toBeLessThan(0.5);
+      inp.pedal = 0;
+      for (let i = 0; i < 2 / PHYSICS.stepSeconds; i++) h.step(inp, flat);
+      expect(Math.abs(h.angular.y)).toBeLessThan(0.03);
+    }
   });
 
   it('sits on its wheels when parked', () => {

@@ -26,6 +26,34 @@ export const ISA = {
   heatCapacityRatio: 1.4,
 } as const;
 
+/**
+ * Stability augmentation as an attack helicopter's flight control computer
+ * provides it (attitude hold in pitch and roll, heading hold in yaw), sized
+ * for a game where the stick is a mouse, a thumb or a tilted phone.
+ */
+export const SAS = {
+  /** Attitude at full cyclic deflection (rad): the stick commands an attitude and the computer holds it. */
+  pitchMaxRad: 0.35,
+  rollMaxRad: 0.5,
+  /** Yaw rate at full pedal (rad/s); centred pedals hold the heading. */
+  yawRateMaxRadS: 0.8,
+  /** Attitude error → rate demand (1/s), and rate error → cyclic (per rad/s). */
+  attitudeGain: 2.2,
+  pitchRateGain: 1.0,
+  rollRateGain: 0.9,
+  /** Integral of the attitude error (cyclic per rad·s) and its limit: holds the attitude against speed and CG trim changes. */
+  attitudeIntegral: 0.7,
+  integralLimit: 1,
+  /** Yaw: rate error → pedal (per rad/s), and its integral (the heading hold). */
+  yawRateGain: 2.5,
+  yawIntegral: 3,
+  /** Below ~12 m/s the attitude reference leans against the drift (rad per m/s, at most), so a centred stick settles into a hover. */
+  driftGainRadPerMs: 0.03,
+  driftMaxRad: 0.13,
+  /** Ground speed a full stick asks for at hover speeds (m/s): the lean is measured from it. */
+  stickSpeedMs: 20,
+} as const;
+
 export type HeliId = 'warden' | 'bulat';
 
 export interface RotorConfig {
@@ -186,7 +214,7 @@ export const HELICOPTERS: Record<HeliId, HeliConfig> = {
       direction: -1,
       inducedFactor: 1.14,
     },
-    tail: { armM: 10.4, heightM: 1.6, radiusM: 1.9, maxThrustN: 13_000, pitchLeft: 0.35, pitchRight: -1.0 },
+    tail: { armM: 10.4, heightM: 1.6, radiusM: 1.9, maxThrustN: 16_000, pitchLeft: 0.35, pitchRight: -1.0 },
     engines: 2,
     enginePowerW: 1_660_000,
     engineLagS: 0.45,

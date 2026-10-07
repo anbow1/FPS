@@ -79,8 +79,14 @@ rotor, not from a plane with vertical thrust.
   - Fuselage drag, a cambered fin that unloads the tail rotor at speed, and a
     stabilator.
   - Spring-damper wheels, rotor strike, and fuel burn.
-- **SAS.** Rate damping in all three axes, on by default. With it off, a
-  hover is genuinely hard to hold.
+- **SAS.** On by default: a flight control computer with attitude hold and
+  heading hold. The cyclic commands a bank or pitch attitude (up to 29° and
+  20°), the pedals a yaw rate (up to 46°/s); let go and it levels and keeps
+  the heading. The tail rotor is fed forward from the main rotor torque, so
+  the collective no longer swings the nose. At hover speeds it also leans
+  against the drift, so a centred stick settles into a hover.
+- **SAS off.** The bare airframe: every collective change swings the nose
+  until the pedals follow, and a hover is genuinely hard to hold.
 
 The tests in [`tests/rotor.test.ts`](tests/rotor.test.ts) fly the model with a
 simple test pilot and check the brief's acceptance points.
