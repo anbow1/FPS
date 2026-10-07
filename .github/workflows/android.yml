@@ -2,6 +2,9 @@
 # uploads them as a workflow artifact, and publishes them on a rolling
 # "android-latest" GitHub release so they can be downloaded straight to a phone.
 #
+# Tanks is always signed with its committed sideload key (android/app), so it
+# updates the copy installed from the old anbow1/tanks releases.
+#
 # Optional stable signing: add repository secrets ANDROID_KEYSTORE_BASE64
 # (base64 of a .jks), ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and
 # ANDROID_KEY_PASSWORD. Without them each run signs with a fresh debug key,
@@ -17,6 +20,7 @@ on:
       - 'castaway-lagoon/**'
       - 'contrail/**'
       - 'ridgeline/**'
+      - 'tanks/**'
       - 'android/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
@@ -80,7 +84,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete android-latest --yes --cleanup-tag || true
-          gh release create android-latest android/out/field-line.apk android/out/castaway-lagoon.apk android/out/contrail.apk android/out/ridgeline.apk \
+          gh release create android-latest android/out/field-line.apk android/out/castaway-lagoon.apk android/out/contrail.apk android/out/ridgeline.apk android/out/tanks.apk \
             --title "Android APKs (latest main)" \
             --notes "Built from ${GITHUB_SHA::7} by run ${GITHUB_RUN_NUMBER}. Install on Android 8+ (allow installs from this source). Landscape, on-screen touch controls; a Bluetooth keyboard also works." \
             --target "$GITHUB_SHA"

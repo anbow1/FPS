@@ -18,11 +18,33 @@ android {
     namespace = "io.github.anbow1.games"
     compileSdk = 35
 
+    signingConfigs {
+        if (keystoreFile != null) {
+            create("release") {
+                storeFile = file(keystoreFile)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+        // Tanks keeps the sideload key it shipped with from its own repository, so a build from here
+        // installs as an update over the one already on a phone instead of needing an uninstall.
+        create("tanksSideload") {
+            storeFile = file("tanks-sideload.keystore")
+            storePassword = "tanks-sideload"
+            keyAlias = "tanks"
+            keyPassword = "tanks-sideload"
+        }
+    }
+
     defaultConfig {
         minSdk = 26 // Android 8: WebView with WebGL2 and ES modules everywhere
         targetSdk = 35
         versionCode = (System.getenv("APP_VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("APP_VERSION_NAME") ?: "1.0"
+        // On the default config, not the release build type: a build type's signing config would
+        // override the one the Tanks flavour sets for itself.
+        signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
     }
 
     flavorDimensions += "game"
@@ -43,16 +65,10 @@ android {
             dimension = "game"
             applicationId = "io.github.anbow1.ridgeline"
         }
-    }
-
-    signingConfigs {
-        if (keystoreFile != null) {
-            create("release") {
-                storeFile = file(keystoreFile)
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-            }
+        create("tanks") {
+            dimension = "game"
+            applicationId = "io.github.anbow1.tanks"
+            signingConfig = signingConfigs.getByName("tanksSideload")
         }
     }
 
@@ -60,7 +76,6 @@ android {
         release {
             // Only a tiny Java activity: nothing worth shrinking, and the game itself is JavaScript.
             isMinifyEnabled = false
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

@@ -143,21 +143,16 @@ tests/                 vitest: balistyka, pancerz
 
 ## Android (APK)
 
-Gra jest opakowana w natywną aplikację przez **Capacitor** (`android/`): pełny ekran, orientacja
-pozioma, ekran nie gaśnie. Na ekranach dotykowych włącza się sterowanie dotykowe — lewy
-kciuk to joystick jazdy, przeciąganie prawym kciukiem celuje, przyciski OGIEŃ / CEL / ZOOM /
-LASER / AMUN. / TERMO / STOP / GAŚ / pauza.
+Gra jest jednym z wariantów wspólnej aplikacji Androida w tym repozytorium
+([`android/`](../android)): pełny ekran, orientacja pozioma, ekran nie gaśnie. Na ekranach
+dotykowych włącza się sterowanie dotykowe — lewy kciuk to joystick jazdy, przeciąganie prawym
+kciukiem celuje, przyciski OGIEŃ / CEL / ZOOM / LASER / AMUN. / TERMO / STOP / GAŚ / pauza.
 
-APK buduje workflow `.github/workflows/android.yml` przy każdym pushu na `main` (albo ręcznie:
-*Actions → Android APK → Run workflow*). Gotowy plik `tanks-1.0.N.apk` jest w zakładce
-**Releases**. Na telefonie: pobierz, otwórz, zezwól na instalację z nieznanych źródeł.
-Kolejne wersje instalują się jako aktualizacja (stały klucz `android/app/tanks-sideload.keystore`
-— klucz tylko do instalacji bezpośrednich, nie do Google Play).
+APK buduje workflow `.github/workflows/android.yml` (w katalogu głównym repozytorium) przy każdym
+pushu na `main`; plik `tanks.apk` jest w wydaniu **android-latest**. Na telefonie: pobierz,
+otwórz, zezwól na instalację z nieznanych źródeł. Kolejne wersje instalują się jako aktualizacja,
+także na wersję zbudowaną wcześniej w osobnym repozytorium `anbow1/tanks` (ten sam identyfikator
+`io.github.anbow1.tanks` i ten sam klucz `android/app/tanks-sideload.keystore` — klucz tylko do
+instalacji bezpośrednich, nie do Google Play).
 
-Lokalnie (wymaga Android SDK i JDK 21): `npm run android:apk` →
-`android/app/build/outputs/apk/release/app-release.apk`.
-
-## Publikacja
-
-Workflow `.github/workflows/pages.yml` buduje grę i publikuje ją na GitHub Pages z domyślnej
-gałęzi. Jednorazowo: *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+Lokalnie: `bash android/build-apks.sh` z katalogu głównego repozytorium.

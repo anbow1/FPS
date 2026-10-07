@@ -140,6 +140,7 @@ export const ENEMY_TANK: TankSpec = {
 
 export interface QualityPreset {
   id: 'high' | 'low';
+  /** Desktop ceiling on the device pixel ratio (phones always cap at 2). */
   pixelRatioCap: number;
   shadowMapSize: number;
   shadowExtent: number;
@@ -155,11 +156,11 @@ export interface QualityPreset {
 
 export const QUALITY: Record<'high' | 'low', QualityPreset> = {
   high: {
-    id: 'high', pixelRatioCap: 1.5, shadowMapSize: 4096, shadowExtent: 140, ao: true, bloom: true,
+    id: 'high', pixelRatioCap: 2, shadowMapSize: 4096, shadowExtent: 140, ao: true, bloom: true,
     grassPerChunk: 5200, grassRadius: 90, treeNearDist: 320, maxParticles: 5000, wreckShadow: true,
   },
   low: {
-    id: 'low', pixelRatioCap: 1, shadowMapSize: 2048, shadowExtent: 110, ao: false, bloom: true,
+    id: 'low', pixelRatioCap: 1.5, shadowMapSize: 2048, shadowExtent: 110, ao: false, bloom: true,
     grassPerChunk: 1800, grassRadius: 55, treeNearDist: 200, maxParticles: 2500, wreckShadow: false,
   },
 };

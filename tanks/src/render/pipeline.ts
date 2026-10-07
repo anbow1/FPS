@@ -1,6 +1,5 @@
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
-import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import {
@@ -37,6 +36,7 @@ import {
 import { ACESFilmicToneMapping, AgXToneMapping, Color, HalfFloatType, type Node, type PerspectiveCamera, RenderPipeline, type Scene, SRGBColorSpace, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import type { QualityPreset } from '../config';
 import { hash12 } from './nodes';
+import { isTouchDevice } from '../ui/touch.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 import { screenReflectionOn } from './screenReflection.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -45,9 +45,9 @@ import { installWebGpuCompat } from './webgpuCompat.ts';
  * Renderer and post chain, the same architecture as Field Line and Castaway Lagoon (anbow1/FPS):
  * WebGPURenderer (WebGPU, or its own WebGL2 fallback) and one TSL RenderPipeline.
  *   scene pass (HDR half float; velocity for TRAA, view normals for GTAO on High)
- *   → TRAA (High) → GTAO (High) → sun shafts (sky mask smeared toward the sun)
+ *   → TRAA → GTAO (High) → sun shafts (sky mask smeared toward the sun)
  *   → bloom (input clamped so a glint cannot flood the frame) → exposure, ACES/AgX, sRGB
- *   → thermal sight grade → sharpen (High) / FXAA (Low).
+ *   → thermal sight grade → sharpen.
  * Everything the governor or the sight switches is a uniform, so nothing recompiles mid-game.
  */
 
@@ -71,6 +71,9 @@ const GOVERNOR_STEPS: readonly GovernorStep[] = [
   { ao: false, shafts: false, reflections: false, scale: 0.76 },
   { ao: false, shafts: false, reflections: false, scale: 0.67 },
   { ao: false, shafts: false, reflections: false, scale: 0.58 },
+  // Deeper steps for slow phones, now that they start from a 2× picture.
+  { ao: false, shafts: false, reflections: false, scale: 0.5 },
+  { ao: false, shafts: false, reflections: false, scale: 0.42 },
 ];
 
 /** Screen-space crepuscular rays: world direction to the sun and their pre-exposed colour (0 = off). */
@@ -177,11 +180,13 @@ export class Pipeline {
   private build(q: QualityPreset): void {
     const high = q.id === 'high';
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
-    scenePass.setMRT(high ? mrt({ output, normal: packNormalToRGB(normalView), velocity }) : mrt({ output }));
+    // TRAA on both presets: on a phone it is what keeps the 2× picture (grass, foliage, wires) from
+    // shimmering, and a velocity target costs far less than the pixels FXAA would need to match it.
+    scenePass.setMRT(high ? mrt({ output, normal: packNormalToRGB(normalView), velocity }) : mrt({ output, velocity }));
     const colour = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
-    const velocityTex = high ? scenePass.getTextureNode('velocity') : null;
-    const aa = velocityTex ? traa(colour, depth, velocityTex, this.camera) : colour;
+    const velocityTex = scenePass.getTextureNode('velocity');
+    const aa = traa(colour, depth, velocityTex, this.camera);
 
     // Sun shafts: the sky (reversed depth: 0 at the far plane) smeared radially toward the sun, taps
     // jittered per pixel to trade banding for fine noise, strongest near the sun.
@@ -216,7 +221,7 @@ export class Pipeline {
       // exposure, tone mapping and sRGB here, so the sight grade and the AA work on display values
       const ldr = renderOutput(hdr);
       const graded = thermalGrade(ldr, this.uThermal, this.uTime);
-      return high ? sharpen(graded, 0.25) : fxaa(graded);
+      return sharpen(graded, 0.25);
     };
 
     this.full?.dispose();
@@ -245,7 +250,7 @@ export class Pipeline {
       const occluded = vec4(colour.rgb.mul(k), colour.a);
       const full = new RenderPipeline(this.renderer);
       full.outputColorTransform = false;
-      full.outputNode = chain(velocityTex ? traa(occluded, depth, velocityTex, this.camera) : occluded);
+      full.outputNode = chain(traa(occluded, depth, velocityTex, this.camera));
       this.full = full;
     } else {
       this.full = null;
@@ -260,7 +265,8 @@ export class Pipeline {
   }
 
   private applyPixelRatio(): void {
-    const cap = this.quality?.pixelRatioCap ?? 1;
+    // Phones: up to 2× on either preset — sharp on any screen a hand holds; native 3× would triple the cost.
+    const cap = isTouchDevice() ? 2 : (this.quality?.pixelRatioCap ?? 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap) * this.renderScale);
     this.resize();
   }

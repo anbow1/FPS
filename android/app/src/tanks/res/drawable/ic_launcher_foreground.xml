@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A main battle tank in side view: tracks with road wheels, hull, turret and gun. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#1E2420"
+        android:pathData="M30,58 L78,58 C82,58 84,61 84,64 C84,67 82,70 78,70 L30,70 C26,70 24,67 24,64 C24,61 26,58 30,58 Z M28,52 L80,52 L84,58 L24,58 Z M40,44 L62,44 L66,52 L38,52 Z M64,46 L88,45 L88,48 L64,49 Z" />
+    <path android:fillColor="#5B6150"
+        android:pathData="M31,64 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M40,64 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M49,64 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M58,64 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M67,64 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M76,64 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+</vector>

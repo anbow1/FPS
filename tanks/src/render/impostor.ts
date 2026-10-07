@@ -252,7 +252,9 @@ export class ImpostorField {
     const f0 = floor(f);
     const f1 = mod(f0.add(1), views);
     const cu = corner.x.add(0.5);
-    const row = sp.add(corner.y).div(species);
+    // Render-target textures are addressed from the top on both backends (three flips WebGL's to match),
+    // so the frame's bottom — the tree's base — is at the larger v.
+    const row = sp.add(float(1).sub(corner.y)).div(species);
     const uv0 = varying(vec2(f0.add(cu).div(views), row), 'vImpUv0');
     const uv1 = varying(vec2(f1.add(cu).div(views), row), 'vImpUv1');
     const blend = varying(fract(f), 'vImpBlend');

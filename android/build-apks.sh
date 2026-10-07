@@ -22,6 +22,7 @@ bundle field-line fieldLine
 bundle castaway-lagoon castawayLagoon
 bundle contrail contrail
 bundle ridgeline ridgeline
+bundle tanks tanks
 
 echo "── Android: assembleRelease"
 cd "$android"
@@ -32,4 +33,5 @@ cp app/build/outputs/apk/fieldLine/release/app-fieldLine-release.apk out/field-l
 cp app/build/outputs/apk/castawayLagoon/release/app-castawayLagoon-release.apk out/castaway-lagoon.apk
 cp app/build/outputs/apk/contrail/release/app-contrail-release.apk out/contrail.apk
 cp app/build/outputs/apk/ridgeline/release/app-ridgeline-release.apk out/ridgeline.apk
+cp app/build/outputs/apk/tanks/release/app-tanks-release.apk out/tanks.apk
 ls -l out/*.apk
