@@ -1,9 +1,9 @@
 // On-screen controls for phones, tablets and the Android app. Flying needs an
 // analogue stick and a throttle lever, not keys:
 //
-//   left half    a floating stick that appears where the thumb lands: up pushes
-//                (nose down), down pulls, sideways rolls — like the mouse stick,
-//                it springs back to centre when the thumb lifts;
+//   left half    a floating stick that appears where the thumb lands: down
+//                pulls, up pushes (the pilot setting can invert that), sideways
+//                rolls — like the mouse stick, it springs back when let go;
 //   left edge    the throttle lever: drag up and down; the top fifth is reheat;
 //   right side   buttons that press the key codes the game already binds
 //                (fire, weapon, lock, radar, flares, chaff, camera, gear,
@@ -26,6 +26,8 @@ export interface FlightTouchButton {
   row: number;
   mode: 'hold' | 'tap';
   big?: boolean;
+  /** A button that is not a key (e.g. tilt calibration): called on press instead of pressing `code`. */
+  action?: () => void;
 }
 
 const STICK_RADIUS_PX = 70;
@@ -91,6 +93,10 @@ export class FlightTouchControls {
       e.preventDefault();
       this.onTouch?.();
       el.classList.add('down');
+      if (b.action) {
+        b.action();
+        return;
+      }
       this.sink.press(b.code);
       if (b.mode === 'tap') {
         // One press: release on the next frame so the game sees a single edge.
@@ -100,7 +106,7 @@ export class FlightTouchControls {
     const up = (e: PointerEvent): void => {
       e.stopPropagation();
       el.classList.remove('down');
-      if (b.mode === 'hold') this.sink.release(b.code);
+      if (b.mode === 'hold' && !b.action) this.sink.release(b.code);
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);

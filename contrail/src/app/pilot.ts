@@ -26,6 +26,10 @@ export class PilotControls {
   /** The on-screen stick while a thumb is on it, and the on-screen throttle lever (touch play). */
   private touchStick: { x: number; y: number } | null = null;
   private touchThrottle: number | null = null;
+  /** The phone's tilt as a stick (null when tilt steering is off); a thumb on the screen stick overrides it. */
+  private tiltStick: { x: number; y: number } | null = null;
+  /** Forward (stick up, mouse forward, W) raises the nose instead of lowering it. Tilt keeps its yoke sense. */
+  invertPitch = false;
 
   constructor(private readonly keys: Input) {}
 
@@ -55,9 +59,12 @@ export class PilotControls {
     this.keyStick.roll = toward(this.keyStick.roll, axis(k.held('rollRight'), k.held('rollLeft')), KEY_RATE_PER_S);
     this.keyStick.yaw = toward(this.keyStick.yaw, axis(k.held('yawRight'), k.held('yawLeft')), PEDAL_RATE_PER_S);
 
-    // Mouse forward (dy < 0) pushes, back pulls: the stick is between the pilot's knees.
-    this.input.pitch = clamp(this.keyStick.pitch + this.mouseStick.y, -1, 1);
-    this.input.roll = clamp(this.keyStick.roll + this.mouseStick.x, -1, 1);
+    // Mouse forward (dy < 0) pushes, back pulls: the stick is between the pilot's knees — unless inverted.
+    const sense = this.invertPitch ? -1 : 1;
+    // Tilt adds to the keys and the sprung stick, but the screen stick under a thumb has the last word.
+    const tilt = this.tiltStick && !this.touchStick ? this.tiltStick : { x: 0, y: 0 };
+    this.input.pitch = clamp(sense * (this.keyStick.pitch + this.mouseStick.y) + tilt.y, -1, 1);
+    this.input.roll = clamp(this.keyStick.roll + this.mouseStick.x + tilt.x, -1, 1);
     this.input.yaw = this.keyStick.yaw;
 
     let t = this.input.throttle;
@@ -78,6 +85,10 @@ export class PilotControls {
    * Touch: the on-screen stick (−1…1 each, or null when the thumb is off it — it then springs back like
    * the mouse stick) and the throttle lever (0…1.25, past 1 = reheat; null = keys and wheel only).
    */
+  setTilt(stick: { x: number; y: number } | null): void {
+    this.tiltStick = stick ? { x: clamp(stick.x, -1, 1), y: clamp(stick.y, -1, 1) } : null;
+  }
+
   setTouch(stick: { x: number; y: number } | null, throttle: number | null): void {
     this.touchStick = stick ? { x: clamp(stick.x, -1, 1), y: clamp(stick.y, -1, 1) } : null;
     this.touchThrottle = throttle === null ? null : clamp(throttle, 0, 1.25);

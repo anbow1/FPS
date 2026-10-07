@@ -1,6 +1,7 @@
 import type { AircraftId } from '../config.ts';
 import type { PresetId } from '../render/lighting.ts';
 import type { Difficulty } from '../sim/opponent.ts';
+import { type ControlSettings, saveControls } from './settings.ts';
 
 // The start menu: game mode, your aircraft, the opponent's, difficulty and
 // time of day (brief: "Duel — choose your aircraft and the opponent's").
@@ -37,7 +38,7 @@ export function optionsFromParams(params: URLSearchParams): GameOptions {
 }
 
 /** Shows the menu and resolves with the player's choice. */
-export function chooseOptions(parent: HTMLElement, initial: GameOptions, touch: boolean): Promise<GameOptions> {
+export function chooseOptions(parent: HTMLElement, initial: GameOptions, controls: ControlSettings, touch: boolean): Promise<GameOptions> {
   const o = { ...initial };
   const root = document.createElement('div');
   root.className = 'menu';
@@ -89,6 +90,30 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, touch: 
     ['noon', 'Broken cloud'],
     ['dusk', 'Dusk overcast'],
   ]);
+  // Control preferences: two-way toggles on the shared settings object (saved on FLY).
+  const toggle = (label: string, key: keyof ControlSettings, onText: string, offText: string): void => {
+    const r = document.createElement('div');
+    r.className = 'row';
+    const l = document.createElement('span');
+    l.textContent = label;
+    r.append(l);
+    const on = document.createElement('button');
+    const off = document.createElement('button');
+    on.textContent = onText;
+    off.textContent = offText;
+    const paint = (): void => {
+      on.className = controls[key] ? 'on' : '';
+      off.className = controls[key] ? '' : 'on';
+    };
+    on.addEventListener('click', () => ((controls[key] = true), paint()));
+    off.addEventListener('click', () => ((controls[key] = false), paint()));
+    paint();
+    r.append(on, off);
+    card.append(r);
+  };
+  const what = touch ? 'Thumb' : 'Mouse';
+  toggle('Pitch', 'invertPitch', `${what} up = nose up`, `${what} up = nose down`);
+  if (touch) toggle('Tilt', 'tilt', 'Steer by tilting', 'Off');
   const go = document.createElement('button');
   go.className = 'go';
   go.textContent = 'FLY';
@@ -96,12 +121,13 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, touch: 
   const keys = document.createElement('div');
   keys.className = 'keys';
   keys.innerHTML = touch
-    ? 'Left thumb: stick (springs back). Left edge: throttle, top fifth = afterburner. Right: fire, weapon, lock, radar, flares, chaff, camera, gear.'
+    ? 'Left thumb: stick (springs back; pitch sense above). Tilt: hold the phone like a yoke, CAL sets hands-off. Left edge: throttle, top fifth = afterburner. Right: fire, weapon, lock, radar, flares, chaff, camera, gear.'
     : 'Mouse or W/S A/D: stick · Q/E: rudder · Shift/Ctrl or wheel: throttle (again at 100 % = afterburner)<br>Fire: mouse / Space · X weapon · V lock · R radar mode · , . range · PgUp/PgDn antenna · F flares · Z chaff<br>C camera (chase, cockpit, orbit, padlock, missile) · G gear · B brakes · L limiter · K sky · H data · O quality';
   card.append(keys);
   parent.append(root);
   return new Promise((resolve) => {
     go.addEventListener('click', () => {
+      saveControls(controls);
       root.remove();
       resolve(o);
     });

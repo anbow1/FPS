@@ -29,6 +29,8 @@ import { type AttackCue, Hud } from './ui/hud.ts';
 import { chooseOptions, optionsFromParams } from './ui/menu.ts';
 import { SensorDisplays } from './ui/sensors.ts';
 import { Tones } from './ui/tones.ts';
+import { loadControls } from './ui/settings.ts';
+import { TiltSteering } from './ui/tilt.ts';
 import { FlightTouchControls } from './ui/touch.ts';
 
 // Contrail — a stealth fighter against a heavy twin in a physical sky. The
@@ -48,7 +50,8 @@ async function main(): Promise<void> {
   if (!(canvas instanceof HTMLCanvasElement) || !ui) throw new Error('index.html must contain canvas#view and div#ui');
   const input = new Input(canvas);
   const skipMenu = params.has('autostart') || params.has('spawn');
-  const opts = skipMenu ? optionsFromParams(params) : await chooseOptions(ui, optionsFromParams(params), input.touch);
+  const controls = loadControls(params);
+  const opts = skipMenu ? optionsFromParams(params) : await chooseOptions(ui, optionsFromParams(params), controls, input.touch);
   const tones = new Tones();
   // Browsers allow audio only after a gesture: the menu's FLY click is one (headless runs skip it).
   if (!skipMenu) tones.start();
@@ -109,6 +112,9 @@ async function main(): Promise<void> {
 
   // ---- controls and displays
   const pilot = new PilotControls(input);
+  pilot.invertPitch = controls.invertPitch;
+  // Tilt steering listens only when chosen (the sensor runs at 60 Hz otherwise for nothing).
+  const tilt = controls.tilt ? new TiltSteering() : null;
   const rig = new CameraRig(stage.camera);
   const hudLayer = document.getElementById('hud') ?? ui;
   const hud = new Hud(hudLayer);
@@ -123,6 +129,8 @@ async function main(): Promise<void> {
   banner.textContent = input.touch ? 'Tap to fly' : 'Click to fly — Esc frees the mouse';
   ui.appendChild(banner);
   const startFlying = (): void => {
+    // However the phone is held when the flight starts is "hands off".
+    tilt?.calibrate();
     tones.start();
     input.requestLock();
   };
@@ -143,6 +151,7 @@ async function main(): Promise<void> {
       { code: b(DEFAULT_BINDINGS.camera[0]!), label: 'CAM', col: 0, row: 2.5, mode: 'tap' },
       { code: b(DEFAULT_BINDINGS.gear[0]!), label: 'GEAR', col: 1, row: 2.5, mode: 'tap' },
       { code: b(DEFAULT_BINDINGS.brake[0]!), label: 'BRK', col: 2, row: 2.5, mode: 'hold' },
+      ...(tilt ? [{ code: '', label: 'CAL', col: 3, row: 1.5, mode: 'tap' as const, action: (): void => tilt.calibrate() }] : []),
     ]);
     touch.setThrottle(aircraft.gear.weightOnWheels ? 0 : 0.8);
     // The touch layer covers the canvas: its first touch is the "tap to fly".
@@ -179,7 +188,7 @@ async function main(): Promise<void> {
   let lastMissile: (typeof game.combat.missiles)[number] | null = null;
   let lastPaintCount = 0;
 
-  const debugHooks = { aircraft, game, stage, frames: 0, input: pilot.input, pilot, rig, overlay, terrain, atmosphere, clouds };
+  const debugHooks = { aircraft, game, stage, frames: 0, input: pilot.input, pilot, tilt, rig, overlay, terrain, atmosphere, clouds };
   (window as unknown as { __contrail: typeof debugHooks }).__contrail = debugHooks;
   let clockS = 0;
 
@@ -188,6 +197,7 @@ async function main(): Promise<void> {
       step: (dtS) => {
         pilot.update(dtS, rig.mode !== 'orbit');
         if (touch) pilot.setTouch(touch.stick, touch.throttle);
+        pilot.setTilt(tilt ? tilt.stick : null);
         if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
         if (input.pressed('camera')) rig.next();
         if (input.pressed('debug')) overlay.visible = !overlay.visible;
@@ -267,6 +277,7 @@ async function main(): Promise<void> {
         const warnings: string[] = [];
         if (aircraft.g.glocS > 0) warnings.push('G-LOC');
         if (aircraft.overstressed) warnings.push('OVER G');
+        if (tilt && !tilt.available && clockS > 3) warnings.push('NO TILT SENSOR');
         if (aircraft.coeff.separation > 0.3 && aircraft.speedMs > 20) warnings.push('ALPHA');
         if (pilot.input.limiterRelaxed) warnings.push('LIM OFF');
         if (aircraft.fuelKg < 800) warnings.push('FUEL');
