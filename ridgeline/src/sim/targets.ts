@@ -30,6 +30,8 @@ export interface GroundTarget {
 export interface TerrainQuery {
   groundAt(x: number, z: number): number;
   riverX(z: number): number;
+  /** Forest cover 0…1 (optional): parked vehicles look for open ground, where they can be seen. */
+  forestAt?(x: number, z: number): number;
 }
 
 /** Where a shot travelling along `travel` (world, need not be unit) hits the vehicle: its damage factor. */
@@ -76,22 +78,32 @@ export class GroundForce {
       { z: -7000, side: -1, kinds: ['apc', 'truck', 'truck', 'tank'] },
     ];
     for (const g of groups) {
-      // A dry, level patch on the bank: try outwards from the river until the ground is gentle.
-      let cx = this.land.riverX(g.z) + g.side * 140;
-      for (let k = 0; k < 8 && this.slope(cx, g.z) > 0.2; k++) cx += g.side * 60;
+      // An open, level patch off the bank: outwards from the river, then up and down the valley, until the
+      // ground is gentle and clear of trees (vehicles parked in a wood would be invisible).
+      let cx = this.land.riverX(g.z) + g.side * 160;
+      let cz = g.z;
+      search: for (let ring = 0; ring < 12; ring++)
+        for (const dz of [0, 150, -150]) {
+          const x = this.land.riverX(g.z + dz) + g.side * (160 + ring * 60);
+          if (this.slope(x, g.z + dz) < 0.15 && (this.land.forestAt?.(x, g.z + dz) ?? 0) < 0.08) {
+            cx = x;
+            cz = g.z + dz;
+            break search;
+          }
+        }
       const heading = rng.range(-Math.PI, Math.PI);
       g.kinds.forEach((kind, i) => {
         const along = (i - (g.kinds.length - 1) / 2) * 22;
         const x = cx + Math.cos(heading) * along + rng.range(-4, 4);
-        const z = g.z - Math.sin(heading) * along + rng.range(-4, 4);
+        const z = cz - Math.sin(heading) * along + rng.range(-4, 4);
         this.add(kind, x, z, heading + rng.range(-0.4, 0.4), null);
       });
     }
-    // The convoy: nose to tail on the road that follows the river's east bank.
+    // The convoy: nose to tail along the valley, clear of the riverside woods on the east bank.
     const convoy: TargetKind[] = ['apc', 'truck', 'truck', 'tank'];
     convoy.forEach((kind, i) => {
       const z = -2800 - i * 28;
-      this.add(kind, this.roadX(z, 75), z, 0, { z0: -2600, z1: -6600, offsetM: 75, dir: 1 });
+      this.add(kind, this.roadX(z, 260), z, 0, { z0: -2600, z1: -6600, offsetM: 260, dir: 1 });
     });
   }
 

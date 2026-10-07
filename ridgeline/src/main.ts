@@ -21,7 +21,7 @@ import { Helicopter } from './sim/helicopter.ts';
 import { GroundForce, type GroundTarget } from './sim/targets.ts';
 import { Armament, clearLine } from './sim/weapons.ts';
 import { Vec3 } from './core/vec.ts';
-import { bakeTerrain, riverX, TERRAIN } from './sim/terrain.ts';
+import { bakeTerrain, riverX, sourceCover, TERRAIN } from './sim/terrain.ts';
 import { DebugOverlay } from './ui/debugOverlay.ts';
 import { Hud, type HudAim } from './ui/hud.ts';
 import { chooseOptions, optionsFromParams } from './ui/menu.ts';
@@ -131,7 +131,14 @@ async function main(): Promise<void> {
 
   // ---- weapons and the ground force up the valley
   const arm = new Armament(view.model.hardpoints);
-  const force = new GroundForce({ groundAt, riverX });
+  const coverTmp = { forest: 0, rock: 0, snow: 0, water: 0, river: 0 };
+  const forestAt = (x: number, z: number): number => {
+    const h = terrainData.heightAt(x, z);
+    const grad = Math.hypot(terrainData.heightAt(x + 10, z) - terrainData.heightAt(x - 10, z), terrainData.heightAt(x, z + 10) - terrainData.heightAt(x, z - 10)) / 20;
+    // The cover bake's "slope" is 1 − the normal's y.
+    return sourceCover(x, z, h, 1 - 1 / Math.hypot(1, grad), coverTmp).forest;
+  };
+  const force = new GroundForce({ groundAt, riverX, forestAt });
   const combatView = new CombatView(stage.scene, atmosphere);
   const targetView = new TargetView(stage.scene);
   // The stores' weight goes as they are fired (the loaded mass in the config is the full load).
