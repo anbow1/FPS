@@ -21,7 +21,10 @@ export type Action =
   | 'centreStick'
   | 'brake'
   | 'timeOfDay'
-  | 'mute';
+  | 'mute'
+  | 'fire'
+  | 'weapon'
+  | 'ripple';
 
 // Mouse0 / Mouse2 are the left / right buttons; WheelUp / WheelDown are edges only.
 // Pull = nose up = S / Down, as on a real cyclic (the pitch-sense setting can flip the stick and mouse).
@@ -46,6 +49,9 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   brake: ['KeyB'],
   timeOfDay: ['KeyK'],
   mute: ['KeyM'],
+  fire: ['Space', 'Mouse0'],
+  weapon: ['KeyR'],
+  ripple: ['KeyV'],
 };
 
 const STORAGE_KEY = 'ridgeline.bindings.v1';

@@ -11,9 +11,11 @@ npm run dev     # http://localhost:5173
 npm test        # flight model and terrain checks
 ```
 
-Status: build step 1 of the brief. It covers the flight model, the terrain,
-the cameras, the HUD with the hover cue, and the debug page. Sensors, weapons,
-enemies and missions follow.
+Status: the flight model, the terrain, the cameras, the HUD with the hover
+cue, the pilot's cockpit and the debug page, plus the first weapons (cannon,
+rockets, guided missiles) against a ground force up the valley that does not
+shoot back yet. The sensor turret, enemies that fight, the enemy helicopter
+and missions follow.
 
 ## Controls
 
@@ -27,9 +29,39 @@ enemies and missions follow.
 | Engines (autorotation practice) | I | ENG |
 | Wheel brakes | B | — |
 | Camera (chase, pilot, gunner, orbit) | C | CAM |
+| Look and aim | the centre of the view | drag with the right thumb |
+| Fire | Space or left click | FIRE |
+| Weapon (gun, rockets, missiles) / rocket ripple 1-4-8 | R / V | WPN steps through all of them |
+| Tilt steering on/off, set hands-off | — (menu) | TILT, CAL |
 | Flight data / sky / quality / sound | H / K / O / M | — |
 
 The menu sets the pitch sense, tilt steering and the graphics preset.
+
+## Weapons
+
+Game abstractions with invented numbers; every shot is a flying body, not a
+hitscan.
+
+- **Cannon.** A chin turret slaved to the centre of the view, within its travel
+  and slew rate. 1200 rounds with time of flight, drag, gravity and a
+  dispersion cone, every third a tracer. Long bursts heat the barrel until it
+  stops ("GUN HOT") and must cool.
+- **Rockets.** 38, from fixed pods along the shaft line, in ripples of 1, 4 or
+  8. Unguided: the HUD ring is where they would land now; fly it onto the
+  target.
+- **Guided missiles.** 8, fire-and-forget. Put a target in the dashed seeker
+  box until it reads LOCK (in range, not behind terrain), then fire. The
+  missile climbs over the target and dives onto its roof.
+- **Armour.** Damage depends on the side that is hit. The cannon cannot get
+  through a tank's front, but its side or rear works. A missile's top attack
+  kills from any direction. Near misses barely scratch armour but wreck
+  trucks.
+- **Weight.** Fired stores leave the aircraft's mass.
+
+The ground force is four parked groups and a convoy on the road along the
+river, north of the base. The HUD marks the vehicles the sensor can see, and
+the cockpit map shows them. A new force rolls in once the last vehicle
+burns.
 
 URL options:
 

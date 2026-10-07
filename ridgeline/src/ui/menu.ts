@@ -124,8 +124,8 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
   const keys = document.createElement('div');
   keys.className = 'keys';
   keys.innerHTML = touch
-    ? 'Left thumb: cyclic (springs back to trim). Left edge: collective. ◀ ▶: pedals. TRIM makes the stick position neutral. Tilt: hold the phone like a yoke, CAL sets hands-off.'
-    : 'Mouse or W/S A/D: cyclic (springs back to trim) · T trim · Shift/Ctrl or wheel: collective · Q/E: pedals<br>Z SAS · I engines (autorotation practice) · B wheel brakes · C camera (chase, cockpit, orbit) · H flight data · K sky · O quality · M sound';
+    ? 'Left thumb: cyclic (springs back to trim). Left edge: collective. ◀ ▶: pedals. TRIM makes the stick position neutral. Right thumb: drag to look and aim.<br>FIRE shoots the selected weapon; WPN steps gun → rockets ×1/×4/×8 → missiles. TILT steers by tilting the phone like a yoke; CAL sets hands-off.'
+    : 'Mouse or W/S A/D: cyclic (springs back to trim) · T trim · Shift/Ctrl or wheel: collective · Q/E: pedals<br>Space or left click: fire · R weapon (gun, rockets, missiles) · V rocket ripple 1/4/8 · the gun and missile seeker follow the centre of the view<br>Z SAS · I engines (autorotation practice) · B wheel brakes · C camera (chase, cockpit, gunner, orbit) · H flight data · K sky · O quality · M sound';
   card.append(keys);
   parent.append(root);
   return new Promise((resolve) => {

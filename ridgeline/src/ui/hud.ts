@@ -31,6 +31,22 @@ export interface HudExtras {
   sensor: string;
   weapon: string;
   message: string;
+  aim?: HudAim;
+}
+
+/** The weapon symbology, in world positions (projected through the camera). */
+export interface HudAim {
+  weapon: 'gun' | 'rockets' | 'missile';
+  /** Where the gun's rounds go: the sight line's point on the ground. */
+  gunPoint: Vector3 | null;
+  /** Where rockets fired now would land. */
+  rocketCue: Vector3 | null;
+  /** The target the missile seeker holds. */
+  lock: Vector3 | null;
+  /** Targets in view of the sensor (in range and not behind terrain). */
+  targets: Vector3[];
+  /** A weapon caution (gun hot, no lock, empty), shown under the reticles. */
+  warning: string;
 }
 
 export class Hud {
@@ -83,7 +99,7 @@ export class Hud {
     // ---- heading
     const o = h.orientation;
     const nose = o.rotate(this.nose.set(0, 0, -1));
-    const heading = ((Math.atan2(nose.x, -nose.z) * DEG + 360) % 360 + 360) % 360;
+    const heading = (((Math.atan2(nose.x, -nose.z) * DEG + 360) % 360) + 360) % 360;
     this.headingTape(cx, hgt * (this.touchLayout ? 0.15 : 0.1), heading, size);
     c.textAlign = 'center';
     c.fillText(extras.sensor, cx, hgt * (this.touchLayout ? 0.15 : 0.1) + 40 * size);
@@ -190,6 +206,7 @@ export class Hud {
     });
     c.strokeStyle = GREEN;
     c.fillStyle = GREEN;
+    if (extras.aim) this.weaponSymbols(camera, extras.aim, w, hgt, size);
     if (extras.message) {
       c.textAlign = 'center';
       c.font = `${Math.round(24 * size + 4)}px ui-monospace, Menlo, Consolas, monospace`;
@@ -250,6 +267,90 @@ export class Hud {
     c.stroke();
   }
 
+  /** Screen position of a world point, or null if it is behind the camera. */
+  private toScreen(camera: PerspectiveCamera, p: Vector3, w: number, hgt: number): { x: number; y: number } | null {
+    this.tmp.copy(p).applyMatrix4(camera.matrixWorldInverse);
+    if (this.tmp.z > -0.5) return null;
+    this.tmp.copy(p).project(camera);
+    return { x: ((this.tmp.x + 1) / 2) * w, y: ((1 - this.tmp.y) / 2) * hgt };
+  }
+
+  /**
+   * Weapon reticles: target markers (diamonds) for what the sensor sees; the gun cross where the turret's
+   * rounds will land; the rocket cue (a ring with a dot) where a ripple fired now would come down — fly it
+   * onto the target; the missile seeker box on the locked target.
+   */
+  private weaponSymbols(camera: PerspectiveCamera, a: HudAim, w: number, hgt: number, size: number): void {
+    const c = this.ctx;
+    c.save();
+    c.strokeStyle = AMBER;
+    c.lineWidth = Math.max(1.2, 1.4 * size);
+    for (const t of a.targets) {
+      const s = this.toScreen(camera, t, w, hgt);
+      if (!s) continue;
+      const r = 7 * size;
+      c.beginPath();
+      c.moveTo(s.x, s.y - r);
+      c.lineTo(s.x + r, s.y);
+      c.lineTo(s.x, s.y + r);
+      c.lineTo(s.x - r, s.y);
+      c.closePath();
+      c.stroke();
+    }
+    c.strokeStyle = GREEN;
+    c.fillStyle = GREEN;
+    c.lineWidth = Math.max(1.4, 1.8 * size);
+    if (a.weapon === 'gun' && a.gunPoint) {
+      const s = this.toScreen(camera, a.gunPoint, w, hgt);
+      if (s) {
+        const r = 16 * size;
+        const g = 5 * size;
+        c.beginPath();
+        c.moveTo(s.x - r, s.y);
+        c.lineTo(s.x - g, s.y);
+        c.moveTo(s.x + g, s.y);
+        c.lineTo(s.x + r, s.y);
+        c.moveTo(s.x, s.y - r);
+        c.lineTo(s.x, s.y - g);
+        c.moveTo(s.x, s.y + g);
+        c.lineTo(s.x, s.y + r);
+        c.stroke();
+      }
+    }
+    if (a.weapon === 'rockets' && a.rocketCue) {
+      const s = this.toScreen(camera, a.rocketCue, w, hgt);
+      if (s) {
+        c.beginPath();
+        c.arc(s.x, s.y, 14 * size, 0, Math.PI * 2);
+        c.stroke();
+        c.beginPath();
+        c.arc(s.x, s.y, 2.2 * size, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    if (a.weapon === 'missile') {
+      const s = a.lock ? this.toScreen(camera, a.lock, w, hgt) : null;
+      if (s) {
+        const r = 14 * size;
+        c.strokeRect(s.x - r, s.y - r, 2 * r, 2 * r);
+        c.textAlign = 'center';
+        c.fillText('LOCK', s.x, s.y - r - 8 * size);
+      } else {
+        // The seeker's field: a dashed box in the middle of the view — put a target in it.
+        const r = 34 * size;
+        c.setLineDash([6 * size, 6 * size]);
+        c.strokeRect(w / 2 - r, hgt / 2 - r, 2 * r, 2 * r);
+        c.setLineDash([]);
+      }
+    }
+    if (a.warning) {
+      c.fillStyle = AMBER;
+      c.textAlign = 'center';
+      c.fillText(a.warning, w / 2, hgt * (this.touchLayout ? 0.79 : 0.83));
+    }
+    c.restore();
+  }
+
   private horizon(camera: PerspectiveCamera, w: number, hgt: number, size: number): void {
     const c = this.ctx;
     camera.getWorldDirection(this.fwd);
@@ -257,7 +358,10 @@ export class Hud {
     const proj = (pitchDeg: number, offsetRad: number): { x: number; y: number } | null => {
       const p = (pitchDeg * Math.PI) / 180;
       const a = yaw + offsetRad;
-      this.tmp.set(Math.sin(a) * Math.cos(p), Math.sin(p), Math.cos(a) * Math.cos(p)).multiplyScalar(1000).add(camera.position);
+      this.tmp
+        .set(Math.sin(a) * Math.cos(p), Math.sin(p), Math.cos(a) * Math.cos(p))
+        .multiplyScalar(1000)
+        .add(camera.position);
       this.tmp.project(camera);
       if (this.tmp.z > 1 || this.tmp.z < -1) return null;
       return { x: ((this.tmp.x + 1) / 2) * w, y: ((1 - this.tmp.y) / 2) * hgt };

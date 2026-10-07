@@ -28,6 +28,8 @@ export interface FlightTouchButton {
   big?: boolean;
   /** A button that is not a key (e.g. tilt calibration): called on press instead of pressing `code`. */
   action?: () => void;
+  /** Name for `setLit` (a toggle that shows its state). */
+  id?: string;
 }
 
 const STICK_RADIUS_PX = 70;
@@ -43,6 +45,7 @@ export class FlightTouchControls {
   private readonly knob = document.createElement('div');
   private readonly lever = document.createElement('div');
   private readonly leverFill = document.createElement('div');
+  private readonly byId = new Map<string, HTMLElement>();
   private stickId: number | null = null;
   private leverId: number | null = null;
   private readonly lookIds = new Map<number, { x: number; y: number }>();
@@ -81,6 +84,14 @@ export class FlightTouchControls {
     this.drawLever();
   }
 
+  /** Shows a toggle button as on or off, and optionally relabels it. */
+  setLit(id: string, on: boolean, label?: string): void {
+    const el = this.byId.get(id);
+    if (!el) return;
+    el.classList.toggle('lit', on);
+    if (label !== undefined && el.textContent !== label) el.textContent = label;
+  }
+
   set visible(v: boolean) {
     this.root.style.display = v ? 'block' : 'none';
   }
@@ -89,6 +100,7 @@ export class FlightTouchControls {
     const el = document.createElement('div');
     el.className = b.big ? 'touch-btn big' : 'touch-btn';
     el.textContent = b.label;
+    if (b.id) this.byId.set(b.id, el);
     const place = (): void => {
       const px = buttonPx();
       const size = b.big ? px * 1.5 : px;

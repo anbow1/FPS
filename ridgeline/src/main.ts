@@ -1,25 +1,31 @@
+import { Vector3 } from 'three/webgpu';
 import { PilotControls } from './app/pilot.ts';
-import { HELICOPTERS, PHYSICS } from './config.ts';
+import { HELICOPTERS, PHYSICS, WEAPONS } from './config.ts';
 import { Input } from './core/input.ts';
 import { FixedLoop } from './core/loop.ts';
 import { Atmosphere } from './render/atmosphere.ts';
 import { CameraRig } from './render/cameraRig.ts';
 import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
+import { CombatView, EMISSIVE_EXPOSURE } from './render/combatView.ts';
 import { HeliCockpit } from './render/heliCockpit.ts';
 import { HeliView } from './render/heliView.ts';
 import { SkyLighting } from './render/lighting.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
+import { TargetView } from './render/targetView.ts';
 import { Forest } from './render/forest.ts';
 import { buildTerrainTextures } from './render/terrainTextures.ts';
 import { bakeCloudData } from './sim/cloudField.ts';
 import { Helicopter } from './sim/helicopter.ts';
+import { GroundForce, type GroundTarget } from './sim/targets.ts';
+import { Armament, clearLine } from './sim/weapons.ts';
+import { Vec3 } from './core/vec.ts';
 import { bakeTerrain, riverX, TERRAIN } from './sim/terrain.ts';
 import { DebugOverlay } from './ui/debugOverlay.ts';
-import { Hud } from './ui/hud.ts';
+import { Hud, type HudAim } from './ui/hud.ts';
 import { chooseOptions, optionsFromParams } from './ui/menu.ts';
-import { graphicsSetup, loadControls } from './ui/settings.ts';
+import { graphicsSetup, loadControls, saveControls } from './ui/settings.ts';
 import { RotorSound } from './ui/sound.ts';
 import { TiltSteering } from './ui/tilt.ts';
 import { FlightTouchControls } from './ui/touch.ts';
@@ -27,8 +33,10 @@ import { FlightTouchControls } from './ui/touch.ts';
 // Ridgeline — an attack helicopter over 20 km of ridges and valleys. The start
 // menu picks the mission, the helicopter and the sky; then the world loads:
 // terrain, clouds, the forward base. Each fixed step reads the pilot's controls
-// into the rotorcraft model; each frame draws the helicopter with its rotor
-// blur, the helicopter HUD with its hover cue, and the flight-data page.
+// into the rotorcraft model and flies the weapons and the ground force; each
+// frame draws the helicopter with its rotor blur, the vehicles and the
+// weapons' effects, the helicopter HUD with its hover cue and reticles, and
+// the flight-data page.
 
 const params = new URLSearchParams(location.search);
 
@@ -120,7 +128,19 @@ async function main(): Promise<void> {
   if (!params.has('nocloudshadow')) clouds.shadeReceivers(stage.scene, settings.quality === 'high' ? 4 : 2);
   const pilot = new PilotControls(input);
   pilot.invertPitch = controls.invertPitch;
+
+  // ---- weapons and the ground force up the valley
+  const arm = new Armament(view.model.hardpoints);
+  const force = new GroundForce({ groundAt, riverX });
+  const combatView = new CombatView(stage.scene, atmosphere);
+  const targetView = new TargetView(stage.scene);
+  // The stores' weight goes as they are fired (the loaded mass in the config is the full load).
+  const syncStores = (): void => {
+    heli.storesKg = Math.max(0, cfg.storesKg - (Armament.fullStoresKg() - arm.storesKg));
+  };
   const spawn = (): void => {
+    arm.rearm();
+    syncStores();
     // On the forward base pad, facing north up the valley; or in a hover above it.
     const x = 300;
     const z = 0;
@@ -135,7 +155,17 @@ async function main(): Promise<void> {
   spawn();
 
   // ---- controls and displays
-  const tilt = controls.tilt ? new TiltSteering() : null;
+  // Tilt steering on phones: always listening, used while switched on (the menu or the TILT button).
+  const tilt = input.touch ? new TiltSteering() : null;
+  if (tilt) tilt.enabled = controls.tilt;
+  const setTilt = (on: boolean): void => {
+    if (!tilt) return;
+    void tilt.setEnabled(on).then((ok) => {
+      controls.tilt = ok;
+      saveControls(controls);
+      say(ok ? 'TILT STEERING — CAL to set hands-off' : on ? 'NO MOTION SENSOR' : 'TILT OFF', 2.5);
+    });
+  };
   const rig = new CameraRig(stage.camera);
   const hudLayer = document.getElementById('hud') ?? ui;
   const hud = new Hud(hudLayer);
@@ -150,7 +180,8 @@ async function main(): Promise<void> {
   banner.textContent = input.touch ? 'Tap to fly' : 'Click to fly — Esc frees the mouse';
   ui.appendChild(banner);
   const startFlying = (): void => {
-    tilt?.calibrate();
+    // iOS grants the motion sensor only from a tap: ask on the first one if tilt is on.
+    if (tilt?.enabled) void tilt.setEnabled(true);
     startAudio();
     input.requestLock();
   };
@@ -164,11 +195,18 @@ async function main(): Promise<void> {
       [
         { code: 'KeyQ', label: '◀', col: 1, row: 0, mode: 'hold' },
         { code: 'KeyE', label: '▶', col: 0, row: 0, mode: 'hold' },
+        { code: 'Space', label: 'FIRE', col: 2.05, row: 0, mode: 'hold', big: true },
         { code: 'KeyT', label: 'TRIM', col: 0, row: 1.2, mode: 'tap', big: false },
         { code: 'KeyZ', label: 'SAS', col: 1, row: 1.2, mode: 'tap' },
+        { code: '', label: 'WPN', col: 2.3, row: 1.55, mode: 'tap', id: 'wpn', action: (): void => cycleTouchWeapon() },
         { code: 'KeyC', label: 'CAM', col: 0, row: 2.2, mode: 'tap' },
         { code: 'KeyI', label: 'ENG', col: 1, row: 2.2, mode: 'tap' },
-        ...(tilt ? [{ code: '', label: 'CAL', col: 2, row: 2.2, mode: 'tap' as const, action: (): void => tilt.calibrate() }] : []),
+        ...(tilt
+          ? [
+              { code: '', label: 'TILT', col: 2.3, row: 2.55, mode: 'tap' as const, id: 'tilt', action: (): void => setTilt(!tilt.enabled) },
+              { code: '', label: 'CAL', col: 3.3, row: 2.55, mode: 'tap' as const, action: (): void => tilt.calibrate() },
+            ]
+          : []),
       ],
       { label: 'COLL', reheat: false },
     );
@@ -177,6 +215,64 @@ async function main(): Promise<void> {
       if (!input.locked) startFlying();
     };
   }
+
+  // Touch has one weapon button: it steps gun → rockets ×1 → ×4 → ×8 → missiles → gun.
+  const cycleTouchWeapon = (): void => {
+    if (arm.selected === 'rockets' && arm.ripple < 8) arm.cycleRipple();
+    else {
+      arm.cycleWeapon();
+      if (arm.selected === 'rockets') while (arm.ripple !== 1) arm.cycleRipple();
+    }
+  };
+
+  // ---- the crew's sight line: from the camera through the centre of the view, to the ground it rests on
+  const sightEye = new Vec3();
+  const sightLook = new Vec3();
+  const sightPoint = new Vec3();
+  const camDir = new Vector3();
+  const sight = (): void => {
+    const cam = stage.camera;
+    cam.getWorldDirection(camDir);
+    sightEye.set(cam.position.x, cam.position.y, cam.position.z);
+    sightLook.set(camDir.x, camDir.y, camDir.z);
+    // March out to 8 km in growing steps, then halve back onto the surface.
+    let prev = 0;
+    let d = 5;
+    let hit = -1;
+    while (d < 8000) {
+      const y = sightEye.y + sightLook.y * d;
+      if (y < groundAt(sightEye.x + sightLook.x * d, sightEye.z + sightLook.z * d)) {
+        hit = d;
+        break;
+      }
+      prev = d;
+      d += Math.max(4, d * 0.03);
+    }
+    if (hit < 0) {
+      sightPoint.copy(sightEye).addScaled(sightLook, 2500);
+      return;
+    }
+    let lo = prev;
+    let hi = hit;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      if (sightEye.y + sightLook.y * mid < groundAt(sightEye.x + sightLook.x * mid, sightEye.z + sightLook.z * mid)) hi = mid;
+      else lo = mid;
+    }
+    sightPoint.copy(sightEye).addScaled(sightLook, hi);
+  };
+  // Targets the sensor sees (in range, clear line of sight from the helicopter), refreshed a few times a second.
+  let seen: GroundTarget[] = [];
+  let seenAtS = -1;
+  const centre = new Vec3();
+  const from = new Vec3();
+  const refreshSeen = (): void => {
+    from.set(heli.position.x, heli.position.y + 1, heli.position.z);
+    seen = force.targets.filter((t) => t.alive && t.position.distanceTo(heli.position) < 6000 && clearLine(from, GroundForce.centre(t, centre), groundAt));
+    cockpit.contacts = seen.map((t) => ({ x: t.position.x, z: t.position.z }));
+  };
+  let lastRoundS = -1;
+  const KILL_NAMES = { tank: 'TANK', apc: 'APC', truck: 'TRUCK' } as const;
 
   let muted = params.has('mute');
   let message = '';
@@ -187,16 +283,18 @@ async function main(): Promise<void> {
   };
   let clockS = 0;
   let crashedAtS = -1;
-  const debugHooks = { heli, stage, frames: 0, input: pilot.input, pilot, tilt, rig, overlay, terrain, atmosphere, clouds, view };
+  const debugHooks = { heli, stage, frames: 0, input: pilot.input, pilot, tilt, rig, overlay, terrain, atmosphere, clouds, view, arm, force, keys: input };
   (window as unknown as { __ridgeline: typeof debugHooks }).__ridgeline = debugHooks;
 
   const loop = new FixedLoop(
     {
       step: (dtS) => {
-        pilot.update(dtS, rig.mode !== 'orbit');
+        // On a touch screen the right thumb's drag looks and aims; it never moves the cyclic (the left thumb does).
+        pilot.update(dtS, rig.mode !== 'orbit' && !input.touch);
         if (touch) pilot.setTouch(touch.stick, touch.throttle);
-        pilot.setTilt(tilt ? tilt.stick : null);
+        pilot.setTilt(tilt?.enabled ? tilt.stick : null);
         if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
+        else if (input.touch) rig.lookBy(pilot.delta.dx, pilot.delta.dy, dtS);
         if (input.pressed('camera')) rig.next();
         if (input.pressed('debug')) overlay.visible = !overlay.visible;
         if (input.pressed('mute')) muted = !muted;
@@ -214,6 +312,24 @@ async function main(): Promise<void> {
         if (input.pressed('sas')) say(pilot.input.sas ? 'SAS ON' : 'SAS OFF', 2);
         if (input.pressed('engines')) say(pilot.input.engines ? 'ENGINES ON' : 'ENGINES CUT — AUTOROTATE', 3);
         heli.step(pilot.input, groundAt, dtS);
+
+        // ---- weapons
+        if (input.pressed('weapon')) arm.cycleWeapon();
+        if (input.pressed('ripple')) arm.cycleRipple();
+        sight();
+        arm.step(dtS, heli, input.locked && input.held('fire'), sightEye, sightLook, sightPoint, force, groundAt);
+        force.step(dtS);
+        syncStores();
+        const ev = arm.events;
+        if (ev.rounds > 0) lastRoundS = clockS;
+        const ear = stage.camera.position;
+        for (const p of ev.launches) sound?.launch(Math.hypot(p.x - ear.x, p.y - ear.y, p.z - ear.z), arm.selected === 'missile');
+        for (const b of ev.blasts) sound?.explosion(Math.hypot(b.position.x - ear.x, b.position.y - ear.y, b.position.z - ear.z), b.kind === 'dust' ? 0.15 : b.size);
+        for (const k of ev.kills) say(`${KILL_NAMES[k.kind]} DESTROYED — ${force.alive} LEFT`, 2.5);
+        if (force.cleared(12)) {
+          force.deploy();
+          say('NEW TARGETS UP THE VALLEY', 4);
+        }
         if (heli.crashed && crashedAtS < 0) {
           crashedAtS = clockS;
           say(heli.touchdownSinkMs > 6 ? 'CRASHED — TOO HARD' : 'CRASHED', 4);
@@ -231,12 +347,36 @@ async function main(): Promise<void> {
         const inside = rig.mode === 'cockpit' || rig.mode === 'gunner';
         view.setSeat(rig.mode === 'cockpit' ? 'pilot' : rig.mode === 'gunner' ? 'gunner' : null);
         view.update(heli, alpha, frameS, true);
+        // The cannon follows its turret; fired missiles leave the rails.
+        view.model.gunYaw.rotation.y = -arm.gunAzRad;
+        view.model.gunPitch.rotation.x = arm.gunElRad;
+        view.model.missileRounds.forEach((m, i) => (m.visible = i >= arm.missilesFired));
         cockpit.update(heli, frameS, inside);
         rig.update(view.renderPos, view.renderRot, { pilot: cfg.pilotEye, gunner: cfg.gunnerEye }, heli.vibration, cfg.lengthM, frameS, groundAt);
         stage.camera.updateMatrixWorld();
         terrain.update(stage.camera);
         if (clockS > messageUntilS) message = '';
-        hud.draw(stage.camera, heli, pilot.input, { sensor: 'NAV', weapon: 'NO WEAPONS', message }, frameS);
+        if (clockS - seenAtS > 0.3) {
+          seenAtS = clockS;
+          refreshSeen();
+        }
+        const lockAt = arm.lock ? GroundForce.centre(arm.lock, new Vec3()) : null;
+        const cue = arm.selected === 'rockets' ? arm.rocketImpact(heli, groundAt, new Vec3()) : null;
+        const aim: HudAim = {
+          weapon: arm.selected,
+          gunPoint: new Vector3(sightPoint.x, sightPoint.y, sightPoint.z),
+          rocketCue: cue ? new Vector3(cue.x, cue.y, cue.z) : null,
+          lock: lockAt ? new Vector3(lockAt.x, lockAt.y, lockAt.z) : null,
+          targets: seen.filter((t) => t.alive).map((t) => new Vector3(t.position.x, t.position.y + 1.4, t.position.z)),
+          warning: arm.selected === 'gun' && arm.overheated ? 'GUN HOT' : (arm.selected === 'gun' && arm.rounds === 0) || (arm.selected === 'rockets' && arm.rockets === 0) || (arm.selected === 'missile' && arm.missiles === 0) ? 'EMPTY' : '',
+        };
+        const weaponText = arm.selected === 'gun' ? `GUN ${arm.rounds}` : arm.selected === 'rockets' ? `RKT ${arm.rockets} ×${arm.ripple}` : `MSL ${arm.missiles}${arm.lock ? ' LOCK' : ''}`;
+        hud.draw(stage.camera, heli, pilot.input, { sensor: `TGT ${seen.length} IN VIEW · ${force.alive} LEFT`, weapon: weaponText, message, aim }, frameS);
+        touch?.setLit('tilt', tilt?.enabled ?? false);
+        touch?.setLit('wpn', false, arm.selected === 'gun' ? 'GUN' : arm.selected === 'rockets' ? `RKT${arm.ripple}` : 'MSL');
+        EMISSIVE_EXPOSURE.value = lighting.exposure;
+        targetView.update(force, groundAt);
+        combatView.update(arm, force, clockS, stage.camera.position);
         if (sound) {
           const s = sound as RotorSound;
           s.muted = muted;
@@ -255,6 +395,7 @@ async function main(): Promise<void> {
             cockpit: inside,
             lowRotor: heli.rpmPct < 92 && !heli.onGround && !heli.crashed,
           });
+          s.gun(clockS - lastRoundS < 0.15, WEAPONS.gun.roundsPerS);
         }
         status.textContent = `FREE FLIGHT · ${cfg.name} · ${heli.regime}`;
         const camY = stage.camera.position.y;

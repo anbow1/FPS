@@ -10,10 +10,13 @@
 //   turbine  the engines' whine, rising with the power they deliver, spooling
 //            down when cut;
 //   air      wind noise growing with airspeed;
-//   horn     the low-rotor horn: a steady tone below 92 % rotor speed.
+//   horn     the low-rotor horn: a steady tone below 92 % rotor speed;
+//   weapons  the cannon's hammering at its rate of fire, rocket and missile
+//            launches, and explosions heard after the sound's travel time.
 // In the cockpit everything passes a low-pass "helmet and airframe" filter.
 
 const NOISE_S = 2;
+const SPEED_OF_SOUND_MS = 340;
 
 export interface SoundFrame {
   /** Rotor speed (rad/s), blades, and the fraction of 100 %. */
@@ -48,6 +51,8 @@ export class RotorSound {
   private readonly wind: GainNode;
   private readonly windFilter: BiquadFilterNode;
   private readonly horn: GainNode;
+  private readonly gunBuzz: OscillatorNode;
+  private readonly gunGain: GainNode;
   muted = false;
 
   constructor(private readonly ctx: AudioContext) {
@@ -128,6 +133,18 @@ export class RotorSound {
     hornOsc.connect(hornTone).connect(this.horn).connect(ctx.destination);
     hornOsc.start();
 
+    // The cannon: a sawtooth at its rate of fire through a low-pass, over the airframe's own filter.
+    this.gunBuzz = ctx.createOscillator();
+    this.gunBuzz.type = 'sawtooth';
+    this.gunBuzz.frequency.value = 10;
+    this.gunGain = ctx.createGain();
+    this.gunGain.gain.value = 0;
+    const gunTone = ctx.createBiquadFilter();
+    gunTone.type = 'lowpass';
+    gunTone.frequency.value = 700;
+    this.gunBuzz.connect(gunTone).connect(this.gunGain).connect(this.helmet);
+    this.gunBuzz.start();
+
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) void ctx.suspend();
       else void ctx.resume();
@@ -172,5 +189,58 @@ export class RotorSound {
     set(this.windFilter.frequency, 300 + f.airspeedMs * 8);
     const beep = f.lowRotor && Math.floor(t * 2) % 2 === 0 ? 0.05 : 0;
     set(this.horn.gain, this.muted ? 0 : beep, 0.01);
+  }
+
+  /** The cannon firing (at `roundsPerS`) or not. */
+  gun(firing: boolean, roundsPerS: number): void {
+    const t = this.ctx.currentTime;
+    this.gunBuzz.frequency.setTargetAtTime(roundsPerS, t, 0.01);
+    this.gunGain.gain.setTargetAtTime(firing && !this.muted ? 0.5 : 0, t, firing ? 0.005 : 0.03);
+  }
+
+  /** A noise burst starting at `at` (audio clock), from a random place in the buffer. */
+  private oneShot(at: number): AudioBufferSourceNode {
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.noise;
+    s.start(at, Math.random() * (NOISE_S - 0.5));
+    return s;
+  }
+
+  /** A rocket or missile leaving its launcher: a hiss falling in pitch as the motor pulls away. */
+  launch(distanceM: number, missile: boolean): void {
+    if (this.muted) return;
+    const t = this.ctx.currentTime;
+    const src = this.oneShot(t);
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 0.8;
+    f.frequency.setValueAtTime(missile ? 1800 : 2600, t);
+    f.frequency.exponentialRampToValueAtTime(400, t + (missile ? 1.8 : 0.9));
+    const g = this.ctx.createGain();
+    const level = Math.min(0.7, 20 / Math.max(20, distanceM)) * (missile ? 1 : 0.7);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (missile ? 2 : 1));
+    src.connect(f).connect(g).connect(this.helmet);
+    src.stop(t + 2.1);
+  }
+
+  /** A blast `distanceM` away: a boom, louder for a bigger `size`, heard after the sound's travel time. */
+  explosion(distanceM: number, size: number): void {
+    if (this.muted || distanceM > 9000) return;
+    const t = this.ctx.currentTime + distanceM / SPEED_OF_SOUND_MS;
+    const src = this.oneShot(t);
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    // Air takes the highs first: a far blast is a dull thud.
+    f.frequency.setValueAtTime(Math.max(120, 2400 / (1 + distanceM / 500)), t);
+    f.frequency.exponentialRampToValueAtTime(60, t + 1.8);
+    const g = this.ctx.createGain();
+    const level = Math.min(1, (Math.sqrt(size) * 70) / Math.max(60, distanceM));
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 2.2);
+    src.connect(f).connect(g).connect(this.helmet);
+    src.stop(t + 2.4);
   }
 }

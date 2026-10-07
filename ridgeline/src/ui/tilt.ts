@@ -57,6 +57,7 @@ export function tiltStick(angles: { roll: number; pitch: number }, neutral: { ro
 }
 
 export class TiltSteering {
+  /** Steering by tilt is on (the sensor is listened to either way, so switching on is instant). */
   enabled = false;
   /** Seen at least one sensor reading (the device has the sensor). */
   available = false;
@@ -82,6 +83,26 @@ export class TiltSteering {
       this.stick.x = s.x;
       this.stick.y = s.y;
     });
+  }
+
+  /**
+   * Switches tilt steering on (calibrating to the way the phone is held now) or off. Call from a tap: iOS
+   * asks for motion-sensor permission, and only grants it inside a user gesture.
+   */
+  async setEnabled(on: boolean): Promise<boolean> {
+    if (on) {
+      const ask = (DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission;
+      if (ask) {
+        try {
+          if ((await ask()) !== 'granted') return (this.enabled = false);
+        } catch {
+          return (this.enabled = false);
+        }
+      }
+      this.calibrate();
+    }
+    this.enabled = on;
+    return on;
   }
 
   /** The way the phone is held now becomes neutral (hands off). */

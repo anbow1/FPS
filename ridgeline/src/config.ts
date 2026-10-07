@@ -239,3 +239,82 @@ export const HELICOPTERS: Record<HeliId, HeliConfig> = {
     gunnerEye: [0, 0.75, -4.3],
   },
 };
+
+/**
+ * Weapons as game abstractions (brief: "weapons that behave like weapons
+ * instead of hitscans" — every shot flies; no real ballistics, seeker or
+ * fuzing data). Masses are per round, so the stores lighten as they go.
+ */
+export const WEAPONS = {
+  gun: {
+    rounds: 1200,
+    muzzleMs: 805,
+    roundsPerS: 10,
+    /** Dispersion cone half-angle (rad): a burst lands as a pattern, not a point. */
+    dispersionRad: 0.0045,
+    /** Drag factor (1/m at sea level): deceleration = k·v². */
+    dragPerM: 0.00022,
+    /** Heat per round and cooling per second, as fractions of the limit: ~10 s bursts, then it must cool. */
+    heatPerRound: 0.02,
+    coolPerS: 0.09,
+    /** Below this heat an overheated gun fires again. */
+    resumeHeat: 0.45,
+    /** Turret limits in body axes (rad): azimuth either side, elevation up and down. */
+    azimuthRad: 1.9,
+    elevationUpRad: 0.19,
+    elevationDownRad: 1.05,
+    slewRadS: 2.2,
+    directDamage: 0.25,
+    splashM: 3,
+    massKg: 0.3,
+  },
+  rockets: {
+    count: 38,
+    ripples: [1, 4, 8] as const,
+    rippleIntervalS: 0.09,
+    launchMs: 45,
+    burnS: 1.05,
+    thrustMs2: 640,
+    dragPerM: 0.0004,
+    dispersionRad: 0.009,
+    /** Pods are fixed: rockets leave along the shaft line, a little nose-down. */
+    podDownRad: 0.035,
+    directDamage: 1.8,
+    splashM: 9,
+    splashDamage: 0.9,
+    massKg: 6.5,
+  },
+  missile: {
+    count: 8,
+    launchMs: 25,
+    burnS: 3.5,
+    thrustMs2: 110,
+    dragPerM: 0.00011,
+    /** Lateral acceleration limit (m/s²). */
+    maxAccelMs2: 450,
+    /** Lock: within this cone of the crew's line of sight, this range, and in clear line of sight. */
+    lockConeRad: 0.1,
+    lockRangeM: 8000,
+    /** Top attack: climbs towards a point over the target (60 m + this share of the range, at most
+     *  `loftMaxM`) and pitches over to dive onto it at about `diveRad`. */
+    loftPerM: 0.3,
+    loftMaxM: 350,
+    diveRad: 0.96,
+    fuseM: 3.5,
+    damage: 4,
+    splashM: 8,
+    massKg: 36,
+  },
+} as const;
+
+export type TargetKind = 'tank' | 'apc' | 'truck';
+
+/**
+ * Ground targets: strength in "hits", armour by aspect (damage factor for a direct hit), and how much a
+ * near miss's blast and fragments do on top of that (armour shrugs them off; a truck does not).
+ */
+export const TARGETS: Record<TargetKind, { health: number; armour: { front: number; side: number; rear: number; top: number }; splash: number; speedMs: number }> = {
+  tank: { health: 3, armour: { front: 0.08, side: 0.45, rear: 0.8, top: 1 }, splash: 0.12, speedMs: 4.5 },
+  apc: { health: 1.5, armour: { front: 0.45, side: 0.85, rear: 1, top: 1 }, splash: 0.6, speedMs: 6 },
+  truck: { health: 0.6, armour: { front: 1, side: 1, rear: 1, top: 1 }, splash: 1, speedMs: 7 },
+};

@@ -19,6 +19,10 @@ export class CameraRig {
   orbitYawRad = 0.7;
   orbitPitchRad = 0.2;
   orbitZoom = 1;
+  /** Head look (cockpit seats) or a swing of the chase arm, from a touch drag; it eases back when let go. */
+  lookYawRad = 0;
+  lookPitchRad = 0;
+  private lookIdleS = 0;
   private yaw = 0;
   private pitch = 0;
   private readonly arm = new Vector3();
@@ -65,17 +69,23 @@ export class CameraRig {
       if (this.mode === 'gunner') cam.rotateX(-8 * DEG);
       // The pilot's default view looks a little down, so the displays are in the picture.
       else cam.rotateX(-7 * DEG);
+      cam.rotateY(this.lookYawRad);
+      cam.rotateX(this.lookPitchRad);
       cam.fov = this.mode === 'gunner' ? 60 : 75;
       cam.near = 0.05;
     } else if (this.mode === 'chase') {
       const d = Math.max(this.chaseDistanceM, lengthM * 1.3);
-      const p = this.pitch - 0.22;
-      this.arm.set(Math.sin(this.yaw) * Math.cos(p), -Math.sin(p), Math.cos(this.yaw) * Math.cos(p)).multiplyScalar(d);
+      const p = Math.max(-1.2, Math.min(0.5, this.pitch - 0.22 + this.lookPitchRad * 0.7));
+      const ay = this.yaw + this.lookYawRad;
+      this.arm.set(Math.sin(ay) * Math.cos(p), -Math.sin(p), Math.cos(ay) * Math.cos(p)).multiplyScalar(d);
       cam.position.copy(pos).add(this.arm);
       // Keep the camera above the ground (and the look point clear of it).
       const g = groundAt(cam.position.x, cam.position.z) + 1.5;
       if (cam.position.y < g) cam.position.y = g;
-      this.look.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).multiplyScalar(lengthM * 0.6).add(pos);
+      this.look
+        .set(-Math.sin(ay), 0, -Math.cos(ay))
+        .multiplyScalar(lengthM * 0.6)
+        .add(pos);
       this.look.y += 1.2;
       cam.up.set(0, 1, 0);
       cam.lookAt(this.look);
@@ -83,7 +93,10 @@ export class CameraRig {
       cam.near = 0.3;
     } else {
       const d = this.chaseDistanceM * 1.1 * this.orbitZoom;
-      cam.position.set(Math.sin(this.orbitYawRad) * Math.cos(this.orbitPitchRad), Math.sin(this.orbitPitchRad), Math.cos(this.orbitYawRad) * Math.cos(this.orbitPitchRad)).multiplyScalar(d).add(pos);
+      cam.position
+        .set(Math.sin(this.orbitYawRad) * Math.cos(this.orbitPitchRad), Math.sin(this.orbitPitchRad), Math.cos(this.orbitYawRad) * Math.cos(this.orbitPitchRad))
+        .multiplyScalar(d)
+        .add(pos);
       const g = groundAt(cam.position.x, cam.position.z) + 1;
       if (cam.position.y < g) cam.position.y = g;
       cam.up.set(0, 1, 0);
@@ -92,6 +105,22 @@ export class CameraRig {
       cam.near = 0.3;
     }
     cam.updateProjectionMatrix();
+  }
+
+  /** A look drag (px); `dtS` lets the view ease back to straight ahead a couple of seconds after it stops. */
+  lookBy(dxPx: number, dyPx: number, dtS: number): void {
+    if (dxPx !== 0 || dyPx !== 0) {
+      this.lookYawRad = Math.max(-2.2, Math.min(2.2, this.lookYawRad - dxPx * 0.004));
+      this.lookPitchRad = Math.max(-1.0, Math.min(0.6, this.lookPitchRad - dyPx * 0.004));
+      this.lookIdleS = 0;
+      return;
+    }
+    this.lookIdleS += dtS;
+    if (this.lookIdleS > 2.5) {
+      const k = Math.exp(-1.5 * dtS);
+      this.lookYawRad *= k;
+      this.lookPitchRad *= k;
+    }
   }
 
   orbit(dxPx: number, dyPx: number): void {

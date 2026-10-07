@@ -223,6 +223,8 @@ export class FlightSound {
     f.frequency.exponentialRampToValueAtTime(60, t + 2);
     const g = this.ctx.createGain();
     const level = Math.min(1, (Math.sqrt(size) * 120) / Math.max(80, distanceM));
+    // Silent until the sound arrives: a gain's value before its first scheduled event is its default of 1.
+    g.gain.value = 0;
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(level, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.001, t + 2.5);

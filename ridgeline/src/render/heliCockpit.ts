@@ -1,5 +1,5 @@
 import { texture, vec3 } from 'three/tsl';
-import { BoxGeometry, type BufferGeometry, CanvasTexture, Group, LinearFilter, type Material, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SRGBColorSpace } from 'three/webgpu';
+import { BoxGeometry, type BufferGeometry, CanvasTexture, Group, LinearFilter, LinearMipmapLinearFilter, type Material, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SRGBColorSpace } from 'three/webgpu';
 import type { HeliConfig } from '../config.ts';
 import { Vec3 } from '../core/vec.ts';
 import type { Helicopter } from '../sim/helicopter.ts';
@@ -18,7 +18,8 @@ import { plain } from './jetMaterials.ts';
 //          temperature and fuel, an attitude ball;
 //   right  tactical situation display: a shaded-relief map of the battle area
 //          (baked once from the height grid), heading-up, with the river, the
-//          base and the helicopter at the centre.
+//          base, the ground targets the sensor has seen (amber diamonds) and the
+//          helicopter at the centre.
 // Shown at a fixed output brightness, as an eye adapted to the cockpit sees
 // them (the scene's single exposure would make them unreadable at noon).
 
@@ -42,6 +43,8 @@ export class HeliCockpit {
   private readonly tex: CanvasTexture;
   private readonly relief = document.createElement('canvas');
   private sinceS = REDRAW_S;
+  /** Ground contacts for the map page (world x, z), set by the game. */
+  contacts: { x: number; z: number }[] = [];
   private readonly v = new Vec3();
 
   constructor(
@@ -55,8 +58,12 @@ export class HeliCockpit {
     this.ctx = ctx;
     this.tex = new CanvasTexture(this.canvas);
     this.tex.colorSpace = SRGBColorSpace;
-    this.tex.minFilter = LinearFilter;
-    this.tex.generateMipmaps = false;
+    // Mipmapped: seen from the seat the 512-pixel page shrinks to ~300 screen pixels, and without mips its
+    // thin strokes alias differently under each frame's TRAA jitter — the text shimmered.
+    this.tex.minFilter = LinearMipmapLinearFilter;
+    this.tex.magFilter = LinearFilter;
+    this.tex.generateMipmaps = true;
+    this.tex.anisotropy = 4;
     this.bakeRelief();
 
     const [ex, ey, ez] = cfg.pilotEye;
@@ -84,7 +91,8 @@ export class HeliCockpit {
       const uv = g.getAttribute('uv');
       for (let i = 0; i < uv.count; i++) uv.setX(i, u0 + uv.getX(i) * (u1 - u0));
       const m = new Mesh(g, screen);
-      m.position.set(x, -0.01, 0.034);
+      // 4 mm proud of the bezel's face (z 0.034): flush, the two fought over the depth test and flickered.
+      m.position.set(x, -0.01, 0.038);
       panel.add(m);
       // Bezel with the push-buttons round it.
       add(new BoxGeometry(0.25, 0.25, 0.012).translate(x, -0.01, 0.028), bezel, panel);
@@ -113,16 +121,37 @@ export class HeliCockpit {
       add(box(0.47, -0.95, -0.9, 0.5, -0.4, 0.6).scale(side, 1, 1).translate(ex, ey, ez), shell);
     }
     // Cyclic between the knees, collective under the left hand.
-    add(tube([[ex, ey - 1.05, ez - 0.32], [ex, ey - 0.62, ez - 0.4]], 0.018, 8), black);
+    add(
+      tube(
+        [
+          [ex, ey - 1.05, ez - 0.32],
+          [ex, ey - 0.62, ez - 0.4],
+        ],
+        0.018,
+        8,
+      ),
+      black,
+    );
     add(box(-0.025, 0, -0.03, 0.025, 0.11, 0.03).translate(ex, ey - 0.62, ez - 0.4), black);
-    add(tube([[ex - 0.36, ey - 0.78, ez + 0.15], [ex - 0.33, ey - 0.6, ez - 0.28]], 0.02, 8), black);
+    add(
+      tube(
+        [
+          [ex - 0.36, ey - 0.78, ez + 0.15],
+          [ex - 0.33, ey - 0.6, ez - 0.28],
+        ],
+        0.02,
+        8,
+      ),
+      black,
+    );
     add(box(-0.035, -0.03, -0.06, 0.035, 0.04, 0.06).translate(ex - 0.33, ey - 0.6, ez - 0.3), black);
     // Floor of the rear tub.
     add(box(-0.47, -1.15, -1.0, 0.47, -1.1, 0.5).translate(ex, ey, ez), black);
 
-    // The gunner's station ahead: the sight unit in front of the seat, the panel, the coaming.
-    add(box(-0.18, -0.3, -0.3, 0.18, 0.02, 0.05).translate(0, gy - 0.12, gz - 0.55), black);
-    add(box(-0.12, -0.22, -0.22, 0.12, -0.0, -0.1).translate(0, gy + 0.08, gz - 0.55), bezel);
+    // The gunner's station ahead: the sight unit in front of the seat, the panel, the coaming. The sight's
+    // hood stays a hand's width under the gunner's eye line, so the gunner's view ahead is clear.
+    add(box(-0.18, -0.3, -0.3, 0.18, 0.02, 0.05).translate(0, gy - 0.34, gz - 0.55), black);
+    add(box(-0.12, -0.22, -0.22, 0.12, -0.0, -0.1).translate(0, gy - 0.14, gz - 0.55), bezel);
     add(box(-0.45, -0.3, -0.1, 0.45, 0.0, 0.0).translate(0, gy - 0.25, gz - 0.85), black);
     add(box(-0.47, -0.02, -0.6, 0.47, 0.03, 0.4).translate(0, gy - 0.45, gz - 0.5), shell);
   }
@@ -267,6 +296,20 @@ export class HeliCockpit {
     c.strokeStyle = 'rgb(110, 255, 150)';
     c.lineWidth = 2 / scale;
     c.strokeRect(bx - 5, bz - 5, 10, 10);
+    // Contacts: amber diamonds, a constant size on the display whatever the map scale.
+    c.strokeStyle = 'rgb(255, 196, 70)';
+    const d = 5 / scale;
+    for (const t of this.contacts) {
+      const tx = (t.x + size / 2) / cell;
+      const tz = (t.z + size / 2) / cell;
+      c.beginPath();
+      c.moveTo(tx, tz - d);
+      c.lineTo(tx + d, tz);
+      c.lineTo(tx, tz + d);
+      c.lineTo(tx - d, tz);
+      c.closePath();
+      c.stroke();
+    }
     c.restore();
     // Own ship at the centre, the heading scale above.
     c.strokeStyle = 'rgb(255, 255, 255)';
