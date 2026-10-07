@@ -52,7 +52,7 @@ The pitch, tilt and graphics choices are remembered on the device.
 Graphics presets (menu):
 
 - **High:** all effects, temporal anti-aliasing, up to 2× on phones.
-- **Balanced:** the phone default; lighter clouds and shadows, still a sharp 2× picture.
+- **Balanced:** the phone default; lighter clouds and shadows, temporal anti-aliasing, a sharp 2× picture.
 - **Fast:** lighter effects at 1×.
 
 On every preset the frame governor lowers the resolution if the frame rate drops.

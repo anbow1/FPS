@@ -21,10 +21,10 @@ export type GraphicsPreset = 'high' | 'balanced' | 'fast';
 const KEY = 'contrail.settings.v1';
 
 /** Stage quality and the device-pixel-ratio ceiling for a preset. */
-export function graphicsSetup(g: GraphicsPreset, touch: boolean): { quality: 'high' | 'low'; maxPixelRatio: number } {
-  if (g === 'fast') return { quality: 'low', maxPixelRatio: 1 };
+export function graphicsSetup(g: GraphicsPreset, touch: boolean): { quality: 'high' | 'low'; maxPixelRatio: number; temporalAA: boolean } {
+  if (g === 'fast') return { quality: 'low', maxPixelRatio: 1, temporalAA: false };
   // Phones: 2× is sharp on any screen a hand holds; native 3× would triple the cost for little.
-  return { quality: g === 'high' ? 'high' : 'low', maxPixelRatio: touch ? 2 : 4 };
+  return { quality: g === 'high' ? 'high' : 'low', maxPixelRatio: touch ? 2 : 4, temporalAA: true };
 }
 
 export function loadControls(params: URLSearchParams, touch: boolean): ControlSettings {

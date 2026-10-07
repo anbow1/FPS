@@ -46,7 +46,8 @@ export interface CloudQuality {
 
 export const CLOUD_QUALITY: Record<'high' | 'low', CloudQuality> = {
   high: { steps: 96, stepFraction: 0.015, lightSteps: 6, lightStepM: 30, lightGrowth: 2, resolutionScale: 0.5 },
-  low: { steps: 40, stepFraction: 0.035, lightSteps: 3, lightStepM: 80, lightGrowth: 3.4, resolutionScale: 1 / 3 },
+  // Low runs at 2× on phones: a quarter-scale buffer keeps its cost near the old third-scale one at 1×.
+  low: { steps: 40, stepFraction: 0.035, lightSteps: 3, lightStepM: 80, lightGrowth: 3.4, resolutionScale: 0.25 },
 };
 
 /**

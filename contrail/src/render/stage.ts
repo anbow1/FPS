@@ -2,7 +2,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { convertToTexture, depth as fragmentDepth, float, length, mix, mrt, normalize, output, pass, pow, rtt, screenUV, select, texture, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { convertToTexture, depth as fragmentDepth, float, length, mix, mrt, normalize, output, pass, pow, rtt, screenSize, screenUV, select, texture, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
 import { ACESFilmicToneMapping, AddEquation, AgXToneMapping, CustomBlending, DepthTexture, FloatType, HalfFloatType, Layers, type Material, type Node, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, RenderPipeline, Scene, SrcAlphaFactor, SRGBColorSpace, WebGPURenderer, ZeroFactor } from 'three/webgpu';
 import { FrameGovernor, PassTimer } from './perf.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -24,6 +24,11 @@ export interface StageSettings {
   toneMap: ToneMap;
   /** Ceiling on the device pixel ratio (render pixels per CSS pixel) before the governor's scale. */
   maxPixelRatio: number;
+  /**
+   * Temporal anti-aliasing. The velocity buffer is rendered either way, so TRAA costs only its resolve
+   * pass, and it also integrates the clouds' per-pixel jitter (grain without it) over frames.
+   */
+  temporalAA: boolean;
 }
 
 export interface GovernorStep {
@@ -188,7 +193,21 @@ export class Stage {
       if (this.clouds) {
         const dir = normalize(uniform(this.camera.matrixWorld).mul(vec4(viewPos, 0)).xyz);
         const cloudTex = rtt(this.clouds.march(dir, distanceM, screen), null, null, { resolutionScale: this.clouds.quality.resolutionScale });
-        rgb = this.clouds.composite(rgb, cloudTex.sample(screen), dir, distanceM);
+        // Upsampling: at half resolution plain bilinear is enough (TRAA does the rest); coarser, each
+        // cloud texel would show as a block of its own jitter, so four bilinear taps half a texel apart
+        // make a tent filter over 3 × 3 texels.
+        const scale = this.clouds.quality.resolutionScale;
+        let cloud: Node<'vec4'> = cloudTex.sample(screen);
+        if (scale < 0.5) {
+          const o = vec2(0.5).div(screenSize.mul(scale));
+          cloud = cloudTex
+            .sample(screen.add(o))
+            .add(cloudTex.sample(screen.sub(o)))
+            .add(cloudTex.sample(screen.add(vec2(o.x, o.y.negate()))))
+            .add(cloudTex.sample(screen.add(vec2(o.x.negate(), o.y))))
+            .mul(0.25);
+        }
+        rgb = this.clouds.composite(rgb, cloud, dir, distanceM);
       }
       const ov = overlay.sample(screen);
       rgb = rgb.mul(ov.a.clamp(0, 1)).add(ov.rgb);
@@ -196,7 +215,8 @@ export class Stage {
       // expression: render the hazed frame to one first.
       hazed = convertToTexture(vec4(rgb, 1));
     }
-    const aa = high ? traa(hazed, depth, motion, this.camera) : hazed;
+    const temporal = this.settings.temporalAA;
+    const aa = temporal ? traa(hazed, depth, motion, this.camera) : hazed;
     const glare = bloom(aa, high ? 0.05 : 0.035, 0.35, 0);
     let lit = aa.add(glare).rgb;
     // G effects: grey-out desaturates and closes a tunnel from the edges; red-out tints red.
@@ -208,7 +228,8 @@ export class Stage {
     // A soft optical vignette, tuned by eye.
     const graded = vec4(lit.mul(float(1).sub(pow(r, 2.6).mul(0.25))), 1);
     const pipeline = new RenderPipeline(this.renderer);
-    pipeline.outputNode = high ? sharpen(graded, 0.3) : fxaa(graded);
+    // TRAA softens a little: give back the detail; without it, FXAA takes the stair-steps.
+    pipeline.outputNode = temporal ? sharpen(graded, high ? 0.3 : 0.25) : fxaa(graded);
     this.pipeline?.dispose();
     this.pipeline = pipeline;
   }
