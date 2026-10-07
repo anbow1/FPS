@@ -63,8 +63,9 @@ export class CameraRig {
       cam.quaternion.multiply(this.q);
       // The gunner looks a little down, towards the ground the sensor works on.
       if (this.mode === 'gunner') cam.rotateX(-8 * DEG);
-      else cam.rotateX(-4 * DEG);
-      cam.fov = this.mode === 'gunner' ? 60 : 72;
+      // The pilot's default view looks a little down, so the displays are in the picture.
+      else cam.rotateX(-7 * DEG);
+      cam.fov = this.mode === 'gunner' ? 60 : 75;
       cam.near = 0.05;
     } else if (this.mode === 'chase') {
       const d = Math.max(this.chaseDistanceM, lengthM * 1.3);

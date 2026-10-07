@@ -25,6 +25,14 @@ export class HeliView {
     scene.add(this.model.root);
   }
 
+  /** Which seat the camera is in: that crew member is hidden and the canopy glass goes nearly clear. */
+  setSeat(seat: 'pilot' | 'gunner' | null): void {
+    const m = this.model;
+    m.pilotFigure.visible = seat !== 'pilot';
+    m.gunnerFigure.visible = seat !== 'gunner';
+    m.glass.opacity = seat ? 0.1 : 0.6;
+  }
+
   update(h: Helicopter, alpha: number, frameS: number, visible: boolean): void {
     const p = h.prevPosition;
     const c = h.position;

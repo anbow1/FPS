@@ -340,7 +340,9 @@ export class Forest {
     const f0 = floor(f);
     const f1 = mod(f0.add(1), VIEWS);
     const cu = c.x.add(0.5);
-    const row = sp.add(c.y.add(0.5)).div(species);
+    // Render-target textures are addressed from the top on both backends (three flips WebGL's to match),
+    // so a frame's bottom — the tree's base — is at the larger v.
+    const row = sp.add(float(0.5).sub(c.y)).div(species);
     const uv0 = varying(vec2(f0.add(cu).div(FRAMES), row), 'vTreeUv0');
     const uv1 = varying(vec2(f1.add(cu).div(FRAMES), row), 'vTreeUv1');
     const blend = varying(fract(f), 'vTreeBlend');
@@ -350,7 +352,8 @@ export class Forest {
     const sy = sin(yaw);
     const lx = off.x.mul(cy).sub(off.z.mul(sy));
     const lz = off.x.mul(sy).add(off.z.mul(cy));
-    const uvTop = varying(vec2(float(VIEWS).add(lx.add(0.5)).div(FRAMES), sp.add(lz.negate().add(0.5)).div(species)), 'vTreeUvTop');
+    // Top view: screen up was −z, and v runs downwards, so −z is the smaller v.
+    const uvTop = varying(vec2(float(VIEWS).add(lx.add(0.5)).div(FRAMES), sp.add(lz.add(0.5)).div(species)), 'vTreeUvTop');
     const vYaw = varying(yaw, 'vTreeYaw');
     const a0 = texture(atlas.albedo, uv0);
     const a1 = texture(atlas.albedo, uv1);

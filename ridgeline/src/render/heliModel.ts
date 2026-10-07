@@ -1,7 +1,7 @@
 import { atan, float, fract, length, max, min, mix, positionLocal, smoothstep, uniform, vec3 } from 'three/tsl';
-import { BoxGeometry, type BufferGeometry, Color, CylinderGeometry, DoubleSide, Group, type Material, Mesh, MeshStandardNodeMaterial, type Node, RingGeometry, SphereGeometry } from 'three/webgpu';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, DoubleSide, Group, type Material, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, type MeshPhysicalNodeMaterial, type Node, RingGeometry, SphereGeometry } from 'three/webgpu';
 import { HELICOPTERS, type HeliId } from '../config.ts';
-import { box, fuselage, lathe, type Station, surface } from './airframe.ts';
+import { box, fuselage, lathe, type Station, surface, tube } from './airframe.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 
@@ -9,12 +9,19 @@ import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 // y up, −z forward, origin at the centre of gravity) so they line up with the
 // flight model: hub, wheels, tail rotor and eyes are the config's numbers.
 //
-//   Warden   tandem cockpits stepped up to the rear under a flat-plate canopy,
-//            a sensor turret on the nose, engines in pods either side of the
-//            mast, stub wings with two pylons each, a long boom to a swept fin
-//            and a low stabilator, the tail rotor on the left of the fin;
-//   Bulat    the same layout, bulkier: a longer nose, armoured slab sides, five
-//            blades, the tail rotor on the right.
+//   Warden   (AH-64 class) a narrow fuselage with flat sides and long cheek
+//            fairings; the tandem cockpit under a faceted flat-plate canopy,
+//            the pilot's seat stepped up behind the gunner's, a blast shield
+//            between them; the sensor turret on the nose — a drum with two
+//            sensor "ears" below and a small night-vision turret above; the
+//            chin cannon on its turret; engines in pods either side of the
+//            mast with intakes in front and exhaust suppressors turned out; a
+//            radar dome over the rotor; stub wings with rocket pods inboard
+//            and anti-armour missile racks outboard; a long boom to a swept
+//            fin, a low stabilator, the scissor tail rotor on the left, and a
+//            tail wheel under it; main gear on trailing struts;
+//   Bulat    (Mi-28 class) the same layout, bulkier and blunter, five blades,
+//            no radar dome, the tail rotor on the right.
 //
 // The rotors: real blades at low RPM; above ~40 % they cross-fade into a disc
 // whose shader draws each blade as the arc it sweeps during one frame's exposure
@@ -38,6 +45,11 @@ export interface HeliModel {
   /** 0 = blades only, 1 = disc only. */
   discBlend: { value: number };
   bladeMaterials: MeshStandardNodeMaterial[];
+  /** The canopy glass (nearly clear from inside: the cockpit views lower its opacity). */
+  glass: MeshPhysicalNodeMaterial;
+  /** The crew figures, hidden for the seat the camera is in. */
+  pilotFigure: Group;
+  gunnerFigure: Group;
 }
 
 type F = Node<'float'>;
@@ -94,12 +106,23 @@ function crew(): Group {
   return g;
 }
 
+interface CanopySection {
+  z: number;
+  sillY: number;
+  sillHalf: number;
+  roofY: number;
+  roofHalf: number;
+}
+
 interface Shape {
   stations: Station[];
+  /** Cheek fairings along the lower fuselage sides: centre offset, stations. */
+  cheeks: { x: number; stations: Station[] };
   paint: number;
   nose: number;
-  /** Canopy: z ranges of the gunner's and the pilot's glazing, sill height and roof heights. */
-  canopy: { z0: number; z1: number; sill: number; roofFront: number; roofRear: number; halfW: number };
+  canopy: CanopySection[];
+  /** Index of the canopy section where the gunner's and the pilot's glazing meet (blast shield). */
+  shieldAt: number;
   nacelleX: number;
   nacelleY: number;
   nacelleZ: [number, number];
@@ -107,147 +130,327 @@ interface Shape {
   wing: { y: number; z: number; span: number; chord: number };
   finTopY: number;
   tailSide: 1 | -1;
+  radarDome: boolean;
+  /** Sensor turret: nose tip z, drum radius. */
+  turretZ: number;
+  turretR: number;
+  gunZ: number;
 }
+
+const st = (z: number, top: number, bot: number, w: number, yc: number, tw = 0.5, bw = 0.6, su = 0.75, sl = 0.6): Station => ({ z, top, bot, w, yc, tw, bw, su, sl });
 
 const SHAPES: Record<HeliId, Shape> = {
   warden: {
     stations: [
-      { z: -6.75, top: -0.18, bot: -0.42, w: 0.12, yc: -0.3, tw: 0.3, bw: 0.3, su: 0.2, sl: 0.2 },
-      { z: -6.3, top: 0.05, bot: -0.72, w: 0.38, yc: -0.3, tw: 0.4, bw: 0.5, su: 0.4, sl: 0.4 },
-      { z: -4.9, top: 0.32, bot: -0.92, w: 0.5, yc: -0.25, tw: 0.5, bw: 0.6, su: 0.6, sl: 0.5 },
-      { z: -3.0, top: 0.62, bot: -1.0, w: 0.56, yc: -0.15, tw: 0.5, bw: 0.65, su: 0.6, sl: 0.5 },
-      { z: -1.1, top: 0.95, bot: -1.0, w: 0.62, yc: 0.0, tw: 0.55, bw: 0.65, su: 0.55, sl: 0.5 },
-      { z: 1.0, top: 1.05, bot: -0.92, w: 0.6, yc: 0.0, tw: 0.55, bw: 0.6, su: 0.5, sl: 0.5 },
-      { z: 2.6, top: 0.8, bot: -0.5, w: 0.48, yc: 0.1, tw: 0.5, bw: 0.4, su: 0.4, sl: 0.4 },
-      { z: 4.0, top: 0.62, bot: 0.05, w: 0.28, yc: 0.3, tw: 0.4, bw: 0.4, su: 0.3, sl: 0.3 },
-      { z: 8.0, top: 0.5, bot: 0.18, w: 0.17, yc: 0.33, tw: 0.4, bw: 0.4, su: 0.3, sl: 0.3 },
-      { z: 9.3, top: 0.46, bot: 0.22, w: 0.12, yc: 0.33, tw: 0.4, bw: 0.4, su: 0.3, sl: 0.3 },
+      st(-6.45, -0.08, -0.55, 0.16, -0.32, 0.3, 0.3, 0.3, 0.3),
+      st(-6.05, 0.12, -0.82, 0.36, -0.38, 0.45, 0.5, 0.8, 0.6),
+      st(-5.3, 0.14, -0.98, 0.46, -0.35),
+      st(-3.4, 0.14, -1.04, 0.49, -0.22),
+      st(-2.6, 0.42, -1.02, 0.5, -0.12),
+      st(-1.0, 0.56, -0.98, 0.52, -0.02),
+      st(0.25, 1.12, -0.95, 0.54, 0.05, 0.55, 0.6, 0.55, 0.55),
+      st(1.6, 0.98, -0.72, 0.5, 0.1, 0.5, 0.5, 0.5, 0.5),
+      st(2.8, 0.74, -0.22, 0.38, 0.25, 0.45, 0.4, 0.4, 0.4),
+      st(4.0, 0.6, 0.05, 0.26, 0.32, 0.4, 0.4, 0.3, 0.3),
+      st(8.2, 0.48, 0.18, 0.17, 0.33, 0.4, 0.4, 0.3, 0.3),
+      st(9.35, 0.44, 0.22, 0.12, 0.33, 0.4, 0.4, 0.3, 0.3),
     ],
-    paint: 0x3d4434,
-    nose: 0x2c302a,
-    canopy: { z0: -5.4, z1: -1.2, sill: 0.08, roofFront: 0.55, roofRear: 1.0, halfW: 0.46 },
-    nacelleX: 0.95,
-    nacelleY: 0.62,
-    nacelleZ: [-0.7, 2.7],
+    cheeks: {
+      x: 0.6,
+      stations: [st(-4.6, -0.3, -0.62, 0.05, -0.46, 0.4, 0.4, 0.5, 0.5), st(-4.0, -0.12, -0.86, 0.3, -0.46), st(0.6, -0.1, -0.86, 0.34, -0.45), st(1.6, -0.25, -0.62, 0.12, -0.45, 0.4, 0.4, 0.5, 0.5)],
+    },
+    paint: 0x353c2d,
+    nose: 0x2a2e27,
+    canopy: [
+      { z: -5.42, sillY: 0.1, sillHalf: 0.45, roofY: 0.16, roofHalf: 0.3 },
+      { z: -4.6, sillY: 0.1, sillHalf: 0.47, roofY: 0.74, roofHalf: 0.3 },
+      { z: -3.15, sillY: 0.12, sillHalf: 0.48, roofY: 0.8, roofHalf: 0.3 },
+      { z: -2.85, sillY: 0.36, sillHalf: 0.5, roofY: 0.84, roofHalf: 0.31 },
+      { z: -2.15, sillY: 0.46, sillHalf: 0.5, roofY: 1.3, roofHalf: 0.32 },
+      { z: -0.95, sillY: 0.56, sillHalf: 0.5, roofY: 1.3, roofHalf: 0.3 },
+      { z: -0.45, sillY: 0.62, sillHalf: 0.44, roofY: 1.16, roofHalf: 0.24 },
+    ],
+    shieldAt: 3,
+    nacelleX: 0.98,
+    nacelleY: 0.66,
+    nacelleZ: [-0.9, 2.5],
     nacelleR: 0.4,
-    wing: { y: -0.05, z: -0.2, span: 2.0, chord: 1.15 },
-    finTopY: 2.6,
+    wing: { y: -0.08, z: -0.15, span: 2.1, chord: 1.15 },
+    finTopY: 2.65,
     tailSide: -1,
+    radarDome: true,
+    turretZ: -6.55,
+    turretR: 0.3,
+    gunZ: -3.9,
   },
   bulat: {
     stations: [
-      { z: -8.0, top: -0.25, bot: -0.55, w: 0.14, yc: -0.4, tw: 0.3, bw: 0.3, su: 0.2, sl: 0.2 },
-      { z: -7.4, top: 0.1, bot: -0.95, w: 0.46, yc: -0.4, tw: 0.4, bw: 0.5, su: 0.5, sl: 0.4 },
-      { z: -5.6, top: 0.4, bot: -1.15, w: 0.62, yc: -0.3, tw: 0.55, bw: 0.65, su: 0.75, sl: 0.6 },
-      { z: -3.4, top: 0.78, bot: -1.25, w: 0.7, yc: -0.2, tw: 0.6, bw: 0.7, su: 0.75, sl: 0.6 },
-      { z: -1.2, top: 1.15, bot: -1.25, w: 0.78, yc: 0.0, tw: 0.6, bw: 0.7, su: 0.7, sl: 0.6 },
-      { z: 1.2, top: 1.25, bot: -1.15, w: 0.76, yc: 0.0, tw: 0.6, bw: 0.65, su: 0.6, sl: 0.55 },
-      { z: 3.0, top: 0.95, bot: -0.6, w: 0.6, yc: 0.15, tw: 0.5, bw: 0.45, su: 0.45, sl: 0.4 },
-      { z: 4.6, top: 0.72, bot: 0.05, w: 0.34, yc: 0.35, tw: 0.4, bw: 0.4, su: 0.3, sl: 0.3 },
-      { z: 9.4, top: 0.62, bot: 0.25, w: 0.2, yc: 0.42, tw: 0.4, bw: 0.4, su: 0.3, sl: 0.3 },
-      { z: 10.9, top: 0.58, bot: 0.3, w: 0.14, yc: 0.42, tw: 0.4, bw: 0.4, su: 0.3, sl: 0.3 },
+      st(-7.9, -0.15, -0.7, 0.18, -0.42, 0.3, 0.3, 0.3, 0.3),
+      st(-7.4, 0.12, -1.0, 0.46, -0.45, 0.45, 0.5, 0.8, 0.6),
+      st(-6.3, 0.2, -1.2, 0.6, -0.4),
+      st(-4.2, 0.22, -1.28, 0.66, -0.3),
+      st(-3.3, 0.58, -1.28, 0.7, -0.2),
+      st(-1.3, 0.72, -1.25, 0.74, -0.05),
+      st(0.2, 1.28, -1.2, 0.76, 0.0, 0.6, 0.65, 0.6, 0.55),
+      st(1.8, 1.12, -0.9, 0.7, 0.1, 0.5, 0.5, 0.5, 0.5),
+      st(3.2, 0.9, -0.4, 0.5, 0.3, 0.45, 0.4, 0.4, 0.4),
+      st(4.6, 0.72, 0.05, 0.34, 0.38, 0.4, 0.4, 0.3, 0.3),
+      st(9.4, 0.62, 0.25, 0.2, 0.42, 0.4, 0.4, 0.3, 0.3),
+      st(10.9, 0.58, 0.3, 0.14, 0.42, 0.4, 0.4, 0.3, 0.3),
     ],
-    paint: 0x4a4e3c,
-    nose: 0x3a3d34,
-    canopy: { z0: -6.5, z1: -1.4, sill: 0.15, roofFront: 0.62, roofRear: 1.2, halfW: 0.58 },
-    nacelleX: 1.15,
-    nacelleY: 0.85,
-    nacelleZ: [-0.6, 3.0],
+    cheeks: {
+      x: 0.78,
+      stations: [st(-5.6, -0.35, -0.75, 0.06, -0.55, 0.4, 0.4, 0.5, 0.5), st(-5.0, -0.15, -1.05, 0.36, -0.55), st(0.8, -0.15, -1.05, 0.4, -0.55), st(1.9, -0.3, -0.75, 0.14, -0.55, 0.4, 0.4, 0.5, 0.5)],
+    },
+    paint: 0x464a37,
+    nose: 0x34372e,
+    canopy: [
+      { z: -6.6, sillY: 0.16, sillHalf: 0.58, roofY: 0.24, roofHalf: 0.38 },
+      { z: -5.7, sillY: 0.16, sillHalf: 0.62, roofY: 0.86, roofHalf: 0.4 },
+      { z: -4.25, sillY: 0.2, sillHalf: 0.64, roofY: 0.92, roofHalf: 0.4 },
+      { z: -3.9, sillY: 0.5, sillHalf: 0.68, roofY: 0.96, roofHalf: 0.4 },
+      { z: -3.1, sillY: 0.62, sillHalf: 0.7, roofY: 1.48, roofHalf: 0.42 },
+      { z: -1.5, sillY: 0.72, sillHalf: 0.7, roofY: 1.48, roofHalf: 0.4 },
+      { z: -0.9, sillY: 0.8, sillHalf: 0.62, roofY: 1.3, roofHalf: 0.3 },
+    ],
+    shieldAt: 3,
+    nacelleX: 1.2,
+    nacelleY: 0.86,
+    nacelleZ: [-0.8, 2.9],
     nacelleR: 0.48,
-    wing: { y: 0.0, z: -0.3, span: 2.4, chord: 1.3 },
-    finTopY: 3.0,
+    wing: { y: 0.0, z: -0.35, span: 2.5, chord: 1.3 },
+    finTopY: 3.05,
     tailSide: 1,
+    radarDome: false,
+    turretZ: -7.95,
+    turretR: 0.34,
+    gunZ: -5.2,
   },
 };
+
+/** Flat-shaded triangles from a list of quads (each four [x,y,z] corners). */
+function quads(list: [number, number, number][][]): BufferGeometry {
+  const pos: number[] = [];
+  for (const q of list) {
+    const [a, b, c, d] = q as [[number, number, number], [number, number, number], [number, number, number], [number, number, number]];
+    pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** The faceted canopy: flat panes lofted between trapezoid sections, and the frame along every edge. */
+function canopy(sections: CanopySection[], glassMat: Material, frameMat: Material): Group {
+  const g = new Group();
+  const corners = sections.map((s) => [
+    [-s.sillHalf, s.sillY, s.z],
+    [-s.roofHalf, s.roofY, s.z],
+    [s.roofHalf, s.roofY, s.z],
+    [s.sillHalf, s.sillY, s.z],
+  ]) as [number, number, number][][];
+  const panes: [number, number, number][][] = [];
+  for (let i = 0; i + 1 < corners.length; i++) {
+    const a = corners[i]!;
+    const b = corners[i + 1]!;
+    for (let k = 0; k < 3; k++) panes.push([a[k]!, a[k + 1]!, b[k + 1]!, b[k]!]);
+  }
+  panes.push(corners[0]!.slice() as [number, number, number][]);
+  const glass = new Mesh(quads(panes), glassMat);
+  glass.renderOrder = 1;
+  g.add(glass);
+  // Frames: along the four edges, and a bow round every section.
+  for (let k = 0; k < 4; k++) g.add(mesh(tube(corners.map((c) => c[k]!), 0.022, 6), frameMat));
+  corners.forEach((c, i) => {
+    const r = i === 0 || i === corners.length - 1 ? 0.03 : 0.024;
+    g.add(mesh(tube(c, r, 6), frameMat));
+  });
+  return g;
+}
 
 export function buildHeli(id: HeliId): HeliModel {
   const cfg = HELICOPTERS[id];
   const s = SHAPES[id];
   const root = new Group();
-  const skin = paintMaterial({ name: `${id} paint`, base: s.paint, roughness: 0.74, panels: { frameM: 0.55, splitM: 0.7, seamM: 0.003, access: 0.25, rivets: true, tape: false } });
-  const darker = plain('fittings', 0x262826, 0.7);
+  const skin = paintMaterial({ name: `${id} paint`, base: s.paint, roughness: 0.8, panels: { frameM: 0.5, splitM: 0.6, seamM: 0.003, access: 0.3, rivets: true, tape: false } });
+  const darker = plain('fittings', 0x232622, 0.7);
   const metal = plain('hub metal', 0x3a3b3c, 0.45, 0.6);
-  const flat = plain(`${id} flat`, s.paint, 0.78);
+  const flat = plain(`${id} flat`, s.paint, 0.82);
+  const black = plain('black', 0x111212, 0.6);
+  const sensorGlass = plain('sensor glass', 0x0b0d10, 0.08, 0.2);
 
-  // Fuselage and boom.
-  root.add(mesh(fuselage(s.stations, { stepM: 0.12, perQuarter: 14 }), skin));
-  // Canopy: a faceted glasshouse, low at the front seat, stepped up over the rear seat.
-  const c = s.canopy;
-  const glass = canopyMaterial(0x30343a, null);
-  const mid = (c.z0 + c.z1) / 2;
-  const front = mesh(box(-c.halfW * 0.82, c.sill, c.z0, c.halfW * 0.82, c.roofFront, mid), glass, false);
-  const rear = mesh(box(-c.halfW, c.sill + 0.1, mid - 0.15, c.halfW, c.roofRear, c.z1), glass, false);
-  root.add(front, rear);
-  // Canopy frames: the bows between the panes.
-  for (const z of [c.z0, mid - 0.15, mid, c.z1]) root.add(mesh(box(-c.halfW - 0.02, c.sill, z - 0.03, c.halfW + 0.02, z < mid ? c.roofFront + 0.02 : c.roofRear + 0.02, z + 0.03), darker));
-  // Crew under the glass.
-  const gunner = crew();
-  gunner.position.set(...cfg.gunnerEye);
-  const pilot = crew();
-  pilot.position.set(...cfg.pilotEye);
-  root.add(gunner, pilot);
-  // Nose sensor turret: a drum on a yoke below the nose tip.
-  const turret = mesh(new CylinderGeometry(0.3, 0.3, 0.42, 20), plain('turret', s.nose, 0.55));
-  turret.rotation.z = Math.PI / 2;
-  turret.position.set(0, -0.3, s.stations[0]!.z - 0.05);
-  root.add(turret);
-  // Chin gun: a short barrel under the cockpit.
-  const gun = mesh(new CylinderGeometry(0.05, 0.06, 1.6, 10), darker);
-  gun.rotation.x = Math.PI / 2;
-  gun.position.set(0, -1.05, s.stations[2]!.z - 0.3);
-  root.add(gun);
+  // ---- body: fuselage and boom, and the cheek fairings along the lower sides
+  root.add(mesh(fuselage(s.stations, { stepM: 0.1, perQuarter: 16 }), skin));
+  for (const side of [-1, 1]) root.add(mesh(fuselage(s.cheeks.stations, { stepM: 0.12, perQuarter: 8, offsetX: side * s.cheeks.x }), skin));
 
-  // Engine pods either side of the mast, with exhaust suppressors at the back.
+  // ---- canopy, blast shield, crew
+  const glass = canopyMaterial(0x2c363c, null);
+  glass.side = DoubleSide;
+  root.add(canopy(s.canopy, glass, flat));
+  const sh = s.canopy[s.shieldAt]!;
+  const shieldMat = canopyMaterial(0x3a444a, null);
+  shieldMat.opacity = 0.18;
+  const shield = mesh(new BoxGeometry(sh.sillHalf * 1.9, 0.62, 0.02), shieldMat, false);
+  shield.position.set(0, sh.sillY + 0.08, sh.z + 0.02);
+  root.add(shield);
+  const gunnerFigure = crew();
+  gunnerFigure.position.set(...cfg.gunnerEye);
+  const pilotFigure = crew();
+  pilotFigure.position.set(...cfg.pilotEye);
+  root.add(gunnerFigure, pilotFigure);
+
+  // ---- nose: sensor turret (drum, side "ears" with their windows) and the small night-vision turret above
+  const nose = plain('turret', s.nose, 0.5);
+  const tz = s.turretZ;
+  const yoke = mesh(new CylinderGeometry(0.16, 0.2, 0.22, 14), nose);
+  yoke.position.set(0, -0.48, tz + 0.25);
+  root.add(yoke);
+  const drum = mesh(new CylinderGeometry(s.turretR, s.turretR, 0.62, 22), nose);
+  drum.rotation.z = Math.PI / 2;
+  drum.position.set(0, -0.7, tz);
+  root.add(drum);
+  for (const side of [-1, 1]) {
+    const ear = mesh(box(-0.1, -0.2, -0.26, 0.1, 0.2, 0.22), nose);
+    ear.position.set(side * 0.43, -0.7, tz);
+    root.add(ear);
+    const win = mesh(new BoxGeometry(0.15, 0.24, 0.02), sensorGlass, false);
+    win.position.set(side * 0.43, -0.7, tz - 0.27);
+    root.add(win);
+  }
+  const drumWin = mesh(new BoxGeometry(0.34, 0.22, 0.02), sensorGlass, false);
+  drumWin.position.set(0, -0.7, tz - s.turretR - 0.005);
+  root.add(drumWin);
+  const pnvs = mesh(new CylinderGeometry(0.15, 0.15, 0.24, 16), nose);
+  pnvs.position.set(0, 0.25, s.stations[1]!.z + 0.05);
+  root.add(pnvs);
+  const pnvsWin = mesh(new SphereGeometry(0.13, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), sensorGlass, false);
+  pnvsWin.rotation.x = -Math.PI / 2;
+  pnvsWin.position.set(0, 0.25, s.stations[1]!.z - 0.05);
+  root.add(pnvsWin);
+
+  // ---- chin cannon on its turret
+  const ring = mesh(new CylinderGeometry(0.24, 0.27, 0.2, 18), darker);
+  ring.position.set(0, -1.12, s.gunZ);
+  root.add(ring);
+  const breech = mesh(box(-0.1, -0.12, -0.55, 0.1, 0.1, 0.2), darker);
+  breech.position.set(0, -1.28, s.gunZ);
+  root.add(breech);
+  const barrel = mesh(new CylinderGeometry(0.035, 0.045, 1.6, 10), black);
+  barrel.rotation.x = Math.PI / 2 - 0.06;
+  barrel.position.set(0, -1.3, s.gunZ - 1.25);
+  root.add(barrel);
+  const jacket = mesh(new CylinderGeometry(0.06, 0.06, 0.5, 10), darker);
+  jacket.rotation.x = Math.PI / 2;
+  jacket.position.set(0, -1.29, s.gunZ - 0.7);
+  root.add(jacket);
+
+  // ---- engines: pods with intakes in front and exhaust suppressors turned out
   for (const side of [-1, 1]) {
     const [z0, z1] = s.nacelleZ;
     const R = s.nacelleR;
     const pod = lathe(
       [
-        [z0, R * 0.55],
-        [z0 + 0.25, R * 0.92],
-        [z0 + 0.8, R],
-        [z1 - 0.8, R],
-        [z1 - 0.2, R * 0.8],
-        [z1, R * 0.62],
+        [z0, R * 0.78],
+        [z0 + 0.15, R * 0.95],
+        [z0 + 0.6, R],
+        [z1 - 0.9, R],
+        [z1 - 0.3, R * 0.85],
+        [z1, R * 0.7],
       ],
       side * s.nacelleX,
       s.nacelleY,
-      20,
+      24,
       true,
     );
     root.add(mesh(pod, flat));
-    const exhaust = mesh(new CylinderGeometry(R * 0.5, R * 0.62, 0.5, 14, 1, true), plain('exhaust', 0x1d1d1c, 0.8));
-    exhaust.rotation.x = Math.PI / 2 - 0.5;
-    exhaust.rotation.z = side * 0.6;
-    exhaust.position.set(side * (s.nacelleX + 0.12), s.nacelleY + 0.05, z1 + 0.15);
-    root.add(exhaust);
-    // Stub wing with two pylons.
+    const intake = mesh(new CylinderGeometry(R * 0.66, R * 0.66, 0.05, 20), black, false);
+    intake.rotation.x = Math.PI / 2;
+    intake.position.set(side * s.nacelleX, s.nacelleY, z0 - 0.01);
+    root.add(intake);
+    const spinner = mesh(new SphereGeometry(R * 0.22, 12, 8), metal);
+    spinner.position.set(side * s.nacelleX, s.nacelleY, z0 + 0.02);
+    root.add(spinner);
+    // The suppressor: a flattened duct bending out and down from the pod's tail.
+    const duct = mesh(box(-0.16, -0.22, -0.3, 0.16, 0.22, 0.45), flat);
+    duct.position.set(side * (s.nacelleX + 0.22), s.nacelleY + 0.02, z1 + 0.05);
+    duct.rotation.y = side * 0.55;
+    root.add(duct);
+    const outlet = mesh(new BoxGeometry(0.26, 0.36, 0.02), black, false);
+    outlet.position.set(side * (s.nacelleX + 0.48), s.nacelleY + 0.02, z1 + 0.42);
+    outlet.rotation.y = side * 0.55;
+    root.add(outlet);
+    // Pylon fairing joining the pod to the body.
+    root.add(mesh(box(side * 0.35 - 0.12 * side, s.nacelleY - 0.3, z0 + 0.4, side * (s.nacelleX - R * 0.5), s.nacelleY + 0.1, z1 - 0.6).translate(0, 0, 0), flat));
+
+    // ---- stub wing, pylons, stores
     const w = s.wing;
-    const sf = { rootX: 0.5, rootY: w.y, rootLeZ: w.z - w.chord / 2, rootChordM: w.chord, spanM: w.span, tipLeZ: w.z - w.chord / 2 + 0.1, tipChordM: w.chord * 0.85, rootThickness: 0.14, tipThickness: 0.12, dihedralRad: -0.08, side: side as 1 | -1 };
+    const sf = { rootX: 0.5, rootY: w.y, rootLeZ: w.z - w.chord / 2, rootChordM: w.chord, spanM: w.span, tipLeZ: w.z - w.chord / 2 + 0.12, tipChordM: w.chord * 0.82, rootThickness: 0.16, tipThickness: 0.13, dihedralRad: -0.06, side: side as 1 | -1 };
     root.add(mesh(surface(sf), skin));
-    for (const f of [0.42, 0.85]) {
-      const px = side * (0.5 + w.span * f);
-      root.add(mesh(box(px - 0.06, w.y - 0.35, w.z - 0.3, px + 0.06, w.y - 0.05, w.z + 0.3), darker));
+    const ty = w.y - 0.06 - (w.span * 0.5) * 0.06;
+    const inboard = side * (0.5 + w.span * 0.38);
+    const outboard = side * (0.5 + w.span * 0.82);
+    for (const px of [inboard, outboard]) root.add(mesh(box(px - 0.05, ty - 0.32, w.z - 0.32, px + 0.05, w.y, w.z + 0.3), darker));
+    // Inboard: a rocket pod, its front face a honeycomb of tubes (dark disc).
+    const pod19 = mesh(new CylinderGeometry(0.21, 0.21, 1.7, 18), plain('rocket pod', 0x3d4234, 0.75));
+    pod19.rotation.x = Math.PI / 2;
+    pod19.position.set(inboard, ty - 0.55, w.z - 0.05);
+    root.add(pod19);
+    const face = mesh(new CylinderGeometry(0.19, 0.19, 0.02, 18), black, false);
+    face.rotation.x = Math.PI / 2;
+    face.position.set(inboard, ty - 0.55, w.z - 0.91);
+    root.add(face);
+    // Outboard: a launcher rail with four anti-armour missiles.
+    root.add(mesh(box(outboard - 0.06, ty - 0.48, w.z - 0.75, outboard + 0.06, ty - 0.3, w.z + 0.7), darker));
+    for (const [dx, dy] of [
+      [-0.12, -0.42],
+      [0.12, -0.42],
+      [-0.12, -0.68],
+      [0.12, -0.68],
+    ] as const) {
+      const m = mesh(new CylinderGeometry(0.09, 0.09, 1.55, 12), plain('missile', 0x3f4639, 0.6));
+      m.rotation.x = Math.PI / 2;
+      m.position.set(outboard + dx, ty + dy, w.z - 0.05);
+      root.add(m);
+      const cone = mesh(new SphereGeometry(0.09, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), plain('seeker', 0x1c1f1c, 0.2, 0.3));
+      cone.rotation.x = -Math.PI / 2;
+      cone.position.set(outboard + dx, ty + dy, w.z - 0.83);
+      root.add(cone);
     }
   }
 
-  // Fin (swept) and stabilator.
+  // ---- tail: swept fin, low stabilator, tail wheel
   const tailZ = s.stations[s.stations.length - 1]!.z;
-  root.add(mesh(surface({ rootX: 0, rootY: 0.45, rootLeZ: tailZ - 1.7, rootChordM: 1.5, spanM: s.finTopY - 0.45, tipLeZ: tailZ - 0.6, tipChordM: 0.85, rootThickness: 0.12, tipThickness: 0.1, dihedralRad: Math.PI / 2 }), skin));
+  root.add(mesh(surface({ rootX: 0, rootY: 0.4, rootLeZ: tailZ - 1.75, rootChordM: 1.55, spanM: s.finTopY - 0.4, tipLeZ: tailZ - 0.55, tipChordM: 0.85, rootThickness: 0.12, tipThickness: 0.1, dihedralRad: Math.PI / 2 }), skin));
   for (const side of [-1, 1] as const) {
-    root.add(mesh(surface({ rootX: 0.1, rootY: 0.25, rootLeZ: tailZ - 1.4, rootChordM: 0.9, spanM: 1.6, tipLeZ: tailZ - 1.2, tipChordM: 0.7, rootThickness: 0.11, tipThickness: 0.1, dihedralRad: 0, side }), skin));
+    root.add(mesh(surface({ rootX: 0.1, rootY: 0.24, rootLeZ: tailZ - 1.3, rootChordM: 0.85, spanM: 1.65, tipLeZ: tailZ - 1.1, tipChordM: 0.65, rootThickness: 0.11, tipThickness: 0.1, dihedralRad: 0, side }), skin));
   }
+  // Anti-collision light on the fin tip.
+  const beacon = new Mesh(new SphereGeometry(0.06, 10, 8), new MeshBasicNodeMaterial({ color: 0xff2a1a }));
+  beacon.position.set(0, s.finTopY + 0.03, tailZ - 0.2);
+  root.add(beacon);
 
-  // Landing gear: legs and wheels at the config's contact points.
+  // ---- landing gear: trailing struts to the main wheels, a fork for the tail wheel
   const tyre = plain('tyre', 0x1b1b1b, 0.9);
   for (const [wx, wy, wz] of cfg.wheels) {
-    const r = wz > 0 ? 0.2 : 0.32;
-    const wheel = mesh(new CylinderGeometry(r, r, 0.18, 18), tyre);
+    const tail = wz > 0;
+    const r = tail ? 0.2 : 0.33;
+    const wheel = mesh(new CylinderGeometry(r, r, tail ? 0.14 : 0.2, 20), tyre);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(wx, wy + r, wz);
     root.add(wheel);
-    const legTop = wz > 0 ? 0.3 : -0.5;
-    root.add(mesh(box(wx - 0.05, wy + r, wz - 0.05, wx + 0.05, legTop, wz + 0.05), darker));
+    const hub = mesh(new CylinderGeometry(r * 0.5, r * 0.5, tail ? 0.16 : 0.22, 12), metal);
+    hub.rotation.z = Math.PI / 2;
+    hub.position.copy(wheel.position);
+    root.add(hub);
+    if (tail) {
+      root.add(mesh(tube([[wx, wy + r, wz], [wx, 0.25, wz - 0.35]], 0.045, 8), darker));
+    } else {
+      // Strut from the cheek fairing down and back to the axle, and a drag brace forward.
+      const top: [number, number, number] = [Math.sign(wx) * (s.cheeks.x + 0.2), -0.55, wz - 0.4];
+      root.add(mesh(tube([top, [wx, wy + r, wz]], 0.065, 10), darker));
+      root.add(mesh(tube([[Math.sign(wx) * (s.cheeks.x + 0.15), -0.7, wz - 1.2], [wx, wy + r + 0.1, wz - 0.05]], 0.04, 8), darker));
+    }
   }
 
   // ---- main rotor: mast, hub, blades and the smear disc
@@ -255,9 +458,11 @@ export function buildHeli(id: HeliId): HeliModel {
   const rotor = new Group();
   rotor.position.set(0, rc.hubHeightM, 0);
   root.add(rotor);
-  const mast = mesh(new CylinderGeometry(0.16, 0.2, rc.hubHeightM - 0.9, 12), metal);
-  mast.position.set(0, (0.9 - rc.hubHeightM) / 2 + 0.0, 0);
-  rotor.add(mast);
+  // The mast from the top of the fuselage; it does not tilt with the disc (the hub does).
+  const mastLen = rc.hubHeightM - 1.05;
+  const mast = mesh(new CylinderGeometry(0.15, 0.2, mastLen, 14), metal);
+  mast.position.set(0, 1.05 + mastLen / 2, 0);
+  root.add(mast);
   const rotorAngle = uniform(0);
   const tailAngle = uniform(0);
   const rotorSmear = uniform(0.3);
@@ -265,16 +470,41 @@ export function buildHeli(id: HeliId): HeliModel {
   const discBlend = uniform(0);
   const bladeHub = new Group();
   rotor.add(bladeHub);
-  bladeHub.add(mesh(new CylinderGeometry(0.42, 0.42, 0.3, 16), metal));
+  // Hub: the swashplate below, the hub plates, a grip and a pitch link per blade.
+  const swash = mesh(new CylinderGeometry(0.36, 0.36, 0.06, 20), metal);
+  swash.position.y = -0.32;
+  rotor.add(swash);
+  bladeHub.add(mesh(new CylinderGeometry(0.34, 0.38, 0.22, 18), metal));
+  if (s.radarDome) {
+    // The radar above the rotor: a squat dome on a short post.
+    const post = mesh(new CylinderGeometry(0.1, 0.12, 0.5, 10), metal);
+    post.position.y = 0.36;
+    rotor.add(post);
+    const dome = mesh(new SphereGeometry(0.62, 24, 12), plain('radome', 0x3b4232, 0.7));
+    dome.scale.set(1, 0.38, 1);
+    dome.position.y = 0.72;
+    rotor.add(dome);
+  }
   const bladeMat = plain('blades', 0x2a2b2a, 0.6);
   bladeMat.transparent = true;
   const bladeMaterials = [bladeMat];
+  const c = rc.chordM;
   for (let b = 0; b < rc.blades; b++) {
-    const g = new BoxGeometry(rc.radiusM - 0.5, 0.06, rc.chordM);
-    g.translate((rc.radiusM - 0.5) / 2 + 0.5, 0, 0);
-    const blade = mesh(g, bladeMat);
-    blade.rotation.y = (b / rc.blades) * Math.PI * 2;
-    bladeHub.add(blade);
+    const arm = new Group();
+    arm.rotation.y = (b / rc.blades) * Math.PI * 2;
+    bladeHub.add(arm);
+    // Grip and pitch link.
+    arm.add(mesh(box(0.25, -0.07, -0.09, 0.62, 0.07, 0.09), metal));
+    arm.add(mesh(tube([[0.3, -0.3, -0.12], [0.34, -0.05, -0.12]], 0.018, 6), metal));
+    // The blade: an airfoil (leading edge ahead of the turning direction), a swept, tapered tip.
+    const span = rc.radiusM - 0.62 - 0.45;
+    const main = surface({ rootX: 0.62, rootY: 0, rootLeZ: -c * 0.25, rootChordM: c, spanM: span, tipLeZ: -c * 0.25, tipChordM: c, rootThickness: 0.11, tipThickness: 0.09, dihedralRad: 0 }, {}, 14, 6);
+    const tip = surface({ rootX: 0.62 + span, rootY: 0, rootLeZ: -c * 0.25, rootChordM: c, spanM: 0.45, tipLeZ: -c * 0.25 + 0.28, tipChordM: c * 0.5, rootThickness: 0.09, tipThickness: 0.08, dihedralRad: 0 }, {}, 14, 3);
+    for (const g of [main, tip]) {
+      // A clockwise rotor leads with the other edge.
+      if (rc.direction < 0) g.scale(1, 1, -1);
+      arm.add(mesh(g, bladeMat));
+    }
   }
   const disc = new RingGeometry(0.4, rc.radiusM, 128, 6);
   disc.rotateX(-Math.PI / 2);
@@ -286,16 +516,17 @@ export function buildHeli(id: HeliId): HeliModel {
   const t = cfg.tail;
   const tailHub = new Group();
   const tailRotor = new Group();
-  tailRotor.position.set(s.tailSide * 0.32, t.heightM + 0.15, t.armM);
+  tailRotor.position.set(s.tailSide * 0.3, s.finTopY - 0.75, t.armM);
   tailRotor.rotation.z = (s.tailSide * Math.PI) / 2;
   root.add(tailRotor);
   tailRotor.add(tailHub);
-  tailHub.add(mesh(new CylinderGeometry(0.12, 0.12, 0.2, 10), metal));
-  for (let b = 0; b < 4; b++) {
-    const g = new BoxGeometry(t.radiusM - 0.15, 0.03, 0.25);
-    g.translate((t.radiusM - 0.15) / 2 + 0.15, 0, 0);
+  tailHub.add(mesh(new CylinderGeometry(0.12, 0.12, 0.22, 12), metal));
+  // The western type's tail rotor is a "scissor": two blade pairs 55° apart, not 90°.
+  const tailAngles = s.radarDome ? [0, 55, 180, 235] : [0, 90, 180, 270];
+  for (const deg of tailAngles) {
+    const g = surface({ rootX: 0.15, rootY: 0, rootLeZ: -0.06, rootChordM: 0.25, spanM: t.radiusM - 0.15, tipLeZ: -0.06, tipChordM: 0.22, rootThickness: 0.1, tipThickness: 0.08, dihedralRad: 0 }, {}, 10, 3);
     const blade = mesh(g, bladeMat);
-    blade.rotation.y = (b / 4) * Math.PI * 2;
+    blade.rotation.y = (deg * Math.PI) / 180;
     tailHub.add(blade);
   }
   const tdisc = new RingGeometry(0.12, t.radiusM, 64, 3);
@@ -307,5 +538,5 @@ export function buildHeli(id: HeliId): HeliModel {
   const t0 = performance.now();
   bakeAmbientOcclusion(root);
   console.log(`${id}: ambient occlusion baked in ${(performance.now() - t0).toFixed(0)} ms`);
-  return { root, rotor, bladeHub, tailHub, rotorAngle, tailAngle, rotorSmear, tailSmear, discBlend, bladeMaterials };
+  return { root, rotor, bladeHub, tailHub, rotorAngle, tailAngle, rotorSmear, tailSmear, discBlend, bladeMaterials, glass, pilotFigure, gunnerFigure };
 }

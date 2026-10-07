@@ -5,6 +5,7 @@ import { FixedLoop } from './core/loop.ts';
 import { Atmosphere } from './render/atmosphere.ts';
 import { CameraRig } from './render/cameraRig.ts';
 import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
+import { HeliCockpit } from './render/heliCockpit.ts';
 import { HeliView } from './render/heliView.ts';
 import { SkyLighting } from './render/lighting.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
@@ -14,7 +15,7 @@ import { Forest } from './render/forest.ts';
 import { buildTerrainTextures } from './render/terrainTextures.ts';
 import { bakeCloudData } from './sim/cloudField.ts';
 import { Helicopter } from './sim/helicopter.ts';
-import { bakeTerrain, TERRAIN } from './sim/terrain.ts';
+import { bakeTerrain, riverX, TERRAIN } from './sim/terrain.ts';
 import { DebugOverlay } from './ui/debugOverlay.ts';
 import { Hud } from './ui/hud.ts';
 import { chooseOptions, optionsFromParams } from './ui/menu.ts';
@@ -113,6 +114,9 @@ async function main(): Promise<void> {
   const cfg = HELICOPTERS[opts.heli];
   const heli = new Helicopter(cfg);
   const view = new HeliView(opts.heli, stage.scene);
+  // The pilot's station inside the model (seen from the rear seat), with its live displays.
+  const cockpit = new HeliCockpit(cfg, { sizeM: TERRAIN.nearSizeM, heightAt: groundAt, riverX, base: { x: 300, z: 0 } });
+  view.model.root.add(cockpit.root);
   if (!params.has('nocloudshadow')) clouds.shadeReceivers(stage.scene, settings.quality === 'high' ? 4 : 2);
   const pilot = new PilotControls(input);
   pilot.invertPitch = controls.invertPitch;
@@ -225,7 +229,9 @@ async function main(): Promise<void> {
         clockS += frameS;
         const high = settings.quality === 'high';
         const inside = rig.mode === 'cockpit' || rig.mode === 'gunner';
+        view.setSeat(rig.mode === 'cockpit' ? 'pilot' : rig.mode === 'gunner' ? 'gunner' : null);
         view.update(heli, alpha, frameS, true);
+        cockpit.update(heli, frameS, inside);
         rig.update(view.renderPos, view.renderRot, { pilot: cfg.pilotEye, gunner: cfg.gunnerEye }, heli.vibration, cfg.lengthM, frameS, groundAt);
         stage.camera.updateMatrixWorld();
         terrain.update(stage.camera);
