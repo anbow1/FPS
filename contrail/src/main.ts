@@ -18,6 +18,7 @@ import { SkyLighting } from './render/lighting.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
+import { Forest } from './render/forest.ts';
 import { buildTerrainTextures } from './render/terrainTextures.ts';
 import { bakeCloudData, lineTransmittance } from './sim/cloudField.ts';
 import { type Combatant, createOrders, type WeaponMode } from './sim/combat.ts';
@@ -87,6 +88,21 @@ async function main(): Promise<void> {
   const terrain = new TerrainRenderer(terrainData, terrainTextures, terrainShadow ? terrainShadow.target.texture : null);
   console.log(`terrain baked in ${(performance.now() - t0).toFixed(0)} ms`);
   stage.scene.add(terrain.mesh);
+  // Forests of impostor trees, generated on the GPU from the land cover round the camera (forest.ts).
+  if (!params.has('noforest')) {
+    const high = settings.quality === 'high';
+    const rings = high
+      ? [
+          { n: 256, spacingM: 11, innerM: 0, sizeK: 1.3 },
+          { n: 192, spacingM: 34, innerM: 1250, sizeK: 1.9 },
+        ]
+      : [
+          { n: 160, spacingM: 13, innerM: 0, sizeK: 1.35 },
+          { n: 128, spacingM: 40, innerM: 900, sizeK: 2 },
+        ];
+    const forest = new Forest(stage.renderer, terrainTextures, terrainShadow ? terrainShadow.target.texture : null, rings, high ? 192 : 128);
+    for (const m of forest.meshes) stage.scene.add(m);
+  }
   loading.textContent = 'Contrail — growing the clouds';
   const t1 = performance.now();
   const clouds = new Clouds(await bakeCloudData(), atmosphere, CLOUD_QUALITY[settings.quality]);

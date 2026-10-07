@@ -10,6 +10,7 @@ import { SkyLighting } from './render/lighting.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
+import { Forest } from './render/forest.ts';
 import { buildTerrainTextures } from './render/terrainTextures.ts';
 import { bakeCloudData } from './sim/cloudField.ts';
 import { Helicopter } from './sim/helicopter.ts';
@@ -80,6 +81,22 @@ async function main(): Promise<void> {
   const terrain = new TerrainRenderer(terrainData, terrainTextures, terrainShadow ? terrainShadow.target.texture : null);
   console.log(`terrain baked in ${(performance.now() - t0).toFixed(0)} ms`);
   stage.scene.add(terrain.mesh);
+  // Forests of impostor trees, generated on the GPU from the land cover round the camera (forest.ts).
+  if (!params.has('noforest')) {
+    const high = settings.quality === 'high';
+    const rings = high
+      ? [
+          { n: 256, spacingM: 7, innerM: 0, sizeK: 1 },
+          { n: 192, spacingM: 22, innerM: 800, sizeK: 1.45 },
+        ]
+      : [
+          { n: 176, spacingM: 8, innerM: 0, sizeK: 1.05 },
+          { n: 128, spacingM: 26, innerM: 620, sizeK: 1.5 },
+        ];
+    // Bigger frames than the jet game's: the helicopter flies past the trees at tens of metres.
+    const forest = new Forest(stage.renderer, terrainTextures, terrainShadow ? terrainShadow.target.texture : null, rings, high ? 320 : 192);
+    for (const f of forest.meshes) stage.scene.add(f);
+  }
   loading.textContent = 'Ridgeline — growing the clouds';
   const clouds = new Clouds(await bakeCloudData(), atmosphere, CLOUD_QUALITY[settings.quality]);
   const applyPresetClouds = (): void => {
