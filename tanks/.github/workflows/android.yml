@@ -1,0 +1,55 @@
+name: Android APK
+
+# Builds a signed, sideloadable APK (Capacitor WebView wrapper around the web build)
+# and publishes it as a GitHub Release asset you can download straight to the phone.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Android SDK packages (runner image ships the SDK)
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - run: npm ci
+      - run: npx vite build
+      - run: npx cap sync android
+      - name: Gradle assembleRelease
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Collect APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk tanks-1.0.${{ github.run_number }}.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tanks-apk
+          path: tanks-*.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-${{ github.run_number }}
+          name: Tanks Android 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            APK do instalacji bezpośrednio na Androidzie (8.0+ zalecany, min. 7.0).
+            Pobierz plik .apk na telefonie, otwórz i zezwól na instalację z tego źródła.
+          files: tanks-*.apk
