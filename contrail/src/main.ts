@@ -7,6 +7,8 @@ import { CameraRig } from './render/cameraRig.ts';
 import { ForceArrows } from './render/forceArrows.ts';
 import { Atmosphere } from './render/atmosphere.ts';
 import { type PresetId, SkyLighting } from './render/lighting.ts';
+import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
+import { bakeCloudData } from './sim/cloudField.ts';
 import { buildJet, poseGear, poseSurfaces } from './render/jetModels.ts';
 import { buildAirbase, RUNWAY, THRESHOLD_36_Z } from './render/airbase.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
@@ -58,6 +60,18 @@ async function main(): Promise<void> {
   const terrain = new TerrainRenderer(terrainData, await buildTerrainTextures(terrainData));
   console.log(`terrain baked in ${(performance.now() - t0).toFixed(0)} ms`);
   stage.scene.add(terrain.mesh);
+  loading.textContent = 'Contrail — growing the clouds';
+  const t1 = performance.now();
+  const clouds = new Clouds(await bakeCloudData(), atmosphere, CLOUD_QUALITY[settings.quality]);
+  console.log(`clouds baked in ${(performance.now() - t1).toFixed(0)} ms`);
+  const applyPresetClouds = (): void => {
+    const p = lighting.preset;
+    // ?clouds=0…1 overrides the preset's coverage (screenshots, A/B).
+    const cov = params.get('clouds');
+    clouds.setLayer({ baseM: p.cloudBaseM, topM: p.cloudTopM, coverage: cov === null ? p.coverage : Number(cov) });
+  };
+  applyPresetClouds();
+  if (!params.has('noclouds')) stage.setClouds(clouds);
   stage.scene.add(buildAirbase());
   const groundAt = (x: number, z: number): number => Math.max(TERRAIN.seaLevelM, terrainData.heightAt(x, z));
 
@@ -72,6 +86,8 @@ async function main(): Promise<void> {
   };
   const model = buildJet(aircraftId);
   stage.scene.add(model.root);
+  // Cloud shadows on the ground, the airbase and the aircraft (the sun light only).
+  if (!params.has('nocloudshadow')) clouds.shadeReceivers(stage.scene, settings.quality === 'high' ? 4 : 2);
   const arrows = new ForceArrows();
   stage.scene.add(arrows.mesh);
 
@@ -96,7 +112,7 @@ async function main(): Promise<void> {
   const renderRot = new Quaternion();
   const prevRot = new Quaternion();
   const currRot = new Quaternion();
-  const debugHooks = { aircraft, stage, frames: 0, input: pilot.input, pilot, rig, overlay, terrain, atmosphere };
+  const debugHooks = { aircraft, stage, frames: 0, input: pilot.input, pilot, rig, overlay, terrain, atmosphere, clouds };
   (window as unknown as { __contrail: typeof debugHooks }).__contrail = debugHooks;
 
   const loop = new FixedLoop({
@@ -106,8 +122,15 @@ async function main(): Promise<void> {
       if (input.pressed('camera')) rig.next();
       if (input.pressed('debug')) overlay.visible = !overlay.visible;
       if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
-      if (input.pressed('timeOfDay')) lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : 'morning');
-      if (input.pressed('quality')) stage.applySettings({ ...settings, quality: (settings.quality = settings.quality === 'high' ? 'low' : 'high') });
+      if (input.pressed('timeOfDay')) {
+        lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : 'morning');
+        applyPresetClouds();
+      }
+      if (input.pressed('quality')) {
+        settings.quality = settings.quality === 'high' ? 'low' : 'high';
+        clouds.quality = CLOUD_QUALITY[settings.quality];
+        stage.applySettings({ ...settings });
+      }
       // G-LOC: the pilot is out and the controls go slack.
       const controls = aircraft.g.glocS > 0 ? { ...pilot.input, pitch: 0, roll: 0, yaw: 0 } : pilot.input;
       if (input.pressed('gear')) aircraft.toggleGear();
@@ -153,7 +176,10 @@ async function main(): Promise<void> {
       if (pilot.input.brake) warnings.push('BRAKE');
       terrain.update(stage.camera);
       hud.draw(stage.camera, aircraft, pilot.input, { radarAltitudeM: Math.max(0, aircraft.position.y - aircraft.wheelDropM - groundAt(aircraft.position.x, aircraft.position.z)), weaponMode: aircraft.gear.position > 0.99 ? 'GEAR DN' : 'GUN', stores: aircraftId === 'wraith' ? 'GUN 180 SRM 2 MRM 4' : 'GUN 150 SRM 4 MRM 4', warnings });
+      const camY = stage.camera.position.y;
+      lighting.setCloudCover(clouds.layer.coverage, camY < clouds.layer.baseM ? 'below' : camY > clouds.layer.topM ? 'above' : 'inside');
       lighting.update(stage.camera, renderPos);
+      clouds.update(frameS, stage.camera.position, settings.quality === 'high');
       stage.scene.environment = lighting.environment;
       stage.greyOut.value = greyOut(aircraft.g);
       stage.redOut.value = aircraft.g.redOut;

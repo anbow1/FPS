@@ -2,7 +2,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { convertToTexture, float, getViewPosition, length, mix, mrt, output, pass, pow, select, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { convertToTexture, float, length, mix, mrt, normalize, output, pass, pow, rtt, select, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
 import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, type Node, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, WebGPURenderer } from 'three/webgpu';
 import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
@@ -34,6 +34,12 @@ const GOVERNOR_STEPS: readonly GovernorStep[] = [{ scale: 1 }, { scale: 0.87 }, 
 export const CAMERA_NEAR_M = 0.05;
 export const CAMERA_FAR_M = 600_000;
 
+export interface CloudHook {
+  readonly quality: { resolutionScale: number };
+  march(dir: Node<'vec3'>, distanceM: Node<'float'>, uv: Node<'vec2'>): Node<'vec4'>;
+  composite(scene: Node<'vec3'>, cloud: Node<'vec4'>, dir: Node<'vec3'>, distanceM: Node<'float'>): Node<'vec3'>;
+}
+
 export class Stage {
   readonly renderer: WebGPURenderer;
   readonly scene = new Scene();
@@ -46,6 +52,8 @@ export class Stage {
   private dynamicScale = 1;
   /** Aerial perspective applied to every surface in the scene pass (atmosphere.ts); sky pixels are skipped. */
   private aerial: ((colour: Node<'vec3'>, uv: Node<'vec2'>, distanceM: Node<'float'>) => Node<'vec3'>) | null = null;
+  /** Volumetric clouds (clouds.ts): a reduced-resolution march composited over the hazed scene. */
+  private clouds: CloudHook | null = null;
   private pipeline: RenderPipeline | null = null;
   private settings: StageSettings;
 
@@ -81,6 +89,11 @@ export class Stage {
     this.buildPipeline();
   }
 
+  setClouds(clouds: CloudHook): void {
+    this.clouds = clouds;
+    this.buildPipeline();
+  }
+
   get backendName(): string {
     const backend: unknown = this.renderer.backend;
     return typeof backend === 'object' && backend !== null && 'isWebGPUBackend' in backend ? 'WebGPU' : 'WebGL2 (fallback)';
@@ -112,19 +125,31 @@ export class Stage {
     // Aerial perspective before anti-aliasing, on the HDR scene colour: every surface takes the haze
     // of the air between it and the eye; the sky (reversed depth 0) already has it.
     let hazed: Node<'vec4'> = colour;
-    if (this.aerial) {
+    if (this.aerial || this.clouds) {
       const screen = uv();
       const d = depth.sample(screen).r;
-      // The scene camera's inverse projection as a uniform: inside a post pass the camera nodes
-      // refer to the full-screen quad's own camera, not the scene's.
-      const viewPos = getViewPosition(screen, d, uniform(this.camera.projectionMatrixInverse));
-      const distanceM = length(viewPos);
-      // Sample the scene colour explicitly: used as `colour.rgb` inside this branch it read black.
+      // The scene camera's matrices as uniforms: inside a post pass the camera nodes refer to the
+      // full-screen quad's own camera, not the scene's.
+      // Our own unprojection: getViewPosition maps depth to −1…1 under WebGL, but with a reversed
+      // buffer the WebGL backend switches clip control to 0…1 (as WebGPU), so depth is NDC z as is.
+      const ndcZ = this.renderer.reversedDepthBuffer || this.backendName === 'WebGPU' ? d : d.mul(2).sub(1);
+      const clip = vec4(screen.x.mul(2).sub(1), screen.y.oneMinus().mul(2).sub(1), ndcZ, 1);
+      const view4 = uniform(this.camera.projectionMatrixInverse).mul(clip);
+      const viewPos = view4.xyz.div(view4.w);
+      // Sky pixels (reversed depth 0) carry no usable view position: call them infinitely far.
+      const distanceM = select(d.lessThanEqual(0), float(1e7), length(viewPos));
+      // Sample the scene colour explicitly: used as `colour.rgb` inside a branch it read black.
       const sceneRgb = colour.sample(screen).rgb;
-      const withAir = vec4(this.aerial(sceneRgb, screen, distanceM), 1);
+      const aerial = this.aerial;
+      let rgb: Node<'vec3'> = aerial ? select(d.lessThanEqual(0), sceneRgb, aerial(sceneRgb, screen, distanceM)) : sceneRgb;
+      if (this.clouds) {
+        const dir = normalize(uniform(this.camera.matrixWorld).mul(vec4(viewPos, 0)).xyz);
+        const cloudTex = rtt(this.clouds.march(dir, distanceM, screen), null, null, { resolutionScale: this.clouds.quality.resolutionScale });
+        rgb = this.clouds.composite(rgb, cloudTex.sample(screen), dir, distanceM);
+      }
       // TRAA re-samples its input at reprojected positions, so it needs a texture, not an
       // expression: render the hazed frame to one first.
-      hazed = convertToTexture(select(d.lessThanEqual(0), colour, withAir));
+      hazed = convertToTexture(vec4(rgb, 1));
     }
     const aa = high ? traa(hazed, depth, motion, this.camera) : hazed;
     const glare = bloom(aa, high ? 0.05 : 0.035, 0.35, 0);

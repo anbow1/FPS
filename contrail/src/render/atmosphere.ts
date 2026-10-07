@@ -356,9 +356,14 @@ export class Atmosphere {
     return colour.mul(T).add(inscatter);
   }
 
+  /** Sky radiance (pre-exposed) for a world view direction, without the sun disc (cloud ambient light). */
+  skyOnly(dir: V3): V3 {
+    return texture(this.skyView.texture, this.skyViewUv(dir)).rgb.mul(this.sunIlluminance);
+  }
+
   /** Sky radiance (pre-exposed) for a world view direction, with the sun disc. */
   skyRadiance(dir: V3): V3 {
-    const sky = texture(this.skyView.texture, this.skyViewUv(dir)).rgb.mul(this.sunIlluminance);
+    const sky = this.skyOnly(dir);
     const r = float(RG).add(max(this.cameraAltitude, 1));
     const cosSun = dot(dir, this.sunDir);
     const disc = smoothstep(Math.cos(SUN_RADIUS_RAD * 1.05), Math.cos(SUN_RADIUS_RAD), cosSun);

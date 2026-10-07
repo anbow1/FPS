@@ -988,6 +988,14 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | A branch built in an unrolled JS loop uses the wrong (last) loop value | an `If(cond, () => …)` body runs when the shader is built, after the loop has finished | copy the loop variable into a block-scoped `const` before `If` (§7.12) |
 | Sand (or any splat) shows little squares | a texture sampler that paints whole hash cells (`floor(u·64)`) | draw a rotated soft ellipse inside the cell instead |
 | Read-back rows look mirrored on WebGL only | `readRenderTargetPixelsAsync` flips WebGL rows to match WebGPU | compare with row `N − 1 − y`; `screenCoordinate` and `textureLoad` agree on both backends |
+| A post-pass effect that needs world positions (aerial perspective, clouds) reads nothing or the wrong place | inside a post pass `cameraPosition` / camera matrices are the full-screen quad's camera | pass the scene camera's `projectionMatrixInverse`, `matrixWorld` and position as `uniform(...)` (Contrail `render/stage.ts`) |
+| Distances from depth wrong by orders of magnitude on WebGL only (haze everywhere or nowhere) | `getViewPosition` maps depth to −1…1 under WebGL, but with `reversedDepthBuffer` the WebGL backend switches clip control to 0…1 | unproject yourself with NDC z = depth when the buffer is reversed (or on WebGPU), `depth·2 − 1` otherwise |
+| Sky pixels (reversed depth 0) get "near" treatment | the far plane is not infinity; unprojecting depth 0 gives garbage | `select(depth <= 0, hugeDistance, length(viewPos))` |
+| Scene colour reads black inside a `select` branch of a post pass | the pass texture node used as `colour.rgb` inside the branch | sample explicitly: `colour.sample(uv).rgb` |
+| TRAA shows a smeared or black frame after an expression was inserted before it | TRAA re-samples its input at reprojected positions and needs a texture | wrap the expression in `convertToTexture(...)` before `traa(...)` |
+| Debug colour views all grey or white | bloom spreads huge debug values (e.g. 1e7 for the sky) over the whole screen | clamp debug outputs to 0…1 before the post chain |
+| WebGPU only: `TextureViewDimension::e2D … not compatible with … e3D` for a `Data3DTexture` sampled in an `rtt()` pass (setting `is3DTexture` does not cure it) | r186's WebGPU backend binds the volume through a 2-D view | store the volume as a 2-D atlas of z slices with a one-texel wrapped border and lerp two bilinear fetches (Contrail `render/clouds.ts` `volumeAtlas`); identical on WebGL2 and phones |
+| Volumetric clouds cover the whole sky at "50 %" coverage | raw Perlin-Worley values bunch around 0.6–0.8, and a column is cloudy if any height in it is | histogram-equalise the baked noise and calibrate the threshold against measured column coverage in a unit test |
 
 ---
 

@@ -39,6 +39,9 @@ export function exposureFor(ev100: number): number {
 
 const GROUND_ALBEDO = 0.2;
 
+/** Where the camera is relative to the cloud layer, for the probe. */
+export type CloudSide = 'below' | 'inside' | 'above';
+
 export class SkyLighting {
   readonly sun = new DirectionalLight(0xffffff, 1);
   readonly sunDir = new Vector3(0, 1, 0);
@@ -48,7 +51,13 @@ export class SkyLighting {
   private readonly probeScene = new Scene();
   private readonly groundColour = new Color();
   private probeTarget: RenderTarget | null = null;
-  private lastBake = { sunY: -2, exposure: -1, band: -999 };
+  /** The cloud deck in the probe: a ceiling seen from below, a floor of tops seen from above. */
+  private readonly ceilingMat = new MeshBasicNodeMaterial({ name: 'probe cloud base', transparent: true, depthWrite: false });
+  private readonly floorMat = new MeshBasicNodeMaterial({ name: 'probe cloud tops', transparent: true, depthWrite: false });
+  private readonly ceiling: Mesh;
+  private readonly floor: Mesh;
+  private cloud = { coverage: 0, side: 'below' as CloudSide };
+  private lastBake = { sunY: -2, exposure: -1, band: -999, cloudKey: '' };
   private lastSunT = { band: -999, sunY: -2 };
 
   constructor(
@@ -66,6 +75,14 @@ export class SkyLighting {
     const ground = new Mesh(new CircleGeometry(48, 32).rotateX(-Math.PI / 2), groundMat);
     ground.position.y = -2;
     this.probeScene.add(ground);
+    // Cloud deck discs, inside the dome (radius 50) and nearer than the ground disc, so the probe
+    // sees an overcast as a grey ceiling (dim, flat ambient underneath) or a white floor (the bright
+    // glow from below when flying over the tops).
+    this.ceiling = new Mesh(new CircleGeometry(45, 48).rotateX(Math.PI / 2), this.ceilingMat);
+    this.ceiling.position.y = 1;
+    this.floor = new Mesh(new CircleGeometry(45, 48).rotateX(-Math.PI / 2), this.floorMat);
+    this.floor.position.y = -1;
+    this.probeScene.add(this.ceiling, this.floor);
     // The sun's shadow map follows the aircraft (self-shadowing, the runway, nearby ground).
     const l = this.sun;
     l.castShadow = true;
@@ -97,6 +114,12 @@ export class SkyLighting {
     this.lastSunT.band = -999;
   }
 
+  /** The cloud layer as the probe should see it (coverage 0…1; which side of the deck the camera is on). */
+  setCloudCover(coverage: number, side: CloudSide): void {
+    this.cloud.coverage = coverage;
+    this.cloud.side = side;
+  }
+
   /** Per frame: sun colour from the transmittance at this altitude, the LUTs, the probe when stale. */
   update(camera: { position: Vector3; projectionMatrix: import('three/webgpu').Matrix4; matrixWorld: import('three/webgpu').Matrix4 }, followM: Vector3): void {
     const sunIll = SUN_TOA_LUX * this.exposure;
@@ -117,14 +140,34 @@ export class SkyLighting {
     this.sun.target.position.copy(followM);
     const probeBand = Math.round(camera.position.y / 1000);
     const b = this.lastBake;
-    if (Math.abs(this.sunDir.y - b.sunY) > 0.005 || Math.abs(this.exposure - b.exposure) > 1e-12 || probeBand !== b.band || !this.probeTarget) this.bake(probeBand);
+    const cloudKey = `${this.cloud.side}:${this.cloud.coverage.toFixed(2)}`;
+    if (Math.abs(this.sunDir.y - b.sunY) > 0.005 || Math.abs(this.exposure - b.exposure) > 1e-12 || probeBand !== b.band || cloudKey !== b.cloudKey || !this.probeTarget) {
+      this.updateCloudDeck();
+      this.bake(probeBand, cloudKey);
+    }
   }
 
-  private bake(band: number): void {
+  private updateCloudDeck(): void {
+    // Rough radiances of the deck, pre-exposed: sunlit tops as a diffuse white surface (plus a
+    // little sky), the base transmitting what a deck of that coverage lets through (~15 % when overcast).
+    const T = Atmosphere.sunTransmittanceCpu(2500, this.sunDir);
+    const e = SUN_TOA_LUX * this.exposure;
+    const top = (e * (Math.max(this.sunDir.y, 0) * 0.8 + 0.06)) / Math.PI;
+    const base = top * (1 - 0.85 * this.cloud.coverage) * 0.6;
+    this.floorMat.color.setRGB(top * T.x, top * T.y, top * T.z);
+    this.ceilingMat.color.setRGB(base * T.x, base * T.y, base * T.z);
+    const cov = this.cloud.coverage;
+    this.ceiling.visible = this.cloud.side !== 'above' && cov > 0.01;
+    this.floor.visible = this.cloud.side !== 'below' && cov > 0.01;
+    this.ceilingMat.opacity = this.cloud.side === 'inside' ? 1 : cov;
+    this.floorMat.opacity = this.cloud.side === 'inside' ? 1 : cov;
+  }
+
+  private bake(band: number, cloudKey: string): void {
     // Re-bake into the same target: the environment texture keeps its identity, nothing recompiles.
     const rt = this.pmrem.fromScene(this.probeScene, 0, 0.1, 100, this.probeTarget ? { size: 128, renderTarget: this.probeTarget } : { size: 128 });
     if (!this.probeTarget) this.probeTarget = rt;
-    this.lastBake = { sunY: this.sunDir.y, exposure: this.exposure, band };
+    this.lastBake = { sunY: this.sunDir.y, exposure: this.exposure, band, cloudKey };
   }
 
   get environment(): import('three/webgpu').Texture | null {
