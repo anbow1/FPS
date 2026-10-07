@@ -9,7 +9,9 @@ import { Atmosphere } from './render/atmosphere.ts';
 import { type PresetId, SkyLighting } from './render/lighting.ts';
 import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
 import { bakeCloudData } from './sim/cloudField.ts';
-import { buildJet, poseGear, poseSurfaces } from './render/jetModels.ts';
+import { buildJet, EMISSIVE_EXPOSURE, poseGear, poseSurfaces } from './render/jetModels.ts';
+import { CONTRAIL, contrailStrength, Trails, VAPOUR, vapourStrength } from './render/trails.ts';
+import { atmosphereAt } from './sim/atmosphere.ts';
 import { buildAirbase, RUNWAY, THRESHOLD_36_Z } from './render/airbase.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { Aircraft } from './sim/aircraft.ts';
@@ -39,7 +41,7 @@ async function main(): Promise<void> {
   loading.textContent = 'Contrail — loading';
   ui.appendChild(loading);
 
-  const settings: StageSettings = { quality: params.get('q') === 'low' ? 'low' : 'high', renderScale: 1, toneMap: 'aces' };
+  const settings: StageSettings = { quality: params.get('q') === 'low' ? 'low' : 'high', renderScale: 1, toneMap: params.get('tm') === 'agx' ? 'agx' : 'aces' };
   const stage = new Stage(canvas, settings);
   await stage.init();
   window.addEventListener('resize', () => stage.resize());
@@ -83,11 +85,19 @@ async function main(): Promise<void> {
       aircraft.placeOnGround(0, THRESHOLD_36_Z - 120, 0, RUNWAY.elevationM);
       pilot.input.throttle = 0;
     }
+    trails.clear();
   };
   const model = buildJet(aircraftId);
   stage.scene.add(model.root);
   // Cloud shadows on the ground, the airbase and the aircraft (the sun light only).
   if (!params.has('nocloudshadow')) clouds.shadeReceivers(stage.scene, settings.quality === 'high' ? 4 : 2);
+  // Contrails from each nozzle, vapour from each wingtip, in one draw.
+  const trails = new Trails(atmosphere, [...model.nozzles.map(() => ({ style: CONTRAIL })), ...model.wingtips.map(() => ({ style: VAPOUR }))]);
+  stage.scene.add(trails.mesh);
+  const emitters = [...model.nozzles, ...model.wingtips].map(() => new Vector3());
+  const emitterStrength = emitters.map(() => 0);
+  const air = atmosphereAt(0);
+  let trailClockS = 0;
   const arrows = new ForceArrows();
   stage.scene.add(arrows.mesh);
 
@@ -162,6 +172,9 @@ async function main(): Promise<void> {
       const qS = aircraft.dynamicPressurePa * aircraft.cfg.aero.wingAreaM2;
       poseSurfaces(model, authority(aircraft.controls.pitch, qS * aircraft.cfg.aero.chordM * aircraft.cfg.aero.cmControl + 1), authority(aircraft.controls.roll, qS * aircraft.cfg.aero.spanM * aircraft.cfg.aero.clControl + 1));
       model.burner.value = aircraft.engine.burner;
+      model.heat.value = Math.min(1, aircraft.engine.core * 0.7 + aircraft.engine.burner * 0.6);
+      for (const m of model.shimmer) m.visible = settings.quality === 'high';
+      EMISSIVE_EXPOSURE.value = lighting.exposure;
       poseGear(model, aircraft.gear.position, aircraft.gear.compression);
       rig.update(renderPos, renderRot, model.eye, aircraft.loadFactor, AIRCRAFT[aircraftId].lengthM, frameS);
       stage.camera.updateMatrixWorld();
@@ -180,6 +193,19 @@ async function main(): Promise<void> {
       lighting.setCloudCover(clouds.layer.coverage, camY < clouds.layer.baseM ? 'below' : camY > clouds.layer.topM ? 'above' : 'inside');
       lighting.update(stage.camera, renderPos);
       clouds.update(frameS, stage.camera.position, settings.quality === 'high');
+      // Trails: emitter positions from the rendered transform; contrails a little behind the nozzle.
+      trailClockS += frameS;
+      model.root.updateMatrixWorld();
+      atmosphereAt(renderPos.y, air);
+      const humidity = lighting.preset.humidity;
+      const thrust = Math.min(1, aircraft.engine.core + aircraft.engine.burner * 0.5);
+      const nN = model.nozzles.length;
+      [...model.nozzles, ...model.wingtips].forEach(([x, y, z], k) => {
+        emitters[k]!.set(x, y, k < nN ? z + 2 : z);
+        model.root.localToWorld(emitters[k]!);
+        emitterStrength[k] = aircraft.crashed ? 0 : k < nN ? contrailStrength(air.temperatureK, humidity, thrust) : vapourStrength(aircraft.loadFactor, aircraft.speedMs, renderPos.y, humidity);
+      });
+      trails.update(trailClockS, emitters, emitterStrength, stage.camera.position);
       stage.scene.environment = lighting.environment;
       stage.greyOut.value = greyOut(aircraft.g);
       stage.redOut.value = aircraft.g.redOut;

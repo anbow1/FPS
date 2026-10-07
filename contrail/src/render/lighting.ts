@@ -24,12 +24,14 @@ export interface LightPreset {
   cloudBaseM: number;
   cloudTopM: number;
   coverage: number;
+  /** Relative humidity factor 0…1 for contrails and vapour. */
+  humidity: number;
 }
 
 export const PRESETS: Record<PresetId, LightPreset> = {
-  morning: { id: 'morning', label: 'Clear morning', sunAzimuthDeg: 105, sunElevationDeg: 14, ev100: 13.8, cloudBaseM: 2200, cloudTopM: 3200, coverage: 0.12 },
-  noon: { id: 'noon', label: 'Broken cloud, noon', sunAzimuthDeg: 170, sunElevationDeg: 62, ev100: 15.0, cloudBaseM: 1600, cloudTopM: 3400, coverage: 0.55 },
-  dusk: { id: 'dusk', label: 'Dusk above an overcast', sunAzimuthDeg: 268, sunElevationDeg: 3, ev100: 12.8, cloudBaseM: 1200, cloudTopM: 2600, coverage: 0.95 },
+  morning: { id: 'morning', label: 'Clear morning', sunAzimuthDeg: 105, sunElevationDeg: 14, ev100: 13.8, cloudBaseM: 2200, cloudTopM: 3200, coverage: 0.12, humidity: 0.9 },
+  noon: { id: 'noon', label: 'Broken cloud, noon', sunAzimuthDeg: 170, sunElevationDeg: 62, ev100: 15.0, cloudBaseM: 1600, cloudTopM: 3400, coverage: 0.55, humidity: 0.7 },
+  dusk: { id: 'dusk', label: 'Dusk above an overcast', sunAzimuthDeg: 268, sunElevationDeg: 3, ev100: 12.8, cloudBaseM: 1200, cloudTopM: 2600, coverage: 0.95, humidity: 1 },
 };
 
 /** Pre-exposure for an EV100 (Lagarde & de Rousiers 2014). */

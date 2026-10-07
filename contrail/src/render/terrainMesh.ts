@@ -1,4 +1,4 @@
-import { abs, attribute, cameraPosition, clamp, dot, float, floor, fract, hash, int, ivec2, length, max, min, mix, mx_noise_float, normalize, positionWorld, smoothstep, texture, textureLoad, transformNormalToView, vec2, vec3 } from 'three/tsl';
+import { abs, attribute, cameraPosition, clamp, cos, dot, float, floor, fract, hash, int, ivec2, length, max, min, mix, mx_noise_float, normalize, positionWorld, sin, smoothstep, step, texture, textureLoad, transformNormalToView, vec2, vec3 } from 'three/tsl';
 import { Box3, BufferAttribute, Color, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, type PerspectiveCamera, type Texture, Vector3 } from 'three/webgpu';
 import { TERRAIN, type TerrainData } from '../sim/terrain.ts';
 import type { TerrainTextures } from './terrainTextures.ts';
@@ -109,28 +109,56 @@ export class TerrainRenderer {
     const macro = mx_noise_float(P.xz.div(4500)).mul(0.5).add(0.5);
     const fine = mx_noise_float(P.xz.div(14)).mul(0.5).add(0.5);
 
-    // Farmland: rectangular fields on a slightly rotated grid, rows offset, a crop colour per field
-    // from the sheet's greens and soils, darker hedgerows along the edges.
-    const ca = Math.cos(0.4);
-    const sa = Math.sin(0.4);
+    // Farmland as seen from the air: blocks of fields whose grid turns from one district (~6 km) to
+    // the next, each block cut into one to four strips of its own crop, desaturated sheet colours with
+    // per-field brightness and in-field moisture patches, hedgerows, the odd farm track along a block
+    // edge, and small villages of roofs and gardens.
+    const district = floor(P.xz.div(6000));
+    const dId = hash(district.x.mul(3.17).add(district.y.mul(11.3)));
+    const angle = dId.mul(1.4).sub(0.7);
+    const ca = cos(angle);
+    const sa = sin(angle);
     const r = vec2(P.x.mul(ca).sub(P.z.mul(sa)), P.x.mul(sa).add(P.z.mul(ca)));
-    const fieldSize = vec2(320, 480);
+    const fieldSize = vec2(mix(float(260), float(420), dId), mix(float(380), float(620), hash(dId.mul(9.1))));
     const row = floor(r.y.div(fieldSize.y));
-    const q = vec2(r.x.div(fieldSize.x).add(hash(row.mul(13.7)).mul(0.9)), r.y.div(fieldSize.y));
+    const q = vec2(r.x.div(fieldSize.x).add(hash(row.mul(13.7).add(dId)).mul(0.9)), r.y.div(fieldSize.y));
     const cell = floor(q);
-    const id = hash(cell.x.mul(7.31).add(cell.y.mul(157.7)));
+    const blockId = hash(cell.x.mul(7.31).add(cell.y.mul(157.7)).add(dId.mul(41)));
+    const f0 = fract(q);
+    // Strips across the block.
+    const strips = floor(blockId.mul(4)).add(1);
+    const stripCoord = f0.x.mul(strips);
+    const stripIdx = floor(stripCoord);
+    const id = hash(blockId.mul(91.7).add(stripIdx.mul(3.3)));
     const crop = mix(
       mix(lin(0x6d7343), lin(0x4a6030), smoothstep(0.15, 0.2, id)),
       mix(mix(lin(0xb3a16a), lin(0x6b5a47), smoothstep(0.55, 0.6, id)), lin(0x8a9a58), smoothstep(0.8, 0.85, id)),
       smoothstep(0.38, 0.42, id),
     );
-    const f = fract(q);
-    const edgeM = min(min(f.x, float(1).sub(f.x)).mul(fieldSize.x), min(f.y, float(1).sub(f.y)).mul(fieldSize.y));
-    const hedge = float(1).sub(smoothstep(4, 9, edgeM));
-    // Crop rows: faint stripes along each field.
+    // Satellite colour is greyer than the swatches: pull a quarter of the way to luminance, vary per field.
+    const cropGrey = vec3(dot(crop, vec3(0.2126, 0.7152, 0.0722)));
+    const moisture = mx_noise_float(P.xz.div(55).add(id.mul(30))).mul(0.5).add(0.5);
+    const field = mix(crop, cropGrey, 0.25).mul(float(0.88).add(hash(id.mul(5.1)).mul(0.24))).mul(float(0.92).add(moisture.mul(0.16)));
+    const edgeX = min(fract(stripCoord), float(1).sub(fract(stripCoord))).mul(fieldSize.x).div(strips);
+    const edgeY = min(f0.y, float(1).sub(f0.y)).mul(fieldSize.y);
+    const blockEdge = min(min(f0.x, float(1).sub(f0.x)).mul(fieldSize.x), edgeY);
+    const hedge = float(1).sub(smoothstep(3, 7, blockEdge)).mul(step(0.35, hash(cell.x.add(cell.y.mul(5.3)))));
+    const furrow = float(1).sub(smoothstep(0.6, 1.6, edgeX)).mul(0.5);
+    // A farm track along some block rows.
+    const track = float(1).sub(smoothstep(2, 4, edgeY)).mul(step(hash(row.mul(2.9).add(dId)), 0.25));
+    // Crop rows: faint stripes along each strip.
     const rows = abs(fract(r.x.div(6).add(id.mul(3))).sub(0.5)).mul(0.08).add(0.96);
+    let farm: Node<'vec3'> = mix(field.mul(rows), lin(0x34472a), max(hedge.mul(0.8), furrow.mul(0.3)));
+    farm = mix(farm, lin(0x9b9488), track.mul(0.7));
+    // Villages: a few hundred metres of roofs, gardens and lanes where a coarse noise peaks.
+    const villageN = mx_noise_float(P.xz.div(2600).add(vec2(31, 7)));
+    const village = smoothstep(0.55, 0.62, villageN);
+    const plot = floor(P.xz.div(22));
+    const plotId = hash(plot.x.mul(1.7).add(plot.y.mul(37.1)));
+    const roof = mix(lin(0x8a4a38), lin(0x6e6a66), step(0.55, plotId));
+    const built = mix(mix(lin(0x55663c), roof, step(0.62, plotId)), lin(0x8d8a84), step(0.9, plotId));
+    const farmland = mix(farm, built, village);
     const lowland = float(1).sub(smoothstep(700, 1100, P.y)).mul(smoothstep(0.94, 0.985, nrm.y));
-    const farmland = mix(crop.mul(rows), lin(0x34472a), hedge.mul(0.8));
     const heath = mix(lin(0x6d7346), lin(0x5c5a42), macro);
     let albedo: Node<'vec3'> = mix(heath, farmland, lowland);
     // Forest canopy: dark greens with crown-scale variation.

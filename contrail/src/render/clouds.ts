@@ -1,4 +1,4 @@
-import { Break, cameraPosition, exp, float, Fn, If, Loop, max, min, mix, positionWorld, pow, screenCoordinate, select, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { Break, cameraPosition, exp, float, Fn, hash, If, Loop, max, min, mix, positionWorld, pow, screenCoordinate, select, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import { DataTexture, LinearFilter, Mesh, type Node, NodeMaterial, type Object3D, RedFormat, RepeatWrapping, UnsignedByteType, Vector2, Vector3 } from 'three/webgpu';
 import { CLOUD_EXTINCTION_PER_M, CLOUD_FIELD, type CloudData, type CloudLayer, densityAt } from '../sim/cloudField.ts';
 import type { Atmosphere } from './atmosphere.ts';
@@ -231,10 +231,13 @@ export class Clouds {
       const T = float(1).toVar();
       const depthSum = float(0).toVar();
       const weightSum = float(0).toVar();
+      // Interleaved gradient noise (Jimenez 2014), rotated each frame for TRAA to average.
+      const pix = screenCoordinate.xy.add(this.frame.mul(5.588238));
+      const jitter = pix.x.mul(0.06711056).add(pix.y.mul(0.00583715)).fract().mul(52.9829189).fract().toVar();
+      // Per-pixel white noise added to it, so a frame TRAA could not accumulate (fast motion)
+      // shows grain rather than IGN's diagonal stripes.
+      jitter.assign(jitter.add(hash(pix.x.add(pix.y.mul(1973.0)))).fract());
       If(seg.end.greaterThan(seg.start), () => {
-        // Interleaved gradient noise (Jimenez 2014), rotated each frame for TRAA to average.
-        const pix = screenCoordinate.xy.add(this.frame.mul(5.588238));
-        const jitter = pix.x.mul(0.06711056).add(pix.y.mul(0.00583715)).fract().mul(52.9829189).fract();
         const a = this.curvature(dir.y);
         const cosSun = dir.dot(this.atmosphere.sunDir);
         // Dual-lobe phase per octave of Wrenninge's approximation (g halves each octave).
@@ -249,16 +252,25 @@ export class Clouds {
         // Steps grow with distance (a pixel's footprint does): 1.5 % of the range, 15 m to 1.5 km.
         const stepOf = (t: F): F => t.mul(q.stepFraction).add(15).clamp(15, 1500);
         const t = seg.start.add(stepOf(seg.start).mul(jitter)).toVar();
+        // Coarse steps through empty air; on the first hit, back up and continue at a third of the
+        // step, easing back out after the cloud — the edges are where coarse steps show as grain lines.
+        const fine = float(1).toVar();
+        const prevDt = stepOf(seg.start).toVar();
         Loop(q.steps, () => {
           If(T.lessThan(0.01).or(t.greaterThan(seg.end)), () => {
             Break();
           });
-          const dt = min(stepOf(t), seg.end.sub(t)).toVar();
+          const dt = min(stepOf(t).mul(fine), seg.end.sub(t)).toVar();
           const px = cam.x.add(dir.x.mul(t));
           const pz = cam.z.add(dir.z.mul(t));
           const h = cam.y.add(dir.y.mul(t)).add(a.mul(t).mul(t));
           const dens = this.density(px, h, pz, true).toVar();
-          If(dens.greaterThan(0.001), () => {
+          const firstHit = dens.greaterThan(0.001).and(fine.greaterThan(0.99));
+          If(firstHit, () => {
+            fine.assign(1 / 3);
+            t.subAssign(prevDt.mul(0.75));
+            dt.assign(0);
+          }).ElseIf(dens.greaterThan(0.001), () => {
             const sigmaT = dens.mul(sigma);
             // Light where the step's energy comes from: within one mean free path of its start, not
             // at its middle (a 300 m step into a cloud would otherwise be lit from deep inside).
@@ -289,8 +301,11 @@ export class Clouds {
             depthSum.addAssign(t.mul(w));
             weightSum.addAssign(w);
             T.mulAssign(stepT);
+          }).Else(() => {
+            fine.assign(min(fine.mul(1.3), 1));
           });
-          t.addAssign(dt.max(1));
+          prevDt.assign(dt.max(1));
+          t.addAssign(dt);
         });
       });
       // Haze in front of the cloud: the cloud as a surface at its weighted depth, opacity 1 − T.

@@ -2,8 +2,8 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { convertToTexture, float, length, mix, mrt, normalize, output, pass, pow, rtt, select, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, type Node, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, WebGPURenderer } from 'three/webgpu';
+import { convertToTexture, depth as fragmentDepth, float, length, mix, mrt, normalize, output, pass, pow, rtt, screenUV, select, texture, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { ACESFilmicToneMapping, AddEquation, AgXToneMapping, CustomBlending, DepthTexture, FloatType, HalfFloatType, Layers, type Material, type Node, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, RenderPipeline, Scene, SrcAlphaFactor, SRGBColorSpace, WebGPURenderer, ZeroFactor } from 'three/webgpu';
 import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -30,6 +30,38 @@ export interface GovernorStep {
 }
 
 const GOVERNOR_STEPS: readonly GovernorStep[] = [{ scale: 1 }, { scale: 0.87 }, { scale: 0.76 }, { scale: 0.67 }, { scale: 0.58 }];
+
+/**
+ * Objects on this layer (contrails, vapour, afterburner flames) skip the scene pass and are drawn in an
+ * overlay pass composited after the clouds: the cloud composite only knows the depth of opaque
+ * surfaces, so a trail in front of a cloud would otherwise vanish behind it.
+ */
+export const OVERLAY_LAYER = 1;
+
+const depthPlaceholder = new DepthTexture(1, 1);
+depthPlaceholder.type = FloatType;
+/** The scene pass's depth, for overlay materials to hide behind opaque surfaces (see `overlayVisibility`). */
+const SCENE_DEPTH = texture(depthPlaceholder);
+
+/** 1 where an overlay fragment is in front of the opaque scene, 0 behind it (reversed depth: larger is nearer). */
+export function overlayVisibility(): Node<'float'> {
+  return select(fragmentDepth.greaterThanEqual(SCENE_DEPTH.sample(screenUV).r.mul(0.99995)), float(1), float(0));
+}
+
+/**
+ * Blending for overlay materials: colour premultiplied over (transparent black), alpha multiplied by
+ * (1 − α) so it ends as the transmittance the composite needs. Emissive overlays (flames) add colour
+ * and leave alpha alone instead.
+ */
+export function overlayBlending(m: Material, emissive: boolean): void {
+  m.blending = CustomBlending;
+  m.blendEquation = AddEquation;
+  m.blendEquationAlpha = AddEquation;
+  m.blendSrc = emissive ? OneFactor : SrcAlphaFactor;
+  m.blendDst = emissive ? OneFactor : OneMinusSrcAlphaFactor;
+  m.blendSrcAlpha = ZeroFactor;
+  m.blendDstAlpha = emissive ? OneFactor : OneMinusSrcAlphaFactor;
+}
 
 export const CAMERA_NEAR_M = 0.05;
 export const CAMERA_FAR_M = 600_000;
@@ -120,6 +152,15 @@ export class Stage {
     scenePass.setMRT(mrt({ output, velocity }));
     const colour = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
+    SCENE_DEPTH.value = scenePass.getTexture('depth');
+    // The overlay: only OVERLAY_LAYER. It is rendered from inside convertToTexture's RTT, which resets
+    // the clear colour to opaque black, so its alpha holds transmittance (1 = nothing drawn): overlay
+    // materials blend with `OVERLAY_BLENDING`.
+    const overlayPass = pass(this.scene, this.camera, { type: HalfFloatType });
+    const overlayLayers = new Layers();
+    overlayLayers.set(OVERLAY_LAYER);
+    overlayPass.setLayers(overlayLayers);
+    const overlay = overlayPass.getTextureNode('output');
     const motion = scenePass.getTextureNode('velocity');
     const high = this.settings.quality === 'high';
     // Aerial perspective before anti-aliasing, on the HDR scene colour: every surface takes the haze
@@ -147,6 +188,8 @@ export class Stage {
         const cloudTex = rtt(this.clouds.march(dir, distanceM, screen), null, null, { resolutionScale: this.clouds.quality.resolutionScale });
         rgb = this.clouds.composite(rgb, cloudTex.sample(screen), dir, distanceM);
       }
+      const ov = overlay.sample(screen);
+      rgb = rgb.mul(ov.a.clamp(0, 1)).add(ov.rgb);
       // TRAA re-samples its input at reprojected positions, so it needs a texture, not an
       // expression: render the hazed frame to one first.
       hazed = convertToTexture(vec4(rgb, 1));

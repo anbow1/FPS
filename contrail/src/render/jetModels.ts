@@ -1,6 +1,8 @@
-import { abs, add, float, fract, fwidth, max, mix, mx_noise_float, positionLocal, smoothstep, uniform, vec3 } from 'three/tsl';
-import { AdditiveBlending, Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type BufferGeometry } from 'three/webgpu';
+import { abs, add, cameraPosition, dot, float, fract, fwidth, max, mix, mx_noise_float, normalize, normalWorld, positionLocal, positionWorld, screenUV, smoothstep, time, uniform, vec2, vec3, viewportSharedTexture } from 'three/tsl';
+import { Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type BufferGeometry } from 'three/webgpu';
 import { AIRCRAFT, type AircraftId } from '../config.ts';
+import { blackbody } from '../core/blackbody.ts';
+import { OVERLAY_LAYER, overlayBlending, overlayVisibility } from './stage.ts';
 import { lathe, loft, type Section, surface } from './airframe.ts';
 
 // Procedural models of the two aircraft, built to the scale sheet
@@ -18,6 +20,10 @@ export interface JetModel {
   rudders: Group[];
   /** Afterburner flame size and brightness 0…1, set per frame. */
   burner: { value: number };
+  /** Exhaust heat 0…1 (core spool, more with the burner) for the shimmer, set per frame. */
+  heat: { value: number };
+  /** Heat-shimmer volumes behind the nozzles (hidden on Low: they need a copy of the frame). */
+  shimmer: Mesh[];
   /** Nozzle positions for effects (contrails, heat shimmer): [x, y, z] in model space. */
   nozzles: [number, number, number][];
   /** Wingtips for vapour trails. */
@@ -63,14 +69,48 @@ function canopyMaterial(tint: number): MeshPhysicalNodeMaterial {
   return m;
 }
 
+/** Pre-exposure for emissive surfaces given in physical luminance (cd/m²): set per frame from the lighting. */
+export const EMISSIVE_EXPOSURE = uniform(1);
+
+/** Afterburner luminance at full reheat (cd/m²): bright enough to read at noon, not to blind at dusk. */
+const FLAME_LUMINANCE = 60_000;
+
 function flameMaterial(burner: { value: number } & Node<'float'>, lengthM: number, z0: number): MeshBasicNodeMaterial {
-  const m = new MeshBasicNodeMaterial({ name: 'afterburner', transparent: true, depthWrite: false, blending: AdditiveBlending, side: DoubleSide });
-  // Colour temperature ~1900 K core fading into a faint blue-violet plume with shock diamonds.
+  const m = new MeshBasicNodeMaterial({ name: 'afterburner', transparent: true, depthWrite: false, side: DoubleSide });
+  // Pure addition of light: a flame hides nothing behind it.
+  overlayBlending(m, true);
+  // Emission, not reflection: a ~1900 K core cooling to ~1300 K along the plume (black-body colour),
+  // plus the blue-violet of the shock diamonds (band emission, not black body), in physical
+  // luminance pre-exposed like everything else — so the same flame is subtle at noon and vivid at dusk.
+  const hot = blackbody(1900);
+  const cool = blackbody(1300);
   const along = positionLocal.z.sub(z0).div(lengthM).clamp(0, 1);
-  const diamonds = abs(fract(along.mul(5.5)).sub(0.5)).mul(2).oneMinus().pow(6).mul(0.6);
-  const core = vec3(1.0, 0.55, 0.18).mul(float(1).sub(along).pow(1.6));
+  const diamonds = abs(fract(along.mul(5.5)).sub(0.5)).mul(2).oneMinus().pow(6).mul(0.5);
+  const core = mix(vec3(...hot), vec3(...cool), along).mul(float(1).sub(along).pow(1.6));
   const plume = vec3(0.35, 0.4, 1.0).mul(diamonds).mul(float(1).sub(along));
-  m.colorNode = add(core, plume).mul(burner.mul(burner)).mul(6);
+  m.colorNode = add(core, plume).mul(burner.mul(burner)).mul(EMISSIVE_EXPOSURE).mul(FLAME_LUMINANCE).mul(overlayVisibility());
+  return m;
+}
+
+/** One shared copy of the frame for every shimmer volume (each viewport texture node keeps its own). */
+const frameCopy = viewportSharedTexture();
+
+/**
+ * Hot exhaust bends the light behind the nozzle: the volume redraws the frame behind it with a small
+ * screen-space offset from animated noise, strongest at the nozzle and towards the volume's centre.
+ */
+function shimmerMaterial(heat: { value: number } & Node<'float'>, lengthM: number, z0: number): MeshBasicNodeMaterial {
+  const m = new MeshBasicNodeMaterial({ name: 'heat shimmer', transparent: true, depthWrite: false });
+  const along = positionLocal.z.sub(z0).div(lengthM).clamp(0, 1);
+  const facing = abs(dot(normalWorld, normalize(cameraPosition.sub(positionWorld))));
+  const flow = positionLocal.mul(vec3(3.5, 3.5, 0.9)).add(vec3(0, 0, time.mul(-24)));
+  const n = vec2(mx_noise_float(flow), mx_noise_float(flow.add(17.3)));
+  const strength = heat.mul(float(1).sub(along).pow(1.5)).mul(facing.pow(2));
+  // Offset in screen units shrinks with distance, as a real refraction of a fixed size would.
+  const dist = positionWorld.sub(cameraPosition).length();
+  const offset = n.mul(strength).mul(float(0.18).div(dist.max(2)));
+  m.colorNode = frameCopy.sample(screenUV.add(offset)).rgb;
+  m.opacityNode = smoothstep(0, 0.05, strength);
   return m;
 }
 
@@ -165,9 +205,14 @@ function buildWraith(): JetModel {
   // Nozzle and flame.
   root.add(mesh(lathe([[6.85, 0.66], [7.4, 0.6], [7.85, 0.56], [7.86, 0.0]], 0, 0.2, 24), dark));
   const burner = uniform(0);
+  const heat = uniform(0);
   const flame = mesh(lathe([[7.86, 0.5], [8.6, 0.42], [10.5, 0.22], [12.2, 0.0]], 0, 0.2, 18, true), flameMaterial(burner, 4.3, 7.86), false);
   flame.renderOrder = 5;
+  flame.layers.set(OVERLAY_LAYER);
   root.add(flame);
+  const shimmer = [mesh(lathe([[7.9, 0.5], [9.5, 0.75], [13.5, 1.1], [17.9, 1.3]], 0, 0.2, 16, true), shimmerMaterial(heat, 10, 7.9), false)];
+  shimmer[0]!.renderOrder = 4;
+  root.add(shimmer[0]!);
   // Canopy bubble.
   const canopy = loft(
     [
@@ -187,6 +232,8 @@ function buildWraith(): JetModel {
     stabs,
     rudders: [],
     burner,
+    heat,
+    shimmer,
     nozzles: [[0, 0.2, 7.9]],
     wingtips: [
       [5.35, 0.0, 1.6],
@@ -220,15 +267,23 @@ function buildTalon(): JetModel {
   root.add(mesh(lathe([[-10.95, 0.0], [-10.9, 0.12], [-10.2, 0.36], [-9.6, 0.45]], 0, 0.36, 20), radome));
   // Engine nacelles under the wing roots, with nozzles and flames.
   const burner = uniform(0);
+  const heat = uniform(0);
   const nozzles: [number, number, number][] = [];
+  const shimmer: Mesh[] = [];
   const flameMat = flameMaterial(burner, 5.2, 9.85);
+  const shimmerMat = shimmerMaterial(heat, 10, 9.9);
   for (const side of [1, -1]) {
     const x = side * 1.3;
     root.add(mesh(lathe([[-3.4, 0.55], [-2.6, 0.68], [6.5, 0.7], [9.0, 0.62], [9.4, 0.6]], x, -0.35, 24, true), paint));
     root.add(mesh(lathe([[9.0, 0.6], [9.85, 0.5], [9.86, 0.0]], x, -0.35, 24), dark));
     const flame = mesh(lathe([[9.86, 0.45], [10.8, 0.38], [12.8, 0.18], [15.0, 0.0]], x, -0.35, 18, true), flameMat, false);
     flame.renderOrder = 5;
+    flame.layers.set(OVERLAY_LAYER);
     root.add(flame);
+    const haze = mesh(lathe([[9.9, 0.45], [11.5, 0.7], [15.5, 1.05], [19.9, 1.25]], x, -0.35, 16, true), shimmerMat, false);
+    haze.renderOrder = 4;
+    root.add(haze);
+    shimmer.push(haze);
     nozzles.push([x, -0.35, 9.9]);
   }
   // Wing (LE sweep ~42°) and the leading-edge root extensions.
@@ -264,6 +319,8 @@ function buildTalon(): JetModel {
     stabs,
     rudders: [],
     burner,
+    heat,
+    shimmer,
     nozzles,
     wingtips: [
       [7.65, -0.15, 5.0],
