@@ -58,6 +58,8 @@ const GOVERNOR_STEPS: Record<Quality, readonly GovernorStep[]> = {
     { shafts: false, reflections: false, scale: 0.76 },
     { shafts: false, reflections: false, scale: 0.67 },
     { shafts: false, reflections: false, scale: 0.58 },
+    { shafts: false, reflections: false, scale: 0.5 },
+    { shafts: false, reflections: false, scale: 0.42 },
   ],
 };
 
@@ -160,7 +162,9 @@ export class Stage {
     const motion = scenePass.getTextureNode('velocity');
     this.sceneTexture = scenePass.getTexture('output');
     const high = this.settings.quality === 'high';
-    const aa = high ? traa(colour, depth, motion, this.camera) : colour;
+    // TRAA on both presets: the velocity buffer is rendered either way, so it costs only its resolve, and
+    // on a phone it is what keeps the 2× picture (and its foliage) from shimmering.
+    const aa = traa(colour, depth, motion, this.camera);
     const samples = SHAFT_SAMPLES[this.settings.quality];
     const sunUv = this.sunScreen;
     const strength = this.shaftStrength;
@@ -187,7 +191,7 @@ export class Stage {
     const r = length(uv().sub(vec2(0.5)).mul(vec2(1.25, 1)));
     const graded = vec4(saturation(lit.add(glare), 1.05).mul(float(1).sub(pow(r, 2.6).mul(0.35))), 1);
     const pipeline = new RenderPipeline(this.renderer);
-    pipeline.outputNode = high ? sharpen(graded, 0.3) : graded;
+    pipeline.outputNode = sharpen(graded, high ? 0.3 : 0.25);
     this.pipeline?.dispose();
     this.pipeline = pipeline;
   }
@@ -196,8 +200,9 @@ export class Stage {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     // Phones report a device pixel ratio of 3 or more: rendering that many pixels would halve the
-    // frame rate for detail a 6-inch screen cannot show. Touch screens render at 1 pixel per CSS pixel.
-    const maxRatio = isTouchDevice() ? 1 : 4;
+    // frame rate for detail a 6-inch screen cannot show.
+    // Phones: up to 2× — sharp on any screen a hand holds; native 3× would triple the cost for little.
+    const maxRatio = isTouchDevice() ? 2 : 4;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio) * this.settings.renderScale * this.dynamicScale);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
