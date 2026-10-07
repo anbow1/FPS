@@ -170,7 +170,7 @@ async function main(): Promise<void> {
       model.root.visible = rig.mode !== 'cockpit';
       const authority = (m: number, a: number): number => (a > 0 ? m / a : 0);
       const qS = aircraft.dynamicPressurePa * aircraft.cfg.aero.wingAreaM2;
-      poseSurfaces(model, authority(aircraft.controls.pitch, qS * aircraft.cfg.aero.chordM * aircraft.cfg.aero.cmControl + 1), authority(aircraft.controls.roll, qS * aircraft.cfg.aero.spanM * aircraft.cfg.aero.clControl + 1));
+      poseSurfaces(model, { pitch: authority(aircraft.controls.pitch, qS * aircraft.cfg.aero.chordM * aircraft.cfg.aero.cmControl + 1), roll: authority(aircraft.controls.roll, qS * aircraft.cfg.aero.spanM * aircraft.cfg.aero.clControl + 1), yaw: authority(aircraft.controls.yaw, qS * aircraft.cfg.aero.spanM * aircraft.cfg.aero.clControl + 1), alphaRad: aircraft.alphaRad, gearDown: aircraft.gear.position > 0.5 });
       model.burner.value = aircraft.engine.burner;
       model.heat.value = Math.min(1, aircraft.engine.core * 0.7 + aircraft.engine.burner * 0.6);
       for (const m of model.shimmer) m.visible = settings.quality === 'high';

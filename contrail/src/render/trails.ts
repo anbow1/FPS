@@ -244,5 +244,7 @@ export class Trails {
     this.shade.needsUpdate = true;
     this.index.needsUpdate = true;
     this.geometry.setDrawRange(0, k);
+    // Nothing to draw: skip the call (an empty draw is a WebGPU validation warning).
+    this.mesh.visible = k > 0;
   }
 }

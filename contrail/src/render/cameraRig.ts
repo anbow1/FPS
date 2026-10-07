@@ -18,6 +18,8 @@ export class CameraRig {
   chaseDistanceM = 22;
   orbitYawRad = 0.6;
   orbitPitchRad = 0.15;
+  /** Orbit distance as a multiple of the chase distance (screenshots, a closer look). */
+  orbitZoom = 1;
   private readonly smoothed = new Quaternion();
   private readonly tmp = new Vector3();
   private readonly tmp2 = new Vector3();
@@ -54,7 +56,7 @@ export class CameraRig {
       cam.fov = 60;
       cam.near = 0.5;
     } else {
-      const d = this.chaseDistanceM * 1.2;
+      const d = this.chaseDistanceM * 1.2 * this.orbitZoom;
       this.tmp.set(Math.sin(this.orbitYawRad) * Math.cos(this.orbitPitchRad), Math.sin(this.orbitPitchRad), Math.cos(this.orbitYawRad) * Math.cos(this.orbitPitchRad)).multiplyScalar(d).add(jetPos);
       cam.position.copy(this.tmp);
       cam.up.set(0, 1, 0);
