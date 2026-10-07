@@ -17,6 +17,7 @@ import { JetView } from './render/jetView.ts';
 import { SkyLighting } from './render/lighting.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
+import { TerrainShadow } from './render/terrainShadow.ts';
 import { buildTerrainTextures } from './render/terrainTextures.ts';
 import { bakeCloudData, lineTransmittance } from './sim/cloudField.ts';
 import { type Combatant, createOrders, type WeaponMode } from './sim/combat.ts';
@@ -79,7 +80,11 @@ async function main(): Promise<void> {
   const t0 = performance.now();
   const terrainData = await bakeTerrain((f) => (loading.textContent = `Contrail — shaping 819 km of terrain ${Math.round(f * 100)} %`));
   loading.textContent = 'Contrail — painting the land';
-  const terrain = new TerrainRenderer(terrainData, await buildTerrainTextures(terrainData));
+  const terrainTextures = await buildTerrainTextures(terrainData);
+  // The ridges' shadows and the valleys' sky occlusion, baked on the GPU for this sun (again when it moves).
+  const terrainShadow = params.has('noterrainshadow') ? null : new TerrainShadow(terrainTextures);
+  terrainShadow?.bake(stage.renderer, lighting.sunDir);
+  const terrain = new TerrainRenderer(terrainData, terrainTextures, terrainShadow ? terrainShadow.target.texture : null);
   console.log(`terrain baked in ${(performance.now() - t0).toFixed(0)} ms`);
   stage.scene.add(terrain.mesh);
   loading.textContent = 'Contrail — growing the clouds';
@@ -215,6 +220,7 @@ async function main(): Promise<void> {
         if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
         if (input.pressed('timeOfDay')) {
           lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : 'morning');
+          terrainShadow?.bake(stage.renderer, lighting.sunDir);
           applyPresetClouds();
         }
         if (input.pressed('quality')) {

@@ -9,7 +9,7 @@ import type { TerrainTextures } from './terrainTextures.ts';
 // patches (one draw call, rules §6). Each vertex reads the height in the vertex
 // stage (four textureLoads and the same bilinear as the CPU) and morphs towards
 // the next coarser grid over the last quarter of its level's range, so levels
-// meet without cracks or pops. Leaves are 3.2 km with 100 m cells (the near
+// meet without cracks or pops. Leaves are 1.6 km with 50 m cells (the near
 // grid's resolution); each level doubles. Sea is the terrain clamped to sea
 // level and shaded as water; rivers come from the cover map.
 //
@@ -19,10 +19,11 @@ import type { TerrainTextures } from './terrainTextures.ts';
 // water tint). Fine detail comes from procedural noise in the fragment stage.
 
 const PATCH = 32;
-const LEAF_M = 3200;
-const LEVELS = 9; // 3.2 km … 819.2 km
-const LEAF_RANGE_M = 7000;
-const MAX_NODES = 600;
+// Leaves of 1.6 km with 50 m cells (the near grid's resolution); ten levels double up to 819.2 km.
+const LEAF_M = 1600;
+const LEVELS = 10;
+const LEAF_RANGE_M = 3600;
+const MAX_NODES = 1000;
 
 function lin(hex: number): Node<'vec3'> {
   const c = new Color(hex);
@@ -46,6 +47,8 @@ export class TerrainRenderer {
   constructor(
     private readonly data: TerrainData,
     tex: TerrainTextures,
+    /** The baked sun and sky visibility of the near grid (terrainShadow.ts), or null for none. */
+    private readonly shadow: Texture | null = null,
   ) {
     for (let l = 0; l < LEVELS; l++) this.ranges.push(LEAF_RANGE_M * 2 ** l);
     const g = new InstancedBufferGeometry();
@@ -164,15 +167,52 @@ export class TerrainRenderer {
     // Forest canopy: dark greens with crown-scale variation.
     const canopy = mix(lin(0x2a3820), lin(0x3c4a2a), mx_noise_float(P.xz.div(60)).mul(0.5).add(0.5));
     albedo = mix(albedo, canopy, smoothstep(0.3, 0.6, forest));
-    albedo = mix(albedo, mix(lin(0x7a7672), lin(0x6a6258), macro), rock);
-    albedo = mix(albedo, lin(0xe8edf2), snow);
+    // Rock: strata — bands that follow the height, bent by noise as folded beds are — in two greys and
+    // a warm iron stain, cut by darker cracks across them.
+    const bend = mx_noise_float(P.xz.div(900)).mul(60).add(mx_noise_float(P.xz.div(140)).mul(12));
+    // Bed thickness varies too (the height scale is itself bent by noise), so the bands never repeat evenly.
+    const bed = fract(P.y.add(bend).div(mx_noise_float(P.xz.div(700)).mul(7).add(19)));
+    const beds = smoothstep(0.1, 0.45, bed).mul(float(1).sub(smoothstep(0.7, 0.98, bed))).mul(0.6).add(mx_noise_float(P.xz.div(55)).mul(0.25));
+    const stain = smoothstep(0.35, 0.75, mx_noise_float(P.xz.div(320).add(vec2(5, 9))));
+    // Beds show only on steep faces: on a gentle slope bands of constant height become contour rings.
+    // (and in patches: whole outcrops, not every slope).
+    const cliff = smoothstep(0.62, 0.45, nrm.y).mul(smoothstep(0.0, 0.3, mx_noise_float(P.xz.div(1100).add(vec2(13, 4)))));
+    const tone = mx_noise_float(P.xz.div(180)).mul(0.5).add(0.5);
+    let rockColour: Node<'vec3'> = mix(lin(0x5e5a55), lin(0x8a857d), mix(tone, beds, cliff));
+    rockColour = mix(rockColour, lin(0x7a6450), stain.mul(0.45));
+    const crack = smoothstep(0.82, 0.95, abs(mx_noise_float(vec2(P.x.add(P.z).div(38), P.y.div(9)))));
+    rockColour = rockColour.mul(float(1).sub(crack.mul(0.35).mul(cliff)));
+    // Exposed rock also where the fragment's own slope is steep, not only where the baked cover says so.
+    const steep = smoothstep(0.82, 0.62, nrm.y).mul(float(1).sub(water));
+    const rockMask = max(rock, steep.mul(0.85));
+    albedo = mix(albedo, rockColour, rockMask);
+    // Snow settles on the flatter ground and slides off the steep faces, whatever the cover map says.
+    const snowHere = snow.mul(smoothstep(0.55, 0.78, nrm.y));
+    albedo = mix(albedo, lin(0xe8edf2), snowHere);
     albedo = albedo.mul(float(0.85).add(macro.mul(0.3))).mul(float(0.9).add(fine.mul(0.2)));
     const waterColour = mix(lin(0x0d2a36), lin(0x1f3e44), cov.a.oneMinus().mul(2).clamp(0, 1));
     m.colorNode = mix(albedo, waterColour, water);
-    m.roughnessNode = mix(mix(float(0.92), float(0.62), snow), float(0.07), water);
-    // Water normals: flat with a little wind ripple; land: the baked normal.
+    m.roughnessNode = mix(mix(float(0.92), float(0.62), snowHere), float(0.07), water);
+    // Water normals: flat with a little wind ripple. Land: the baked normal, roughened below the grid's
+    // 50 m by noise — crags and gullies on rock, a gentle undulation elsewhere.
     const ripple = vec3(mx_noise_float(P.xz.div(35)).mul(0.04), 1, mx_noise_float(P.xz.div(35).add(17)).mul(0.04));
-    m.normalNode = transformNormalToView(normalize(mix(nrm, ripple, water)));
+    const crag = rockMask.mul(0.55).add(0.12);
+    const detail = vec3(
+      mx_noise_float(P.xz.div(31)).add(mx_noise_float(P.xz.div(9).add(3.3)).mul(0.5)),
+      0,
+      mx_noise_float(P.xz.div(31).add(7.7)).add(mx_noise_float(P.xz.div(9).add(1.9)).mul(0.5)),
+    ).mul(crag);
+    m.normalNode = transformNormalToView(normalize(mix(nrm.add(detail), ripple, water)));
+    // The mountains' own light (terrainShadow.ts): sun shadow from the ridges, and sky occlusion for the
+    // ambient. Both fade to 1 outside the near grid, which the bake does not cover.
+    if (this.shadow) {
+      const vis = texture(this.shadow, uvN);
+      const sunVis = mix(vis.r, float(1), t);
+      m.aoNode = mix(vis.g, float(1), t).mul(0.85).add(0.15);
+      // ShadowNode calls this with the shadow factor; clouds.shadeReceivers multiplies its own on top.
+      m.receivedShadowNode = ((shadow: Node<'vec4'>) => shadow.mul(sunVis)) as unknown as () => Node;
+      m.userData.shadowFactor = sunVis;
+    }
     return m;
   }
 

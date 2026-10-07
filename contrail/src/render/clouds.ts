@@ -341,11 +341,18 @@ export class Clouds {
   /** Applies the cloud shadow to every shadow-receiving node material under `root` (sun light only). */
   shadeReceivers(root: Object3D, samples: number): void {
     // ShadowNode calls this with the shadow factor; three's typing declares it argument-less.
-    const fn = ((shadow: Node<'vec4'>) => shadow.mul(this.sunShadow(positionWorld, cameraPosition, samples))) as unknown as () => Node;
+    // Built inside the callback: the march assigns to variables, which needs the shader-building stack.
+    const cloud = (): Node<'float'> => this.sunShadow(positionWorld, cameraPosition, samples);
+    const fn = ((shadow: Node<'vec4'>) => shadow.mul(cloud())) as unknown as () => Node;
     root.traverse((o) => {
       if (!(o instanceof Mesh) || !o.receiveShadow) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of mats) if (m instanceof NodeMaterial) m.receivedShadowNode = fn;
+      for (const m of mats) {
+        if (!(m instanceof NodeMaterial)) continue;
+        // A material may carry a sun factor of its own (the terrain's ridge shadows): keep it, times the cloud's.
+        const own = m.userData.shadowFactor as Node<'float'> | undefined;
+        m.receivedShadowNode = own ? (((shadow: Node<'vec4'>) => shadow.mul(cloud()).mul(own)) as unknown as () => Node) : fn;
+      }
     });
   }
 
