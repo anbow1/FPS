@@ -3,6 +3,7 @@ import { type BufferGeometry, DoubleSide, Group, type Material, Mesh, MeshBasicN
 import { AIRCRAFT, type AircraftId } from '../config.ts';
 import { blackbody } from '../core/blackbody.ts';
 import { bellyY, box, fuselage, lathe, type Station, type Surface, surface, surfacePoint, tube } from './airframe.ts';
+import { bakeAmbientOcclusion } from './aoBake.ts';
 import { canopyMaterial, nozzleMaterial, type PaintSpec, paintMaterial, plain } from './jetMaterials.ts';
 import { OVERLAY_LAYER, overlayBlending, overlayVisibility } from './stage.ts';
 
@@ -645,7 +646,11 @@ function stationAt2(stations: Station[], z: number): Station {
 }
 
 export function buildJet(id: AircraftId): JetModel {
-  return id === 'wraith' ? buildWraith() : buildTalon();
+  const model = id === 'wraith' ? buildWraith() : buildTalon();
+  const t0 = performance.now();
+  bakeAmbientOcclusion(model.root);
+  console.log(`${id}: ambient occlusion baked in ${(performance.now() - t0).toFixed(0)} ms`);
+  return model;
 }
 
 export interface SurfaceCommand {

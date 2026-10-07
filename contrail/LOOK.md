@@ -36,3 +36,24 @@ at speed and is stronger lower down. Both are lit by the atmosphere's sun with a
 strong forward lobe for ice. They are drawn in an overlay pass after the clouds,
 so a trail over a cloud deck stays visible. Over a white deck a contrail has
 little contrast, as in reality.
+
+## Airframes
+
+Both jets are built in code (`render/airframe.ts`, `render/jetModels.ts`) to
+the scale sheet. They are not imported models: the brief asks for invented
+types with no markings, and building them in code keeps them inside the repo's
+rules.
+
+- **Shape.** Fuselages are lofted from a few stations through smooth Bézier
+  cross-sections. The chine is a vertex seam, so the stealth type's sharp edge
+  and the twin's round body come from the same code. Wings and tails are cut
+  into fixed panels and hinged surfaces that move on their real hinge lines.
+- **Paint.** The paint works in skin coordinates (metres along and around the
+  hull): panels, access covers, rivets on the twin, seam tape on the stealth
+  type, flow streaks and exhaust soot. Seams get bump shading.
+- **Ambient occlusion.** Baked once at load from a voxel grid of the airframe
+  (`render/aoBake.ts`) into a per-vertex value that dims only the indirect
+  light. Wing roots, inlets, gear wells and the space under the stores darken.
+  GTAO was tried and dropped: three r186's GTAO unprojects depth with the
+  WebGL convention, which is wrong with a reversed depth buffer on the WebGL2
+  fallback that phones use.
