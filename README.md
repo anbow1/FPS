@@ -8,9 +8,10 @@ fallback), each with its own `package.json`, tests and build:
 | [`field-line/`](field-line/) | **Field Line** — single-player military FPS: shooting range, city block, forest ridge; Range, Skirmish and Extraction modes. |
 | [`castaway-lagoon/`](castaway-lagoon/) | **Castaway Lagoon** — first-person tropical lagoon with a survival outpost: stone throwing, AK-47, knife, supply crate, harvesting, inventory, dynamic weather and time of day. |
 | [`contrail/`](contrail/) | **Contrail** — jet fighter simulator: a stealth fighter against a heavy twin-engine fighter, six-degree-of-freedom flight model, radar and threat warning, gun and missiles, an AI opponent, volumetric clouds in a physical sky; Duel, Intercept, Landing and Free flight. |
+| [`ridgeline/`](ridgeline/) | **Ridgeline** — attack helicopter simulator (in progress): a rotor flight model built from blade-element and momentum theory (torque and tail rotor, translational lift, ground effect, vortex ring state, retreating blade stall, autorotation), 20 km of ridges and valleys made for terrain masking, the helicopter HUD with its hover cue. |
 
 ```powershell
-cd field-line        # or: cd castaway-lagoon, cd contrail
+cd field-line        # or: cd castaway-lagoon, cd contrail, cd ridgeline
 npm install
 npm run dev          # http://localhost:5173
 ```
@@ -45,11 +46,11 @@ product flavour per game, each a full-screen landscape WebView that serves the
 bundled production build offline. On phones and tablets the games switch to
 on-screen controls — a floating movement stick on the left, drag anywhere
 else to look, and buttons for fire, aim, jump, use, reload, weapons and the
-rest (Contrail: an analogue stick, a throttle lever and cockpit buttons) — start on the Low graphics preset, and cap the render resolution so a
+rest (Contrail and Ridgeline: an analogue stick, a throttle or collective lever, and cockpit buttons; tilt steering as an option), and cap the render resolution so a
 3× phone screen does not cost three times the pixels. The back button pauses.
 
 - **Download:** every push to `main` runs `.github/workflows/android.yml`,
-  which publishes `field-line.apk`, `castaway-lagoon.apk` and `contrail.apk` on the
+  which publishes `field-line.apk`, `castaway-lagoon.apk`, `contrail.apk` and `ridgeline.apk` on the
   **android-latest** release of this repository (Android 8 or newer; allow
   installs from that source when asked).
 - **Build locally** (Node 22, JDK 17, Android SDK): `bash android/build-apks.sh`

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An attack helicopter in side view over the ridges: rotor disc, fuselage, boom and fin. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#1E2420" android:strokeWidth="2" android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M26,38 L82,36" />
+    <path android:fillColor="#1E2420"
+        android:pathData="M53,38 L55,38 L55,43 L53,43 Z M34,52 C34,46 42,43 50,43 L60,43 C64,43 66,46 70,47 L84,47 L86,40 L89,40 L88,50 L70,51 C66,53 60,56 50,56 L40,56 C36,56 34,54 34,52 Z M44,56 L44,60 L46,60 L46,56 Z M58,55 L58,60 L60,60 L60,55 Z" />
+</vector>

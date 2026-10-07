@@ -1,0 +1,24 @@
+{
+  "name": "ridgeline",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Attack helicopter simulator: rotor flight model, terrain masking, sensor turret. TypeScript + three.js WebGPU.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "bench": "vite-node scripts/bench.ts"
+  },
+  "dependencies": {
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.7"
+  }
+}

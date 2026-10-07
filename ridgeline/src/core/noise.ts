@@ -1,0 +1,98 @@
+// Value + gradient noise for terrain and procedural textures. Deterministic.
+
+function hash2(ix: number, iy: number, seed: number): number {
+  let h = (ix * 374761393 + iy * 668265263 + seed * 144269504) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+function fade(t: number): number {
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+/** 2D gradient noise in about [-1, 1]. */
+export function noise2(x: number, y: number, seed = 0): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const g = (cx: number, cy: number, dx: number, dy: number): number => {
+    const a = hash2(cx, cy, seed) * Math.PI * 2;
+    return Math.cos(a) * dx + Math.sin(a) * dy;
+  };
+  const n00 = g(ix, iy, fx, fy);
+  const n10 = g(ix + 1, iy, fx - 1, fy);
+  const n01 = g(ix, iy + 1, fx, fy - 1);
+  const n11 = g(ix + 1, iy + 1, fx - 1, fy - 1);
+  const u = fade(fx);
+  const v = fade(fy);
+  return (n00 + (n10 - n00) * u + (n01 - n00) * v + (n00 - n10 - n01 + n11) * u * v) * 1.41;
+}
+
+export function fbm2(x: number, y: number, octaves: number, seed = 0, lacunarity = 2, gain = 0.5): number {
+  let sum = 0;
+  let amp = 1;
+  let norm = 0;
+  let fx = x;
+  let fy = y;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * noise2(fx, fy, seed + i * 17);
+    norm += amp;
+    amp *= gain;
+    fx *= lacunarity;
+    fy *= lacunarity;
+  }
+  return sum / norm;
+}
+
+/** Ridged multifractal: sharp crests, used for the forest ridge line. */
+export function ridged2(x: number, y: number, octaves: number, seed = 0): number {
+  let sum = 0;
+  let amp = 0.5;
+  let fx = x;
+  let fy = y;
+  let weight = 1;
+  for (let i = 0; i < octaves; i++) {
+    let n = 1 - Math.abs(noise2(fx, fy, seed + i * 31));
+    n *= n * weight;
+    weight = Math.min(1, Math.max(0, n * 2));
+    sum += n * amp;
+    amp *= 0.5;
+    fx *= 2.03;
+    fy *= 2.03;
+  }
+  return sum;
+}
+
+/** Tileable value noise on a period, for textures that must wrap. */
+export function tileNoise(x: number, y: number, period: number, seed = 0): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const w = (v: number): number => ((v % period) + period) % period;
+  const a = hash2(w(ix), w(iy), seed);
+  const b = hash2(w(ix + 1), w(iy), seed);
+  const c = hash2(w(ix), w(iy + 1), seed);
+  const d = hash2(w(ix + 1), w(iy + 1), seed);
+  const u = fade(fx);
+  const v = fade(fy);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+export function tileFbm(x: number, y: number, period: number, octaves: number, seed = 0): number {
+  let sum = 0;
+  let amp = 0.5;
+  let p = period;
+  let fx = x;
+  let fy = y;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * tileNoise(fx, fy, p, seed + i * 13);
+    amp *= 0.5;
+    fx *= 2;
+    fy *= 2;
+    p *= 2;
+  }
+  return sum;
+}

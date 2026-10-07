@@ -39,6 +39,10 @@ android {
             dimension = "game"
             applicationId = "io.github.anbow1.contrail"
         }
+        create("ridgeline") {
+            dimension = "game"
+            applicationId = "io.github.anbow1.ridgeline"
+        }
     }
 
     signingConfigs {
