@@ -1,5 +1,5 @@
 import { abs, cameraPosition, dot, float, fract, mix, mx_noise_float, normalize, normalWorld, positionLocal, positionWorld, screenUV, smoothstep, time, uniform, vec2, vec3, viewportSharedTexture } from 'three/tsl';
-import { type BufferGeometry, DoubleSide, Group, type Material, Mesh, MeshBasicNodeMaterial, type Node, SphereGeometry, Vector3 } from 'three/webgpu';
+import { BufferAttribute, BufferGeometry, DoubleSide, Group, type Material, Mesh, MeshBasicNodeMaterial, type Node, SphereGeometry, Vector3 } from 'three/webgpu';
 import { AIRCRAFT, type AircraftId } from '../config.ts';
 import { blackbody } from '../core/blackbody.ts';
 import { bellyY, box, fuselage, lathe, type Station, type Surface, surface, surfacePoint, tube } from './airframe.ts';
@@ -346,10 +346,28 @@ export function poseGear(model: JetModel, position: number, compression: readonl
 function buildWraith(): JetModel {
   const root = new Group();
   root.name = 'wraith';
-  const spec: PaintSpec = { name: 'wraith coating', base: 0x6a6d71, roughness: 0.58, panels: { frameM: 1.05, splitM: 0.75, seamM: 0.0035, access: 0.3, rivets: false, tape: true }, soot: { fromZ: 5.2, toZ: 7.0 } };
+  // Saw-toothed door edges in plan view, as on a stealth airframe: two weapon bays and the gear doors
+  // underneath, the refuelling door on the spine.
+  const spec: PaintSpec = {
+    name: 'wraith coating',
+    base: 0x6a6d71,
+    roughness: 0.58,
+    panels: { frameM: 1.05, splitM: 0.75, seamM: 0.0035, access: 0.3, rivets: false, tape: true },
+    soot: { fromZ: 5.4, toZ: 7.2 },
+    doors: [
+      { x0: 0.3, x1: 1.12, z0: -2.5, z1: 1.3, saw: 0.26, up: false },
+      { x0: -1.12, x1: -0.3, z0: -2.5, z1: 1.3, saw: 0.26, up: false },
+      { x0: 1.2, x1: 1.95, z0: 0.1, z1: 1.7, saw: 0.2, up: false },
+      { x0: -1.95, x1: -1.2, z0: 0.1, z1: 1.7, saw: 0.2, up: false },
+      { x0: -0.26, x1: 0.26, z0: -5.25, z1: -4.0, saw: 0.18, up: false },
+      { x0: -0.24, x1: 0.24, z0: 0.5, z1: 1.15, saw: 0.16, up: true },
+    ],
+  };
   const paint = paintMaterial(spec);
+  // Wings and tails: the same coating with the leading-edge band.
+  const surfPaint = paintMaterial({ ...spec, name: 'wraith coating, surfaces', doors: [], leadingEdge: true });
   const hinges: Hinge[] = [];
-  // Chined nose (sharp side edge), widening into the inlet cheeks and a blended body; round at the nozzle.
+  // Chined nose (sharp side edge), a steep cheek at the inlets, a blended body, round at the nozzle.
   const S = (z: number, top: number, bot: number, w: number, yc: number, tw: number, bw: number, su: number, sl: number): Station => ({ z, top, bot, w, yc, tw, bw, su, sl });
   const stations: Station[] = [
     S(-7.85, 0.02, -0.02, 0.02, 0.0, 0.3, 0.3, 0.9, 0.9),
@@ -357,48 +375,49 @@ function buildWraith(): JetModel {
     S(-6.6, 0.46, -0.38, 0.5, -0.02, 0.3, 0.4, 0.95, 0.85),
     S(-5.5, 0.7, -0.58, 0.72, -0.04, 0.35, 0.45, 0.9, 0.8),
     S(-4.3, 0.84, -0.7, 0.9, -0.02, 0.4, 0.5, 0.85, 0.8),
-    S(-3.55, 0.92, -0.74, 1.04, 0.02, 0.42, 0.55, 0.85, 0.8),
-    S(-2.9, 1.04, -0.76, 1.6, 0.06, 0.5, 0.6, 0.85, 0.8),
+    S(-3.62, 0.9, -0.74, 1.0, 0.02, 0.42, 0.55, 0.85, 0.8),
+    S(-3.32, 0.98, -0.76, 1.6, 0.05, 0.48, 0.6, 0.85, 0.8),
     S(-1.0, 1.06, -0.78, 1.78, 0.08, 0.55, 0.62, 0.85, 0.8),
     S(2.0, 1.0, -0.74, 1.76, 0.08, 0.55, 0.62, 0.85, 0.8),
-    S(4.0, 0.94, -0.68, 1.5, 0.1, 0.5, 0.6, 0.75, 0.7),
-    S(5.4, 0.84, -0.56, 1.12, 0.14, 0.48, 0.55, 0.5, 0.45),
-    S(6.3, 0.77, -0.48, 0.78, 0.15, 0.55, 0.55, 0.15, 0.15),
+    S(4.0, 0.94, -0.68, 1.45, 0.1, 0.5, 0.6, 0.75, 0.7),
+    S(5.4, 0.84, -0.56, 1.0, 0.14, 0.48, 0.55, 0.5, 0.45),
+    S(6.3, 0.77, -0.48, 0.74, 0.15, 0.55, 0.55, 0.15, 0.15),
     S(6.85, 0.74, -0.44, 0.62, 0.15, 0.55, 0.55, 0.0, 0.0),
   ];
-  root.add(mesh(fuselage(stations, { stepM: 0.08, perQuarter: 20 }), paint));
-  // Caret inlets: a raked dark mouth on each cheek, a lip, and the compression bump ahead of it.
-  const inletDark = plain('inlet duct', 0x1e1f21, 0.85);
-  inletDark.side = DoubleSide;
+  root.add(mesh(fuselage(stations, { stepM: 0.06, perQuarter: 22 }), paint));
+  // Caret inlets on the cheek face: a raked trapezoid mouth (top lip ahead of the bottom), a sharp lip,
+  // and the diverterless bump on the body side ahead of it.
+  const inletDark = plain('inlet duct', 0x18191b, 0.9);
   for (const side of [1, -1]) {
-    const x = side * 1.22;
-    // Painted cowl round the mouth, blending back into the cheek; the dark duct inside it.
-    const cowl = fuselage([S(-3.6, 0.65, -0.21, 0.33, 0.22, 0.6, 0.6, 0.6, 0.0), S(-2.6, 0.7, -0.26, 0.4, 0.2, 0.6, 0.6, 0.5, 0.2), S(-1.6, 0.66, -0.24, 0.36, 0.18, 0.6, 0.6, 0.4, 0.2)], { offsetX: x, capStart: false, stepM: 0.1, perQuarter: 10 });
-    root.add(mesh(cowl, paint));
-    const duct = fuselage([S(-3.58, 0.62, -0.18, 0.3, 0.22, 0.6, 0.6, 0.6, 0.0), S(-2.2, 0.55, -0.1, 0.26, 0.22, 0.6, 0.6, 0.3, 0.0)], { offsetX: x, capStart: false, stepM: 0.2, perQuarter: 8 });
-    root.add(mesh(duct, inletDark, false));
-    const lip: [number, number, number][] = [];
-    for (let k = 0; k <= 24; k++) {
-      const t = (k / 24) * Math.PI * 2;
-      // The mouth is raked: its top lip leans forward of the bottom.
-      lip.push([x + Math.cos(t) * 0.31, 0.22 + Math.sin(t) * 0.41, -3.6 - Math.sin(t) * 0.12]);
-    }
-    root.add(mesh(tube(lip, 0.022, 6, true), paint));
-    // The diverterless bump on the body side ahead of the mouth.
-    const bump = lathe([[-4.6, 0.0], [-4.25, 0.14], [-3.85, 0.17], [-3.62, 0.02]], 0, 0, 16, true);
-    bump.scale(1, 1.5, 1).translate(side * 0.84, 0.22, 0);
+    const xi = side * 1.0;
+    const xo = side * 1.56;
+    const corners: [number, number, number][] = [
+      [xi, 0.62, -3.66],
+      [xo, 0.48, -3.6],
+      [xo * 0.98, -0.22, -3.44],
+      [xi, -0.3, -3.4],
+    ];
+    root.add(mesh(mouth(corners, 0.7), inletDark, false));
+    root.add(mesh(tube([...corners, corners[0]!], 0.018, 6, false), paint));
+    const bump = lathe([[-4.75, 0.0], [-4.35, 0.12], [-3.95, 0.15], [-3.66, 0.02]], 0, 0, 16, true);
+    bump.scale(1, 2.2, 1).translate(side * 0.86, 0.18, 0);
     root.add(mesh(bump, paint));
+  }
+  // Tail booms either side of the engine, carrying the fins and tailplanes past the nozzle.
+  for (const side of [1, -1] as const) {
+    root.add(mesh(fuselage([S(3.0, 0.5, 0.0, 0.05, 0.25, 0.5, 0.5, 0.4, 0.4), S(4.4, 0.78, -0.16, 0.27, 0.3, 0.55, 0.55, 0.6, 0.5), S(7.3, 0.72, -0.12, 0.25, 0.3, 0.55, 0.55, 0.6, 0.5), S(8.05, 0.46, 0.06, 0.07, 0.26, 0.5, 0.5, 0.4, 0.4)], { offsetX: side * 1.12, stepM: 0.08, perQuarter: 10 }), paint));
   }
   // Wing: 34° leading-edge sweep, forward-swept trailing edge; leading-edge flaps and flaperons.
   for (const side of [1, -1] as const) {
     const sf: Surface = { rootX: 1.2, rootY: 0.08, rootLeZ: -2.05, rootChordM: 5.25, spanM: 4.15, tipLeZ: 0.75, tipChordM: 1.45, rootThickness: 0.05, tipThickness: 0.035, dihedralRad: -0.03, side };
-    wing(root, hinges, sf, paint, { lef: [0.14, 0.14, 1], flaperon: [[0.8, 0.24, 0.86]] });
-    // Canted fins (25° outboard) with rudders.
-    fin(root, hinges, { rootX: 1.02, rootY: 0.72, rootLeZ: 3.55, rootChordM: 2.75, spanM: 1.55, tipLeZ: 5.3, tipChordM: 1.12, rootThickness: 0.05, tipThickness: 0.04, dihedralRad: (65 * Math.PI) / 180, side }, paint, [0.7, 0.1, 0.92]);
-    // All-moving tailplanes.
-    stab(root, hinges, { rootX: 0.95, rootY: 0.15, rootLeZ: 5.15, rootChordM: 2.55, spanM: 2.4, tipLeZ: 6.65, tipChordM: 1.0, rootThickness: 0.04, tipThickness: 0.03, dihedralRad: 0, side }, paint);
+    wing(root, hinges, sf, surfPaint, { lef: [0.14, 0.14, 1], flaperon: [[0.8, 0.24, 0.86]] });
+    // Canted fins (25° outboard) on the booms, with rudders.
+    fin(root, hinges, { rootX: 1.12, rootY: 0.7, rootLeZ: 3.9, rootChordM: 2.7, spanM: 1.6, tipLeZ: 5.5, tipChordM: 1.1, rootThickness: 0.05, tipThickness: 0.04, dihedralRad: (65 * Math.PI) / 180, side }, surfPaint, [0.7, 0.1, 0.92]);
+    // All-moving tailplanes on the booms, trailing edges past the nozzle.
+    stab(root, hinges, { rootX: 1.15, rootY: 0.28, rootLeZ: 5.4, rootChordM: 2.5, spanM: 2.25, tipLeZ: 6.9, tipChordM: 1.0, rootThickness: 0.04, tipThickness: 0.03, dihedralRad: 0, side }, surfPaint);
   }
-  // Nozzle: a twelve-petal faceted shroud in a dark coating, the turbine glowing deep inside.
+  // Nozzle: a twelve-petal faceted shroud in a dark coating with a saw-tooth exit edge, the turbine
+  // glowing deep inside.
   const burner = uniform(0);
   const heat = uniform(0);
   const petals = (a: number, f: number): number => {
@@ -407,10 +426,15 @@ function buildWraith(): JetModel {
     const local = ((a % seg) + seg) % seg - seg / 2;
     return f > 0.3 ? Math.cos(seg / 2) / Math.cos(local) : 1;
   };
-  root.add(mesh(lathe([[6.8, 0.63], [7.3, 0.6], [7.85, 0.54]], 0, 0.15, 36, false, petals), nozzleMaterial('ceramic', 6.8, 7.85)));
+  const teeth = (a: number, f: number): number => {
+    if (f < 1) return 0;
+    const t = ((a / (Math.PI * 2)) * 12) % 1;
+    return -0.1 * Math.abs(t - 0.5) * 2;
+  };
+  root.add(mesh(lathe([[6.8, 0.63], [7.3, 0.6], [7.9, 0.54]], 0, 0.15, 48, false, petals, teeth), nozzleMaterial('ceramic', 6.8, 7.9)));
   const inner = plain('nozzle liner', 0x2a2a2c, 0.7);
   inner.side = DoubleSide;
-  root.add(mesh(lathe([[7.84, 0.5], [7.2, 0.46]], 0, 0.15, 24), inner, false));
+  root.add(mesh(lathe([[7.86, 0.5], [7.2, 0.46]], 0, 0.15, 24), inner, false));
   const turbine = mesh(lathe([[7.2, 0.46], [7.2, 0.0]], 0, 0.15, 24), turbineMaterial(heat), false);
   root.add(turbine);
   const flame = mesh(lathe([[7.86, 0.47], [8.6, 0.4], [10.5, 0.22], [12.2, 0.0]], 0, 0.15, 18), flameMaterial(burner, 4.3, 7.86), false);
@@ -420,24 +444,46 @@ function buildWraith(): JetModel {
   const shimmer = [mesh(lathe([[7.9, 0.5], [9.5, 0.75], [13.5, 1.1], [17.9, 1.3]], 0, 0.15, 16), shimmerMaterial(heat, 10, 7.9), false)];
   shimmer[0]!.renderOrder = 4;
   root.add(shimmer[0]!);
-  // Frameless canopy with a gold metallised coating; the frame is only the sill.
+  // Single-piece canopy with a gold metallised coating; a dark sill frame and the aft bow.
   const canopyStations = [S(-5.8, 0.66, 0.6, 0.05, 0.63, 0.4, 0.4, 0.2, 0.2), S(-5.2, 1.08, 0.6, 0.44, 0.7, 0.45, 0.4, 0.3, 0.0), S(-4.25, 1.38, 0.65, 0.54, 0.82, 0.5, 0.4, 0.2, 0.0), S(-3.2, 1.28, 0.7, 0.5, 0.88, 0.5, 0.4, 0.25, 0.0), S(-2.6, 1.08, 0.8, 0.3, 0.92, 0.45, 0.4, 0.4, 0.0)];
-  const glass = mesh(fuselage(canopyStations, { stepM: 0.08, perQuarter: 14 }), canopyMaterial(0x4a4636, 0xd9c590), false);
+  const glass = mesh(fuselage(canopyStations, { stepM: 0.06, perQuarter: 16 }), canopyMaterial(0x4a4636, 0xd9c590), false);
   glass.renderOrder = 4;
   root.add(glass);
+  const frameMat = plain('canopy frame', 0x3c3e40, 0.6);
+  for (const side of [1, -1]) {
+    const sill: [number, number, number][] = [];
+    for (let z = -5.7; z <= -2.75; z += 0.15) {
+      const st = stationAt2(canopyStations, z);
+      sill.push([side * st.w * 0.97, st.yc + 0.01, z]);
+    }
+    root.add(mesh(tube(sill, 0.03, 6, false), frameMat));
+  }
+  root.add(mesh(tube(fuselageRing(canopyStations, -2.8, 0.01), 0.045, 6, false), frameMat));
   const cockpit = pilot();
   cockpit.position.set(0, 1.1, -4.25);
   root.add(cockpit);
   root.add(mesh(box(-0.5, 0.62, -5.4, 0.5, 0.84, -2.8), plain('cockpit tub', 0x26282a, 0.9), false));
-  // Sensor window under the nose (faceted sapphire), antenna blades, lights.
+  // Sensor window under the nose (faceted sapphire), aperture windows round the body, antenna blades.
   const sapphire = canopyMaterial(0x1d2228, 0xb0a070);
   sapphire.opacity = 0.9;
   const eots = lathe([[-6.55, 0.0], [-6.35, 0.13], [-5.95, 0.15], [-5.75, 0.0]], 0, -0.36, 7, false);
   eots.scale(1, 0.55, 1);
   root.add(mesh(eots, sapphire, false));
-  root.add(mesh(box(-0.006, 1.02, 0.6, 0.006, 1.2, 0.9), paint));
-  root.add(mesh(box(-0.006, -0.82, -1.2, 0.006, -0.66, -0.95), paint));
-  addLights(root, [[5.33, 0.02, 1.4], [-5.33, 0.02, 1.4]], [0, 1.06, 2.6], [0, 0.78, 6.6]);
+  for (const [x, y, z, ry] of [
+    [0, 1.07, -1.9, 0],
+    [0, -0.79, 0.3, Math.PI],
+    [0.66, 0.42, -5.3, -0.9],
+    [-0.66, 0.42, -5.3, 0.9],
+  ] as const) {
+    const w = mesh(lathe([[-0.11, 0.0], [-0.08, 0.06], [0.08, 0.06], [0.11, 0.0]], 0, 0, 4, false), sapphire, false);
+    w.scale.set(1, 0.15, 1);
+    w.position.set(x, y, z);
+    w.rotation.z = ry;
+    root.add(w);
+  }
+  root.add(mesh(box(-0.006, 1.04, 0.2, 0.006, 1.2, 0.45), paint));
+  root.add(mesh(box(-0.006, -0.84, -1.2, 0.006, -0.68, -0.95), paint));
+  addLights(root, [[5.33, 0.02, 1.4], [-5.33, 0.02, 1.4]], [0, 1.07, 2.6], [0, 0.75, 6.75]);
   const model: JetModel = {
     root,
     hinges,
@@ -455,6 +501,30 @@ function buildWraith(): JetModel {
   };
   buildGear(model, 'wraith', paint);
   return model;
+}
+
+/**
+ * An inlet mouth: the front face through four corners (inner top, outer top, outer bottom, inner bottom)
+ * and the duct walls running `depthM` aft into the body, dark inside.
+ */
+function mouth(c: [number, number, number][], depthM: number): BufferGeometry {
+  const back = c.map(([x, y, z]) => [x * 0.92, y * 0.9 + 0.02, z + depthM] as [number, number, number]);
+  const pos: number[] = [];
+  const quad = (a: number[], b: number[], d: number[], e: number[]): void => {
+    pos.push(...a, ...b, ...d, ...a, ...d, ...e);
+  };
+  // The front face is drawn from both sides; the walls show the duct turning away inside.
+  quad(c[0]!, c[1]!, c[2]!, c[3]!);
+  quad(c[0]!, c[3]!, c[2]!, c[1]!);
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    quad(c[i]!, back[i]!, back[j]!, c[j]!);
+    quad(c[i]!, c[j]!, back[j]!, back[i]!);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.computeVertexNormals();
+  return g;
 }
 
 /** Wingtip nav lights (green right, red left), a strobe on the spine and a white tail light. */

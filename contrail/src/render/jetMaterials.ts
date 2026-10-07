@@ -77,6 +77,13 @@ export interface PaintSpec {
   camo?: { dark: number; light: number; scaleM: number };
   /** Exhaust soot from this station aft (m) to the nozzle exit. */
   soot?: { fromZ: number; toZ: number };
+  /** Lifting surfaces: a darker, glossier coating band along the leading edge (surf.x = chord from LE). */
+  leadingEdge?: boolean;
+  /**
+   * Doors drawn in plan view (model x, z) on the skin facing `up` (or down): rectangles whose fore and aft
+   * edges are saw-toothed with the given tooth pitch (m; 0 = straight), as on stealth airframes.
+   */
+  doors?: { x0: number; x1: number; z0: number; z1: number; saw: number; up: boolean }[];
 }
 
 interface PanelPattern {
@@ -167,6 +174,24 @@ export function paintMaterial(spec: PaintSpec): MeshStandardNodeMaterial {
   if (spec.panels.tape) colour = mix(colour, colour.mul(1.08), p.tape.mul(0.8));
   colour = colour.mul(float(1).sub(p.seam.mul(0.42))).mul(float(1).sub(p.access.mul(0.3)));
   colour = colour.mul(float(1).sub(p.rivet.mul(0.12)));
+  let doorLine: F = float(0);
+  for (const d of spec.doors ?? []) {
+    // Saw-tooth fore/aft edges: the edge's z moves with a triangle wave across x.
+    const tri = (pitch: number): F => (pitch > 0 ? abs(fract(P.x.div(pitch)).sub(0.5)).mul(pitch) : float(0));
+    const zf = float(d.z0).add(tri(d.saw));
+    const za = float(d.z1).sub(tri(d.saw));
+    const inX = step(d.x0, P.x).mul(step(P.x, d.x1));
+    const inZ = step(zf, P.z).mul(step(P.z, za));
+    const facing = d.up ? smoothstep(0.2, 0.5, normalLocal.y) : smoothstep(-0.2, -0.5, normalLocal.y);
+    const dist = min(min(abs(P.x.sub(d.x0)), abs(P.x.sub(d.x1))).add(step(0.5, float(1).sub(inZ)).mul(9)), min(abs(P.z.sub(zf)), abs(P.z.sub(za))).add(step(0.5, float(1).sub(inX)).mul(9)));
+    doorLine = max(doorLine, lineAA(dist, 0.004).mul(facing));
+  }
+  colour = colour.mul(float(1).sub(doorLine.mul(0.5)));
+  if (spec.leadingEdge) {
+    // Leading-edge coating: a slightly darker band, a little glossier, the width growing with chord.
+    const surfLe = attribute('surf', 'vec2');
+    colour = mix(colour, colour.mul(0.82), float(1).sub(smoothstep(0.08, 0.12, surfLe.x)));
+  }
   // Weathering: streaks carried aft by the airflow, soot towards the nozzles.
   const surf = attribute('surf', 'vec2');
   const streak = smoothstep(0.35, 0.8, mx_noise_float(vec2(surf.x.mul(0.35), surf.y.mul(4.5)))).mul(0.06);
@@ -179,7 +204,7 @@ export function paintMaterial(spec: PaintSpec): MeshStandardNodeMaterial {
   const rough = float(spec.roughness).add(p.panelId.sub(0.5).mul(0.06)).sub(p.tape.mul(spec.panels.tape ? 0.1 : 0)).add(p.seam.mul(0.1));
   m.roughnessNode = rough.clamp(0.25, 1);
   // Recessed seams (0.6 mm), raised rivet heads (0.3 mm).
-  m.normalNode = bumpNormal(p.seam.add(p.access.mul(0.7)).mul(-0.0006).add(p.rivet.mul(0.0003)));
+  m.normalNode = bumpNormal(p.seam.add(p.access.mul(0.7)).add(doorLine).mul(-0.0006).add(p.rivet.mul(0.0003)));
   return m;
 }
 

@@ -356,10 +356,10 @@ export function surface(sf: Surface, panel: Panel = {}, chordPoints = 22, spanPo
 
 /**
  * A body of revolution along z: `profile` is [z, radius] pairs centred at (x, y). `modulate(angle, f)`
- * scales the radius per angle (f = 0…1 along the profile) for petals and serrations. Ends are open
- * unless `capEnd`.
+ * scales the radius per angle (f = 0…1 along the profile) for petals; `shiftZ(angle, f)` moves a ring
+ * along the axis per angle, for a serrated (saw-tooth) exit edge. Ends are open unless `capEnd`.
  */
-export function lathe(profile: readonly (readonly [number, number])[], x: number, y: number, around = 24, capEnd = false, modulate?: (angleRad: number, f: number) => number): BufferGeometry {
+export function lathe(profile: readonly (readonly [number, number])[], x: number, y: number, around = 24, capEnd = false, modulate?: (angleRad: number, f: number) => number, shiftZ?: (angleRad: number, f: number) => number): BufferGeometry {
   const b = new Builder();
   const base = b.pos.length / 3;
   let along = 0;
@@ -370,7 +370,7 @@ export function lathe(profile: readonly (readonly [number, number])[], x: number
     for (let i = 0; i < around; i++) {
       const t = (i / around) * Math.PI * 2;
       const rr = r * (modulate ? modulate(t, f) : 1);
-      b.vertex(x + Math.cos(t) * rr, y + Math.sin(t) * rr, z, along, t * r);
+      b.vertex(x + Math.cos(t) * rr, y + Math.sin(t) * rr, z + (shiftZ ? shiftZ(t, f) : 0), along, t * r);
     }
   }
   b.grid(base, profile.length, around, true, true);
