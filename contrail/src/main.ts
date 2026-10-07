@@ -145,7 +145,10 @@ async function main(): Promise<void> {
       { code: b(DEFAULT_BINDINGS.brake[0]!), label: 'BRK', col: 2, row: 2.5, mode: 'hold' },
     ]);
     touch.setThrottle(aircraft.gear.weightOnWheels ? 0 : 0.8);
-    canvas.addEventListener('pointerdown', startFlying);
+    // The touch layer covers the canvas: its first touch is the "tap to fly".
+    touch.onTouch = (): void => {
+      if (!input.locked) startFlying();
+    };
   }
 
   console.log(formatEmChart(opts.player, emChart(opts.player, [0, 3000, 6000, 9000, 12_000], [100, 150, 200, 250, 300, 350, 400, 450, 500])));

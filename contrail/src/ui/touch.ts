@@ -47,6 +47,8 @@ export class FlightTouchControls {
   stick: { x: number; y: number } | null = null;
   /** Throttle lever 0…1.25. */
   throttle = 0.75;
+  /** Called on every touch (the game starts audio and "locks" on the first). */
+  onTouch: (() => void) | null = null;
 
   constructor(
     private readonly sink: FlightTouchSink,
@@ -87,6 +89,7 @@ export class FlightTouchControls {
     el.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       e.preventDefault();
+      this.onTouch?.();
       el.classList.add('down');
       this.sink.press(b.code);
       if (b.mode === 'tap') {
@@ -107,6 +110,7 @@ export class FlightTouchControls {
 
   private down(e: PointerEvent): void {
     e.preventDefault();
+    this.onTouch?.();
     const w = window.innerWidth;
     if (e.clientX < LEVER_WIDTH_PX + 16 && this.leverId === null) {
       this.leverId = e.pointerId;
