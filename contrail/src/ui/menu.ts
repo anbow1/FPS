@@ -91,7 +91,7 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
     ['dusk', 'Dusk overcast'],
   ]);
   // Control preferences: two-way toggles on the shared settings object (saved on FLY).
-  const toggle = (label: string, key: keyof ControlSettings, onText: string, offText: string): void => {
+  const toggle = (label: string, key: 'invertPitch' | 'tilt', onText: string, offText: string): void => {
     const r = document.createElement('div');
     r.className = 'row';
     const l = document.createElement('span');
@@ -114,6 +114,30 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
   const what = touch ? 'Thumb' : 'Mouse';
   toggle('Pitch', 'invertPitch', `${what} up = nose up`, `${what} up = nose down`);
   if (touch) toggle('Tilt', 'tilt', 'Steer by tilting', 'Off');
+  {
+    const r = document.createElement('div');
+    r.className = 'row';
+    const l = document.createElement('span');
+    l.textContent = 'Graphics';
+    r.append(l);
+    const buttons: HTMLButtonElement[] = [];
+    for (const [value, text] of [
+      ['high', 'High'],
+      ['balanced', 'Balanced'],
+      ['fast', 'Fast'],
+    ] as const) {
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.className = controls.graphics === value ? 'on' : '';
+      b.addEventListener('click', () => {
+        controls.graphics = value;
+        for (const x of buttons) x.className = x === b ? 'on' : '';
+      });
+      buttons.push(b);
+      r.append(b);
+    }
+    card.append(r);
+  }
   const go = document.createElement('button');
   go.className = 'go';
   go.textContent = 'FLY';

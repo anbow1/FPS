@@ -32,7 +32,10 @@ export interface FlightTouchButton {
 
 const STICK_RADIUS_PX = 70;
 const LEVER_WIDTH_PX = 64;
-const BUTTON_PX = 60;
+/** Button size (CSS px): 60 on a tablet, smaller on a landscape phone so the view stays open. */
+function buttonPx(): number {
+  return Math.round(Math.max(44, Math.min(60, window.innerHeight * 0.13)));
+}
 
 export class FlightTouchControls {
   private readonly root = document.createElement('div');
@@ -84,10 +87,15 @@ export class FlightTouchControls {
     const el = document.createElement('div');
     el.className = b.big ? 'touch-btn big' : 'touch-btn';
     el.textContent = b.label;
-    const size = b.big ? BUTTON_PX * 1.5 : BUTTON_PX;
-    el.style.width = el.style.height = `${size}px`;
-    el.style.right = `${12 + b.col * (BUTTON_PX + 10)}px`;
-    el.style.bottom = `${12 + b.row * (BUTTON_PX + 10)}px`;
+    const place = (): void => {
+      const px = buttonPx();
+      const size = b.big ? px * 1.5 : px;
+      el.style.width = el.style.height = `${size}px`;
+      el.style.right = `${12 + b.col * (px + 10)}px`;
+      el.style.bottom = `${12 + b.row * (px + 10)}px`;
+    };
+    place();
+    window.addEventListener('resize', place);
     el.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       e.preventDefault();

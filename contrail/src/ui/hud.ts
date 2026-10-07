@@ -62,6 +62,8 @@ export class Hud {
   clipToCombiner = false;
   /** The combiner glass outline in CSS pixels, or null for a helmet display. */
   combinerOutline: { x: number; y: number }[] | null = null;
+  /** Narrower layout that keeps clear of the on-screen buttons. */
+  touchLayout = false;
 
   constructor(parent: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -91,10 +93,11 @@ export class Hud {
     const size = areaW / 1280;
     // Layout: over the whole view outside, compressed into the combiner glass in the cockpit.
     const inGlass = this.clipToCombiner;
-    let tapeOff = inGlass ? 0.15 : 0.3;
-    let cornerOff = inGlass ? 0.17 : 0.4;
+    // On touch screens the buttons own the lower right: pull the tapes and corner data inwards.
+    let tapeOff = inGlass ? 0.15 : this.touchLayout ? 0.19 : 0.3;
+    let cornerOff = inGlass ? 0.17 : this.touchLayout ? 0.21 : 0.4;
     let cornerY = inGlass ? h * 0.6 : h * 0.8;
-    let headingY = inGlass ? h * 0.2 : h * 0.11;
+    let headingY = inGlass ? h * 0.2 : this.touchLayout ? h * 0.16 : h * 0.11;
     let midY = h * 0.5;
     const glass = inGlass ? this.combinerOutline : null;
     if (glass) {

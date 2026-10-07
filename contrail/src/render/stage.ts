@@ -4,7 +4,6 @@ import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { convertToTexture, depth as fragmentDepth, float, length, mix, mrt, normalize, output, pass, pow, rtt, screenUV, select, texture, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
 import { ACESFilmicToneMapping, AddEquation, AgXToneMapping, CustomBlending, DepthTexture, FloatType, HalfFloatType, Layers, type Material, type Node, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, RenderPipeline, Scene, SrcAlphaFactor, SRGBColorSpace, WebGPURenderer, ZeroFactor } from 'three/webgpu';
-import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 
@@ -23,13 +22,16 @@ export interface StageSettings {
   quality: Quality;
   renderScale: number;
   toneMap: ToneMap;
+  /** Ceiling on the device pixel ratio (render pixels per CSS pixel) before the governor's scale. */
+  maxPixelRatio: number;
 }
 
 export interface GovernorStep {
   scale: number;
 }
 
-const GOVERNOR_STEPS: readonly GovernorStep[] = [{ scale: 1 }, { scale: 0.87 }, { scale: 0.76 }, { scale: 0.67 }, { scale: 0.58 }];
+// Down to ~0.4: from a 2× phone picture that is still about the old 1× one, the floor it used to start at.
+const GOVERNOR_STEPS: readonly GovernorStep[] = [{ scale: 1 }, { scale: 0.87 }, { scale: 0.76 }, { scale: 0.67 }, { scale: 0.58 }, { scale: 0.5 }, { scale: 0.42 }];
 
 /**
  * Objects on this layer (contrails, vapour, afterburner flames) skip the scene pass and are drawn in an
@@ -214,8 +216,7 @@ export class Stage {
   resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    const maxRatio = isTouchDevice() ? 1 : 4;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio) * this.settings.renderScale * this.dynamicScale);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.settings.maxPixelRatio) * this.settings.renderScale * this.dynamicScale);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();

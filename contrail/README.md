@@ -46,8 +46,16 @@ the sky.
 
 URL options: `?mode=duel|intercept|landing|free`, `&ac=wraith|talon`,
 `&vs=…`, `&ai=easy|normal|hard`, `&time=morning|noon|dusk`, `&q=low`,
-`&autostart`, `&invert=0|1`, `&tilt=0|1`, `&mute`. The pitch and tilt
-choices are remembered on the device.
+`&autostart`, `&invert=0|1`, `&tilt=0|1`, `&q=high|balanced|fast`, `&mute`.
+The pitch, tilt and graphics choices are remembered on the device.
+
+Graphics presets (menu):
+
+- **High:** all effects, temporal anti-aliasing, up to 2× on phones.
+- **Balanced:** the phone default; lighter clouds and shadows, still a sharp 2× picture.
+- **Fast:** lighter effects at 1×.
+
+On every preset the frame governor lowers the resolution if the frame rate drops.
 
 ## What is modelled
 

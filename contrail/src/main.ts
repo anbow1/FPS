@@ -31,7 +31,7 @@ import { SensorDisplays } from './ui/sensors.ts';
 import { Cockpit } from './render/cockpit.ts';
 import { FlightSound } from './ui/sound.ts';
 import { Tones } from './ui/tones.ts';
-import { loadControls } from './ui/settings.ts';
+import { graphicsSetup, loadControls } from './ui/settings.ts';
 import { TiltSteering } from './ui/tilt.ts';
 import { FlightTouchControls } from './ui/touch.ts';
 
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   if (!(canvas instanceof HTMLCanvasElement) || !ui) throw new Error('index.html must contain canvas#view and div#ui');
   const input = new Input(canvas);
   const skipMenu = params.has('autostart') || params.has('spawn');
-  const controls = loadControls(params);
+  const controls = loadControls(params, input.touch);
   const opts = skipMenu ? optionsFromParams(params) : await chooseOptions(ui, optionsFromParams(params), controls, input.touch);
   const tones = new Tones();
   // Browsers allow audio only after a gesture: the menu's FLY click is one (headless runs skip it).
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   loading.textContent = 'Contrail — loading';
   ui.appendChild(loading);
 
-  const settings: StageSettings = { quality: params.get('q') === 'low' || (params.get('q') === null && input.touch) ? 'low' : 'high', renderScale: 1, toneMap: params.get('tm') === 'agx' ? 'agx' : 'aces' };
+  const settings: StageSettings = { ...graphicsSetup(controls.graphics, input.touch), renderScale: 1, toneMap: params.get('tm') === 'agx' ? 'agx' : 'aces' };
   const stage = new Stage(canvas, settings);
   await stage.init();
   window.addEventListener('resize', () => stage.resize());
@@ -125,6 +125,7 @@ async function main(): Promise<void> {
   const rig = new CameraRig(stage.camera);
   const hudLayer = document.getElementById('hud') ?? ui;
   const hud = new Hud(hudLayer);
+  hud.touchLayout = input.touch;
   const sensors = new SensorDisplays(hudLayer);
   const overlay = new DebugOverlay(ui);
   overlay.visible = false;
