@@ -67,6 +67,10 @@ All of it is a game abstraction, with invented numbers tuned to feel right.
   - Terrain masks targets.
   - The stealth type is seen nose-on at about a third of the usual range.
 - **Threat warning.** Shows search, track and launch, by bearing.
+- **Cockpit.**
+  - Glare shield, panel, sills and live displays (radar, threat ring, flight page).
+  - The stealth type has one panoramic screen and helmet-mounted symbology.
+  - The twin-engine type has a windscreen frame, two displays, and a HUD clipped to its combiner glass.
 - **Sound.**
   - Synthesised, with no samples.
   - Engine whine and rumble follow the core speed; the afterburner roars.

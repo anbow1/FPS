@@ -19,6 +19,7 @@ export interface CameraFocus {
 
 const CHASE_ATTITUDE_RATE = 5; // 1/s, tuned by hand: lag enough to see the roll, not so much it feels loose
 const DEG = Math.PI / 180;
+const COCKPIT_LOOK_DOWN_RAD = 6 * DEG;
 
 export class CameraRig {
   mode: CameraMode = 'chase';
@@ -75,7 +76,9 @@ export class CameraRig {
       this.tmp.set(eye[0], eye[1] + sag, eye[2]).applyQuaternion(jetRot).add(jetPos);
       cam.position.copy(this.tmp);
       cam.quaternion.copy(jetRot);
-      cam.rotateX(-Math.max(0, loadFactor - 1) * 0.15 * DEG);
+      // The default view looks ~6° down, as simulators do: on a flat screen the panel's displays are
+      // then in view, while the over-the-nose line (and the HUD on its combiner) stays in the upper half.
+      cam.rotateX(-COCKPIT_LOOK_DOWN_RAD - Math.max(0, loadFactor - 1) * 0.15 * DEG);
       cam.fov = 70;
       cam.near = 0.05;
     } else if (this.mode === 'chase') {

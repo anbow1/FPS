@@ -28,6 +28,7 @@ import { DebugOverlay } from './ui/debugOverlay.ts';
 import { type AttackCue, Hud } from './ui/hud.ts';
 import { chooseOptions, optionsFromParams } from './ui/menu.ts';
 import { SensorDisplays } from './ui/sensors.ts';
+import { Cockpit } from './render/cockpit.ts';
 import { FlightSound } from './ui/sound.ts';
 import { Tones } from './ui/tones.ts';
 import { loadControls } from './ui/settings.ts';
@@ -105,6 +106,11 @@ async function main(): Promise<void> {
   const views = new Map<number, JetView>();
   for (const f of game.combat.fighters) views.set(f.id, new JetView(f.kind, stage.scene, atmosphere));
   const playerView = views.get(player.id)!;
+  // The office around the pilot's eye, for the cockpit and padlock views.
+  const cockpit = new Cockpit(opts.player, playerView.model.eye);
+  stage.scene.add(cockpit.root);
+  const combinerCorners: Vector3[] = [];
+  const projected = new Vector3();
   const combatView = new CombatView(stage.scene, atmosphere);
   // Cloud shadows on the ground, the airbase and the aircraft (the sun light only).
   if (!params.has('nocloudshadow')) clouds.shadeReceivers(stage.scene, settings.quality === 'high' ? 4 : 2);
@@ -286,7 +292,39 @@ async function main(): Promise<void> {
         rig.update(playerView.renderPos, playerView.renderRot, playerView.model.eye, aircraft.loadFactor, AIRCRAFT[opts.player].lengthM, frameS, { padlock, missile });
         stage.camera.updateMatrixWorld();
         combatView.update(game.combat, clockS, stage.camera.position);
+        const inside = (rig.mode === 'cockpit' || rig.mode === 'padlock') && player.alive;
+        const nose = aircraft.orientation.rotate(new Vec3(0, 0, -1));
+        const wingR = aircraft.orientation.rotate(new Vec3(1, 0, 0));
+        const roof = aircraft.orientation.rotate(new Vec3(0, 1, 0));
+        const ps = player.stores;
+        cockpit.update(playerView.renderPos, playerView.renderRot, inside, frameS, {
+          radar: player.radar,
+          rwr: player.rwr,
+          altitudeM: aircraft.position.y,
+          pitchRad: Math.asin(Math.max(-1, Math.min(1, nose.y))),
+          rollRad: Math.atan2(-wingR.y, roof.y),
+          headingDeg: (Math.atan2(nose.x, -nose.z) * 180) / Math.PI + 360,
+          speedMs: aircraft.speedMs,
+          mach: aircraft.mach,
+          loadFactor: aircraft.loadFactor,
+          fuelKg: aircraft.fuelKg,
+          weapon,
+          gunRounds: ps.gunRounds,
+          srm: ps.srm,
+          mrm: ps.mrm,
+          flares: ps.flares,
+          chaff: ps.chaff,
+        });
+        // The screen-corner radar and threat displays are the cockpit's own screens inside.
+        sensors.visible = !inside;
         hud.clipToCombiner = rig.mode === 'cockpit';
+        hud.combinerOutline = null;
+        if (hud.clipToCombiner && cockpit.combinerWorld(combinerCorners)) {
+          hud.combinerOutline = combinerCorners.map((c) => {
+            projected.copy(c).project(stage.camera);
+            return { x: ((projected.x + 1) / 2) * window.innerWidth, y: ((1 - projected.y) / 2) * window.innerHeight };
+          });
+        }
         const warnings: string[] = [];
         if (aircraft.g.glocS > 0) warnings.push('G-LOC');
         if (aircraft.overstressed) warnings.push('OVER G');

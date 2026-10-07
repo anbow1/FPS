@@ -58,8 +58,10 @@ export class Hud {
   private readonly attitude = new Quaternion();
   private dpr = 1;
   visible = true;
-  /** In the cockpit the HUD is clipped to the combiner glass. */
+  /** In the cockpit the HUD takes its compact layout (clipped to the combiner glass when there is one). */
   clipToCombiner = false;
+  /** The combiner glass outline in CSS pixels, or null for a helmet display. */
+  combinerOutline: { x: number; y: number }[] | null = null;
 
   constructor(parent: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -89,19 +91,37 @@ export class Hud {
     const size = areaW / 1280;
     // Layout: over the whole view outside, compressed into the combiner glass in the cockpit.
     const inGlass = this.clipToCombiner;
-    const tapeOff = inGlass ? 0.15 : 0.3;
-    const cornerOff = inGlass ? 0.17 : 0.4;
-    const cornerY = inGlass ? h * 0.6 : h * 0.8;
-    const headingY = inGlass ? h * 0.2 : h * 0.11;
+    let tapeOff = inGlass ? 0.15 : 0.3;
+    let cornerOff = inGlass ? 0.17 : 0.4;
+    let cornerY = inGlass ? h * 0.6 : h * 0.8;
+    let headingY = inGlass ? h * 0.2 : h * 0.11;
+    let midY = h * 0.5;
+    const glass = inGlass ? this.combinerOutline : null;
+    if (glass) {
+      // Fit the layout inside the glass as it appears on this screen.
+      const xs = glass.map((p) => p.x);
+      const ys = glass.map((p) => p.y);
+      const halfW = (Math.max(...xs) - Math.min(...xs)) / 2;
+      const top = Math.min(...ys);
+      const bottom = Math.max(...ys);
+      tapeOff = (halfW * 0.72) / areaW;
+      cornerOff = (halfW * 0.95) / areaW;
+      cornerY = bottom - 62 * size;
+      headingY = top + 20 * size;
+      midY = (top + bottom) / 2;
+    }
     c.strokeStyle = GREEN;
     c.fillStyle = GREEN;
     c.lineWidth = Math.max(1.2, 1.6 * size);
     c.font = `${Math.round(15 * size + 4)}px ui-monospace, Menlo, Consolas, monospace`;
     c.textBaseline = 'middle';
     c.save();
-    if (this.clipToCombiner) {
+    // Inside, the symbology lives on the combiner glass (clipped to its outline on screen) — or, with a
+    // helmet-mounted display (no combiner), it floats free in the compact layout.
+    if (this.clipToCombiner && this.combinerOutline) {
       c.beginPath();
-      c.roundRect(w / 2 - areaW * 0.2, h * 0.16, areaW * 0.4, h * 0.56, 12);
+      this.combinerOutline.forEach((p, i) => (i === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y)));
+      c.closePath();
       c.clip();
     }
 
@@ -182,18 +202,18 @@ export class Hud {
 
     // Tapes: calibrated (equivalent) airspeed left, altitude right, heading top.
     const easKt = speed * Math.sqrt(ac.air.densityKgM3 / ISA.seaLevelDensityKgM3) * KNOTS_PER_MS;
-    this.tape(w / 2 - areaW * tapeOff, h * 0.5, easKt, 10, 50, 3.2 * size, 'left', size);
+    this.tape(w / 2 - areaW * tapeOff, midY, easKt, 10, 50, 3.2 * size, 'left', size);
     c.textAlign = 'center';
-    c.fillText(`M ${ac.mach.toFixed(2)}`, w / 2 - areaW * tapeOff, h * 0.5 + 150 * size);
+    c.fillText(`M ${ac.mach.toFixed(2)}`, w / 2 - areaW * tapeOff, midY + 150 * size);
     const altFt = ac.position.y * FEET_PER_M;
-    this.tape(w / 2 + areaW * tapeOff, h * 0.5, altFt, 100, 500, 0.34 * size, 'right', size);
-    if (extras.radarAltitudeM < 500) c.fillText(`R ${Math.round(extras.radarAltitudeM * FEET_PER_M)}`, w / 2 + areaW * tapeOff, h * 0.5 + 150 * size);
+    this.tape(w / 2 + areaW * tapeOff, midY, altFt, 100, 500, 0.34 * size, 'right', size);
+    if (extras.radarAltitudeM < 500) c.fillText(`R ${Math.round(extras.radarAltitudeM * FEET_PER_M)}`, w / 2 + areaW * tapeOff, midY + 150 * size);
     // Vertical speed bar beside the altitude tape (±6000 ft/min full scale).
     const vsiFpm = v.y * FEET_PER_M * 60;
     const vsiH = Math.max(-1, Math.min(1, vsiFpm / 6000)) * 120 * size;
     c.beginPath();
-    c.moveTo(w / 2 + areaW * tapeOff + 70 * size, h * 0.5);
-    c.lineTo(w / 2 + areaW * tapeOff + 70 * size, h * 0.5 - vsiH);
+    c.moveTo(w / 2 + areaW * tapeOff + 70 * size, midY);
+    c.lineTo(w / 2 + areaW * tapeOff + 70 * size, midY - vsiH);
     c.stroke();
     this.headingTape(w / 2, headingY, headingDeg, size);
 
