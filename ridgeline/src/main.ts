@@ -238,9 +238,17 @@ async function main(): Promise<void> {
   const sightLook = new Vec3();
   const sightPoint = new Vec3();
   const camDir = new Vector3();
+  // The gun cursor: a point on the screen (−1…1 each way) the mouse or the right thumb moves; the camera stays
+  // with the aircraft, and the sight line runs from the camera through the cursor.
+  const cursor = { x: 0, y: 0 };
+  const moveCursor = (dxPx: number, dyPx: number): void => {
+    const k = input.touch ? 1.3 : 1;
+    cursor.x = Math.max(-0.92, Math.min(0.92, cursor.x + ((dxPx * 2) / window.innerWidth) * k));
+    cursor.y = Math.max(-0.85, Math.min(0.85, cursor.y - ((dyPx * 2) / window.innerHeight) * k));
+  };
   const sight = (): void => {
     const cam = stage.camera;
-    cam.getWorldDirection(camDir);
+    camDir.set(cursor.x, cursor.y, 0.5).unproject(cam).sub(cam.position).normalize();
     sightEye.set(cam.position.x, cam.position.y, cam.position.z);
     sightLook.set(camDir.x, camDir.y, camDir.z);
     // March out to 8 km in growing steps, then halve back onto the surface.
@@ -306,8 +314,8 @@ async function main(): Promise<void> {
         }
         pilot.setTilt(tilt?.enabled ? tilt.stick : null);
         if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
-        else rig.lookBy(pilot.delta.dx, pilot.delta.dy, dtS, input.touch ? 0.004 : 0.0022, input.touch);
-        if (input.pressed('centreView')) rig.centreLook();
+        else moveCursor(pilot.delta.dx, pilot.delta.dy);
+        if (input.pressed('centreView')) cursor.x = cursor.y = 0;
         if (input.pressed('laser')) {
           arm.laser = !arm.laser;
           say(arm.laser ? 'LASER ON' : 'LASER OFF', 1.5);
@@ -384,6 +392,7 @@ async function main(): Promise<void> {
           gunPoint: new Vector3(sightPoint.x, sightPoint.y, sightPoint.z),
           rocketCue: cue ? new Vector3(cue.x, cue.y, cue.z) : null,
           lock: lockAt ? new Vector3(lockAt.x, lockAt.y, lockAt.z) : null,
+          cursor,
           targets: seen.filter((t) => t.alive).map((t) => new Vector3(t.position.x, t.position.y + 1.4, t.position.z)),
           laser: arm.laser,
           laserRangeM: arm.laserRangeM,

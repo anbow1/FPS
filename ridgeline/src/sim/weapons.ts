@@ -281,7 +281,7 @@ export class Armament {
     const p = pods[this.podIndex++ % pods.length] ?? [0, 0, 0];
     const pos = h.orientation.rotate(new Vec3(p[0], p[1], p[2])).add(h.position);
     const dir = this.spread(h.orientation.rotate(new Vec3(0, -Math.sin(rw.podDownRad), -Math.cos(rw.podDownRad))), rw.dispersionRad);
-    const s: Shot = { kind: 'rocket', position: pos, velocity: h.velocity.clone().addScaled(dir, rw.launchMs), ageS: 0, tracer: false, target: null, burning: true, alive: true };
+    const s: Shot = { kind: 'rocket', position: pos, velocity: rocketLaunchVelocity(h, dir, new Vec3()), ageS: 0, tracer: false, target: null, burning: true, alive: true };
     this.shots.push(s);
     this.rockets--;
     return s;
@@ -460,7 +460,7 @@ export class Armament {
     for (const p of pods) ((mid.x += p[0] / pods.length), (mid.y += p[1] / pods.length), (mid.z += p[2] / pods.length));
     const pos = h.orientation.rotate(out.copy(mid)).add(h.position);
     const dir = h.orientation.rotate(scratch.a.set(0, -Math.sin(rw.podDownRad), -Math.cos(rw.podDownRad)));
-    const vel = scratch.b.copy(h.velocity).addScaled(dir, rw.launchMs);
+    const vel = rocketLaunchVelocity(h, dir, scratch.b);
     const dt = PHYSICS.stepSeconds;
     for (let t = dt; t < 14; t += dt) {
       const speed = vel.length();
@@ -475,6 +475,16 @@ export class Armament {
     }
     return null;
   }
+}
+
+/**
+ * A rocket leaves along the pod's line: the aircraft's speed along that line plus the launch speed. Its fins
+ * turn it into the airflow straight away, so a sideways drift does not carry it off the shaft line — the
+ * rockets go where the nose points, which is how they are aimed.
+ */
+function rocketLaunchVelocity(h: Helicopter, dir: Vec3, out: Vec3): Vec3 {
+  const along = Math.max(0, h.velocity.dot(dir));
+  return out.copy(dir).scale(along + WEAPONS.rockets.launchMs);
 }
 
 function targetRadius(t: GroundTarget): number {

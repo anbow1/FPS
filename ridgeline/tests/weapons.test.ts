@@ -127,4 +127,18 @@ describe('weapons', () => {
     expect(mean.distanceTo(cue ?? new Vec3())).toBeLessThan(40);
     for (const b of hits) expect(Math.abs(b.position.x - (cue?.x ?? 0))).toBeLessThan(25);
   });
+
+  it('sends rockets along the aircraft axis even while it drifts sideways', () => {
+    const s = setup(120);
+    // Nose north, drifting east at 15 m/s.
+    s.h.velocity.set(15, 0, -20);
+    s.arm.selected = 'rockets';
+    const eye = s.h.position.clone();
+    for (let t = 0; t < 12; t += PHYSICS.stepSeconds) s.arm.step(PHYSICS.stepSeconds, s.h, t < 0.05, eye, new Vec3(0, 0, -1), new Vec3(0, 0, -1000), s.force, flat);
+    const hit = s.arm.blasts.find((b) => b.kind === 'blast');
+    expect(hit).toBeDefined();
+    // Well ahead, and within the pod's spread of the axis line (x = pod offset), not carried off to the east.
+    expect(hit?.position.z ?? 0).toBeLessThan(-300);
+    expect(Math.abs(hit?.position.x ?? 99)).toBeLessThan(12);
+  });
 });

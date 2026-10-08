@@ -43,6 +43,8 @@ export interface HudAim {
   rocketCue: Vector3 | null;
   /** The target the missile seeker holds. */
   lock: Vector3 | null;
+  /** The gun cursor on the screen (−1…1, y up): where the sight line points. */
+  cursor: { x: number; y: number };
   /** Targets in view of the sensor (in range and not behind terrain). */
   targets: Vector3[];
   /** A weapon caution (gun hot, no lock, empty), shown under the reticles. */
@@ -315,6 +317,13 @@ export class Hud {
     c.strokeStyle = GREEN;
     c.fillStyle = GREEN;
     c.lineWidth = Math.max(1.4, 1.8 * size);
+    // The cursor the mouse moves: a ring with a centre dot (the gun cross and the seeker box sit on it).
+    const ax = ((a.cursor.x + 1) / 2) * w;
+    const ay = ((1 - a.cursor.y) / 2) * hgt;
+    c.beginPath();
+    c.arc(ax, ay, 22 * size, 0, Math.PI * 2);
+    c.stroke();
+    c.fillRect(ax - 1.5, ay - 1.5, 3, 3);
     if (a.weapon === 'gun' && a.gunPoint) {
       const s = this.toScreen(camera, a.gunPoint, w, hgt);
       if (s) {
@@ -351,10 +360,10 @@ export class Hud {
         c.textAlign = 'center';
         c.fillText('LOCK', s.x, s.y - r - 8 * size);
       } else {
-        // The seeker's field: a dashed box in the middle of the view — put a target in it.
+        // The seeker's field: a dashed box on the cursor — put a target in it.
         const r = 34 * size;
         c.setLineDash([6 * size, 6 * size]);
-        c.strokeRect(w / 2 - r, hgt / 2 - r, 2 * r, 2 * r);
+        c.strokeRect(ax - r, ay - r, 2 * r, 2 * r);
         c.setLineDash([]);
       }
     }
@@ -375,7 +384,7 @@ export class Hud {
         c.stroke();
       }
       c.textAlign = 'left';
-      c.fillText(a.laserRangeM > 0 ? `L ${Math.round(a.laserRangeM)}` : 'L ----', w / 2 + 40 * size, hgt / 2 + 44 * size);
+      c.fillText(a.laserRangeM > 0 ? `L ${Math.round(a.laserRangeM)}` : 'L ----', ax + 28 * size, ay + 36 * size);
       const d = a.designated ? this.toScreen(camera, a.designated, w, hgt) : null;
       if (d) {
         const r = 10 * size;

@@ -124,8 +124,8 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
   const keys = document.createElement('div');
   keys.className = 'keys';
   keys.innerHTML = touch
-    ? 'Left thumb: stick — up/down tilts the nose, sideways turns. Left edge: power lever — above the mark climb, below descend, let go to hold the height. ◀ ▶: rotate on the spot.<br>Right thumb: drag to look and aim. FIRE shoots; WPN steps gun → rockets ×1/×4/×8 → missiles; LSR the laser. TILT steers by tilting the phone; CAL sets hands-off.'
-    : 'W / S: nose down (forward) / nose up · A / D: turn · Q / E: rotate on the spot · Shift: climb · Ctrl: descend · neither: hold the height (wheel: a standing climb or descent)<br>Mouse: look and aim the gun · left click or Space: fire · right click or L: laser (marks the target for missiles) · middle click or X: look ahead · R weapon · V rocket ripple 1/4/8<br>T trim · Z SAS · I engines (autorotation practice) · B wheel brakes · C camera (chase, cockpit, gunner, orbit) · H flight data · K sky · O quality · M sound';
+    ? 'Left thumb: stick — up/down tilts the nose, sideways turns. Left edge: power lever — above the mark climb, below descend, let go to hold the height. ◀ ▶: rotate on the spot.<br>Right thumb: drag the gun cursor. FIRE shoots; WPN steps gun → rockets ×1/×4/×8 → missiles; LSR the laser. TILT steers by tilting the phone; CAL sets hands-off.'
+    : 'W / S: nose down (forward) / nose up · A / D: turn · Q / E: rotate on the spot · Shift: climb · Ctrl: descend · neither: hold the height (wheel: a standing climb or descent)<br>Mouse: moves the gun cursor (the aircraft flies on) · left click or Space: fire · right click or L: laser (marks the target for missiles) · middle click or X: cursor back to the centre · R weapon · V rocket ripple 1/4/8<br>T trim · Z SAS · I engines (autorotation practice) · B wheel brakes · C camera (chase, cockpit, gunner, orbit) · H flight data · K sky · O quality · M sound';
   card.append(keys);
   parent.append(root);
   return new Promise((resolve) => {

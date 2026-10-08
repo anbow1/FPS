@@ -25,7 +25,7 @@ and missions follow.
 | Turn | A / D: mostly a yaw in a hover, a banked turn with speed | the same stick, sideways |
 | Rotate on the spot | Q / E (pedals) | ◀ ▶ |
 | Power | Shift climb, Ctrl descend, neither holds the height; the wheel sets a standing climb or descent | lever on the left edge: above the mark climb, below descend, let go to hold |
-| Look and aim | mouse; middle click or X looks ahead again | drag with the right thumb |
+| Aim (gun cursor) | mouse moves a cursor over the view, the aircraft flies on; middle click or X centres it | drag with the right thumb |
 | Fire | left click or Space | FIRE |
 | Laser designator | right click or L | LSR |
 | Weapon (gun, rockets, missiles) / rocket ripple 1-4-8 | R / V | WPN steps through all of them |
@@ -53,17 +53,19 @@ hitscan.
 - **Laser designator.** It ranges the spot the sight rests on (the gun shoots
   there) and marks the vehicle on it. A marked vehicle is the missile's target
   wherever the seeker box is.
-- **Cannon.** A chin turret slaved to the centre of the view (aimed with the
-  mouse or the right thumb), within its travel
+- **Cannon.** A chin turret slaved to the gun cursor (moved over the view
+  with the mouse or the right thumb), within its travel
   and slew rate. 1200 rounds with time of flight, drag, gravity and a
   dispersion cone, every third a tracer. Long bursts heat the barrel until it
   stops ("GUN HOT") and must cool.
 - **Rockets.** 38, from fixed pods along the shaft line, in ripples of 1, 4 or
-  8. Unguided: the HUD ring is where they would land now; fly it onto the
+  8. Unguided and fired along the aircraft's axis, whatever its drift: the
+  HUD ring is where they would land now; point the nose to put it on the
   target.
 - **Guided missiles.** 8, fire-and-forget. Put a target in the dashed seeker
   box until it reads LOCK (in range, not behind terrain), then fire. The
-  missile climbs over the target and dives onto its roof.
+  missile climbs over the target and dives onto its roof. The seeker box sits
+  on the gun cursor.
 - **Armour.** Damage depends on the side that is hit. The cannon cannot get
   through a tank's front, but its side or rear works. A missile's top attack
   kills from any direction. Near misses barely scratch armour but wreck

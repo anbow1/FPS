@@ -19,10 +19,6 @@ export class CameraRig {
   orbitYawRad = 0.7;
   orbitPitchRad = 0.2;
   orbitZoom = 1;
-  /** Head look (cockpit seats) or a swing of the chase arm, from a touch drag; it eases back when let go. */
-  lookYawRad = 0;
-  lookPitchRad = 0;
-  private lookIdleS = 0;
   private yaw = 0;
   private pitch = 0;
   private readonly arm = new Vector3();
@@ -69,14 +65,12 @@ export class CameraRig {
       if (this.mode === 'gunner') cam.rotateX(-8 * DEG);
       // The pilot's default view looks a little down, so the displays are in the picture.
       else cam.rotateX(-7 * DEG);
-      cam.rotateY(this.lookYawRad);
-      cam.rotateX(this.lookPitchRad);
       cam.fov = this.mode === 'gunner' ? 60 : 75;
       cam.near = 0.05;
     } else if (this.mode === 'chase') {
       const d = Math.max(this.chaseDistanceM, lengthM * 1.3);
-      const p = Math.max(-1.2, Math.min(0.5, this.pitch - 0.22 + this.lookPitchRad * 0.7));
-      const ay = this.yaw + this.lookYawRad;
+      const p = this.pitch - 0.22;
+      const ay = this.yaw;
       this.arm.set(Math.sin(ay) * Math.cos(p), -Math.sin(p), Math.cos(ay) * Math.cos(p)).multiplyScalar(d);
       cam.position.copy(pos).add(this.arm);
       // Keep the camera above the ground (and the look point clear of it).
@@ -105,31 +99,6 @@ export class CameraRig {
       cam.near = 0.3;
     }
     cam.updateProjectionMatrix();
-  }
-
-  /**
-   * A look movement (px) at `radPerPx`. With `settle` (a thumb's drag) the view eases back to straight
-   * ahead a couple of seconds after it stops; the mouse's aim stays where it was put.
-   */
-  lookBy(dxPx: number, dyPx: number, dtS: number, radPerPx: number, settle: boolean): void {
-    if (dxPx !== 0 || dyPx !== 0) {
-      this.lookYawRad = Math.max(-2.2, Math.min(2.2, this.lookYawRad - dxPx * radPerPx));
-      this.lookPitchRad = Math.max(-1.0, Math.min(0.6, this.lookPitchRad - dyPx * radPerPx));
-      this.lookIdleS = 0;
-      return;
-    }
-    this.lookIdleS += dtS;
-    if (settle && this.lookIdleS > 2.5) {
-      const k = Math.exp(-1.5 * dtS);
-      this.lookYawRad *= k;
-      this.lookPitchRad *= k;
-    }
-  }
-
-  /** Straight ahead again. */
-  centreLook(): void {
-    this.lookYawRad = 0;
-    this.lookPitchRad = 0;
   }
 
   orbit(dxPx: number, dyPx: number): void {
