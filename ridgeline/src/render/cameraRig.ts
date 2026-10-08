@@ -107,20 +107,29 @@ export class CameraRig {
     cam.updateProjectionMatrix();
   }
 
-  /** A look drag (px); `dtS` lets the view ease back to straight ahead a couple of seconds after it stops. */
-  lookBy(dxPx: number, dyPx: number, dtS: number): void {
+  /**
+   * A look movement (px) at `radPerPx`. With `settle` (a thumb's drag) the view eases back to straight
+   * ahead a couple of seconds after it stops; the mouse's aim stays where it was put.
+   */
+  lookBy(dxPx: number, dyPx: number, dtS: number, radPerPx: number, settle: boolean): void {
     if (dxPx !== 0 || dyPx !== 0) {
-      this.lookYawRad = Math.max(-2.2, Math.min(2.2, this.lookYawRad - dxPx * 0.004));
-      this.lookPitchRad = Math.max(-1.0, Math.min(0.6, this.lookPitchRad - dyPx * 0.004));
+      this.lookYawRad = Math.max(-2.2, Math.min(2.2, this.lookYawRad - dxPx * radPerPx));
+      this.lookPitchRad = Math.max(-1.0, Math.min(0.6, this.lookPitchRad - dyPx * radPerPx));
       this.lookIdleS = 0;
       return;
     }
     this.lookIdleS += dtS;
-    if (this.lookIdleS > 2.5) {
+    if (settle && this.lookIdleS > 2.5) {
       const k = Math.exp(-1.5 * dtS);
       this.lookYawRad *= k;
       this.lookPitchRad *= k;
     }
+  }
+
+  /** Straight ahead again. */
+  centreLook(): void {
+    this.lookYawRad = 0;
+    this.lookPitchRad = 0;
   }
 
   orbit(dxPx: number, dyPx: number): void {

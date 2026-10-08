@@ -47,6 +47,10 @@ export interface HudAim {
   targets: Vector3[];
   /** A weapon caution (gun hot, no lock, empty), shown under the reticles. */
   warning: string;
+  /** Laser designator: on, its range to the spot (m, 0 = no return), the vehicle it marks. */
+  laser: boolean;
+  laserRangeM: number;
+  designated: Vector3 | null;
 }
 
 export class Hud {
@@ -127,6 +131,17 @@ export class Hud {
     const barX = lx + 14 * size;
     c.strokeRect(barX, cy - barH / 2, 8 * size, barH);
     c.fillRect(barX, cy + barH / 2 - barH * input.collective, 8 * size, barH * input.collective);
+    if (input.sas) {
+      // The lever is a climb / hold / descend command: a detent mark at the middle and the mode under it.
+      c.fillRect(barX - 4 * size, cy - 1, 16 * size, 2);
+      const lever = input.collective - 0.5;
+      const mode = Math.abs(lever) <= 0.08 ? 'HOLD' : lever > 0 ? 'CLIMB' : 'DESC';
+      c.textAlign = 'center';
+      c.font = `${Math.round(11 * size + 3)}px ui-monospace, Menlo, Consolas, monospace`;
+      c.fillText(mode, barX + 4 * size, cy + barH / 2 + 16 * size);
+      c.font = `${Math.round(15 * size + 4)}px ui-monospace, Menlo, Consolas, monospace`;
+      c.textAlign = 'right';
+    }
 
     // ---- right: radar altitude, vertical speed, airspeed
     const rx = cx + areaW * side;
@@ -341,6 +356,35 @@ export class Hud {
         c.setLineDash([6 * size, 6 * size]);
         c.strokeRect(w / 2 - r, hgt / 2 - r, 2 * r, 2 * r);
         c.setLineDash([]);
+      }
+    }
+    if (a.laser) {
+      // The laser spot: a flickering diamond on the sight's point, the range beside the reticle, and a
+      // marker over the vehicle the spot is on.
+      const s = a.gunPoint ? this.toScreen(camera, a.gunPoint, w, hgt) : null;
+      c.strokeStyle = RED;
+      c.fillStyle = RED;
+      if (s && Math.floor(performance.now() / 120) % 2 === 0) {
+        const r = 6 * size;
+        c.beginPath();
+        c.moveTo(s.x, s.y - r);
+        c.lineTo(s.x + r, s.y);
+        c.lineTo(s.x, s.y + r);
+        c.lineTo(s.x - r, s.y);
+        c.closePath();
+        c.stroke();
+      }
+      c.textAlign = 'left';
+      c.fillText(a.laserRangeM > 0 ? `L ${Math.round(a.laserRangeM)}` : 'L ----', w / 2 + 40 * size, hgt / 2 + 44 * size);
+      const d = a.designated ? this.toScreen(camera, a.designated, w, hgt) : null;
+      if (d) {
+        const r = 10 * size;
+        c.beginPath();
+        c.moveTo(d.x - r, d.y - 2.2 * r);
+        c.lineTo(d.x + r, d.y - 2.2 * r);
+        c.lineTo(d.x, d.y - r);
+        c.closePath();
+        c.fill();
       }
     }
     if (a.warning) {

@@ -165,17 +165,17 @@ describe('rotorcraft flight model', () => {
     expect(h.vibration).toBeGreaterThan(0.5);
   });
 
-  it('holds heading and a level attitude through collective changes with SAS on, hands off', () => {
+  it('holds heading and a level attitude through climbs and descents with SAS on, hands off', () => {
     for (const id of ['warden', 'bulat'] as const) {
       const h = new Helicopter(HELICOPTERS[id]);
       h.placeInFlight(0, 600, 0, 0, 0);
       const inp: HeliInput = { ...neutralHeliInput(), brake: false };
-      // Snatch the lever from a sink to a hard climb and back: the bare airframe spins at over 100 °/s here.
-      for (const collective of [0.35, 0.75, 0.45, 0.7]) {
+      // Lever to the top, the detent, the bottom and back: the bare airframe spins at over 100 °/s here.
+      for (const collective of [1, 0.5, 0, 0.5, 0.8]) {
         inp.collective = collective;
         for (let i = 0; i < 4 / PHYSICS.stepSeconds; i++) {
           h.step(inp, flat);
-          expect(Math.abs(h.angular.y)).toBeLessThan(0.15);
+          expect(Math.abs(h.angular.y), `${id} lever ${collective}`).toBeLessThan(0.15);
         }
       }
       const att = attitude(h);
@@ -183,6 +183,36 @@ describe('rotorcraft flight model', () => {
       expect(Math.abs(att.pitch)).toBeLessThan(0.08);
       expect(Math.abs(att.roll)).toBeLessThan(0.1);
       expect(h.velocity.lengthXZ()).toBeLessThan(3);
+    }
+  });
+
+  it('treats the lever as climb / hold / descend with SAS on: takes off, holds its height and lands softly', () => {
+    for (const id of ['warden', 'bulat'] as const) {
+      const h = new Helicopter(HELICOPTERS[id]);
+      h.placeOnGround(0, 0, 0, 0);
+      const inp: HeliInput = { ...neutralHeliInput(), collective: 0.5, brake: false };
+      const fly = (lever: number, seconds: number): void => {
+        inp.collective = lever;
+        for (let i = 0; i < seconds / PHYSICS.stepSeconds; i++) h.step(inp, flat);
+      };
+      // In the detent on the ground it stays there.
+      fly(0.5, 2);
+      expect(h.onGround).toBe(true);
+      // Full up: a climb towards the 8 m/s at the stop, as fast as the torque limit lets it build.
+      fly(1, 6);
+      expect(h.velocity.y).toBeGreaterThan(5.5);
+      expect(h.torquePct).toBeLessThan(103);
+      // Back in the detent: it stops climbing and holds the height it reached.
+      fly(0.5, 5);
+      const held = h.position.y;
+      fly(0.5, 5);
+      expect(Math.abs(h.position.y - held)).toBeLessThan(1);
+      expect(Math.abs(h.velocity.y)).toBeLessThan(0.3);
+      // Full down: it comes down and touches down gently, easing off near the ground.
+      fly(0, 40);
+      expect(h.onGround).toBe(true);
+      expect(h.crashed).toBe(false);
+      expect(h.touchdownSinkMs).toBeLessThan(1.2);
     }
   });
 

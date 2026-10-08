@@ -21,28 +21,40 @@ and missions follow.
 
 | | Keyboard and mouse | Touch |
 |---|---|---|
-| Cyclic | mouse or W/S A/D; springs back to the trim position | left thumb, floating stick; or tilt the phone |
-| Trim | T: the current stick and pedals become neutral | TRIM |
-| Collective | Shift / Ctrl, or the wheel in notches | lever on the left edge |
-| Pedals | Q / E | ◀ ▶ |
+| Nose down (forward) / up | W / S | left thumb, floating stick, up and down; or tilt the phone |
+| Turn | A / D: mostly a yaw in a hover, a banked turn with speed | the same stick, sideways |
+| Rotate on the spot | Q / E (pedals) | ◀ ▶ |
+| Power | Shift climb, Ctrl descend, neither holds the height; the wheel sets a standing climb or descent | lever on the left edge: above the mark climb, below descend, let go to hold |
+| Look and aim | mouse; middle click or X looks ahead again | drag with the right thumb |
+| Fire | left click or Space | FIRE |
+| Laser designator | right click or L | LSR |
+| Weapon (gun, rockets, missiles) / rocket ripple 1-4-8 | R / V | WPN steps through all of them |
+| Trim | T: the current stick becomes neutral | TRIM |
 | Stability augmentation | Z | SAS |
 | Engines (autorotation practice) | I | ENG |
 | Wheel brakes | B | — |
 | Camera (chase, pilot, gunner, orbit) | C | CAM |
-| Look and aim | the centre of the view | drag with the right thumb |
-| Fire | Space or left click | FIRE |
-| Weapon (gun, rockets, missiles) / rocket ripple 1-4-8 | R / V | WPN steps through all of them |
 | Tilt steering on/off, set hands-off | — (menu) | TILT, CAL |
 | Flight data / sky / quality / sound | H / K / O / M | — |
 
-The menu sets the pitch sense, tilt steering and the graphics preset.
+With SAS on, the flight computer flies what the controls ask for. The power
+lever has three levels: climb, hold the height, descend. Straight down at low
+speed it descends no faster than 2.5 m/s, under the vortex ring, and it eases
+off near the ground for a soft touchdown. It also limits torque to 98 %. With
+SAS off the lever is the raw collective.
+
+The menu sets the thumb stick's pitch sense, tilt steering and the graphics preset.
 
 ## Weapons
 
 Game abstractions with invented numbers; every shot is a flying body, not a
 hitscan.
 
-- **Cannon.** A chin turret slaved to the centre of the view, within its travel
+- **Laser designator.** It ranges the spot the sight rests on (the gun shoots
+  there) and marks the vehicle on it. A marked vehicle is the missile's target
+  wherever the seeker box is.
+- **Cannon.** A chin turret slaved to the centre of the view (aimed with the
+  mouse or the right thumb), within its travel
   and slew rate. 1200 rounds with time of flight, drag, gravity and a
   dispersion cone, every third a tracer. Long bursts heat the barrel until it
   stops ("GUN HOT") and must cool.
@@ -111,12 +123,14 @@ rotor, not from a plane with vertical thrust.
   - Fuselage drag, a cambered fin that unloads the tail rotor at speed, and a
     stabilator.
   - Spring-damper wheels, rotor strike, and fuel burn.
-- **SAS.** On by default: a flight control computer with attitude hold and
-  heading hold. The cyclic commands a bank or pitch attitude (up to 29° and
+- **SAS.** On by default: a flight control computer with attitude hold,
+  heading hold and height hold. The cyclic commands a bank or pitch attitude (up to 29° and
   20°), the pedals a yaw rate (up to 46°/s); let go and it levels and keeps
   the heading. The tail rotor is fed forward from the main rotor torque, so
   the collective no longer swings the nose. At hover speeds it also leans
-  against the drift, so a centred stick settles into a hover.
+  against the drift, so a centred stick settles into a hover. The collective
+  lever is a vertical-speed command: its middle holds the height, and the
+  computer finds the collective, rate-limited and under the torque limit.
 - **SAS off.** The bare airframe: every collective change swings the nose
   until the pedals follow, and a hover is genuinely hard to hold.
 

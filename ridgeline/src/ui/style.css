@@ -40,3 +40,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0c0e; col
   .menu .go { margin-top: 8px; padding: 9px; }
   .menu .keys { display: none; }
 }
+.touch-lever-detent { position: absolute; left: -4px; right: -4px; top: 50%; height: 3px; margin-top: -1px; background: rgba(150, 255, 180, 0.85); border-radius: 2px; pointer-events: none; }

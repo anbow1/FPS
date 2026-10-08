@@ -206,6 +206,7 @@ async function main(): Promise<void> {
         { code: 'KeyT', label: 'TRIM', col: 0, row: 1.2, mode: 'tap', big: false },
         { code: 'KeyZ', label: 'SAS', col: 1, row: 1.2, mode: 'tap' },
         { code: '', label: 'WPN', col: 2.3, row: 1.55, mode: 'tap', id: 'wpn', action: (): void => cycleTouchWeapon() },
+        { code: 'KeyL', label: 'LSR', col: 3.3, row: 1.55, mode: 'tap', id: 'laser' },
         { code: 'KeyC', label: 'CAM', col: 0, row: 2.2, mode: 'tap' },
         { code: 'KeyI', label: 'ENG', col: 1, row: 2.2, mode: 'tap' },
         ...(tilt
@@ -215,7 +216,7 @@ async function main(): Promise<void> {
             ]
           : []),
       ],
-      { label: 'COLL', reheat: false },
+      { label: 'PWR', reheat: false, detent: true },
     );
     touch.setThrottle(pilot.input.collective);
     touch.onTouch = (): void => {
@@ -296,12 +297,21 @@ async function main(): Promise<void> {
   const loop = new FixedLoop(
     {
       step: (dtS) => {
-        // On a touch screen the right thumb's drag looks and aims; it never moves the cyclic (the left thumb does).
-        pilot.update(dtS, rig.mode !== 'orbit' && !input.touch);
-        if (touch) pilot.setTouch(touch.stick, touch.throttle);
+        // The mouse (or the right thumb's drag) looks and aims the gun and the laser; it never flies.
+        pilot.update(dtS, heli.airspeedMs);
+        if (touch) {
+          // With SAS the lever springs back to its middle — hold the height — when the thumb lets go.
+          if (pilot.input.sas && !touch.leverHeld && touch.throttle !== 0.5) touch.setThrottle(0.5);
+          pilot.setTouch(touch.stick, touch.throttle);
+        }
         pilot.setTilt(tilt?.enabled ? tilt.stick : null);
         if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
-        else if (input.touch) rig.lookBy(pilot.delta.dx, pilot.delta.dy, dtS);
+        else rig.lookBy(pilot.delta.dx, pilot.delta.dy, dtS, input.touch ? 0.004 : 0.0022, input.touch);
+        if (input.pressed('centreView')) rig.centreLook();
+        if (input.pressed('laser')) {
+          arm.laser = !arm.laser;
+          say(arm.laser ? 'LASER ON' : 'LASER OFF', 1.5);
+        }
         if (input.pressed('camera')) rig.next();
         if (input.pressed('debug')) overlay.visible = !overlay.visible;
         if (input.pressed('mute')) muted = !muted;
@@ -375,11 +385,15 @@ async function main(): Promise<void> {
           rocketCue: cue ? new Vector3(cue.x, cue.y, cue.z) : null,
           lock: lockAt ? new Vector3(lockAt.x, lockAt.y, lockAt.z) : null,
           targets: seen.filter((t) => t.alive).map((t) => new Vector3(t.position.x, t.position.y + 1.4, t.position.z)),
+          laser: arm.laser,
+          laserRangeM: arm.laserRangeM,
+          designated: arm.designated ? new Vector3(arm.designated.position.x, arm.designated.position.y + 1.4, arm.designated.position.z) : null,
           warning: arm.selected === 'gun' && arm.overheated ? 'GUN HOT' : (arm.selected === 'gun' && arm.rounds === 0) || (arm.selected === 'rockets' && arm.rockets === 0) || (arm.selected === 'missile' && arm.missiles === 0) ? 'EMPTY' : '',
         };
         const weaponText = arm.selected === 'gun' ? `GUN ${arm.rounds}` : arm.selected === 'rockets' ? `RKT ${arm.rockets} ×${arm.ripple}` : `MSL ${arm.missiles}${arm.lock ? ' LOCK' : ''}`;
         hud.draw(stage.camera, heli, pilot.input, { sensor: `TGT ${seen.length} IN VIEW · ${force.alive} LEFT`, weapon: weaponText, message, aim }, frameS);
         touch?.setLit('tilt', tilt?.enabled ?? false);
+        touch?.setLit('laser', arm.laser);
         touch?.setLit('wpn', false, arm.selected === 'gun' ? 'GUN' : arm.selected === 'rockets' ? `RKT${arm.ripple}` : 'MSL');
         EMISSIVE_EXPOSURE.value = lighting.exposure;
         targetView.update(force, groundAt);

@@ -18,7 +18,8 @@ export type Action =
   | 'pause'
   | 'quality'
   | 'toneMap'
-  | 'centreStick'
+  | 'centreView'
+  | 'laser'
   | 'brake'
   | 'timeOfDay'
   | 'mute'
@@ -45,7 +46,8 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   pause: ['Escape', 'KeyP'],
   quality: ['KeyO'],
   toneMap: ['KeyY'],
-  centreStick: ['Mouse2'],
+  centreView: ['KeyX', 'Mouse1'],
+  laser: ['KeyL', 'Mouse2'],
   brake: ['KeyB'],
   timeOfDay: ['KeyK'],
   mute: ['KeyM'],

@@ -52,6 +52,23 @@ export const SAS = {
   driftMaxRad: 0.13,
   /** Ground speed a full stick asks for at hover speeds (m/s): the lean is measured from it. */
   stickSpeedMs: 20,
+  /**
+   * Height hold: with SAS on the collective lever is a vertical-speed command with a neutral detent in the
+   * middle — below it descend, at it hold the height, above it climb (m/s at the stops).
+   */
+  climbMaxMs: 8,
+  descentMaxMs: 5,
+  /** The most it descends straight down at hover speeds (m/s): under the vortex ring's onset. */
+  verticalDescentMs: 2.5,
+  leverDetent: 0.08,
+  /** Vertical-speed error → collective, and its integral (which finds the hover collective by itself). */
+  vsGain: 0.07,
+  vsIntegral: 0.04,
+  /** How fast the computer may move the collective (lever travel per second), and the torque it stays under (%). */
+  collectiveRatePerS: 0.5,
+  torqueLimitPct: 98,
+  /** Close to the ground the commanded descent eases off to this rate per metre of height (soft touchdowns). */
+  flareRatePerM: 0.35,
 } as const;
 
 export type HeliId = 'warden' | 'bulat';
@@ -284,6 +301,8 @@ export const WEAPONS = {
     splashDamage: 0.9,
     massKg: 6.5,
   },
+  /** How close to a vehicle the laser spot must fall to mark it (m). */
+  laserMarkM: 18,
   missile: {
     count: 8,
     launchMs: 25,

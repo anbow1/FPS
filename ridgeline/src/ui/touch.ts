@@ -62,7 +62,7 @@ export class FlightTouchControls {
     private readonly sink: FlightTouchSink,
     buttons: FlightTouchButton[],
     /** The lever: its label and whether its top fifth is a reheat range (jets) or plain travel (collective). */
-    private readonly leverStyle: { label: string; reheat: boolean } = { label: 'AB', reheat: true },
+    private readonly leverStyle: { label: string; reheat: boolean; detent?: boolean } = { label: 'AB', reheat: true },
   ) {
     this.root.className = 'touch';
     this.base.className = 'touch-stick';
@@ -74,6 +74,12 @@ export class FlightTouchControls {
     ab.className = leverStyle.reheat ? 'touch-lever-ab' : 'touch-lever-ab plain';
     ab.textContent = leverStyle.label;
     this.lever.append(this.leverFill, ab);
+    if (leverStyle.detent) {
+      // A mark at the middle of the travel: the lever's hold position.
+      const d = document.createElement('div');
+      d.className = 'touch-lever-detent';
+      this.lever.append(d);
+    }
     this.root.append(this.base, this.lever);
     for (const b of buttons) this.root.append(this.button(b));
     document.body.append(this.root);
@@ -197,6 +203,11 @@ export class FlightTouchControls {
     // Jets: bottom 80 % of travel idle to military, the top 20 % reheat. A collective: the whole travel.
     this.throttle = !this.leverStyle.reheat ? f : f <= 0.8 ? f / 0.8 : 1 + ((f - 0.8) / 0.2) * 0.25;
     this.drawLever();
+  }
+
+  /** A finger is on the lever. */
+  get leverHeld(): boolean {
+    return this.leverId !== null;
   }
 
   /** Sets the lever from the game (e.g. after a respawn). */

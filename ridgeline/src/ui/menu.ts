@@ -90,8 +90,8 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
     r.append(on, off);
     card.append(r);
   };
-  const what = touch ? 'Thumb' : 'Mouse';
-  toggle('Pitch', 'invertPitch', `${what} up = nose up`, `${what} up = nose down`);
+  // The keys never flip (W is always nose down) and the mouse aims: the setting is the thumb stick's.
+  if (touch) toggle('Pitch', 'invertPitch', 'Thumb up = nose up', 'Thumb up = nose down');
   if (touch) toggle('Tilt', 'tilt', 'Steer by tilting', 'Off');
   {
     const r = document.createElement('div');
@@ -124,8 +124,8 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
   const keys = document.createElement('div');
   keys.className = 'keys';
   keys.innerHTML = touch
-    ? 'Left thumb: cyclic (springs back to trim). Left edge: collective. ◀ ▶: pedals. TRIM makes the stick position neutral. Right thumb: drag to look and aim.<br>FIRE shoots the selected weapon; WPN steps gun → rockets ×1/×4/×8 → missiles. TILT steers by tilting the phone like a yoke; CAL sets hands-off.'
-    : 'Mouse or W/S A/D: cyclic (springs back to trim) · T trim · Shift/Ctrl or wheel: collective · Q/E: pedals<br>Space or left click: fire · R weapon (gun, rockets, missiles) · V rocket ripple 1/4/8 · the gun and missile seeker follow the centre of the view<br>Z SAS · I engines (autorotation practice) · B wheel brakes · C camera (chase, cockpit, gunner, orbit) · H flight data · K sky · O quality · M sound';
+    ? 'Left thumb: stick — up/down tilts the nose, sideways turns. Left edge: power lever — above the mark climb, below descend, let go to hold the height. ◀ ▶: rotate on the spot.<br>Right thumb: drag to look and aim. FIRE shoots; WPN steps gun → rockets ×1/×4/×8 → missiles; LSR the laser. TILT steers by tilting the phone; CAL sets hands-off.'
+    : 'W / S: nose down (forward) / nose up · A / D: turn · Q / E: rotate on the spot · Shift: climb · Ctrl: descend · neither: hold the height (wheel: a standing climb or descent)<br>Mouse: look and aim the gun · left click or Space: fire · right click or L: laser (marks the target for missiles) · middle click or X: look ahead · R weapon · V rocket ripple 1/4/8<br>T trim · Z SAS · I engines (autorotation practice) · B wheel brakes · C camera (chase, cockpit, gunner, orbit) · H flight data · K sky · O quality · M sound';
   card.append(keys);
   parent.append(root);
   return new Promise((resolve) => {

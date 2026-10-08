@@ -42,7 +42,10 @@ import { type AirState, atmosphereAt } from './atmosphere.ts';
 // attitude, the pedals a yaw rate, and the computer works the rotor to get
 // them — with the tail rotor fed forward from the main rotor torque, so a
 // collective change no longer swings the nose. At hover speeds the attitude
-// reference also leans against the drift. SAS off is the bare airframe.
+// reference also leans against the drift. The collective lever becomes a
+// vertical-speed command with a neutral detent: below it the aircraft
+// descends, in it holds its height, above it climbs; the computer finds the
+// collective that does that. SAS off is the bare airframe.
 //
 // Body axes are three.js': x right, y up, −z forward. Angular rates: x pitch up,
 // y yaw left, z roll left.
@@ -131,7 +134,7 @@ export class Helicopter {
   private wasOnGround = true;
   private shakePhase = 0;
   /** The SAS integrators (cyclic and pedal units). */
-  private readonly hold = { pitch: 0, roll: 0, yaw: 0 };
+  private readonly hold = { pitch: 0, roll: 0, yaw: 0, collective: 0, lastCollective: 0 };
 
   constructor(readonly cfg: HeliConfig) {
     this.fuelKg = cfg.fuelKg;
@@ -183,6 +186,8 @@ export class Helicopter {
     this.reset();
     this.velocity.set(-Math.sin(yawRad) * speedMs, 0, -Math.cos(yawRad) * speedMs);
     this.onGround = this.wasOnGround = false;
+    // The height hold starts from about the hover collective, not from the bottom of the lever.
+    this.hold.collective = this.hold.lastCollective = 0.5;
   }
 
   private reset(): void {
@@ -197,6 +202,7 @@ export class Helicopter {
     this.engine.powerW = 0;
     this.crashed = false;
     this.hold.pitch = this.hold.roll = this.hold.yaw = 0;
+    this.hold.collective = this.hold.lastCollective = 0;
   }
 
   /** One fixed step: `groundAt(x, z)` gives the surface height (terrain or water). */
@@ -484,6 +490,34 @@ export class Helicopter {
       a.cyclicY = SAS.pitchRateGain * (SAS.attitudeGain * ePitch - w.x) + hold.pitch;
       a.cyclicX = SAS.rollRateGain * (SAS.attitudeGain * eRoll + w.z) + hold.roll;
     }
+    // Height: the lever's offset from its detent is a vertical speed; easing off near the ground for a soft landing.
+    const lever = input.collective - 0.5;
+    const off = Math.max(0, Math.abs(lever) - SAS.leverDetent) / (0.5 - SAS.leverDetent);
+    let vsCmd = lever > 0 ? off * SAS.climbMaxMs : -off * SAS.descentMaxMs;
+    if (vsCmd < 0) {
+      // Straight down at low speed the rotor sinks into its own wake (vortex ring): the computer keeps a slow
+      // vertical descent under the ring's onset and allows the full rate only with speed through the air.
+      const moving = smoothstep(6, 16, Math.hypot(vF, vR));
+      vsCmd = Math.max(vsCmd, -(SAS.verticalDescentMs + (SAS.descentMaxMs - SAS.verticalDescentMs) * moving));
+      vsCmd = Math.max(vsCmd, -Math.max(0.6, this.radarAltitudeM * SAS.flareRatePerM));
+    }
+    if (this.onGround && vsCmd <= 0) {
+      // Down on the wheels with the lever at or under the detent: settle the blades to flat pitch.
+      hold.collective = Math.max(0, hold.collective - 0.4 * h);
+      a.collective = hold.collective;
+    } else {
+      const eVs = vsCmd - this.velocity.y;
+      // Torque limiting: never past the transmission's rating (and the tail rotor's authority with it). At
+      // the limit the climb is what it is, and the integral stops winding up.
+      const over = this.torquePct - SAS.torqueLimitPct;
+      if (!(over > -3 && eVs > 0)) hold.collective = clamp(hold.collective + SAS.vsIntegral * eVs * h, 0, 1);
+      let want = clamp(hold.collective + SAS.vsGain * eVs, 0, 1);
+      if (over > 0) want = Math.min(want, hold.lastCollective - over * 0.004);
+      // Rate-limited, as a flight computer moves the lever: a snatch of collective is what swings the nose.
+      a.collective = hold.lastCollective + clamp(want - hold.lastCollective, -SAS.collectiveRatePerS * h, SAS.collectiveRatePerS * h);
+    }
+    hold.lastCollective = a.collective;
+
     // Yaw: the tail rotor thrust that cancels the main rotor torque, plus a rate loop with an integral (the heading hold).
     // At speed a centred pedal asks for the coordinated turn rate of the bank instead of none, so the nose follows a turn.
     const t = cfg.tail;

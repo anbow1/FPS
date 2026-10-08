@@ -15,7 +15,10 @@ import type { Helicopter } from './helicopter.ts';
 //            of 1 / 4 / 8; a short motor burn, then ballistic, dispersing
 //            with range — the HUD cue shows where they would land now;
 //   missile  fire-and-forget with a lock taken before launch: the target in
-//            the line of sight, in range and not behind terrain. It climbs
+//            the line of sight, in range and not behind terrain — or the one
+//            the laser designator is on, wherever the seeker box is;
+//   laser    the designator: on, it ranges the point the crew's sight rests on
+//            (the gun shoots there) and marks the vehicle at that spot. It climbs
 //            over the target and dives onto its roof (top attack), steered
 //            by a lateral-acceleration-limited pursuit with lead.
 //
@@ -81,6 +84,10 @@ export class Armament {
   gunElRad = -0.1;
   /** The target the missile seeker holds (only while the missile is selected). */
   lock: GroundTarget | null = null;
+  /** The laser designator: on or off, its range to the spot (m, 0 = no return) and the vehicle it marks. */
+  laser = false;
+  laserRangeM = 0;
+  designated: GroundTarget | null = null;
   readonly shots: Shot[] = [];
   readonly blasts: Blast[] = [];
   readonly events: FireEvents = { rounds: 0, launches: [], blasts: [], kills: [] };
@@ -193,9 +200,29 @@ export class Armament {
       }
     }
 
-    // ---- missile: lock, then a press launches at the locked target
+    // ---- laser: range the sight's spot and mark the vehicle within a few metres of it
+    this.designated = null;
+    this.laserRangeM = 0;
+    if (this.laser && alive) {
+      const range = eye.distanceTo(aim);
+      if (range < WEAPONS.missile.lockRangeM * 1.2) {
+        this.laserRangeM = range;
+        let best: number = WEAPONS.laserMarkM;
+        for (const t of force.targets) {
+          if (!t.alive) continue;
+          const d = GroundForce.centre(t, scratch.c).distanceTo(aim);
+          if (d < best) {
+            best = d;
+            this.designated = t;
+          }
+        }
+      }
+    }
+
+    // ---- missile: lock (the designated vehicle first), then a press launches at the locked target
     if (this.selected === 'missile' && alive) {
-      this.lock = this.findLock(eye, look, force, groundAt, this.lock);
+      const marked = this.designated && this.designated.position.distanceTo(eye) > 150 ? this.designated : null;
+      this.lock = marked ?? this.findLock(eye, look, force, groundAt, this.lock);
       if (pressed && this.lock && this.missiles > 0) ev.launches.push(this.fireMissile(h, this.lock).position.clone());
     } else this.lock = null;
 
