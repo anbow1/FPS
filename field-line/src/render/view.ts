@@ -26,6 +26,8 @@ import { Undergrowth } from './undergrowth.ts';
 import { VIEWMODEL_LAYER, VM_SCALE, ViewModel } from './viewmodel.ts';
 import { WorldFx } from './worldFx.ts';
 import { buildStaticWorld, type StaticWorld } from './worldMesh.ts';
+import { buildWetStreet, puddleAmount, rainRate, wetTime } from './wetStreet.ts';
+import { Rain } from './rain.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 
 // The render system: reads game state, writes transforms (rules §10 — logic
@@ -55,6 +57,8 @@ export class GameView {
   /** Interactive ripples on the lake: legs wading, bullets and blasts (rippleField.ts). */
   private ripples: RippleField | null = null;
   private undergrowth!: Undergrowth;
+  /** The city's rain (null elsewhere). */
+  private rain: Rain | null = null;
   private settings: ViewSettings;
   private shake = 0;
   private interiorK = 1;
@@ -115,6 +119,14 @@ export class GameView {
     await progress('Building the world', 0.35);
     this.world = buildStaticWorld(map, lib);
     stage.scene.add(this.world.group, buildProps(map.props, lib));
+    // The city in the rain: standing water, rings and reflections on the street, and the rain itself.
+    if (map.id === 'city') {
+      stage.scene.add(buildWetStreet(map, this.settings.quality));
+      this.rain = new Rain(map, this.settings.quality);
+      const w = WORLD_WIND.city;
+      this.rain.wind.value.set(Math.sin(w.directionRad) * w.speedMs, Math.cos(w.directionRad) * w.speedMs);
+      stage.scene.add(this.rain.mesh);
+    }
     await progress('Planting trees', 0.5);
     this.foliage = new Foliage(map.trees, map.bushes, lib, this.settings.quality, stage.renderer);
     await progress('Growing undergrowth', 0.55);
@@ -126,7 +138,7 @@ export class GameView {
     this.exposure = new AutoExposure(stage.renderer, this.lighting.preset.ev100);
     const w = WORLD_WIND[map.id];
     windVector.value.set(Math.sin(w.directionRad) * w.speedMs, 0, Math.cos(w.directionRad) * w.speedMs);
-    wetness.value = this.settings.wet && map.id === 'city' ? 1 : 0;
+    this.applyWeather();
     this.viewModel = new ViewModel(this.scopeSidePx());
     stage.passTimer.name(this.viewModel.scope.target, 'scope');
     stage.camera.add(this.viewModel.root);
@@ -171,12 +183,25 @@ export class GameView {
     const presetChanged = s.preset !== this.settings.preset;
     this.settings = { ...s };
     this.stage.applySettings(s);
-    wetness.value = s.wet && this.map.id === 'city' ? 1 : 0;
     if (presetChanged) {
       await this.lighting.apply(s.preset, this.map.playerSpawn.pos.y);
       this.exposure.reset(this.lighting.preset.ev100);
       this.viewModel.setEnvironment(this.stage.scene.environment, this.interiorK);
       this.syncPreExposure();
+    }
+    this.applyWeather();
+  }
+
+  /** Wet streets (the city's rain setting): soaked materials, standing water, falling rain lit by the sky. */
+  private applyWeather(): void {
+    const wet = this.settings.wet && this.map.id === 'city';
+    wetness.value = wet ? 1 : 0;
+    puddleAmount.value = wet ? 1 : 0;
+    rainRate.value = wet ? 1 : 0;
+    if (this.rain) {
+      this.rain.rate.value = wet ? 1 : 0;
+      const sky = (this.lighting.preset.skyIlluminanceLux / Math.PI) * this.lighting.preExposure;
+      this.rain.light.value.set(sky * 0.9, sky * 0.95, sky);
     }
   }
 
@@ -250,6 +275,8 @@ export class GameView {
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
+    wetTime.value = game.timeSeconds;
+    this.rain?.update(game.timeSeconds, cam);
     if (this.caustics) this.updateWater(game);
     this.cpu.lap('update');
     this.foliage.update(cam.position);

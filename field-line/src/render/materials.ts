@@ -125,7 +125,11 @@ export function cloneMaterial<T extends Material>(source: T): T {
 
 /** Wet-capable material: the same texture set driven by the wetness uniform (rules §3.1). */
 function wettable(ts: TextureSet, name: string): MeshPhysicalNodeMaterial {
-  const m = new MeshPhysicalNodeMaterial({ name, normalMap: ts.normalMap, metalness: 0 });
+  const m = new MeshPhysicalNodeMaterial({ name, metalness: 0 });
+  // Water fills the pores: a wet surface is smoother, and its full-strength grain under the clearcoat
+  // sparkled in motion. The relief keeps a third of its strength when soaked.
+  const relief = mix(float(1), float(0.35), wetness);
+  m.normalNode = normalMap(texture(ts.normalMap).xyz, vec2(relief, relief));
   m.aoNode = texture(ts.ormMap).r.mul(skyVisibilityNode());
   // Sheet: dry asphalt #3A3A3C L 0.043 → wet #2A2B2E L 0.024, so ×0.56 in linear.
   m.colorNode = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness));

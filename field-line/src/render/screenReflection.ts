@@ -106,11 +106,11 @@ const marchFn = Fn(([originIn, dirIn]: [Node<'vec3'>, Node<'vec3'>], builder: No
   const meets = float(1).sub(smoothstep(hi.sub(lo).mul(1.2).add(0.1), hi.sub(lo).mul(2.4).add(0.2), gap));
   const edge = min(min(end.uv.x, float(1).sub(end.uv.x)), min(end.uv.y, float(1).sub(end.uv.y)));
   const weight = found.mul(meets).mul(smoothstep(0, 0.1, edge));
-  return vec4(viewportSharedTexture(end.uv.clamp(0, 1)).rgb, weight);
+  return vec4(end.uv.clamp(0, 1), weight, 0);
 });
 
 const reflectFn = Fn(([originIn, dirIn]: [Node<'vec3'>, Node<'vec3'>]) => {
-  const r = vec4(0).toVar('ssr');
+  const r = vec4(0.5, 0.5, 0, 0).toVar('ssr');
   // A branch on a uniform keeps the control flow uniform, so the samples inside stay legal.
   If(screenReflectionOn.greaterThan(0.5), () => {
     r.assign(marchFn(originIn, dirIn));
@@ -120,6 +120,16 @@ const reflectFn = Fn(([originIn, dirIn]: [Node<'vec3'>, Node<'vec3'>]) => {
 
 /** Reflection of the opaque scene along `dir` (world, unit) from world point `origin`. */
 export function screenReflection(origin: Node<'vec3'>, dir: Node<'vec3'>): ScreenReflection {
+  const hit = screenReflectionHit(origin, dir);
+  return { colour: viewportSharedTexture(hit.uv).rgb, weight: hit.weight };
+}
+
+/**
+ * Where the reflected ray meets the opaque scene on screen (`uv`) and how far that can be trusted
+ * (`weight`), for callers that sample the scene there themselves — e.g. several taps along the
+ * screen's vertical for the stretched reflections of a wet road.
+ */
+export function screenReflectionHit(origin: Node<'vec3'>, dir: Node<'vec3'>): { uv: Node<'vec2'>; weight: Node<'float'> } {
   const r = reflectFn(origin, dir);
-  return { colour: r.rgb, weight: r.a };
+  return { uv: r.xy, weight: r.z };
 }
