@@ -18,7 +18,8 @@ import { W } from './waterUniforms.ts';
 import { sampleHeight } from '../maps/terrain.ts';
 import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './interior.ts';
 import { Lighting } from './lighting.ts';
-import { FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
+import { CITY, FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
+import { CityLights } from './cityLights.ts';
 import { buildProps } from './props.ts';
 import { CpuTimer } from './perf.ts';
 import { Stage, type StageSettings } from './stage.ts';
@@ -57,8 +58,9 @@ export class GameView {
   /** Interactive ripples on the lake: legs wading, bullets and blasts (rippleField.ts). */
   private ripples: RippleField | null = null;
   private undergrowth!: Undergrowth;
-  /** The city's rain (null elsewhere). */
+  /** The city's rain and street lamps (null elsewhere). */
   private rain: Rain | null = null;
+  private cityLights: CityLights | null = null;
   private settings: ViewSettings;
   private shake = 0;
   private interiorK = 1;
@@ -92,6 +94,7 @@ export class GameView {
     stage.camera.layers.enable(VIEWMODEL_LAYER);
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';
+    CITY.lamps = map.id === 'city';
     const lib = new MaterialLibrary();
     setInteriorVolumes(map.interiors);
     // The forest lake: its wave field is solved over the carved bed once here; the terrain
@@ -136,6 +139,7 @@ export class GameView {
     this.lighting = new Lighting(stage.renderer, stage.scene, this.settings.quality);
     await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y);
     this.exposure = new AutoExposure(stage.renderer, this.lighting.preset.ev100);
+    if (map.id === 'city') this.cityLights = new CityLights(map, stage.scene, this.settings.quality);
     const w = WORLD_WIND[map.id];
     windVector.value.set(Math.sin(w.directionRad) * w.speedMs, 0, Math.cos(w.directionRad) * w.speedMs);
     this.applyWeather();
@@ -198,6 +202,7 @@ export class GameView {
     wetness.value = wet ? 1 : 0;
     puddleAmount.value = wet ? 1 : 0;
     rainRate.value = wet ? 1 : 0;
+    this.cityLights?.setNight(this.lighting.preset.id === 'night', this.lighting.preExposure);
     if (this.rain) {
       this.rain.rate.value = wet ? 1 : 0;
       const sky = (this.lighting.preset.skyIlluminanceLux / Math.PI) * this.lighting.preExposure;
@@ -276,6 +281,7 @@ export class GameView {
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
     wetTime.value = game.timeSeconds;
+    this.cityLights?.update(cam, this.lighting.preExposure);
     this.rain?.update(game.timeSeconds, cam);
     if (this.caustics) this.updateWater(game);
     this.cpu.lap('update');

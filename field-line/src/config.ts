@@ -338,7 +338,7 @@ export const MODES = {
 
 // Lighting presets, straight from lighting-reference.png. Sun and sky are
 // split so that sun + sky ≈ the sheet's ground illuminance.
-export type LightingPresetId = 'noon' | 'overcast' | 'golden';
+export type LightingPresetId = 'noon' | 'overcast' | 'golden' | 'night';
 
 export interface LightingPreset {
   id: LightingPresetId;
@@ -412,6 +412,25 @@ export const LIGHTING: Record<LightingPresetId, LightingPreset> = {
     fogHeightFalloffPerM: 0.005,
     shadowSoftness: 1.4,
   },
+  night: {
+    id: 'night',
+    label: 'Night',
+    // Overcast night over a lit city: the clouds glow with the city's light (~0.5 lux of sky glow, orange),
+    // a trace of moonlight through them; the street itself is lit by its lamps (~5–60 lux under them).
+    groundIlluminanceLux: 8,
+    ev100: 1.5,
+    sunIlluminanceLux: 0.03,
+    skyIlluminanceLux: 0.5,
+    sunColourK: 4100,
+    skyColourK: 3400,
+    sunElevationRad: 40 * DEG,
+    sunAzimuthRad: 200 * DEG,
+    turbidity: 10,
+    cloudCover: 1,
+    fogDensityPerM: 0.0009,
+    fogHeightFalloffPerM: 0.004,
+    shadowSoftness: 6,
+  },
 };
 
 export const EXPOSURE = {
@@ -431,6 +450,25 @@ export const EXPOSURE = {
   histogramHeight: 36,
   histogramLowPercentile: 0.5, // ignore the darkest half, as UE does
   histogramHighPercentile: 0.95,
+} as const;
+
+/**
+ * The city at night (render/cityLights.ts): an LED street luminaire of ~8000 lm has a peak intensity
+ * near 2500 cd and a lens of ~30 000 cd/m²; a lit room seen through its window ~20–60 cd/m², a shop
+ * window ~150 cd/m² (lighting sheet order of magnitude).
+ */
+export const CITY_LIGHTS = {
+  lampCd: 2500,
+  lampK: 4000,
+  lensLuminance: 9000,
+  windowLuminance: 9,
+  windowK: 2900,
+  shopLuminance: 18,
+  shopK: 4200,
+  /** Share of upper-floor windows lit. */
+  litShare: 0.3,
+  nearLampsHigh: 6,
+  nearLampsLow: 3,
 } as const;
 
 export const LOCAL_LIGHTS = {

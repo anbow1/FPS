@@ -129,13 +129,14 @@ export class Lighting {
 
     const u = this.sky;
     u.turbidity.value = p.turbidity;
-    u.rayleigh.value = p.id === 'golden' ? 2.2 : p.id === 'overcast' ? 0.8 : 1.4;
-    u.mieCoefficient.value = p.id === 'overcast' ? 0.02 : 0.005;
+    const cloudy = p.id === 'overcast' || p.id === 'night';
+    u.rayleigh.value = p.id === 'golden' ? 2.2 : cloudy ? 0.8 : 1.4;
+    u.mieCoefficient.value = cloudy ? 0.02 : 0.005;
     u.mieDirectionalG.value = 0.8;
     // Full overcast is a uniform haze (high turbidity and Mie), not Preetham clouds, which
     // render as dark lenses at full cover.
-    u.cloudCoverage.value = p.id === 'overcast' ? 0 : p.cloudCover;
-    u.showSunDisc.value = p.id === 'overcast' ? 0 : 1;
+    u.cloudCoverage.value = cloudy ? 0 : p.cloudCover;
+    u.showSunDisc.value = cloudy ? 0 : 1;
     u.sunPosition.value.copy(this.sunDir);
     const skyLum = (p.skyIlluminanceLux / Math.PI) * this.preExposure;
 
@@ -170,8 +171,10 @@ export class Lighting {
     this.scene.environmentIntensity = 1;
     const rawLum = 0.2126 * raw.r + 0.7152 * raw.g + 0.0722 * raw.b;
     const visibleGain = (p.skyIlluminanceLux * this.preExposure) / Math.max(1e-9, rawLum);
-    this.skyGain.value.set(visibleGain, visibleGain, visibleGain);
-    u.showSunDisc.value = p.id === 'overcast' ? 0 : 1;
+    // At night the cloud deck glows with the city's light: its colour, not Preetham's blue.
+    if (p.id === 'night') this.skyGain.value.set(visibleGain * skyK.r, visibleGain * skyK.g, visibleGain * skyK.b);
+    else this.skyGain.value.set(visibleGain, visibleGain, visibleGain);
+    u.showSunDisc.value = cloudy ? 0 : 1;
   }
 
   /**

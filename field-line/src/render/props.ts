@@ -79,7 +79,12 @@ function partsFor(kind: PropKind, lib: MaterialLibrary): Part[] {
     }
     case 'lampPost': {
       const g = merge([new CylinderGeometry(0.06, 0.09, 6.5, 8).translate(0, 3.25, 0), box(0.08, 0.08, 1.4, 0, 6.4, 0.65), box(0.3, 0.12, 0.55, 0, 6.3, 1.3)]);
-      return [{ geometry: g, material: lib.look('metalDark').material }];
+      // The diffuser under the head: the lamp's light source at night (render/cityLights.ts).
+      const lens = box(0.24, 0.02, 0.48, 0, 6.235, 1.3);
+      return [
+        { geometry: g, material: lib.look('metalDark').material },
+        { geometry: lens, material: lib.get('lampLens'), castShadow: false },
+      ];
     }
     case 'streetTree': {
       const trunk = new CylinderGeometry(0.1, 0.16, 3.2, 8).translate(0, 1.6, 0);

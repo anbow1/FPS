@@ -1,6 +1,7 @@
 import { attribute, Discard, float, Fn, If, max, mod, normalize, positionWorld, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, DataTexture, FloatType, Mesh, MeshBasicNodeMaterial, NearestFilter, RedFormat, Vector2, Vector3 } from 'three/webgpu';
 import type { MapData } from '../maps/types.ts';
+import { lampAirLightNode } from './cityLights.ts';
 
 // Rain: thousands of streaks in a world-anchored box that follows the camera
 // (so turning never swims them), falling at terminal velocity with the wind's
@@ -90,7 +91,9 @@ export class Rain {
       const fade = smoothstep(0.0, 0.2, c.y).mul(float(1).sub(smoothstep(0.6, 1.0, c.y)));
       // Drops within a metre or two would fill the screen: fade them out.
       const near = smoothstep(1.5, 4.0, p.sub(cam).length());
-      return vec4(this.light.mul(1.8), fade.mul(near).mul(0.085).mul(max(this.rate, 0.35)));
+      // Lit by the sky, and at night by the street lamps it falls through (their cones read in the rain).
+      const lit = this.light.add(lampAirLightNode().mul(0.5 / Math.PI));
+      return vec4(lit.mul(1.8), fade.mul(near).mul(0.07).mul(max(this.rate, 0.35)));
     })();
     this.mesh = new Mesh(g, m);
     this.mesh.frustumCulled = false;
