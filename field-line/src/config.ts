@@ -461,9 +461,9 @@ export const CITY_LIGHTS = {
   lampCd: 2500,
   lampK: 4000,
   lensLuminance: 9000,
-  windowLuminance: 9,
+  windowLuminance: 3.5,
   windowK: 2900,
-  shopLuminance: 18,
+  shopLuminance: 5,
   shopK: 4200,
   /** Share of upper-floor windows lit. */
   litShare: 0.3,

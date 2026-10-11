@@ -1,10 +1,9 @@
-import { bumpMap, dot, float, floor, Fn, fract, If, mix, normalMap, normalWorld, normalWorldGeometry, positionWorld, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { bumpMap, float, Fn, If, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, triplanarTexture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
-import { CITY_LIGHTS } from '../config.ts';
-import { cityNight, lampLightNode, lensGlowNode, lightPreExposure } from './cityLights.ts';
-import { lightColour } from './colour.ts';
+import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
 import { skyVisibilityNode } from './interior.ts';
+import { roomInteriorNode } from './roomInteriors.ts';
 import * as P from './patterns.ts';
 import * as PL from './plantPatterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
@@ -63,37 +62,15 @@ export const CITY = { lamps: false };
 function lampLit(colour: Node<'vec3'>): Node<'vec3'> | null {
   if (!CITY.lamps) return null;
   return Fn(() => {
-    const out = vec3(0).toVar('lampLit');
+    // Zero, but built from normalWorld so that shared variable is declared and set here, before the
+    // branch: TSL sets it where it is first built, and first built inside the night-only branch it stayed
+    // unset by day — and the material's own lighting read that garbage normal (façades mirrored the sky).
+    const out = normalWorld.mul(0).toVar('lampLit');
     If(cityNight.greaterThan(0.5), () => {
       out.assign(colour.mul(lampLightNode()).mul(1 / Math.PI));
     });
     return out;
   })();
-}
-
-/**
- * Lit windows at night on a façade tile (one bay × one storey per uv unit, the window in the middle as
- * patterns.ts `facade` draws it): a share of the rooms lit warm, the ground floor's shops brighter and cooler.
- */
-function windowGlow(): Node<'vec3'> {
-  const t = uv();
-  const cell = floor(t);
-  const f = fract(t);
-  // Soft-edged so far windows do not crawl under TRAA.
-  const inWindow = smoothstep(0.3, 0.33, f.x).mul(smoothstep(0.7, 0.67, f.x)).mul(smoothstep(0.32, 0.35, f.y)).mul(smoothstep(0.78, 0.75, f.y));
-  // Per window and per face (the normal tells the four faces of a block apart). The geometric normal: the
-  // shading one carries the normal map, and a hash of it changed per pixel — every window a speckle.
-  const key = cell.add(vec2(dot(normalWorldGeometry, vec3(17.1, 0, 31.7)), dot(normalWorldGeometry, vec3(5.3, 0, 11.9))));
-  const h = fract(sin(dot(key, vec2(12.9898, 78.233))).mul(43758.5453));
-  const lit = step(h, CITY_LIGHTS.litShare);
-  const shop = step(cell.y, 0.5).mul(step(-0.5, cell.y));
-  const room = lightColour(CITY_LIGHTS.windowK);
-  const store = lightColour(CITY_LIGHTS.shopK);
-  // Rooms vary: a dim lamp to a full ceiling light.
-  const level = mix(float(0.35), float(1.4), fract(h.mul(7.31)));
-  const upper = vec3(room.r, room.g, room.b).mul(CITY_LIGHTS.windowLuminance).mul(level).mul(lit);
-  const ground = vec3(store.r, store.g, store.b).mul(CITY_LIGHTS.shopLuminance).mul(step(h, 0.8));
-  return mix(upper, ground, shop).mul(inWindow).mul(lightPreExposure).mul(cityNight);
 }
 
 function translucentLeaf(ts: TextureSet, name: string): MeshStandardNodeMaterial {
@@ -209,10 +186,13 @@ export class MaterialLibrary {
       const wall = this.wallSampler(look);
       const ts = set(`facade-${look}`, 512, () => P.facade(wall, 0x3c3c3e), 3);
       const mat = wettable(ts, `facade-${look}`);
-      if (CITY.lamps) {
-        const lamps = lampLit(texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness)));
-        mat.emissiveNode = lamps ? lamps.add(windowGlow()) : windowGlow();
-      }
+      // Clear glass (the texture's glossiest texels) shows the room behind it, so it barely scatters itself.
+      const pane = float(1).sub(smoothstep(0.08, 0.25, texture(ts.ormMap).g));
+      const albedo = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness)).mul(mix(float(1), float(0.2), pane));
+      mat.colorNode = albedo;
+      const rooms = roomInteriorNode(pane);
+      const lamps = lampLit(albedo);
+      mat.emissiveNode = lamps ? lamps.add(rooms) : rooms;
       m = { material: mat, tileM: 1 };
       this.facades.set(look, m);
     }

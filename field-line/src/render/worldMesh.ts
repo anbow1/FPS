@@ -19,6 +19,8 @@ class GeometryBuffer {
   readonly positions: number[] = [];
   readonly normals: number[] = [];
   readonly uvs: number[] = [];
+  /** Per vertex (bay, storey) in metres on façade meshes, for the rooms behind the windows; empty elsewhere. */
+  readonly tiles: number[] = [];
   readonly indices: number[] = [];
   readonly groups: { start: number; count: number; materialIndex: number }[] = [];
 
@@ -27,6 +29,7 @@ class GeometryBuffer {
     g.setAttribute('position', new BufferAttribute(new Float32Array(this.positions), 3));
     g.setAttribute('normal', new BufferAttribute(new Float32Array(this.normals), 3));
     g.setAttribute('uv', new BufferAttribute(new Float32Array(this.uvs), 2));
+    if (this.tiles.length > 0) g.setAttribute('tileSize', new BufferAttribute(new Float32Array(this.tiles), 2));
     g.setIndex(this.positions.length / 3 > 65535 ? new BufferAttribute(new Uint32Array(this.indices), 1) : new BufferAttribute(new Uint16Array(this.indices), 1));
     for (const gr of this.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
     g.computeBoundingSphere();
@@ -52,7 +55,7 @@ interface UvRule {
 }
 
 /** Appends one yaw-rotated box. `sideGroup` / `capGroup` pick the material index for the faces. */
-function appendBox(buf: GeometryBuffer, box: MapBox, rule: UvRule, capRule: UvRule, sideGroup: number, capGroup: number, pending: Map<number, number[]>): void {
+function appendBox(buf: GeometryBuffer, box: MapBox, rule: UvRule, capRule: UvRule, sideGroup: number, capGroup: number, pending: Map<number, number[]>, tileSize = false): void {
   const yaw = box.yawRad ?? 0;
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
@@ -79,6 +82,7 @@ function appendBox(buf: GeometryBuffer, box: MapBox, rule: UvRule, capRule: UvRu
       const pz = box.center.z + n[2] * dn + right[2] * dr * a + up[2] * du * b;
       buf.positions.push(px, py, pz);
       buf.normals.push(n[0], n[1], n[2]);
+      if (tileSize) buf.tiles.push(rule.tileU, rule.tileV);
       if (side) buf.uvs.push((px * right[0] + pz * right[2]) / r.tileU, (py - r.baseY) / r.tileV);
       else buf.uvs.push((px * right[0] + pz * right[2]) / r.tileU, (px * up[0] + pz * up[2]) / r.tileV);
     }
@@ -137,7 +141,7 @@ export function buildStaticWorld(map: MapData, lib: MaterialLibrary): StaticWorl
     for (const b of boxes) {
       const f = b.facade;
       if (!f) continue;
-      appendBox(buf, b, { tileU: f.bayM, tileV: f.storeyM, baseY: b.center.y - b.size.y / 2 }, { tileU: roof.tileM, tileV: roof.tileM, baseY: 0 }, 0, 1, pending);
+      appendBox(buf, b, { tileU: f.bayM, tileV: f.storeyM, baseY: b.center.y - b.size.y / 2 }, { tileU: roof.tileM, tileV: roof.tileM, baseY: 0 }, 0, 1, pending, true);
     }
     flush(buf, pending);
     group.add(staticMesh(buf.toGeometry(), [lib.facade(look).material, roof.material], `facade-${look}`));

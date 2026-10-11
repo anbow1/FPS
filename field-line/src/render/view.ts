@@ -29,6 +29,7 @@ import { WorldFx } from './worldFx.ts';
 import { buildStaticWorld, type StaticWorld } from './worldMesh.ts';
 import { buildWetStreet, puddleAmount, rainRate, wetTime } from './wetStreet.ts';
 import { Rain } from './rain.ts';
+import { roomDaylight } from './roomInteriors.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 
 // The render system: reads game state, writes transforms (rules §10 — logic
@@ -203,6 +204,10 @@ export class GameView {
     puddleAmount.value = wet ? 1 : 0;
     rainRate.value = wet ? 1 : 0;
     this.cityLights?.setNight(this.lighting.preset.id === 'night', this.lighting.preExposure);
+    // Rooms get ~5 % of the light outside by the window, falling off inwards (roomInteriors.ts): the
+    // daylight factor of an ordinary room near its window.
+    const outside = this.lighting.preset.skyIlluminanceLux + this.lighting.preset.sunIlluminanceLux * 0.3;
+    roomDaylight.value = outside * 0.05 * this.lighting.preExposure;
     if (this.rain) {
       this.rain.rate.value = wet ? 1 : 0;
       const sky = (this.lighting.preset.skyIlluminanceLux / Math.PI) * this.lighting.preExposure;
