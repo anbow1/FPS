@@ -72,6 +72,8 @@ On the phone preset the picture is simpler, never different.
 | Real landforms (ridges, valleys, saddles, erosion), not raw noise. | From the highest point the land reads as geology, and it allows masking / cover. |
 | Height-blended splat in texture arrays, triplanar rock, detail normals near, macro variation far. | No visible repeat grid at any distance; cliffs not stretched; sharp at the lowest eye height. |
 | Paths, ruts, wet bands, canopy shade and litter under trees from the same data. | Grass under a pine stand turns to needles and is darker. |
+| Map scale (≥ 10 km): grids baked at load on worker threads, CDLOD drawn as one instanced mesh, Earth curvature. | No cracks or pops while flying; collision, altimeter and picture agree. |
+| Mountains shade the land behind them and valleys see less sky (horizon-angle bake on the GPU, re-baked when the sun moves). | Low sun: ridges throw long shadows across valleys; gullies darker than summits. |
 
 ## 7. Vegetation and distance
 
@@ -82,6 +84,9 @@ On the phone preset the picture is simpler, never different.
 | Grass from blades, density thinned by distance, rooted on the terrain triangles, trampled. | No paper cards, no floating or sunken blades on slopes, no visible density rings. |
 | Coverage-preserving alpha mips; translucency on High. | Trees do not thin out at distance; leaves glow from behind at golden hour. |
 | Wind from one source moves every plant (and bullets / smoke where the game has them). | Gust visibly travels across a field. |
+| Map-scale forests generated on the GPU from the land-cover texture (instanced impostor rings, per-cell hash, stands and clearings, a top view for altitude). | No rows, no orchard grid; from 3 km up you see crowns, not edge-on cards. |
+| Impostor atlas read with the right orientation (render targets are top-origin). | A forced close-up of impostors alone: trunks at the bottom. |
+| Gameplay objects placed where the player can see them (queried against the same cover data). | No target, pickup or landing site inside a generated wood. |
 
 ## 8. Water (where the game has any)
 
@@ -101,15 +106,18 @@ On the phone preset the picture is simpler, never different.
 | Particles soft (depth-faded), lit by sun and ambient, coloured by the surface (dust, spray, snow). | Smoke near a wall has no hard intersection line; dust in shade is darker. |
 | Fire, muzzle flash and engines with physical colour temperature and candela values. | Checked against the lighting sheet under the chosen tone map. |
 | Moving parts (rotors, wheels, tracks) handled explicitly (blur disc, motion vectors). | No ghosting in the exterior camera under TAA. |
+| Rotor blur: each blade drawn as its exposure smear (angle swept in one frame) once the rotor is fast. | At 100 % rotor speed a soft disc with blade hints, no strobing spokes. |
+| Tracers, flames, fireballs as emission on the overlay layer; smoke and dust lit; wreck smoke columns rise and drift. | A burning wreck reads at 2 km, at noon and at dusk. |
+| Cockpit displays at constant output brightness, mipmapped, never coplanar with their bezel. | Readable at noon and dusk; no flicker, no shimmering text. |
 
 ## 10. Image stability and resolution
 
 | Must | Check |
 |---|---|
-| TRAA on High with velocity for everything that moves (instanced, animated, vertex-displaced). | Pan across foliage: no ghost trails, no crawling edges. |
+| TRAA on every preset with velocity for everything that moves (instanced, animated, vertex-displaced). | Pan across foliage: no ghost trails, no crawling edges. |
 | Sharpening after TAA; render scale setting (1.0 default, up to 1.25–1.5 on High). | Texture detail survives TAA; text on signs readable. |
 | High-frequency detail faded by pixel footprint (grass blades ≥ 1 px wide, ripples, specular). | No moiré or sparkle on distant grass, wire, water. |
-| Device pixel ratio honoured on the desktop; capped on phones, with the governor lowering it before effects die. | 1440p desktop and a 3× phone screen both sharp at 60 fps. |
+| Device pixel ratio honoured on the desktop; phones render at 2× (not 1×), with the governor lowering render scale (to ~0.42) before effects die. | 1440p desktop and a 3× phone screen both sharp at 60 fps; canvas width / client width = 2 in phone emulation. |
 
 ## 11. Smoothness
 
@@ -124,8 +132,9 @@ On the phone preset the picture is simpler, never different.
 
 | Setting | High (desktop) | Low (phone, default on touch) |
 |---|---|---|
-| Pixel ratio | device × render scale | ≤ 1 on touch screens |
-| TRAA / GTAO / sharpen | on / on (full res, before TAA) / on | off (FXAA) / off / off |
+| Pixel ratio | device × render scale (2 on touch screens) | 2 on touch screens (an opt-in "Fast" preset at 1) |
+| TRAA / GTAO / sharpen | on / on (full res, before TAA) / 0.3 | on / off / 0.25 |
+| Governor floor (render scale) | 0.58 | 0.42 |
 | Sun shafts | 24–40 samples | 0 |
 | Shadow cascades × size | 3–4 × 2048–4096 | 2 × 1024 |
 | Leaf translucency | on | off |
@@ -194,3 +203,9 @@ On the phone preset the picture is simpler, never different.
 | Foam reads as paving stones | Worley cell edges | lace texture (holes of many sizes, domain-warped) |
 | Whole swash band reflects the sky as a white strip | wet film too smooth | roughness ~0.14 on the film |
 | Headless tests pass, phone fails | software renderers allow 32 textures and lose no device | test WebGPU too, then the real phone |
+| "Low resolution" picture on phones | pixel ratio capped at 1 on touch, FXAA on Low | 2× on phones, TRAA + sharpen on every preset, deeper governor steps |
+| Distant trees stand on their crowns | impostor rows read bottom-up; render targets are top-origin | `v = species + (1 − corner.y)` |
+| GPU forest grows in rows | TSL `hash()` casts negative seeds to `uint` | sin–fract hash, full-cell jitter |
+| MRT bake fails on WebGL ("missing fragment shader outputs") | target textures not named like the MRT outputs | name them (`albedo`, `normal`, …) |
+| Cockpit displays flicker | screen coplanar with its bezel | 3–4 mm proud; mipmaps |
+| Targets nobody can find | parked inside a generated forest | place by the cover data, on open ground |

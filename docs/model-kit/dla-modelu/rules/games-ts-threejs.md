@@ -265,6 +265,13 @@ asset. Licences in `LICENSES.md`.
 - Exterior: spring arm, damped, collided with terrain.
 - Camera shake from physics events, scaled by one global setting.
 - Never cut the camera without a reason the player can see.
+- **Aiming never turns the camera.** A turret, a gun or a sensor is aimed with a
+  cursor the mouse or the right thumb moves over the view; the sight line is
+  the ray through that cursor. The camera stays with the vehicle, so fixed
+  weapons' cues stay on its axis.
+- Cockpit displays: constant output brightness (not exposed with the scene),
+  mipmapped, and never coplanar with their bezel (3–4 mm proud), or they
+  flicker. From every seat, nothing of the cockpit blocks the centre of view.
 
 ## 8. HUD and UI
 
@@ -277,8 +284,15 @@ asset. Licences in `LICENSES.md`.
 - Every element has a real source; if nothing feeds it, delete it.
 - Damage, hit, lock and warning feedback readable in under 200 ms: a shape
   change plus a distinct sound, not only a colour change.
-- Touch builds: a floating left stick, drag-to-look on the right, buttons for
-  every action, nothing under the thumbs in the centre zone.
+- Show what the flight computer is doing: the power lever's mode (CLIMB / HOLD /
+  DESC) by the collective bar, SAS state, laser range.
+- A ballistic cue (rockets, bombs) is computed with the **same integrator and
+  step** as the real projectile, or cue and hits disagree at grazing angles.
+- Symbols behind the camera are culled in view space (`z > −0.5`), not from the
+  NDC z of `project()` (wrong with a reversed depth buffer).
+- Touch builds: a floating left stick, a drag on the right that looks or aims
+  (never flies), buttons for every action, nothing under the thumbs in the
+  centre zone.
 
 ## 9. Audio
 
@@ -288,6 +302,9 @@ asset. Licences in `LICENSES.md`.
 - Engines blend by RPM and load, never by speed alone. Duck on explosions.
 - Generated with Web Audio (noise, filters, oscillators) is fine; samples need a
   licence line.
+- A delayed one-shot (a far blast heard after the light) starts **silent**: set
+  `gain.value = 0` before scheduling the envelope, or `start(at)` the source at
+  the event — an `AudioParam` sits at its default of 1 until its first event.
 
 ## 10. Smoothness — zero hitches in play
 
@@ -321,10 +338,20 @@ asset. Licences in `LICENSES.md`.
   triangles, EV, backend.
 - **Frame governor**: holds 60 fps by trading image quality, never gameplay —
   first expensive effects (AO, shafts, reflections), then render scale
-  100 → 58 %; down quickly, up slowly, a step that gains nothing is undone. A
+  100 → 58 % (42 % on phones rendering at 2×); down quickly, up slowly, a step that gains nothing is undone. A
   switch must never recompile.
 - Any performance change: the same numbers **before and after** at the same
   spots. "Feels faster" is not a result.
+- **Phones render at 2× device pixels** (never capped at 1×) with TRAA and a
+  light sharpen on every preset; the frame governor lowers the render scale
+  (down to ~0.42) before anything else. A "Fast" preset at 1× is the opt-out.
+- Map-scale content is generated, not listed: forests as GPU-instanced impostor
+  rings driven by the land-cover texture, terrain as CDLOD from baked grids.
+  Heavy bakes run on the GPU (quad passes into render targets) or on worker
+  threads in bands, never as one long main-thread loop.
+- Gameplay objects (targets, pickups, landing sites) are placed by querying the
+  same cover function the renderer uses: never inside a generated wood where
+  nobody can see them.
 
 ## 12. Code structure
 
@@ -335,6 +362,31 @@ asset. Licences in `LICENSES.md`.
 - Shared engine pieces (perf timer, governor, warm-up, impostors, grass, water
   ripples) are written once and copied file for file between games, fixed at
   the source.
+
+## 12b. Controls (vehicles, aircraft)
+
+Physics stays real; the controls make it flyable. Every rule below came from a
+player's complaint.
+
+- **Keys never flip** with an "invert" setting: W is nose down / forward, S nose
+  up. Inversion is for a thumb stick only.
+- A/D **turn** (mostly yaw in a hover, a coordinated bank with speed); Q/E are
+  the pedals (pure yaw).
+- Once the game has weapons, **the mouse aims and does not fly**. On touch, the
+  right thumb aims and never feeds the flight controls.
+- A **flight computer is on by default** (and can be switched off for the bare
+  airframe): attitude hold on the stick, heading hold on the pedals with the
+  tail rotor fed forward from rotor torque, and **height hold on the power lever
+  with a neutral detent** — below it descend, at it hold, above it climb. It
+  respects the torque limit, protects against the vortex ring at low speed, and
+  flares to a soft touchdown. The touch lever springs back to the detent.
+- Fixed weapons fire **along the vehicle's axis**, not carried off by its drift.
+- Tilt steering can be switched on in play (and recalibrated), not only in the
+  menu.
+- Every control behaviour has a unit test in the simulation (hover, climb /
+  hold / descend, landing, heading through lever snatches, key mapping). Do not
+  judge it from a headless browser: a software renderer runs the simulation at
+  a fraction of real time.
 
 ## 13. Content and conduct
 

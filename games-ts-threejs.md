@@ -283,6 +283,13 @@ Everything is SI. Every number in the game world means something real.
 - Camera shake is driven by physics events (recoil, hit, rotor wash), scaled by
   a single global intensity the player can turn down.
 - Never cut the camera without a reason the player can see.
+- **Aiming never turns the camera.** A turret, a gun or a sensor is aimed with a
+  cursor the mouse or the right thumb moves over the view; the sight line is
+  the ray through that cursor. The camera stays with the vehicle, so fixed
+  weapons' cues stay on its axis.
+- Cockpit displays: constant output brightness (not exposed with the scene),
+  mipmapped, and never coplanar with their bezel (3–4 mm proud), or they
+  flicker. From every seat, nothing of the cockpit blocks the centre of view.
 
 ## 7. HUD and UI
 
@@ -298,6 +305,12 @@ Everything is SI. Every number in the game world means something real.
 - Every HUD element has a real source. If nothing feeds it, delete it.
 - Damage, hit and lock feedback must be readable in under 200 ms: a shape
   change, not just a colour change. Add a distinct sound for each.
+- Show what the flight computer is doing: the power lever's mode (CLIMB / HOLD /
+  DESC) by the collective bar, SAS state, laser range.
+- A ballistic cue (rockets, bombs) is computed with the **same integrator and
+  step** as the real projectile, or cue and hits disagree at grazing angles.
+- Symbols behind the camera are culled in view space (`z > −0.5`), not from the
+  NDC z of `project()` (wrong with a reversed depth buffer).
 
 ## 8. Audio
 
@@ -307,6 +320,9 @@ Everything is SI. Every number in the game world means something real.
   version chosen by range.
 - Engine sound blends by RPM and load, never by a single speed value.
 - Duck the mix on an explosion, do not just make everything louder.
+- A delayed one-shot (a far blast heard after the light) starts **silent**: set
+  `gain.value = 0` before scheduling the envelope, or `start(at)` the source at
+  the event — an `AudioParam` sits at its default of 1 until its first event.
 
 ## 9. Performance
 
@@ -329,6 +345,16 @@ Everything is SI. Every number in the game world means something real.
 - Load assets in a real streaming pass with a progress bar. No frame-time spike
   on first shot because a texture decoded mid-fight. Pre-compile every shader
   variant during loading.
+- **Phones render at 2× device pixels** (never capped at 1×) with TRAA and a
+  light sharpen on every preset; the frame governor lowers the render scale
+  (down to ~0.42) before anything else. A "Fast" preset at 1× is the opt-out.
+- Map-scale content is generated, not listed: forests as GPU-instanced impostor
+  rings driven by the land-cover texture, terrain as CDLOD from baked grids.
+  Heavy bakes run on the GPU (quad passes into render targets) or on worker
+  threads in bands, never as one long main-thread loop.
+- Gameplay objects (targets, pickups, landing sites) are placed by querying the
+  same cover function the renderer uses: never inside a generated wood where
+  nobody can see them.
 
 ## 10. Code structure
 
@@ -344,6 +370,31 @@ Everything is SI. Every number in the game world means something real.
   `Date.now()` inside logic.
 - Input is mapped through a rebindable layer. Never read `event.code` in a
   gameplay system.
+
+## 10b. Controls (vehicles, aircraft)
+
+Physics stays real; the controls make it flyable. Every rule below came from a
+player's complaint.
+
+- **Keys never flip** with an "invert" setting: W is nose down / forward, S nose
+  up. Inversion is for a thumb stick only.
+- A/D **turn** (mostly yaw in a hover, a coordinated bank with speed); Q/E are
+  the pedals (pure yaw).
+- Once the game has weapons, **the mouse aims and does not fly**. On touch, the
+  right thumb aims and never feeds the flight controls.
+- A **flight computer is on by default** (and can be switched off for the bare
+  airframe): attitude hold on the stick, heading hold on the pedals with the
+  tail rotor fed forward from rotor torque, and **height hold on the power lever
+  with a neutral detent** — below it descend, at it hold, above it climb. It
+  respects the torque limit, protects against the vortex ring at low speed, and
+  flares to a soft touchdown. The touch lever springs back to the detent.
+- Fixed weapons fire **along the vehicle's axis**, not carried off by its drift.
+- Tilt steering can be switched on in play (and recalibrated), not only in the
+  menu.
+- Every control behaviour has a unit test in the simulation (hover, climb /
+  hold / descend, landing, heading through lever snatches, key mapping). Do not
+  judge it from a headless browser: a software renderer runs the simulation at
+  a fraction of real time.
 
 ## 11. Content and conduct
 

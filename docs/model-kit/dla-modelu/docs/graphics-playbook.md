@@ -1,11 +1,11 @@
 > **Note for a model reading this in the kit:** file paths below point at the
-> reference implementation (`field-line/`, `castaway-lagoon/`, `anbow1/tanks`),
+> reference implementation (`field-line/`, `castaway-lagoon/`, `tanks/`, `contrail/`, `ridgeline/`),
 > which is not in your folder. The techniques, numbers and traps stand on their
 > own; build your own versions to `rules/graphics-quality.md`.
 
 # Graphics playbook — real-time outdoor worlds in three.js (WebGPU + TSL)
 
-Everything the two games in this repository do to look good and still run on a
+Everything the games in this repository do to look good and still run on a
 phone, written so another project (or another coding agent) can repeat it step by
 step. It is a record of what was built, measured and fixed here, including the
 traps that cost the most time.
@@ -14,8 +14,13 @@ traps that cost the most time.
   forest ridge.
 - **Castaway Lagoon** (`castaway-lagoon/`): tropical bay with a jungle, a beach,
   a survival outpost, weather and time of day.
+- **Tanks** (`tanks/`): tank combat on fields, lakes and a village.
+- **Contrail** (`contrail/`): jet fighters over 100 km of terrain under a
+  physical sky with volumetric clouds.
+- **Ridgeline** (`ridgeline/`): an attack helicopter over 20 km of ridges, with
+  a cockpit, weapons and a ground force.
 
-Both use **three.js r186**, `WebGPURenderer` (falls back to WebGL2 by itself),
+All use **three.js r186**, `WebGPURenderer` (falls back to WebGL2 by itself),
 **TSL** node materials, strict TypeScript, Vite. Everything is procedural: no
 texture or model files, so the builds are ~1.2 MB and ship offline in an APK.
 
@@ -40,6 +45,10 @@ bit us. Do not move on while a Check fails.
    while walking) came from features that looked fine on desktop.
 7. **Verification** (§9) after every feature: tests, a headless screenshot, the
    pipeline tracer, draw calls and triangles.
+8. For **flight and vehicle simulators** (kilometres per minute, 100 km views):
+   map-scale terrain, baked mountain shadows, GPU forests, sky and clouds (§12);
+   cockpits, displays and the HUD (§13); controls and the flight computer
+   (§14) — the controls decide whether anyone can fly it.
 
 General rules that held up:
 
@@ -67,7 +76,7 @@ General rules that held up:
 2. **HDR scene pass**: `pass(scene, camera, { type: HalfFloatType })` with an MRT
    `{ output, velocity }` (velocity for TRAA).
 3. **Post chain** (in `RenderPipeline`, HDR until the very end):
-   scene → **TRAA** (High only) → **screen-space sun shafts** → **bloom** →
+   scene → **TRAA** (every preset; it was High only until phones moved to 2×) → **screen-space sun shafts** → **bloom** →
    **grade** (saturation, vignette) → exposure → ACES tone map → sRGB (the output
    transform, once) → **CAS-style sharpen** (wins back what TAA softens).
 4. **Sun shafts** = radial light scattering (GPU Gems 3 ch. 13): march from each
@@ -310,6 +319,11 @@ Measured on the forest map (SwiftShader, 640×360): 516 → ~130 draw calls,
    blend between them, so walking round a tree turns it smoothly. The fragment
    blends both views, turns the baked normal by the instance yaw and lights it
    like any surface (sun, sky, shadows, fog). Refilled on the stream grid.
+   **Orientation:** render-target textures are addressed from the **top** on
+   both backends (three flips WebGL's to match), so the frame's bottom — the
+   trunk — is at the larger v: `row = (species + 1 − corner.y) / speciesCount`.
+   Getting it backwards stood every tree past 200 m on its crown for weeks;
+   check a forced close-up of the impostors alone, not a forest at a distance.
 6. **Dithered hand-over**: over a band `[impostorM − fadeM, impostorM]` the
    meshes keep a pixel where an interleaved-gradient-noise threshold is above the
    fade and the impostor where it is below (`ditherOutBeyond` gives opaque bark
@@ -769,12 +783,19 @@ mixed over the analytic sky by its weight. Rules learnt:
 
 Target here: a Pixel 9 Pro XL in an Android WebView (WebGL2 fallback is common).
 
+**Lesson:** "the picture looks low-res on the phone" was the 1× pixel-ratio cap
+on touch screens, not a missing effect. Render phones at 2× (sharp on any screen
+a hand holds; native 3× would triple the cost), keep TRAA on every preset, and
+let the frame governor take the resolution down when it must. Contrail exposes
+the choice as High / Balanced (cheaper effects, still 2×) / Fast (1×).
+
 ### 8.1 Presets
 
 | Setting | High | Low (default on touch devices) |
 |---|---|---|
-| Pixel ratio | device × render scale | capped at 1 on touch screens |
-| TRAA | on | off |
+| Pixel ratio | device (up to 4) × render scale; 2 on touch screens | 2 on touch screens (a "Fast" preset: 1) |
+| TRAA + sharpen | on, sharpen 0.3 | on, sharpen 0.25 (the velocity target is drawn anyway; FXAA left the phone picture soft) |
+| Frame governor floor | render scale 0.58 | render scale 0.42 (steps 0.5, 0.42 added for 2× phones) |
 | Sun shafts | 16+ samples | 0 samples (pass skipped) |
 | Shadows | 4 cascades, 2048–4096 px | 2 cascades, 1024 px |
 | Leaf translucency | on | off |
@@ -851,6 +872,12 @@ teleporting across the map.
    640×360 for looks, and give screenshots long timeouts.
 4. Look at the image. Then take **frames several seconds apart** for anything that
    moves (waves, swash, foam, caustics).
+5. **Phone emulation**: a context with `deviceScaleFactor: 3, isMobile: true,
+   hasTouch: true` at ~800 × 380 checks the touch layout and that the canvas
+   really renders at 2× (`canvas.width / clientWidth`).
+6. **Do not judge flight or driving behaviour headless**: SwiftShader's frame
+   rate makes wall-clock key presses a fraction of their simulated length (§14).
+   Fly the simulation in unit tests and use the browser for pictures only.
 
 ### 9.2 Numbers to log: the measurement routine
 
@@ -1007,10 +1034,214 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | `bumpMap(expression)` on a procedural pattern (panel lines, seams) does nothing | `BumpMapNode` re-samples its input as a texture at offset UVs; an expression has no UVs to offset, so its gradient is zero | build the perturbed normal from the expression's own screen derivatives (`h.dFdx()`, `h.dFdy()`, Mikkelsen's surface gradient), as `bumpNormal` in Contrail `render/jetMaterials.ts` |
 | Procedural panels stretch and squeeze across a curved hull | the pattern is drawn in model space (x, y, z), which is not the skin | write a skin-coordinate attribute in metres (along, arc length around) while building the geometry and draw panels in that |
 | Fine lines (seams, rivets) shimmer or thicken into dark bands at a distance | an `smoothstep(w, w + fwidth)` edge keeps every line at least a pixel wide | scale the line's coverage by `2w / fwidth` so sub-pixel lines fade instead of thickening (`lineAA`) |
+| Every tree past ~200 m upside down | impostor atlas rows read bottom-up; render targets are top-origin on both backends | `v = species + (1 − corner.y)` (§5.5); check impostors alone, close up |
+| GPU-generated forest grows in neat rows ("orchard") | TSL `hash()` casts its seed to `uint`, so negative world cells all hash alike | `fract(sin(dot(cell, vec2(12.9898 + k·1.37, 78.233 + k·2.71)) + k·0.618) · 43758.5453)` and a full-cell jitter |
+| WebGL: "Active draw buffers with missing fragment shader outputs" when baking into an MRT target | render-target textures not named like the MRT outputs | `target.textures[i].name = 'albedo'` etc., matching `mrt({ albedo, normal })` |
+| "No stack defined for assign" from a material callback | nodes that assign (`toVar`, `assign`) built outside a `Fn` or callback | build them inside the callback that runs at compile time (e.g. inside `receivedShadowNode`) |
+| Cockpit displays flicker | screen plane coplanar with its bezel's face (z-fighting) | 3–4 mm proud; mipmapped canvas texture so text stops shimmering under TRAA |
+| A delayed one-shot sound (far explosion) plays at full volume at once | an `AudioParam` holds its default (gain 1) until its first scheduled event | `gain.value = 0` before scheduling, or `start(at)` the source at the event time |
+| Android flavour's own `signingConfig` ignored | a build type's `signingConfig` overrides the flavour's | set the default on `defaultConfig`, override per flavour |
+| Low cloud layer turns blocky on phones | one bilinear tap upsampling a ¼-resolution layer | a 4-tap tent when the layer is below ½ resolution |
 
 ---
 
-## 12. Sources and credits
+## 12. Large worlds: flight and vehicle simulators
+
+**Games:** Contrail (`contrail/`, jets over 100 km), Ridgeline (`ridgeline/`, an
+attack helicopter over 20 km of ridges). What changes when the player covers
+kilometres a minute and sees 100+ km.
+
+### 12.1 Terrain at map scale
+
+1. **Bake the height function into float grids at load**, not per query: a near
+   grid (Contrail 102.4 km at 50 m, Ridgeline 20.48 km at 10 m) and a coarse far
+   grid to the horizon, read by the CPU (collision, radar altimeter, AI line of
+   sight, placement) and the GPU (vertex stage) with the **same bilinear**. What
+   you see is what you hit.
+2. **Bake on all cores**: split the grid into bands of rows and post each band
+   to a module worker (`sim/terrainWorker.ts`, `onWorkers`/`bakeGridParallel`),
+   with a single-thread fallback when workers are missing. The normal and
+   land-cover maps are baked the same way, each band with one extra row either
+   side. A unit test checks that the band bake equals the single-thread bake.
+3. **CDLOD** (Strugar 2009): a quadtree selected on the CPU by distance and
+   frustum, drawn as **one instanced mesh** of 32 × 32-cell patches; each vertex
+   reads four heights (`textureLoad`, the same bilinear as the CPU) and morphs to
+   the coarser level over the last quarter of its range. No cracks, no pops, one
+   draw call. Tune leaf size, levels, leaf range and the node cap per game
+   (Contrail 1600 m / 10 / 3600 m / 1000; Ridgeline 320 m / 10 / 760 m / 900).
+4. **Earth curvature** in the vertex stage (`d²/2R` drop) and the same drop for
+   the cloud layer, so the overcast meets the horizon.
+5. **Rock and snow from slope**, not height alone: rock strata (banded colour)
+   only on cliff patches, snow that slides off steep faces, so ridges read
+   from 10 km.
+6. **Tried and dropped:** a hydraulic-erosion pass on the grid. Within the
+   load-time budget it made silt lakes and streaks instead of valleys. The
+   relief now gets its look from light (§12.2) and resolution, not erosion.
+
+### 12.2 Mountain shadows and sky occlusion, baked on the GPU (`render/terrainShadow.ts`)
+
+Without them the relief is lit like a plastic model: every sun-facing slope
+bright, every gully as open to the sky as a summit. Both come from **horizon
+angles** over the near height grid, computed in **one full-screen `QuadMesh`
+pass into a `RenderTarget`** (≈1 M texels × ~150 height reads: milliseconds on
+a GPU, minutes on a CPU), and again when the sun moves (time-of-day change):
+
+- **r = sun visibility**: march towards the sun with geometric steps (56 steps
+  out to `sunM`: Contrail 20 km, Ridgeline 6 km); lit if the sun stands above the
+  steepest terrain angle along the way, with a soft edge for the disc.
+- **g = sky visibility**: the horizon angle in 8 directions × 14 steps out to
+  `skyM` (3 km / 1.2 km); each contributes `1 − sin(horizon)`.
+
+The terrain material multiplies the sun shadow by r inside
+`receivedShadowNode` (with the cloud shadow) and feeds g to `aoNode`. Forests
+(§12.3) sample the same texture so a tree in a ridge's shadow is dark too.
+
+### 12.3 Forests generated on the GPU (`render/forest.ts`)
+
+No list of trees anywhere. Each **ring is ONE instanced draw** of N × N
+camera-facing impostor quads on a grid that moves with the camera in whole
+cells; the instance index alone gives the cell (no per-instance attributes).
+Per cell, a **hash** gives the jitter (a full cell, or rows show), the species,
+the size and the yaw; a coarse hash makes stands and clearings. The vertex
+stage reads the forest density (cover map: forest minus water and rock) and the
+height (`texture().level(0)` in the vertex stage), and collapses the quad where
+there is no forest. A 100 km map costs the same as a park, and a tree is always
+in the same place when you come back.
+
+- Two rings: dense and small near, sparse and larger far (Contrail High
+  `{256 × 256, 11 m}` + `{192 × 192, 34 m from 1250 m}`; Ridgeline
+  `{256, 7 m}` + `{192, 22 m from 800 m}`). Low uses fewer cells.
+- Atlas: three procedural species (spruce of ruffled tiers, pine, broadleaf),
+  8 views round the trunk **plus one from above**, unlit albedo and
+  object-space normals through a named MRT. The top view blends in with the
+  camera's elevation, so from altitude you see crowns, not edge-on cards.
+- **Gameplay objects must not stand in it.** Vehicles parked "on the river
+  bank" sat inside riverside woods and were invisible. Place them by querying
+  the same cover function the bake uses (`sourceCover(...).forest`) and search
+  outwards for open, level ground.
+
+### 12.4 Sky, clouds and their shadows
+
+- **Hillaire 2020 sky** (`render/atmosphere.ts`): transmittance, multiple
+  scattering, sky-view and aerial-perspective LUTs, all quad passes written
+  through `fragmentNode` (the colour path clamps raw data). Valid from the
+  runway to 15 km+, unlike the Preetham sky. Sun, sky and haze share one
+  pre-exposed scale.
+- **Volumetric cloud slab** (`render/clouds.ts`): ray march at ½ (High) or ¼
+  (Low) resolution inside the post chain, before TRAA (which averages the
+  jittered start). Below ½ resolution, upsample with a **4-tap tent**, not one
+  bilinear tap, or the edges turn to blocks on phones. Dual-lobe HG phase,
+  Wrenninge's multiple-scattering octaves, Hillaire's energy-conserving steps,
+  each pixel's cloud hazed at its transmittance-weighted depth.
+- **Cloud shadows on the ground**: `clouds.shadeReceivers(scene)` wraps every
+  receiver's `receivedShadowNode`, multiplying by the cloud's transmittance
+  towards the sun (and by the material's own `userData.shadowFactor`, e.g. the
+  terrain's horizon shadow). Build the cloud-shadow nodes **inside** the
+  callback (see §11).
+- The game logic reads the same density formula (`sim/cloudField.ts`), so
+  what the player sees hiding him is what the AI cannot see through.
+
+### 12.5 Vehicles, wrecks and effects in the open
+
+- **Vehicles on slopes**: pitch and roll each model from four ground samples
+  around it, every frame for movers.
+- **Destroyed**: swap to a charred material, throw the turret askew; a smoke
+  column as an `InstancedMesh` of dark puffs that rise, swell and drift on a
+  loop (7 per wreck, one draw for all), plus a flickering emissive fire for
+  the first ~40 s.
+- **Emission in physical units on the overlay layer** (Contrail §11 trap):
+  tracers (`LineSegments`, 1900 K × 60 000 cd/m²), motor flames, fireballs,
+  wreck fires. Smoke and dust are lit scene geometry.
+- **Smoke trails** of rockets and missiles: the contrail ribbon (`trails.ts`), a
+  ring buffer of points drawn as one camera-facing strip, lit with a forward
+  scattering lobe; its noise scale is for big trails, so keep widths ≥ 0.25 m.
+
+---
+
+## 13. Cockpits, displays and the HUD
+
+- **Cockpit geometry relative to the eye** (x right, y up, −z forward): one
+  layout serves several airframes; only the eye point moves. Model what the
+  eye sees: glare shield, panel, sills, consoles, stick and collective, and in a
+  tandem cockpit the front seat's station and helmet. The crew figure of the
+  seat the camera is in is hidden; the canopy glass drops to ~0.1 opacity from
+  inside (0.6 outside).
+- **Live displays**: one 2-D canvas (512 × 256) redrawn ~10 times a second
+  into a `CanvasTexture` (engine page with tapes, a heading-up map baked once
+  as shaded relief). Rules learned the hard way:
+  - **Constant output brightness** (`MeshBasicNodeMaterial`, colour × a level
+    ~1.3), not lit and not exposed with the scene: an eye adapted to the cockpit
+    reads them at noon and at dusk.
+  - **Never coplanar with the bezel**: a screen flush with its frame's face
+    z-fights and flickers. Put it 3–4 mm proud.
+  - **Mipmapped** (`LinearMipmapLinearFilter`, anisotropy 4): a 512-px page
+    shown at ~300 screen px aliases differently under each TRAA jitter, and
+    thin text shimmers.
+  - A second seat's view can be blocked by its own instruments; check every
+    camera seat's centre of view and lower the hardware below the eye line.
+- **Rotor blur**: blades as meshes while slow; from ~40 % rotor speed a disc
+  whose shader draws each blade as its **exposure smear** (the angle swept in
+  one frame, `ω·dt`, at least a few degrees), blended in by rotor speed.
+- **HUD on a canvas**, symbology projected through the camera. Test "behind the
+  camera" in view space (`z > −0.5` after `matrixWorldInverse`), not with the
+  NDC z of `project()`, which misbehaves with a reversed depth buffer.
+- **Weapon symbology** (Ridgeline `ui/hud.ts`): target diamonds for what the
+  sensor sees; the gun cross where the turret's rounds land; a rocket cue ring
+  at the impact point of a rocket simulated now with the **same fixed-step
+  integrator** as real rockets (otherwise the cue and the hits disagree at
+  grazing angles); a missile seeker box; a laser spot with its range.
+- **An on-screen aim cursor** moved by the mouse or the right thumb; the sight
+  line is the ray `vec3(cursorNdc, 0.5).unproject(camera) − camera.position`,
+  marched against the height grid (growing steps, then bisection) for the aim
+  point. The camera stays with the vehicle.
+
+---
+
+## 14. Controls and flight computers (what players actually asked for)
+
+The rotor and jet models are physical; the **controls** decide whether anyone
+can fly them. Each item below came from a player's complaint.
+
+1. **Keys never flip.** W is nose down / forward, S nose up, whatever the
+   "invert" setting; that setting belongs to a thumb stick only.
+2. **A/D turn, Q/E rotate.** In a hover a sideways input is mostly a yaw (with
+   ~30 % bank); with speed it blends to a banked turn the computer
+   coordinates. Pedals stay pure yaw.
+3. **The mouse aims, it does not fly**, once the game has weapons. It moves a
+   cursor over the view; the camera and the aircraft carry on. Rotating the
+   camera with the aim made fixed-weapon cues drift off the axis.
+4. **On touch the right thumb never touches the flight controls.** A right-side
+   drag that silently added to the cyclic made the helicopter "unstable".
+5. **A flight computer is on by default** (SAS), off = the bare airframe:
+   - **attitude hold**: the stick commands a pitch/bank attitude (±20° / ±29°),
+     PI on attitude plus rate damping; at hover speeds the reference leans
+     against drift so a centred stick settles into a hover;
+   - **heading hold**: pedals command a yaw rate; the tail rotor is **fed
+     forward from main-rotor torque** (`dir·Q / arm`), plus a PI on yaw rate.
+     Without the feed-forward any collective change spun the aircraft at
+     60–150 °/s; at speed a centred pedal asks for the coordinated turn rate
+     `g·sin φ / V`;
+   - **height hold with a neutral detent**: the power lever is a vertical-speed
+     command (below the middle mark descend, at it hold, above it climb, ±8 m/s
+     at the stops). The computer integrates the hover collective itself, moves
+     it rate-limited (0.5 lever/s), stays under a 98 % torque limit (no
+     wind-up while limited), keeps a straight-down descent under the vortex
+     ring's onset (2.5 m/s at hover speeds, the full rate only with airspeed)
+     and eases off near the ground for a soft touchdown. The touch lever springs
+     back to the detent when released.
+6. **Fixed weapons go where the nose points.** Rockets leave at the aircraft's
+   speed *along* the pod line plus their launch speed, not inheriting a sideways
+   drift (fins weathercock them at once); otherwise the cue sits off the axis.
+7. **Turn-on tilt steering in flight** (a TILT toggle, CAL to set hands-off);
+   iOS grants motion only inside a tap (`DeviceMotionEvent.requestPermission`).
+8. **Test the controls in a unit simulation**, not by flying headless:
+   SwiftShader renders a frame every few seconds, so a 25-second key press is
+   two seconds of simulated flight. Tests here: hover, climb/hold/descend and
+   soft landing, heading held through lever snatches, attitude step response,
+   key mapping (W never flips, A yaws at hover and banks at speed), rockets on
+   the axis while drifting.
+
+## 15. Sources and credits
 
 - **Tidewater** by Dan Greenheck (MIT), github.com/dgreenheck/tidewater — the
   eikonal shore-wave field, the per-wave height model and swash run-up, the lace
@@ -1027,3 +1258,17 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
   pre-exposure.
 - Pope & Fry 1997 — pure-water absorption.
 - The repository's `references/` sheets (PBR materials, lighting values).
+- Hillaire 2020, *A Scalable and Production Ready Sky and Atmosphere Rendering
+  Technique* (EGSR) — the sky and aerial-perspective LUTs (§12.4); Bruneton 2017
+  for the coefficients.
+- Hillaire 2016, *Physically Based Sky, Atmosphere and Cloud Rendering in
+  Frostbite* (SIGGRAPH course) — energy-conserving cloud integration;
+  Wrenninge et al. 2013, *Oz: The Great and Volumetric* — multiple-scattering
+  octaves.
+- Strugar 2009, *Continuous Distance-Dependent Level of Detail for Rendering
+  Heightmaps* — CDLOD terrain (§12.1).
+- Max 1988, *Horizon Mapping: Shadows for Bump-Mapped Surfaces* — the horizon
+  angle idea behind the mountain-shadow and sky-visibility bake (§12.2).
+- Leishman, *Principles of Helicopter Aerodynamics* — blade-element thrust with
+  momentum inflow; Cheeseman & Bennett 1955 — ground effect (the rotorcraft
+  model behind §14).

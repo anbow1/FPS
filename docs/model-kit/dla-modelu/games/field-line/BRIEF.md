@@ -40,8 +40,8 @@ budget.
    code path. All shaders in **TSL** node materials. No `ShaderMaterial`,
    `onBeforeCompile`, `ShaderChunk` patches or `EffectComposer`.
 3. One post chain (`RenderPipeline`): HDR scene pass with a velocity MRT → TRAA
-   (High) → GTAO (High) → sun shafts → bloom → exposure + ACES + sRGB once, at
-   the end → sharpen (High) / FXAA (Low).
+   (every preset) → GTAO (High) → sun shafts → bloom → exposure + ACES + sRGB
+   once, at the end → sharpen (0.3 High, 0.25 Low).
 4. Physical light: sun and sky in lux, lamps in candela, exposure from EV100
    with auto exposure (about 2 s to adapt between a noon street and an
    interior), pre-exposure on every light so FP16 never overflows.

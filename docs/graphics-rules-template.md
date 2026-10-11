@@ -32,9 +32,10 @@
    `SpriteNodeMaterial`). Zakazane: `onBeforeCompile`, `ShaderMaterial`,
    łatki `ShaderChunk`, `EffectComposer`.
 3. **Post-processing: jeden `RenderPipeline`**:
-   scena HDR (half float, MRT z velocity) → TRAA (Wysoka) → [GTAO (Wysoka)] →
+   scena HDR (half float, MRT z velocity) → TRAA (każdy preset) → [GTAO (Wysoka)] →
    promienie słońca → bloom → ekspozycja + ACES (AgX jako A/B) + sRGB **raz**,
-   na końcu → wyostrzenie (Wysoka) / FXAA (Niska).
+   na końcu → wyostrzenie (Wysoka 0,3, Niska 0,25). FXAA zostawiało obraz na
+   telefonie miękki; velocity i tak jest rysowane.
 4. **Reversed depth** (`reversedDepthBuffer: true`), gdy bliska płaszczyzna
    < 0,5 m albo daleka > 2 km. Niebo = głębokość 0.
 5. **Wspólne pliki kopiowane 1:1 między grami** (nie forkuj, poprawiaj u
@@ -47,7 +48,12 @@
    - `render/grassField.ts` — trawa z prawdziwych źdźbeł,
    - `render/rippleField.ts` — interaktywne zmarszczki na wodzie,
    - `render/ocean.ts` — fale wiatrowe FFT (Tessendorf),
-   - `render/instanceStream.ts` — instancjonowanie strumieniowe.
+   - `render/instanceStream.ts` — instancjonowanie strumieniowe;
+   w grach o dużej mapie (lot, pojazdy) także:
+   - `render/terrainShadow.ts` — cienie gór i widoczność nieba, liczone raz na GPU,
+   - `render/forest.ts` — lasy generowane na GPU z mapy pokrycia terenu,
+   - `render/atmosphere.ts`, `render/clouds.ts` — niebo Hillaire'a i chmury wolumetryczne,
+   - `render/trails.ts` — wstęgi dymu i smug.
 6. **TypeScript strict**, bez `any`, jednostki SI w nazwach (`radiusM`, `dtS`,
    `lux`, `ev100`), komentarze wyjaśniają *dlaczego*.
 
@@ -109,6 +115,15 @@
    wysokości kamery.
 6. Kolizje (kule, pociski) testują **proste kolidery logiki**, nigdy geometrię
    renderu.
+7. **Atlas impostorów: tekstury render targetów są adresowane od góry** na obu
+   backendach — pień jest przy większym v: `row = (gatunek + 1 − corner.y) / liczba`.
+   Sprawdź zbliżenie samych impostorów, nie las z daleka (u nas wszystkie drzewa
+   za 200 m stały do góry nogami).
+8. **Mapa ≥ 10 km**: lasy generowane na GPU (pierścienie instancji impostorów,
+   hash komórki przez `fract(sin(…))` — TSL `hash()` psuje się dla ujemnych),
+   gęstość z mapy pokrycia, widok z góry dla wysokiego pułapu. Obiekty gry
+   (cele, znajdźki, lądowiska) stawiaj tam, gdzie lasu nie ma — pytając tę samą
+   funkcję pokrycia.
 
 ## 5. Woda (jeśli jest)
 
@@ -155,7 +170,7 @@
 3. **F3**: fps, ms klatki, poziom regulatora, CPU i GPU na sekcję/przebieg,
    draw calle, trójkąty, EV, backend.
 4. **Regulator klatek** (`FrameGovernor`): najpierw efekty (AO, promienie),
-   potem skala renderu 100 → 58 %; w górę powoli, bez oscylacji; krok bez
+   potem skala renderu 100 → 58 % (42 % na telefonach renderujących w 2×); w górę powoli, bez oscylacji; krok bez
    zysku jest cofany. Przełącznik „Adaptacyjna rozdzielczość” w ustawieniach.
 5. Każda zmiana wydajności: **liczby przed i po w tych samych punktach**
    (`scripts/benchView.mjs --save before` / `--compare before`).
@@ -164,8 +179,9 @@
 
 | Ustawienie | Wysoka | Niska |
 |---|---|---|
-| Pixel ratio | urządzenie × skala | ≤ 1 na dotyku |
-| TRAA / GTAO | tak / tak | nie / nie |
+| Pixel ratio | urządzenie × skala (2 na dotyku) | 2 na dotyku (preset „Szybka”: 1) |
+| TRAA / GTAO / wyostrzenie | tak / tak / 0,3 | tak / nie / 0,25 |
+| Dno regulatora (skala renderu) | 0,58 | 0,42 |
 | Promienie słońca | ‹24–40› próbek | ‹0–12› |
 | Kaskady cieni × rozmiar | 3 × ‹2048› | 2 × ‹1024› |
 | Prześwit liści | tak | nie |
@@ -183,6 +199,11 @@
    --use-webgpu-adapter=swiftshader`; gdy urządzenie ginie przy konfiguracji
    canvasa — skrypt `--no-present`).
 4. Obejrzyj zrzut ekranu; dla ruchomych rzeczy kilka zrzutów w odstępach.
+   Emulacja telefonu (`deviceScaleFactor: 3, isMobile, hasTouch`): canvas ma
+   mieć 2× szerokość CSS.
+   Zachowania lotu i jazdy **nie** oceniaj w headless (SwiftShader liczy kilka
+   klatek na sekundę, więc symulacja biegnie wielokrotnie wolniej) — testuj je
+   w testach jednostkowych symulacji.
 5. Zero błędów w konsoli; liczby z testu wydajności w opisie commita.
 6. Na końcu: test wydajności na docelowym telefonie (jedyne prawdziwe liczby).
 
@@ -196,6 +217,30 @@
 - [ ] Budżety presetów dotrzymane w każdym punkcie testu.
 - [ ] 0 nowych potoków po załadowaniu.
 - [ ] Wysoka i Niska wyglądają spójnie (Niska prostsza, nie inna).
+
+## 10b. Sterowanie (pojazdy, samoloty, śmigłowce)
+
+Fizyka zostaje prawdziwa; sterowanie decyduje, czy da się latać. Każdy punkt
+wynika ze skargi gracza.
+
+- **Klawisze nigdy się nie odwracają**: W = nos w dół / do przodu, S = nos w
+  górę. Odwracanie dotyczy tylko drążka na ekranie.
+- **A/D skręcają** (w zawisie głównie obrót, z prędkością zakręt z
+  przechyleniem); Q/E to pedały (czysty obrót).
+- Gdy gra ma broń, **mysz celuje, a nie steruje lotem** — przesuwa celownik
+  po ekranie, kamera zostaje przy pojeździe. Na dotyku prawy kciuk tylko
+  celuje, nigdy nie dokłada się do drążka.
+- **Komputer lotu domyślnie włączony** (wyłączalny): utrzymanie położenia,
+  kursu (śmigło ogonowe ze sprzężeniem w przód od momentu wirnika) i
+  **wysokości z neutralną pozycją dźwigni mocy** — poniżej kreski opadanie, na
+  kresce trzymanie wysokości, powyżej wznoszenie. Limit momentu, ochrona przed
+  pierścieniem wirowym przy małej prędkości, miękkie przyziemienie. Dźwignia
+  na dotyku wraca na kreskę po puszczeniu.
+- Broń stała (rakiety niekierowane) leci **w osi pojazdu**, nie znoszona przez
+  jego dryf; znacznik balistyczny liczony tym samym integratorem co pociski.
+- Sterowanie przechyłem telefonu włączane w trakcie gry (TILT + kalibracja).
+- Wyświetlacze w kabinie: stała jasność, mipmapy, nigdy w tej samej płaszczyźnie
+  co ramka (migotanie).
 
 ## 11. Specyfika tej gry (uzupełnij)
 

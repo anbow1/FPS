@@ -28,9 +28,9 @@ performance budget.
 2. three.js **`WebGPURenderer`** with its WebGL2 fallback; all shaders in
    **TSL** node materials; no `ShaderMaterial`, `onBeforeCompile`, or
    `EffectComposer`.
-3. One post chain: HDR scene pass (velocity MRT) → TRAA (High) → GTAO (High) →
-   sun shafts → bloom → exposure + ACES + sRGB → thermal grade → sharpen (High)
-   / FXAA (Low).
+3. One post chain: HDR scene pass (velocity MRT) → TRAA (every preset) → GTAO
+   (High) → sun shafts → bloom → exposure + ACES + sRGB → thermal grade →
+   sharpen.
 4. Physical light and exposure per `lighting-reference.png`; pre-exposure on all
    lights; height fog with Mie scattering toward the sun as `scene.fogNode`;
    drifting cumulus whose shadows move over ground and water.
