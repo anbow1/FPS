@@ -20,7 +20,7 @@ import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './int
 import { Lighting } from './lighting.ts';
 import { CITY, FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
 import { CityLights } from './cityLights.ts';
-import { buildProps } from './props.ts';
+import { buildProps, type PropsView } from './props.ts';
 import { CpuTimer } from './perf.ts';
 import { Stage, type StageSettings } from './stage.ts';
 import { Undergrowth } from './undergrowth.ts';
@@ -62,6 +62,7 @@ export class GameView {
   /** The city's rain and street lamps (null elsewhere). */
   private rain: Rain | null = null;
   private cityLights: CityLights | null = null;
+  private props: PropsView | null = null;
   private settings: ViewSettings;
   private shake = 0;
   private interiorK = 1;
@@ -122,7 +123,8 @@ export class GameView {
     stage.scene.add(buildTerrainMesh(map, lib, this.lakeFx), buildFarRing(map));
     await progress('Building the world', 0.35);
     this.world = buildStaticWorld(map, lib);
-    stage.scene.add(this.world.group, buildProps(map.props, lib));
+    this.props = buildProps(map.props, lib);
+    stage.scene.add(this.world.group, this.props.group);
     // The city in the rain: standing water, rings and reflections on the street, and the rain itself.
     if (map.id === 'city') {
       stage.scene.add(buildWetStreet(map, this.settings.quality));
@@ -287,6 +289,7 @@ export class GameView {
     this.lighting.update(cam);
     wetTime.value = game.timeSeconds;
     this.cityLights?.update(cam, this.lighting.preExposure);
+    this.props?.update(cam.position);
     this.rain?.update(game.timeSeconds, cam);
     if (this.caustics) this.updateWater(game);
     this.cpu.lap('update');

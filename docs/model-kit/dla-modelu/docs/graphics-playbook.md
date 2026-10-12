@@ -439,6 +439,68 @@ Field Line; in Tanks +0.1–0.4 M.
 
 ---
 
+## 6c. Hard-surface props and characters (FL cars, weapons, soldiers)
+
+Boxes read as toys at any distance; what reads as "real" is the silhouette, the
+edges that catch light and the small parts people expect.
+
+- **Cars as lofts** (`render/carModel.ts`): rounded sections every ~10 cm from
+  bumper to tail (eased between a handful of key stations: half width at sill
+  and shoulder for tumblehome, sill and waist heights, corner radius), the sill
+  lifted into a **wheel-arch tunnel** over each axle (a narrow floor fills it
+  between the wheels). The greenhouse is a second loft that narrows to the roof
+  and rises along the windscreen rake. **Sort every quad into a part by where it
+  sits** (paint, glass, black trim: seals, B-pillar, door shut lines, sills) and
+  put a ring exactly on every boundary: shut lines and window edges become real,
+  crisp mesh edges. Lamps, grille, intakes and plates are **patches laid on the
+  skin** (march in from the end until the section contains (x, y), bisect, lift a
+  few mm), so they wrap round the nose flush; boxes stuck on stand off it. Lathed
+  tyres (rounded sidewall) and a five-spoke rim. ~10 k vertices per car; two
+  body variants by a hash of the parking place; one InstancedMesh per part.
+- **Weapons** (`render/weaponModels.ts`): side profiles as `ExtrudeGeometry` with
+  a 1–4 mm **bevel** (every edge gets a highlight), trigger guards as shapes with
+  holes, turned parts as lathes (barrel steps, muzzle device, scope bells),
+  rail teeth every 10 mm, a slotted handguard, and holes (ports, slots, flutes,
+  serrations, knurling) as a near-black "cavity" part — it reads as depth.
+- **Characters** (`render/actors.ts`): rigid segments (pelvis, torso, head, upper
+  arm, forearm, hand, thigh, shin, boot, rifle), one InstancedMesh each, both
+  sides in the same mesh (two instances per soldier). Pose per frame: stance sets
+  hips and spine to the hitbox layout; the rifle butt sits in the shoulder pocket
+  along the aim; **two-bone IK** brings the hands to the grips (elbows out) and
+  the feet to a stride (knees forward); the torso is **bladed ~35°** so the
+  support hand reaches the handguard. One material for all kit: per-vertex colour
+  plus a kind (hard / plain fabric / camouflage) that sets roughness, sheen and a
+  procedural four-colour camouflage in segment space.
+- Never mirror an instance with a negative-determinant matrix: instanced draws
+  pick the front face per mesh, not per instance, so the mirrored copies render
+  inside out. Build paired segments symmetric instead.
+
+---
+
+## 6d. A city at night, and rooms behind the windows (FL)
+
+- **Street lamps** (`render/cityLights.ts`): physical units throughout (lamp
+  ~2500 cd with a cut-off profile, lens ~9000 cd/m², EV 1.5). The few lamps
+  nearest the camera are real `SpotLight`s (they light characters and draw the
+  highlights on wet asphalt); every other lamp lights the ground through a
+  half-float irradiance map baked once at load (0.5 m texels). The shader
+  subtracts the near lamps' share with the bake's own formula, so no surface is
+  lit twice. Everything night-only sits behind `If(uniform)`: switching day and
+  night never recompiles (mind the variable trap in §11).
+- **Interior mapping** (`render/roomInteriors.ts`, van Dongen 2008): for a pixel
+  of clear pane the view ray carries on into a room one bay wide, one storey
+  high and a few metres deep; the nearest of the three planes it is heading for
+  gives wall, floor or ceiling. Add one piece of furniture (a rectangle in front
+  of the back wall), curtains just inside the glass, a ceiling light (Lambert +
+  inverse square + bounce) lit in a hashed share of rooms at night, and daylight
+  through the window by day (~5 % of the outside light, falling off inwards).
+  The pane mask is the façade texture's own roughness (clear glass is the
+  glossiest texel), so blinds and frames stay as drawn. Past ~60 m fade to the
+  room's mean or sub-pixel rooms sparkle. Needs a per-vertex tile size (bay ×
+  storey in metres) to turn UVs into metres.
+
+---
+
 ## 7. Water and the shoreline
 
 **Files:** Lagoon `render/water.ts`, `render/shoreField.ts`, `render/shoreWaves.ts`,
@@ -1042,6 +1104,9 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | A delayed one-shot sound (far explosion) plays at full volume at once | an `AudioParam` holds its default (gain 1) until its first scheduled event | `gain.value = 0` before scheduling, or `start(at)` the source at the event time |
 | Android flavour's own `signingConfig` ignored | a build type's `signingConfig` overrides the flavour's | set the default on `defaultConfig`, override per flavour |
 | Low cloud layer turns blocky on phones | one bilinear tap upsampling a ¼-resolution layer | a 4-tap tent when the layer is below ½ resolution |
+| Lamp-lit or other night-only shading in an `If(uniform)` branch: fine at night, by day façades mirror the sky and blocks go black | TSL declares a shared variable (`normalWorld`, `normalWorldGeometry`) where it is first built; built first inside the branch, it is only assigned when the branch runs, and the material's own lighting reads it unset | build it before the branch: `const out = normalWorld.mul(0).toVar()` (FL `materials.ts` `lampLit`) |
+| Lit windows (or any per-object hash) speckle pixel by pixel | the hash key uses `normalWorld`, which carries the normal map | key on `normalWorldGeometry` |
+| Paired limbs or wheels instanced with a mirrored matrix render inside out | instanced draws set the front face per mesh, not per instance | build both sides from symmetric geometry; never negate an axis per instance |
 
 ---
 

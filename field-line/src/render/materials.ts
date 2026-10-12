@@ -306,8 +306,23 @@ export class MaterialLibrary {
       }
       case 'carWreck':
         return standard(set('rust', 256, () => P.concrete(0x7a4326, 0.88, 151), 3), name); // sheet: fresh rust #7A4326 rough 0.88
-      case 'tyre':
-        return standard(set('tyre', 64, () => P.finish(0x2c2c2e, 0.86), 0.3), name);
+      case 'tyre': {
+        // Double-sided: the lathed tyre and rim profiles are not wound one way round.
+        const m = standard(set('tyre', 64, () => P.finish(0x2c2c2e, 0.86), 0.3), name);
+        m.side = DoubleSide;
+        return m;
+      }
+      case 'carTrim':
+        return new MeshStandardNodeMaterial({ name, color: 0x232325, roughness: 0.55, metalness: 0 }); // textured black plastic
+      case 'carRim':
+        return new MeshStandardNodeMaterial({ name, color: 0xb4b4b6, roughness: 0.32, metalness: 1, side: DoubleSide }); // painted alloy, sheet: aluminium
+      case 'carHeadlamp':
+        // Clear polycarbonate over a chrome reflector: a bright, glossy surface.
+        return new MeshPhysicalNodeMaterial({ name, color: 0xc8cccc, roughness: 0.08, metalness: 0.6, clearcoat: 1, clearcoatRoughness: 0.02 });
+      case 'carTaillamp':
+        return new MeshPhysicalNodeMaterial({ name, color: 0x9a1a14, roughness: 0.15, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02 });
+      case 'carPlate':
+        return new MeshStandardNodeMaterial({ name, color: 0xd6d6d0, roughness: 0.45, metalness: 0 }); // blank: no markings
       case 'lampLens': {
         // A frosted diffuser: pale by day, the luminaire's own luminance by night.
         const m = new MeshStandardNodeMaterial({ name, color: 0xd6d6d0, roughness: 0.3, metalness: 0 });

@@ -40,8 +40,8 @@ export class ViewModel {
   private readonly pistol: PistolModel;
   readonly redDot = new RedDot();
   readonly scope: Scope;
-  private readonly handL = buildHand();
-  private readonly handR = buildHand();
+  private readonly handL = buildHand(-1);
+  private readonly handR = buildHand(1);
   private readonly frag = buildFrag();
   private readonly medKit = buildMedKit();
   private readonly ammoPouch = buildAmmoPouch();

@@ -20,6 +20,7 @@ import {
 import { fbm2 } from '../core/noise.ts';
 import type { MapProp, PropKind } from '../maps/types.ts';
 import type { MaterialLibrary } from './materials.ts';
+import { buildCar, type CarGeometry, type CarPart, type CarVariant } from './carModel.ts';
 
 // Props: one InstancedMesh per (kind, material part), sized from real objects
 // (scale sheet: light 4x4 4.60 m, a hatchback 4.2 m; ISO container 6.06 m).
@@ -46,29 +47,130 @@ function merge(list: BufferGeometry[]): BufferGeometry {
   return g;
 }
 
-function wheel(x: number, z: number, r: number, w: number): BufferGeometry {
-  return new CylinderGeometry(r, r, w, 14).rotateZ(Math.PI / 2).translate(x, r, z);
+const CAR_MATERIAL: Record<CarPart, string> = {
+  paint: 'carPaint',
+  glass: 'darkGlass',
+  trim: 'carTrim',
+  headlamp: 'carHeadlamp',
+  taillamp: 'carTaillamp',
+  plate: 'carPlate',
+  tyre: 'tyre',
+  rim: 'carRim',
+};
+
+const carCache = new Map<string, CarGeometry>();
+
+function carParts(variant: CarVariant, lib: MaterialLibrary, coarse = false): Part[] {
+  const key = `${variant}:${coarse ? 'far' : 'near'}`;
+  let car = carCache.get(key);
+  if (!car) {
+    car = buildCar(variant, coarse);
+    carCache.set(key, car);
+  }
+  const parts: Part[] = [];
+  for (const [part, geometry] of Object.entries(car) as [CarPart, BufferGeometry][]) {
+    // Small, flush or under the body: their shadows are lost in the body's.
+    const castShadow = part === 'paint' || part === 'tyre' || part === 'glass';
+    parts.push({ geometry, material: lib.get(CAR_MATERIAL[part]), tinted: part === 'paint', castShadow });
+  }
+  return parts;
 }
 
-function partsFor(kind: PropKind, lib: MaterialLibrary): Part[] {
-  switch (kind) {
-    case 'car': {
-      const body = merge([box(1.8, 0.62, 4.2, 0, 0.62, 0), box(1.62, 0.1, 2.3, 0, 0.98, 0.25)]);
-      const cabin = merge([box(1.56, 0.44, 2.1, 0, 1.25, 0.25)]);
-      const tyres = merge([wheel(-0.82, -1.35, 0.31, 0.2), wheel(0.82, -1.35, 0.31, 0.2), wheel(-0.82, 1.35, 0.31, 0.2), wheel(0.82, 1.35, 0.31, 0.2), box(1.84, 0.18, 0.12, 0, 0.42, -2.1), box(1.84, 0.18, 0.12, 0, 0.42, 2.1)]);
-      return [
-        { geometry: body, material: lib.get('carPaint'), tinted: true },
-        { geometry: cabin, material: lib.get('darkGlass') },
-        { geometry: tyres, material: lib.get('tyre') },
-      ];
+/** Cars within this range of the camera get the full model; the rest the coarse one (~1/5 the triangles). */
+const CAR_NEAR_M = 45;
+/** Re-sort cars between the two models when the camera has moved this far. */
+const CAR_RESORT_M = 4;
+
+/** Near and far versions of one car variant: the instances move between them as the camera moves. */
+class CarLod {
+  private readonly near: InstancedMesh[] = [];
+  private readonly far: InstancedMesh[] = [];
+  private readonly last = new Vector3(Infinity, 0, 0);
+
+  constructor(
+    private readonly cars: readonly MapProp[],
+    variant: CarVariant,
+    lib: MaterialLibrary,
+    group: Group,
+  ) {
+    for (const [coarse, into] of [
+      [false, this.near],
+      [true, this.far],
+    ] as const) {
+      for (const part of carParts(variant, lib, coarse)) {
+        const mesh = new InstancedMesh(part.geometry, part.material, cars.length);
+        mesh.name = `prop-car-${coarse ? 'far' : 'near'}`;
+        mesh.castShadow = part.castShadow ?? true;
+        mesh.receiveShadow = true;
+        // The instances change set as the camera moves, so stored bounds would go stale.
+        mesh.frustumCulled = false;
+        mesh.userData.tinted = part.tinted === true;
+        mesh.count = 0;
+        into.push(mesh);
+        group.add(mesh);
+      }
     }
+  }
+
+  update(camera: Vector3): void {
+    if (this.last.distanceToSquared(camera) < CAR_RESORT_M * CAR_RESORT_M) return;
+    this.last.copy(camera);
+    let nNear = 0;
+    let nFar = 0;
+    for (const p of this.cars) {
+      const isNear = Math.hypot(p.pos.x - camera.x, p.pos.z - camera.z) < CAR_NEAR_M;
+      const slot = isNear ? nNear++ : nFar++;
+      _q.setFromAxisAngle(_up, p.yawRad);
+      _m.compose(_pos.set(p.pos.x, p.pos.y, p.pos.z), _q, _scale.setScalar(p.scale));
+      _colour.setHex(CAR_COLOURS[(p.colourIndex ?? 0) % CAR_COLOURS.length] ?? 0x6e2a24);
+      for (const mesh of isNear ? this.near : this.far) {
+        mesh.setMatrixAt(slot, _m);
+        if (mesh.userData.tinted) mesh.setColorAt(slot, _colour);
+      }
+    }
+    for (const [list, n] of [
+      [this.near, nNear],
+      [this.far, nFar],
+    ] as const) {
+      for (const mesh of list) {
+        mesh.count = n;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
+    }
+  }
+}
+
+const _m = new Matrix4();
+const _q = new Quaternion();
+const _up = new Vector3(0, 1, 0);
+const _pos = new Vector3();
+const _scale = new Vector3();
+const _colour = new Color();
+
+/** Which model a prop uses: cars alternate hatchback and saloon by a hash of their place. */
+function variantOf(p: MapProp): string {
+  if (p.kind !== 'car') return '';
+  const h = Math.abs(Math.round(p.pos.x * 7.3 + p.pos.z * 13.1)) % 5;
+  return h < 3 ? 'hatch' : 'saloon';
+}
+
+function partsFor(kind: PropKind, variant: string, lib: MaterialLibrary): Part[] {
+  switch (kind) {
+    case 'car':
+      return carParts(variant === 'saloon' ? 'saloon' : 'hatch', lib);
     case 'carWreck': {
-      const shell = merge([box(1.8, 0.55, 4.2, 0, 0.55, 0), box(1.5, 0.34, 2.0, 0, 1.0, 0.2)]);
-      const rims = merge([wheel(-0.82, -1.35, 0.24, 0.16), wheel(0.82, 1.35, 0.24, 0.16), box(1.7, 0.35, 0.4, 0, 0.3, -2.0)]);
-      return [
-        { geometry: shell, material: lib.get('carWreck') },
-        { geometry: rims, material: lib.get('steel') },
-      ];
+      // The hatchback burnt out: rust for the paint, no glass or tyres left, sitting on its rims.
+      const car = buildCar('hatch');
+      const sag = (g: BufferGeometry | undefined): BufferGeometry | null => (g ? g.clone().translate(0, -0.1, 0) : null);
+      const parts: Part[] = [];
+      const shell = sag(car.paint);
+      const trim = sag(car.trim);
+      const rims = sag(car.rim);
+      if (shell) parts.push({ geometry: shell, material: lib.get('carWreck') });
+      if (trim) parts.push({ geometry: trim, material: lib.get('tyre') });
+      if (rims) parts.push({ geometry: rims, material: lib.get('carWreck') });
+      return parts;
     }
     case 'container':
       return [{ geometry: containerGeometry(), material: lib.get('containerPaint') }];
@@ -159,28 +261,44 @@ function rockGeometry(): BufferGeometry {
   return welded.translate(0, 0.3, 0);
 }
 
-export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): Group {
+export interface PropsView {
+  group: Group;
+  /** Moves cars between their near and far models as the camera moves. */
+  update(camera: Vector3): void;
+}
+
+export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): PropsView {
   const group = new Group();
   group.name = 'props';
-  const byKind = new Map<PropKind, MapProp[]>();
+  const byKind = new Map<string, { kind: PropKind; variant: string; list: MapProp[] }>();
   for (const p of props) {
-    let list = byKind.get(p.kind);
-    if (!list) {
-      list = [];
-      byKind.set(p.kind, list);
+    const variant = variantOf(p);
+    const key = `${p.kind}:${variant}`;
+    let entry = byKind.get(key);
+    if (!entry) {
+      entry = { kind: p.kind, variant, list: [] };
+      byKind.set(key, entry);
     }
-    list.push(p);
+    entry.list.push(p);
   }
   const m = new Matrix4();
   const q = new Quaternion();
   const up = new Vector3(0, 1, 0);
   const colour = new Color();
-  for (const [kind, list] of byKind) {
+  const lods: CarLod[] = [];
+  for (const { kind, variant, list } of byKind.values()) {
     if (kind === 'rangeSign') {
       for (const p of list) group.add(rangeSign(p, lib));
       continue;
     }
-    for (const part of partsFor(kind, lib)) {
+    if (kind === 'car') {
+      const lod = new CarLod(list, variant === 'saloon' ? 'saloon' : 'hatch', lib, group);
+      // Everything in the far model until the first camera update: the warm-up compiles both.
+      lod.update(new Vector3(Infinity, 0, Infinity));
+      lods.push(lod);
+      continue;
+    }
+    for (const part of partsFor(kind, variant, lib)) {
       const mesh = new InstancedMesh(part.geometry, part.material, list.length);
       mesh.name = `prop-${kind}`;
       mesh.castShadow = part.castShadow ?? true;
@@ -195,7 +313,12 @@ export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): Gro
       group.add(mesh);
     }
   }
-  return group;
+  return {
+    group,
+    update(camera: Vector3): void {
+      for (const lod of lods) lod.update(camera);
+    },
+  };
 }
 
 /** Range distance board: a painted board on a post, the distance in metres on it. */
