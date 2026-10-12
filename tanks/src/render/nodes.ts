@@ -18,6 +18,8 @@ export const G = {
   /** 0 = night, 1 = full day; drives solar heating in the thermal view */
   uDay: uniform(1),
   uWind: uniform(new Vector2(1, 0.35)),
+  /** 0 = dry, 1 = raining: wet, darker, glossier surfaces and puddles (render/rain.ts) */
+  uRain: uniform(0),
   /** pre-exposed sun irradiance (colour × lux × exposure), for translucency */
   uSunIrr: uniform(new Color(0, 0, 0)),
 };

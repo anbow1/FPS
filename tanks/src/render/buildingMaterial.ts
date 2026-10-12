@@ -1,6 +1,6 @@
 import { abs, attribute, cross, dFdx, dFdy, dot, float, floor, fract, Fn, fwidth, length, max, min, mix, mod, normalize, normalViewGeometry, positionView, property, select, sign, sin, smoothstep, step, varying, vec2, vec3 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
-import { addThermalConst, fbm3, vnoise3 } from './nodes';
+import { addThermalConst, fbm3, G, vnoise3 } from './nodes';
 
 /**
  * Procedural facade shading in the building's own frame (attribute aLocal; aInfo = base height,
@@ -113,9 +113,10 @@ export function buildingMaterial(kind: SurfaceKind): THREE.MeshStandardNodeMater
   mat.colorNode = Fn(() => {
     const nL = normalize(cross(dFdx(local), dFdy(local)));
     const f = facade(kind, local, nL, info.y, local.y.sub(info.x));
-    tkRough.assign(f.rough);
+    // Rain: walls and roofs soak darker and turn glossy.
+    tkRough.assign(mix(f.rough, f.rough.mul(0.55), G.uRain));
     tkH.assign(f.h);
-    return f.col;
+    return f.col.mul(mix(float(1), float(0.72), G.uRain));
   })();
   mat.roughnessNode = tkRough;
   // Mikkelsen's surface-gradient bump from the height's screen derivatives

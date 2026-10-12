@@ -67,9 +67,10 @@ export function vehicleMaterial(key: PbrKey, u: VehicleUniforms, opts: { camo?: 
     dust.assign(clamp(d0.mul(fbm3(tp.mul(1.9).add(5)).mul(1.1).add(0.35)), 0, 0.85));
     const col = mix(paint.mul(grime.mul(0.28).add(0.86)), c3(DUST), dust);
     const burnt = mix(c3(SOOT), c3(RUST), smoothstep(0.5, 0.72, fbm3(tp.mul(1.6).add(3)))).mul(grime.mul(0.4).add(0.8));
-    return mix(col, burnt, u.uBurnt);
+    return mix(col, burnt, u.uBurnt).mul(mix(float(1), float(0.85).sub(dust.mul(0.25)), G.uRain));
   })();
-  mat.roughnessNode = mix(float(p.rough).mul(grime.mul(0.2).add(0.9)), float(0.95), max(dust, u.uBurnt));
+  // Rain: wet paint and wet dust are darker and glossier (a film of water over both).
+  mat.roughnessNode = mix(float(p.rough).mul(grime.mul(0.2).add(0.9)), float(0.95), max(dust, u.uBurnt)).mul(mix(float(1), float(0.5), G.uRain));
   mat.metalnessNode = float(p.metal).mul(float(1).sub(u.uBurnt)).mul(float(1).sub(dust));
   thermalOutput(
     mat,

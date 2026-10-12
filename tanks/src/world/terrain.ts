@@ -1,4 +1,4 @@
-import { cameraViewMatrix, dFdx, dFdy, dot, float, floor, fract, Fn, If, int, max, mix, normalize, normalWorldGeometry, positionWorld, property, sin, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, floor, fract, Fn, If, int, length, max, mix, normalize, normalWorldGeometry, positionWorld, pow, property, sin, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import { linear, PBR } from '../render/palette';
@@ -15,6 +15,28 @@ const LOD_DIST = [170, 380, 760, 1400];
 
 type V2 = THREE.Node<'vec2'>;
 type V4 = THREE.Node<'vec4'>;
+
+/** 0 … 1 hash per cell, safe for negative cells (TSL's hash() is not). */
+const cellHash = (c: V2, k: number): THREE.Node<'float'> => fract(sin(dot(c, vec2(12.9898 + k * 1.37, 78.233 + k * 2.71)).add(k * 0.618)).mul(43758.5453));
+
+/** One layer of rain rings (Field Line render/wetStreet.ts): each cell, one drop per cycle, its ring running out and fading. */
+const ringLayer = (p: V2, cellM: number, periodS: number, seed: number, time: THREE.Node<'float'>): V2 => {
+  const q = p.div(cellM);
+  const cell = floor(q);
+  const phase = cellHash(cell, seed);
+  const t = fract(time.div(periodS).add(phase));
+  const cycle = floor(time.div(periodS).add(phase));
+  const centre = vec2(cellHash(cell.add(cycle), seed + 1), cellHash(cell.add(cycle), seed + 2)).mul(0.7).add(0.15);
+  const d = q.sub(cell).sub(centre);
+  const x = length(d).mul(cellM).sub(t.mul(cellM * 0.45));
+  const wave = sin(x.mul(70)).mul(smoothstep(0.03, 0.0, x.abs()));
+  return normalize(d.add(1e-5)).mul(wave.mul(pow(float(1).sub(t), 2)));
+};
+
+/** Slope (xz) of the rain rings on standing water at world `p`. */
+function rainRings(p: V2, time: THREE.Node<'float'>): V2 {
+  return ringLayer(p, 0.45, 0.9, 3, time).add(ringLayer(p.add(vec2(0.21, 0.13)), 0.33, 0.75, 11, time));
+}
 
 /**
  * Terrain PBR material. Layer choice follows the material sheet — fresh/dry grass, dry soil, rock
@@ -144,7 +166,18 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground:
     tkHeat.assign(
       float(0.06).add(fine.mul(0.04)).add(rockMask.mul(0.04)).add(road.mul(0.02)).sub(wet.mul(0.03)).add(G.uDay.mul(0.1).mul(max(dot(tkNrmW, G.uSunDir), 0))),
     );
-    const ground = col.mul(ao.mul(0.45).add(0.55)).mul(float(1).sub(puddle.mul(0.35)));
+    // Rain (G.uRain): soil, mud, road and rock soak dark and glossy, grass less so; water stands in
+    // the ruts of the tracks, in the mud and in flat low spots, rippled by rain rings near the camera.
+    const rain = G.uRain;
+    const soak = rain.mul(float(1).sub(hw.x.mul(0.55)));
+    const flatGround = smoothstep(0.93, 0.99, nW.y);
+    const pool = tex(9, 0.7).r.mul(0.55).add(road.mul(0.45)).add(hw.w.mul(0.35)).add(hw.y.mul(0.1));
+    const rainPuddle = rain.mul(flatGround).mul(smoothstep(0.62, 0.72, pool));
+    const dist = positionWorld.sub(cameraPosition).length();
+    const rings = rainRings(wp, G.uTime).mul(smoothstep(30, 6, dist)).mul(0.4);
+    tkRough.assign(mix(mix(tkRough, max(tkRough.mul(0.5), 0.3), soak), float(0.03), rainPuddle));
+    tkNrmW.assign(normalize(mix(tkNrmW, normalize(nW.sub(vec3(rings.x, 0, rings.y))), rainPuddle)));
+    const ground = col.mul(ao.mul(0.45).add(0.55)).mul(float(1).sub(puddle.mul(0.35))).mul(mix(float(1), float(0.6), soak)).mul(float(1).sub(rainPuddle.mul(0.45)));
     return mix(ground.mul(mix(float(1), float(0.6), max(soaked.mul(0.7), film))), vec3(0.8), lace.mul(0.8));
   })();
   mat.roughnessNode = tkRough;

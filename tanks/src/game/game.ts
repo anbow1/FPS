@@ -6,6 +6,7 @@ import { ATMO, installAtmosphere } from '../render/atmosphere';
 import { Lighting, PRESETS } from '../render/lighting';
 import type { Pipeline } from '../render/pipeline';
 import { G } from '../render/nodes';
+import { Rain } from '../render/rain';
 import { revealOnePerPipeline, warmAllPipelines } from '../render/warmup.ts';
 import type { Hud, MarkerState } from '../ui/hud';
 import { PLAYER_SPAWN } from '../world/layout';
@@ -61,6 +62,7 @@ export class Game {
   readonly camera = new THREE.PerspectiveCamera(60, 1, 0.25, 9000);
   readonly lighting: Lighting;
   readonly effects: Effects;
+  private readonly rain: Rain;
   readonly projectiles: Projectiles;
   player!: Tank;
   enemies: Tank[] = [];
@@ -129,6 +131,8 @@ export class Game {
     installAtmosphere(this.scene);
     this.lighting = new Lighting(pipeline.renderer, this.scene, initialDetail);
     this.effects = new Effects(this.quality.maxParticles);
+    this.rain = new Rain(this.quality.id === 'low' ? 'low' : 'high');
+    this.scene.add(this.rain.mesh);
     this.scene.add(this.effects.group);
     this.projectiles = new Projectiles(this.effects);
     this.bullets = new Bullets(this.effects);
@@ -164,6 +168,12 @@ export class Game {
     else this.pipeline.shafts.color.setRGB(0, 0, 0);
     this.applyFog();
     this.headlightsOn = p.headlights;
+    // Rain: the soaked ground and the falling drops, lit by the sky.
+    const rain = p.rain ?? 0;
+    G.uRain.value = rain;
+    this.rain.rate.value = rain;
+    const sky = (p.skyLux / Math.PI) * this.lighting.exposure;
+    this.rain.light.value.set(sky * 0.9, sky * 0.95, sky);
   }
 
   /** particle sizes are in pixels: refresh after the render resolution changes */
@@ -1001,6 +1011,8 @@ export class Game {
     }
 
     this.world.update(dt, cam.position);
+    this.rain.wind.value.set(G.uWind.value.x * 3, G.uWind.value.y * 3);
+    this.rain.update(this.time, cam.position);
     this.infantry.render(cam.position);
     if (!this.rotor && this.audio.ready) this.rotor = this.audio.createRotor();
     if (this.rotor) this.audio.updateRotor(this.rotor, this.drone.pos, Math.min(1, this.drone.vel.length() / DRONE.maxSpeed), this.drone.alive);

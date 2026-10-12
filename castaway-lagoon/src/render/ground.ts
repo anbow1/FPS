@@ -1,4 +1,4 @@
-import { attribute, cos, float, fwidth, int, length, max, mix, normalMap, normalWorld, positionWorld, sin, smoothstep, texture, vec2, vec3 } from 'three/tsl';
+import { attribute, cameraPosition, cos, float, fwidth, int, length, max, mix, normalMap, normalWorld, positionWorld, sin, smoothstep, texture, vec2, vec3 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, type DataArrayTexture, Group, Mesh, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { fbm2 } from '../core/noise.ts';
 import { WATER_LEVEL_M } from '../config.ts';
@@ -8,6 +8,7 @@ import { noiseMap, terrainArray } from './textures.ts';
 import { shorePhase, swash } from './shoreWaves.ts';
 import { type Caustics, causticAt } from './caustics.ts';
 import { U } from './uniforms.ts';
+import { rainRings } from './waterFx.ts';
 
 // The ground: a dense near mesh over the playable bay (1.25 m cells, with a
 // skirt to hide the seam) and a coarse far mesh out to the volcano. One
@@ -327,6 +328,9 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   rough = mix(rough, float(0.14), film);
   rough = mix(rough, float(0.75), foamy);
   nTex = mix(nTex, vec3(0.5, 0.5, 1), max(max(puddle, film), wet.mul(0.4)));
+  // Rain rings on the puddles (the same rings as on the lagoon, waterFx.ts), near the camera only.
+  const rings = rainRings(p.xz).mul(puddle).mul(smoothstep(25, 6, length(cameraPosition.sub(p))));
+  nTex = nTex.add(vec3(rings.x, rings.y, 0).mul(0.5));
 
   // Wave-formed ripples on the shallow sand, after ClearWater6.1's sand_relief (SamG-Coder,
   // MIT): crests run across the swell (shoreField's propagation direction) about 20 cm apart,

@@ -47,6 +47,8 @@ export interface LightPreset {
   stars: number;
   headlights: boolean;
   note: string;
+  /** 0 … 1: rain falling and the ground soaked (0 when absent) */
+  rain?: number;
 }
 
 export const PRESETS: LightPreset[] = [
@@ -58,6 +60,7 @@ export const PRESETS: LightPreset[] = [
   { id: 'twilight', label: 'Zmierzch cywilny', ev100: 2.0, evBias: 1.0, sunLux: 0, skyLux: 10, sunElevDeg: -4, sunAzDeg: 270, keyK: 2000, skyK: 14000, haze: 0.3, clouds: 0.3, fogDensity: 0.0004, shadowSoftness: 6, stars: 0.3, headlights: true, note: 'headlights start to read' },
   { id: 'moon', label: 'Pełnia księżyca', ev100: -3.3, evBias: 2.0, sunLux: 0.2, skyLux: 0.12, sunElevDeg: 40, sunAzDeg: 200, keyK: 4100, skyK: 7800, haze: 0.15, clouds: 0.25, fogDensity: 0.0003, shadowSoftness: 2, stars: 1, headlights: true, note: 'moon 4100 K, render slightly blue' },
   { id: 'night', label: 'Pochmurna noc', ev100: -10.3, evBias: 7.0, sunLux: 0, skyLux: 0.002, sunElevDeg: 30, sunAzDeg: 200, keyK: 4000, skyK: 4000, haze: 1, clouds: 0, fogDensity: 0.0007, shadowSoftness: 8, stars: 0, headlights: true, note: 'almost black, use NV / thermal' },
+  { id: 'rain', label: 'Deszcz', ev100: 11.0, evBias: 0, sunLux: 0, skyLux: 5500, sunElevDeg: 50, sunAzDeg: 170, keyK: 6500, skyK: 7200, haze: 1, clouds: 0, fogDensity: 0.0017, shadowSoftness: 8, stars: 0, headlights: false, note: 'steady rain: soaked ground, puddles in ruts', rain: 1 },
 ];
 
 export function exposureFor(p: LightPreset): number {
