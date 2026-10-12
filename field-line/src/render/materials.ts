@@ -1,4 +1,4 @@
-import { bumpMap, dot, float, floor, Fn, fract, If, mix, normalize, normalMap, normalWorld, positionWorld, sin, smoothstep, step, texture, transformNormalToView, triplanarTexture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { bumpMap, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, normalMap, normalWorld, positionWorld, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
@@ -180,7 +180,8 @@ function slabbed(m: MeshPhysicalNodeMaterial, ts: TextureSet): MeshPhysicalNodeM
   const tilt = vec3(fract(h.mul(3.7)).sub(0.5), 0, fract(h.mul(5.9)).sub(0.5)).mul(0.012);
   const relief = mix(float(1), float(0.35), wetness);
   const mapped = normalMap(texture(ts.normalMap).xyz, vec2(relief, relief)) as unknown as Node<'vec3'>;
-  m.normalNode = normalize(mapped.add(transformNormalToView(tilt)));
+  // World → view as a direction, not normalised (transformNormalToView normalises: the tiny tilt became a unit one).
+  m.normalNode = normalize(mapped.add(cameraViewMatrix.mul(vec4(tilt, 0)).xyz));
   return m;
 }
 
@@ -203,7 +204,7 @@ export class MaterialLibrary {
     let m = this.facades.get(look);
     if (!m) {
       const wall = this.wallSampler(look);
-      const ts = set(`facade-${look}`, 512, () => P.facade(wall, 0x3c3c3e), 3);
+      const ts = set(`facade-${look}`, 512, () => P.facade(wall, 0x3c3c3e), 2);
       const mat = wettable(ts, `facade-${look}`);
       // Clear glass (the texture's glossiest texels) shows the room behind it, so it barely scatters itself.
       const pane = float(1).sub(smoothstep(0.08, 0.25, texture(ts.ormMap).g));
