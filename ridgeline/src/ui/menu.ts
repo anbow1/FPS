@@ -25,7 +25,7 @@ export function optionsFromParams(params: URLSearchParams): GameOptions {
   return {
     mode: 'free',
     heli: pick('heli', ['warden', 'bulat'] as const, 'warden'),
-    time: pick('time', ['morning', 'noon', 'dusk'] as const, 'noon'),
+    time: pick('time', ['morning', 'noon', 'dusk', 'rain'] as const, 'noon'),
     airStartM: params.get('spawn') === 'air' ? Number(params.get('alt') ?? 30) : null,
   };
 }
@@ -68,6 +68,7 @@ export function chooseOptions(parent: HTMLElement, initial: GameOptions, control
     ['morning', 'Clear morning'],
     ['noon', 'Broken cloud'],
     ['dusk', 'Dusk overcast'],
+    ['rain', 'Rain'],
   ]);
   // Control preferences: two-way toggles on the shared settings object (saved on FLY).
   const toggle = (label: string, key: 'invertPitch' | 'tilt', onText: string, offText: string): void => {

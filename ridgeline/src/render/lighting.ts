@@ -11,7 +11,7 @@ import { Atmosphere, SUN_TOA_LUX } from './atmosphere.ts';
 // hemisphere of albedo 0.2 lit by sun and sky (ground bounce), re-baked into the
 // same target only when the sun, the exposure or the altitude band changed.
 
-export type PresetId = 'morning' | 'noon' | 'dusk';
+export type PresetId = 'morning' | 'noon' | 'dusk' | 'rain';
 
 export interface LightPreset {
   id: PresetId;
@@ -26,11 +26,15 @@ export interface LightPreset {
   coverage: number;
   /** Relative humidity factor 0…1 for contrails and vapour. */
   humidity: number;
+  /** 0 … 1: rain falling below the cloud base (absent = dry). */
+  rain?: number;
 }
 
 export const PRESETS: Record<PresetId, LightPreset> = {
   morning: { id: 'morning', label: 'Clear morning', sunAzimuthDeg: 105, sunElevationDeg: 14, ev100: 13.8, cloudBaseM: 2200, cloudTopM: 3200, coverage: 0.12, humidity: 0.9 },
   noon: { id: 'noon', label: 'Broken cloud, noon', sunAzimuthDeg: 170, sunElevationDeg: 62, ev100: 15.0, cloudBaseM: 1600, cloudTopM: 3400, coverage: 0.55, humidity: 0.7 },
+  // A low, unbroken deck with steady rain under it: flat grey light (EV ~12 under heavy overcast).
+  rain: { id: 'rain', label: 'Rain under a low overcast', sunAzimuthDeg: 170, sunElevationDeg: 45, ev100: 12.2, cloudBaseM: 650, cloudTopM: 2600, coverage: 1, humidity: 1, rain: 1 },
   dusk: { id: 'dusk', label: 'Dusk above an overcast', sunAzimuthDeg: 268, sunElevationDeg: 3, ev100: 12.8, cloudBaseM: 1200, cloudTopM: 2600, coverage: 0.95, humidity: 1 },
 };
 

@@ -1,4 +1,4 @@
-import { Vector3 } from 'three/webgpu';
+import { Quaternion, Vector3 } from 'three/webgpu';
 import { PilotControls } from './app/pilot.ts';
 import { HELICOPTERS, PHYSICS, WEAPONS } from './config.ts';
 import { Input } from './core/input.ts';
@@ -10,6 +10,8 @@ import { CombatView, EMISSIVE_EXPOSURE } from './render/combatView.ts';
 import { HeliCockpit } from './render/heliCockpit.ts';
 import { HeliView } from './render/heliView.ts';
 import { SkyLighting } from './render/lighting.ts';
+import { Rain } from './render/rain.ts';
+import { canopyFlow, canopyFlowSpeed, canopyRain, canopyTime } from './render/canopyRain.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
@@ -127,6 +129,14 @@ async function main(): Promise<void> {
   view.model.root.add(cockpit.root);
   if (!params.has('nocloudshadow')) clouds.shadeReceivers(stage.scene, settings.quality === 'high' ? 4 : 2);
   const pilot = new PilotControls(input);
+  // Rain below the cloud base (the 'rain' sky), and the water it leaves on the canopy.
+  const rain = new Rain(settings.quality === 'high' ? 'high' : 'low');
+  stage.scene.add(rain.mesh);
+  const rainVel = new Vector3();
+  const noWind = new Vector3();
+  const bodyInv = new Quaternion();
+  const flowLocal = new Vector3();
+  const downLocal = new Vector3();
   pilot.invertPitch = controls.invertPitch;
 
   // ---- weapons and the ground force up the valley
@@ -325,7 +335,7 @@ async function main(): Promise<void> {
         if (input.pressed('mute')) muted = !muted;
         if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
         if (input.pressed('timeOfDay')) {
-          lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : 'morning');
+          lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : lighting.preset.id === 'dusk' ? 'rain' : 'morning');
           terrainShadow?.bake(stage.renderer, lighting.sunDir);
           applyPresetClouds();
         }
@@ -433,6 +443,23 @@ async function main(): Promise<void> {
         lighting.update(stage.camera, view.renderPos);
         clouds.update(frameS, stage.camera.position, high);
         stage.scene.environment = lighting.environment;
+        {
+          const wet = (lighting.preset.rain ?? 0) * (camY < clouds.layer.baseM ? 1 : 0);
+          rain.rate.value = wet;
+          // Under a full deck the drops are lit by the cloud base: ~6000 lux of diffuse sky.
+          const sky = (6000 / Math.PI) * lighting.exposure;
+          rain.light.value.set(sky * 0.92, sky * 0.96, sky);
+          rainVel.set(heli.velocity.x, heli.velocity.y, heli.velocity.z);
+          rain.update(clockS, stage.camera.position, rainVel, noWind);
+          // On the glass: the air runs aft at the airspeed and gravity pulls down, both in the body frame.
+          bodyInv.copy(view.renderRot).invert();
+          flowLocal.copy(rainVel).applyQuaternion(bodyInv).multiplyScalar(-0.05);
+          downLocal.set(0, -1, 0).applyQuaternion(bodyInv);
+          canopyFlow.value.copy(flowLocal.addScaledVector(downLocal, 0.4)).normalize();
+          canopyFlowSpeed.value = Math.min(1.6, 0.06 + heli.airspeedMs * 0.02);
+          canopyRain.value = wet;
+          canopyTime.value = clockS;
+        }
         overlay.update(heli, pilot.input, `${stage.backendName} · ${settings.quality} · ${lighting.preset.label} · camera ${rig.mode} · terrain ${terrain.nodesDrawn} patches · ${stage.governorLabel}`);
         if (frameS > 0 && !document.hidden) stage.governor.update(frameS);
         stage.render();

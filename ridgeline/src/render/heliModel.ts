@@ -21,6 +21,7 @@ import type { Hardpoints } from '../sim/weapons.ts';
 import { box, fuselage, lathe, type Station, surface, tube } from './airframe.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
+import { addCanopyRain } from './canopyRain.ts';
 
 // The two helicopters, procedural (no model files), in body axes (x right,
 // y up, −z forward, origin at the centre of gravity) so they line up with the
@@ -324,6 +325,7 @@ export function buildHeli(id: HeliId): HeliModel {
   // ---- canopy, blast shield, crew
   const glass = canopyMaterial(0x2c363c, null);
   glass.side = DoubleSide;
+  addCanopyRain(glass);
   root.add(canopy(s.canopy, glass, flat));
   const sh = s.canopy[s.shieldAt]!;
   const shieldMat = canopyMaterial(0x3a444a, null);
