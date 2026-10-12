@@ -1,4 +1,5 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Group, InstancedMesh, type Material, Matrix4, Mesh, Quaternion, Vector3 } from 'three/webgpu';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, Group, InstancedMesh, type Material, Matrix4, Mesh, Quaternion, Vector3 } from 'three/webgpu';
 import type { BoxLook, MapBox, MapData } from '../maps/types.ts';
 import type { MaterialLibrary } from './materials.ts';
 
@@ -146,6 +147,8 @@ export function buildStaticWorld(map: MapData, lib: MaterialLibrary): StaticWorl
     flush(buf, pending);
     group.add(staticMesh(buf.toGeometry(), [lib.facade(look).material, roof.material], `facade-${look}`));
   }
+  const pipes = drainpipes([...facades.values()].flat());
+  if (pipes) group.add(staticMesh(pipes, lib.look('metalDark').material, 'drainpipes'));
 
   let glass: InstancedMesh | null = null;
   const glassColliderIds: number[] = [];
@@ -167,6 +170,45 @@ export function buildStaticWorld(map: MapData, lib: MaterialLibrary): StaticWorl
 
   if (map.roads.length > 0) group.add(roadMarkings(map, lib));
   return { group, glass, glassColliderIds };
+}
+
+/**
+ * Rainwater downpipes on two diagonal corners of every façade block: roof to pavement, held off the wall
+ * by brackets every 2 m, with a shoe at the foot turned out over the drain.
+ */
+function drainpipes(boxes: readonly MapBox[]): BufferGeometry | null {
+  const parts: BufferGeometry[] = [];
+  const m = new Matrix4();
+  const q = new Quaternion();
+  const up = new Vector3(0, 1, 0);
+  for (const b of boxes) {
+    const yaw = b.yawRad ?? 0;
+    q.setFromAxisAngle(up, yaw);
+    const base = b.center.y - b.size.y / 2;
+    const top = b.center.y + b.size.y / 2;
+    for (const [sx, sz] of [
+      [1, 1],
+      [-1, -1],
+    ] as const) {
+      // Just off the corner, on the wall facing ±X (local), 12 cm from the edge.
+      const lx = sx * (b.size.x / 2 + 0.07);
+      const lz = sz * (b.size.z / 2 - 0.12);
+      const local: BufferGeometry[] = [new CylinderGeometry(0.05, 0.05, top - base - 0.25, 8, 1, true).translate(lx, base + 0.25 + (top - base - 0.25) / 2, lz)];
+      for (let y = base + 1.5; y < top - 0.3; y += 2) local.push(new BoxGeometry(0.1, 0.03, 0.12).translate(lx - sx * 0.04, y, lz));
+      // Shoe: a short elbow at the foot, out over the pavement.
+      local.push(new CylinderGeometry(0.05, 0.05, 0.3, 8).rotateZ(sx * 0.9).translate(lx + sx * 0.08, base + 0.17, lz));
+      // Hopper under the roof edge.
+      local.push(new CylinderGeometry(0.1, 0.05, 0.18, 8).translate(lx, top - 0.18, lz));
+      for (const g of local) {
+        m.compose(new Vector3(b.center.x, 0, b.center.z), q, new Vector3(1, 1, 1));
+        const ng = g.index ? g.toNonIndexed() : g;
+        ng.applyMatrix4(m);
+        parts.push(ng);
+      }
+    }
+  }
+  if (parts.length === 0) return null;
+  return mergeGeometries(parts, false);
 }
 
 function staticMesh(geometry: BufferGeometry, material: Material | Material[], name: string): Mesh {

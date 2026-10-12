@@ -1,6 +1,6 @@
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
-import { cameraPosition, exp, float, fog, max, positionWorld, pow, uniform, vec4 } from 'three/tsl';
+import { cameraPosition, dot, exp, float, fog, max, mix, positionWorld, pow, uniform, vec3, vec4 } from 'three/tsl';
 import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, PMREMGenerator, RenderTarget, Scene, SphereGeometry, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '../config.ts';
 import { lightColour, preExposureFor } from './colour.ts';
@@ -29,6 +29,8 @@ export class Lighting {
   private envTexture: Texture | null = null;
   /** Per-channel: brightness and colour temperature both calibrated to the sheet. */
   private readonly skyGain = uniform(new Vector3(1, 1, 1));
+  /** 0 … 1: how far the dome's Preetham hue is washed toward grey (a full cloud deck is nearly neutral). */
+  private readonly skyDesaturation = uniform(0);
   private readonly fogColour = uniform(new Vector3());
   private readonly sunGlowColour = uniform(new Vector3());
   private readonly sunDirection = uniform(new Vector3(0, 1, 0));
@@ -72,7 +74,9 @@ export class Lighting {
     if (!baseColour) throw new Error('SkyMesh has no colour node to scale');
     // The sky node is typed as a union; SkyMesh returns vec4(texColor, 1).
     const skyColour = baseColour as unknown as ReturnType<typeof vec4>;
-    this.sky.material.colorNode = vec4(skyColour.xyz.mul(this.skyGain), 1);
+    const hue = skyColour.xyz;
+    const grey = vec3(dot(hue, vec3(0.2126, 0.7152, 0.0722)));
+    this.sky.material.colorNode = vec4(mix(hue, grey, this.skyDesaturation).mul(this.skyGain), 1);
     scene.add(this.sky);
     // The probe scene renders the same sky: the clone shares the material, so it shares the uniforms.
     this.skyScene.add(this.sky.clone());
@@ -136,6 +140,9 @@ export class Lighting {
     // Full overcast is a uniform haze (high turbidity and Mie), not Preetham clouds, which
     // render as dark lenses at full cover.
     u.cloudCoverage.value = cloudy ? 0 : p.cloudCover;
+    // Under a full deck the sky is the cloud base: grey-white, not Preetham's clear-sky blue (the sheet's
+    // colour temperature tints it below through skyGain).
+    this.skyDesaturation.value = cloudy ? 0.85 : 0;
     u.showSunDisc.value = cloudy ? 0 : 1;
     u.sunPosition.value.copy(this.sunDir);
     const skyLum = (p.skyIlluminanceLux / Math.PI) * this.preExposure;
@@ -171,8 +178,8 @@ export class Lighting {
     this.scene.environmentIntensity = 1;
     const rawLum = 0.2126 * raw.r + 0.7152 * raw.g + 0.0722 * raw.b;
     const visibleGain = (p.skyIlluminanceLux * this.preExposure) / Math.max(1e-9, rawLum);
-    // At night the cloud deck glows with the city's light: its colour, not Preetham's blue.
-    if (p.id === 'night') this.skyGain.value.set(visibleGain * skyK.r, visibleGain * skyK.g, visibleGain * skyK.b);
+    // A cloud deck takes the sheet's sky colour (at night the city's glow on it), not Preetham's blue.
+    if (cloudy) this.skyGain.value.set(visibleGain * skyK.r, visibleGain * skyK.g, visibleGain * skyK.b);
     else this.skyGain.value.set(visibleGain, visibleGain, visibleGain);
     u.showSunDisc.value = cloudy ? 0 : 1;
   }

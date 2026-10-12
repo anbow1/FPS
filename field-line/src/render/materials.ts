@@ -1,9 +1,10 @@
-import { bumpMap, float, Fn, If, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, triplanarTexture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { bumpMap, dot, float, floor, Fn, fract, If, mix, normalize, normalMap, normalWorld, positionWorld, sin, smoothstep, step, texture, transformNormalToView, triplanarTexture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
 import { skyVisibilityNode } from './interior.ts';
 import { roomInteriorNode } from './roomInteriors.ts';
+import { facadeWear } from './facadeWear.ts';
 import * as P from './patterns.ts';
 import * as PL from './plantPatterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
@@ -165,6 +166,24 @@ function wettable(ts: TextureSet, name: string): MeshPhysicalNodeMaterial {
   return m;
 }
 
+/**
+ * Paving: each slab its own shade, a few stained, and each settled a fraction of a degree off level, so
+ * the 2.4 m texture tile stops repeating and wet slabs break reflections into facets as real ones do.
+ * The slab grid is the texture's (4 × 4 per tile), in the box's world-metre UVs.
+ */
+function slabbed(m: MeshPhysicalNodeMaterial, ts: TextureSet): MeshPhysicalNodeMaterial {
+  const cell = floor(uv().mul(4));
+  const h = fract(sin(dot(cell, vec2(12.9898, 78.233))).mul(43758.5453));
+  const stained = step(0.9, fract(h.mul(7.13)));
+  const shade = mix(float(0.94), float(1.04), h).mul(mix(float(1), float(0.88), stained));
+  m.colorNode = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness)).mul(shade).mul(mix(vec3(1), vec3(1.04, 1, 0.92), stained));
+  const tilt = vec3(fract(h.mul(3.7)).sub(0.5), 0, fract(h.mul(5.9)).sub(0.5)).mul(0.012);
+  const relief = mix(float(1), float(0.35), wetness);
+  const mapped = normalMap(texture(ts.normalMap).xyz, vec2(relief, relief)) as unknown as Node<'vec3'>;
+  m.normalNode = normalize(mapped.add(transformNormalToView(tilt)));
+  return m;
+}
+
 export class MaterialLibrary {
   private readonly looks = new Map<BoxLook, LookMaterial>();
   private readonly facades = new Map<BoxLook, LookMaterial>();
@@ -188,8 +207,13 @@ export class MaterialLibrary {
       const mat = wettable(ts, `facade-${look}`);
       // Clear glass (the texture's glossiest texels) shows the room behind it, so it barely scatters itself.
       const pane = float(1).sub(smoothstep(0.08, 0.25, texture(ts.ormMap).g));
-      const albedo = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness)).mul(mix(float(1), float(0.2), pane));
+      const base = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness));
+      // Weather and people on the wall (facadeWear.ts); the glass stays clean and dark.
+      const wear = facadeWear(base, pane);
+      const albedo = mix(wear.colour, base.mul(0.2), pane);
       mat.colorNode = albedo;
+      mat.roughnessNode = mix(mix(texture(ts.ormMap).g, float(0.35), wetness), float(0.85), wear.paper);
+      mat.clearcoatNode = wetness.mul(float(1).sub(wear.paper.mul(0.6)));
       const rooms = roomInteriorNode(pane);
       const lamps = lampLit(albedo);
       mat.emissiveNode = lamps ? lamps.add(rooms) : rooms;
@@ -231,7 +255,10 @@ export class MaterialLibrary {
       case 'kerb':
         return { material: standard(set('concrete', 512, () => P.concrete(0x8f8b85, 0.88), 2), look), tileM: 3 };
       case 'pavement':
-        return { material: wettable(set('pavement', 512, () => P.pavement(0x8f8b85), 3), look), tileM: 2.4 };
+      {
+        const ts = set('pavement', 512, () => P.pavement(0x8f8b85), 3);
+        return { material: slabbed(wettable(ts, look), ts), tileM: 2.4 };
+      }
       case 'roofTar':
         return { material: wettable(set('roof', 256, () => P.asphalt(0x3a3a3c, 0.9), 2), look), tileM: 2 };
       case 'woodFloor':
