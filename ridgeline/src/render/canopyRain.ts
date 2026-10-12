@@ -38,7 +38,8 @@ export function addCanopyRain(m: MeshPhysicalNodeMaterial): void {
   const pace = canopyFlowSpeed.mul(mix(float(0.05), float(1), hash(vec2(column, 3), 1)));
   const uu = u.sub(canopyTime.mul(pace));
   const cell = vec2(floor(uu.div(CELL_M)), column);
-  const present = smoothstep(0.55, 0.6, hash(cell, 2)).mul(canopyRain);
+  // None on the panes facing down into the cockpit tub (below the sill, never rained on).
+  const present = smoothstep(0.55, 0.6, hash(cell, 2)).mul(canopyRain).mul(smoothstep(-0.25, 0.05, n.y));
   const local = vec2(fract(uu.div(CELL_M)), fract(v.div(CELL_M))).sub(vec2(hash(cell, 3), hash(cell, 4)).mul(0.4).add(0.3));
   // Fast flow draws a drop out into a streak along the flow.
   const stretch = float(1).add(canopyFlowSpeed.mul(2.2));

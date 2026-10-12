@@ -5,6 +5,7 @@ import { blackbody } from '../core/blackbody.ts';
 import { bellyY, box, fuselage, lathe, type Station, type Surface, surface, surfacePoint, tube } from './airframe.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
 import { canopyMaterial, nozzleMaterial, type PaintSpec, paintMaterial, plain } from './jetMaterials.ts';
+import { addCanopyRain } from './canopyRain.ts';
 import { OVERLAY_LAYER, overlayBlending, overlayVisibility } from './stage.ts';
 
 // Procedural models of the two aircraft, built to the scale sheet
@@ -446,7 +447,10 @@ function buildWraith(): JetModel {
   root.add(shimmer[0]!);
   // Single-piece canopy with a gold metallised coating; a dark sill frame and the aft bow.
   const canopyStations = [S(-5.8, 0.66, 0.6, 0.05, 0.63, 0.4, 0.4, 0.2, 0.2), S(-5.2, 1.08, 0.6, 0.44, 0.7, 0.45, 0.4, 0.3, 0.0), S(-4.25, 1.38, 0.65, 0.54, 0.82, 0.5, 0.4, 0.2, 0.0), S(-3.2, 1.28, 0.7, 0.5, 0.88, 0.5, 0.4, 0.25, 0.0), S(-2.6, 1.08, 0.8, 0.3, 0.92, 0.45, 0.4, 0.4, 0.0)];
-  const glass = mesh(fuselage(canopyStations, { stepM: 0.06, perQuarter: 16 }), canopyMaterial(0x4a4636, 0xd9c590), false);
+  const glassMat = canopyMaterial(0x4a4636, 0xd9c590);
+  addCanopyRain(glassMat);
+  const glass = mesh(fuselage(canopyStations, { stepM: 0.06, perQuarter: 16 }), glassMat, false);
+  glass.name = 'canopy glass';
   glass.renderOrder = 4;
   root.add(glass);
   const frameMat = plain('canopy frame', 0x3c3e40, 0.6);
@@ -655,7 +659,10 @@ function buildTalon(): JetModel {
   }
   // Raised framed canopy, the windscreen bow frame, the sensor ball ahead of it.
   const canopyStations = [S(-7.75, 0.98, 0.95, 0.06, 0.96, 0.4, 0.4, 0.2, 0.0), S(-7.1, 1.42, 0.95, 0.48, 1.05, 0.45, 0.4, 0.35, 0.0), S(-6.2, 1.74, 0.98, 0.56, 1.12, 0.5, 0.4, 0.2, 0.0), S(-5.0, 1.62, 1.0, 0.5, 1.12, 0.5, 0.4, 0.25, 0.0), S(-4.2, 1.28, 1.05, 0.26, 1.12, 0.45, 0.4, 0.45, 0.0)];
-  const glass = mesh(fuselage(canopyStations, { stepM: 0.08, perQuarter: 14 }), canopyMaterial(0x39424a, null), false);
+  const glassMat = canopyMaterial(0x39424a, null);
+  addCanopyRain(glassMat);
+  const glass = mesh(fuselage(canopyStations, { stepM: 0.08, perQuarter: 14 }), glassMat, false);
+  glass.name = 'canopy glass';
   glass.renderOrder = 4;
   root.add(glass);
   const frameMat = plain('canopy frame', 0x5d6a7a, 0.6);

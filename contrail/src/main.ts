@@ -1,4 +1,4 @@
-import { Vector3 } from 'three/webgpu';
+import { DoubleSide, Mesh, Quaternion, Vector3 } from 'three/webgpu';
 import { Game } from './app/game.ts';
 import { PilotControls } from './app/pilot.ts';
 import { AIRCRAFT, PHYSICS } from './config.ts';
@@ -15,6 +15,8 @@ import { ForceArrows } from './render/forceArrows.ts';
 import { EMISSIVE_EXPOSURE } from './render/jetModels.ts';
 import { JetView } from './render/jetView.ts';
 import { SkyLighting } from './render/lighting.ts';
+import { addCanopyRain, canopyFlow, canopyFlowSpeed, canopyRain, canopyTime } from './render/canopyRain.ts';
+import { canopyMaterial } from './render/jetMaterials.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
@@ -129,6 +131,20 @@ async function main(): Promise<void> {
   const playerView = views.get(player.id)!;
   // The office around the pilot's eye, for the cockpit and padlock views.
   const cockpit = new Cockpit(opts.player, playerView.model.eye);
+  {
+    // The canopy seen from the seat (the outside model is hidden there): the same shell, nearly clear,
+    // so the water it picks up in cloud reads from inside.
+    const shell = playerView.model.root.getObjectByName('canopy glass');
+    if (shell instanceof Mesh) {
+      const inner = canopyMaterial(0x39424a, null);
+      inner.opacity = 0.06;
+      inner.side = DoubleSide;
+      addCanopyRain(inner);
+      const glassInside = new Mesh(shell.geometry, inner);
+      glassInside.renderOrder = 4;
+      cockpit.root.add(glassInside);
+    }
+  }
   stage.scene.add(cockpit.root);
   const combinerCorners: Vector3[] = [];
   const projected = new Vector3();
@@ -140,6 +156,12 @@ async function main(): Promise<void> {
 
   // ---- controls and displays
   const pilot = new PilotControls(input);
+  // Water on the canopy (render/canopyRain.ts).
+  let canopyWet = 0;
+  const wetCanopyParam = params.has('wetcanopy');
+  const bodyInv = new Quaternion();
+  const flowLocal = new Vector3();
+  const downLocal = new Vector3();
   pilot.invertPitch = controls.invertPitch;
   // Tilt steering listens only when chosen (the sensor runs at 60 Hz otherwise for nothing).
   const tilt = controls.tilt ? new TiltSteering() : null;
@@ -432,6 +454,20 @@ async function main(): Promise<void> {
         lighting.update(stage.camera, playerView.renderPos);
         clouds.update(frameS, stage.camera.position, high);
         stage.scene.environment = lighting.environment;
+        {
+          // Water on the canopy: picked up inside cloud, blown off by the airflow once out of it.
+          const inCloud = camY >= clouds.layer.baseM && camY <= clouds.layer.topM && clouds.layer.coverage > 0.3;
+          canopyWet = Math.max(0, Math.min(1, canopyWet + frameS * (inCloud ? 0.6 : -0.12)));
+          if (wetCanopyParam) canopyWet = 1; // ?wetcanopy: screenshot and test hook
+          canopyRain.value = canopyWet;
+          bodyInv.copy(playerView.renderRot).invert();
+          flowLocal.set(aircraft.velocity.x, aircraft.velocity.y, aircraft.velocity.z).applyQuaternion(bodyInv).multiplyScalar(-0.05);
+          downLocal.set(0, -1, 0).applyQuaternion(bodyInv);
+          canopyFlow.value.copy(flowLocal.addScaledVector(downLocal, 0.4)).normalize();
+          const tas = Math.hypot(aircraft.velocity.x, aircraft.velocity.y, aircraft.velocity.z);
+          canopyFlowSpeed.value = Math.min(1.6, 0.06 + tas * 0.02);
+          canopyTime.value += frameS;
+        }
         stage.greyOut.value = greyOut(aircraft.g);
         stage.redOut.value = aircraft.g.redOut;
         arrows.update(playerView.renderPos, aircraft.forces, aircraft.velocity, overlay.visible && rig.mode !== 'cockpit');
