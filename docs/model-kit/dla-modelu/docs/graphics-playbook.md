@@ -539,6 +539,26 @@ for each:
 - **Haze.** A clear day over a city is ~15 km visibility (β = 3.9 / V ≈
   2.6e-4 /m); at 6e-5 the far blocks had the contrast of near ones.
 
+## 6g. Ground and plants up close (FL forest, found by a screenshot tour)
+
+- **Litter, not weave.** Two anisotropic noises crossed at 90° read as knitted
+  carpet; one stretched noise reads as brushed metal. Scatter short straight
+  fibres per cell in random directions (each texel checks its 3 × 3 cells) for
+  dead grass, fallen needles, straw.
+- **Reed beds** are stems of uneven height with arching leaves and plumes on
+  cards of different heights in a fan; equal cards with a meadow-tuft texture
+  read as blocks of hedge in the water.
+- **Leaves at the lens.** Dither leaf cards out within ~0.85 m of the camera
+  (screen-space hash against a distance ramp, TRAA smooths it); the shadow
+  pass sees them from the light, so shadows keep every leaf.
+- **The far ring wears what the map wears.** Hills beyond a forest map need a
+  canopy material (dark crowns in colour and bump, clearings); on the meadow
+  splat they read as grey domes in the haze.
+- **Litter on the floor**: cones, twigs, a fallen branch now and then, streamed
+  round the camera; without them a forest floor reads as bare earth.
+- **Cap cut and fill** where a road is pulled to a grade: a smooth target
+  surface far below the local ground carves a trench along the whole road.
+
 ## 6f. Explosions in layers, and debris that stays (FL)
 
 Learned from a study of *hood-warfare* (a three.js FPS): one effect per layer.
