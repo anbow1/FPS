@@ -1,20 +1,33 @@
-import { float, length, smoothstep, uv, vec3 } from 'three/tsl';
+import { atan, float, length, mx_noise_float, smoothstep, uv, vec2, vec3 } from 'three/tsl';
 import { AdditiveBlending, BoxGeometry, Color, InstancedMesh, Matrix4, MeshBasicNodeMaterial, MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, type Scene, Vector3, type PerspectiveCamera } from 'three/webgpu';
 import { LOCAL_LIGHTS, type SurfaceKind } from '../config.ts';
 import type { GameEvent } from '../game/events.ts';
 import type { Game } from '../game/game.ts';
 import { lightColour } from './colour.ts';
-import { ParticlePool, spawnDefaults } from './particles.ts';
+import { Debris } from './debris.ts';
+import { fireRadiance, ParticlePool, smokeGlowRadiance, spawnDefaults } from './particles.ts';
 
 // Short-lived combat effects: muzzle flashes (a point light for 1–2 frames and
 // an emissive core, lighting sheet values), tracers, impact decals and debris
 // per material (concrete chips, metal sparks, wood splinters, soil puffs,
 // glass), and grenade explosions. No gore: body hits show only an armour spark
 // or a fabric puff.
+//
+// A frag explosion is built in layers, each doing one job (as film effects
+// are): a flash core and a light that dies away over a third of a second
+// with a flicker; a short fireball of billows cooling from white-yellow to
+// dull red; a smoke-and-dust cloud that follows it, lit orange from inside
+// while young, rising and lingering; a dust ring rolling out along the ground;
+// earth and stone chunks on real arcs that land and stay; embers; and a
+// scorch mark left on the ground.
 
 const MAX_DECALS = 400;
 const MAX_TRACERS = 64;
 const FLASH_LIGHTS = 4;
+const MAX_SCORCHES = 12;
+/** Pre-exposure is applied on top of these (cd/m²): a fireball's billows and smoke lit from inside. */
+const FIRE_NITS = 2.2e4;
+const SMOKE_GLOW_NITS = 5e3;
 
 // Decal tint per surface (sRGB): the chipped or dented look of each material.
 const DECAL_COLOUR: Partial<Record<SurfaceKind, number>> = {
@@ -44,11 +57,19 @@ const DEBRIS_COLOUR: Partial<Record<SurfaceKind, number>> = {
 interface Flash {
   light: PointLight;
   ttl: number;
+  seconds: number;
+  peakCd: number;
+  flicker: boolean;
 }
 
 export class Effects {
-  readonly dust = new ParticlePool(900, false);
-  readonly sparks = new ParticlePool(300, true);
+  readonly dust = new ParticlePool(900, 'lit');
+  readonly sparks = new ParticlePool(300, 'emissive');
+  readonly fire = new ParticlePool(160, 'fire');
+  readonly debris3d: Debris;
+  private readonly scorches: InstancedMesh;
+  private nextScorch = 0;
+  private readonly pendingScorch: Vector3[] = [];
   private readonly decals: InstancedMesh;
   private nextDecal = 0;
   private readonly tracers: InstancedMesh;
@@ -80,13 +101,28 @@ export class Effects {
       const light = new PointLight(0xffffff, 0, 25, 2);
       light.castShadow = false; // sheet: muzzle flash has no shadow
       scene.add(light);
-      this.flashes.push({ light, ttl: 0 });
+      this.flashes.push({ light, ttl: 0, seconds: 1, peakCd: 0, flicker: false });
     }
     const k = lightColour(LOCAL_LIGHTS.muzzleFlashK);
     this.flashColour.setRGB(k.r, k.g, k.b);
     const e = lightColour(2200);
     this.explosionColour.setRGB(e.r, e.g, e.b);
-    scene.add(this.dust.mesh, this.sparks.mesh, this.decals, this.tracers);
+    // Scorch marks: soot thrown out in streaks from a dark centre, a ragged edge (no stamped disc).
+    const scorchMat = new MeshStandardNodeMaterial({ roughness: 0.97, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    const q = uv().sub(0.5).mul(2);
+    const rr = length(q);
+    const rays = mx_noise_float(vec2(atan(q.y, q.x).mul(2.5), 3.1)).mul(0.5).add(0.5);
+    const ragged = mx_noise_float(q.mul(4.5)).mul(0.18);
+    const reach = float(0.55).add(rays.mul(0.4)).add(ragged);
+    scorchMat.opacityNode = float(1).sub(smoothstep(reach.mul(0.35), reach, rr)).mul(0.9);
+    scorchMat.colorNode = vec3(0.045, 0.04, 0.035).add(smoothstep(0.1, 0.9, rr).mul(0.04));
+    this.scorches = new InstancedMesh(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), scorchMat, MAX_SCORCHES);
+    this.scorches.frustumCulled = false;
+    this.scorches.receiveShadow = true;
+    for (let i = 0; i < MAX_SCORCHES; i++) this.scorches.setMatrixAt(i, _zero);
+    this.debris3d = new Debris(scene);
+    this.fire.mesh.renderOrder = 12;
+    scene.add(this.dust.mesh, this.sparks.mesh, this.fire.mesh, this.decals, this.tracers, this.scorches);
   }
 
   /** `muzzle` is where the flash should appear (for the player, the viewmodel's muzzle projected to true range). */
@@ -111,7 +147,8 @@ export class Effects {
     }
   }
 
-  private flashLight(x: number, y: number, z: number, intensityCd: number, colour: Color, seconds: number): void {
+  /** `flicker`: the light dies away over `seconds` (a fire), instead of holding then cutting (a muzzle flash). */
+  private flashLight(x: number, y: number, z: number, intensityCd: number, colour: Color, seconds: number, flicker = false): void {
     const f = this.flashes[this.nextFlash] as Flash;
     this.nextFlash = (this.nextFlash + 1) % this.flashes.length;
     f.light.position.set(x, y, z);
@@ -119,6 +156,9 @@ export class Effects {
     // Point light intensity in candela, pre-exposed like every other light.
     f.light.intensity = intensityCd * this.preExposure;
     f.ttl = seconds;
+    f.seconds = seconds;
+    f.peakCd = intensityCd;
+    f.flicker = flicker;
   }
 
   private muzzleFlash(p: Vector3, dx: number, dy: number, dz: number, suppressed: boolean): void {
@@ -178,7 +218,16 @@ export class Effects {
     if (surface !== 'foliage' && surface !== 'fabric' && surface !== 'armourPlate') this.decal(x, y, z, nx, ny, nz, surface, exit ? 0.07 : 0.05);
     const colour = DEBRIS_COLOUR[surface];
     if (colour !== undefined) {
-      const count = surface === 'soil' ? 7 : 5;
+      const solid = surface === 'concrete' || surface === 'brick' || surface === 'rock' || surface === 'asphalt' || surface === 'wood';
+      if (solid) {
+        // Chips of the face itself, thrown out of the hole and down onto the ground, where they stay a while.
+        const chips = 3 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < chips; i++) {
+          const sp = 1.5 + Math.random() * 3.5;
+          this.debris3d.spawn(x + nx * 0.03, y + ny * 0.03, z + nz * 0.03, (nx + (Math.random() - 0.5) * 1.3) * sp, (ny + Math.random() * 0.9) * sp, (nz + (Math.random() - 0.5) * 1.3) * sp, 0.012 + Math.random() * 0.028, colour, 4 + Math.random() * 4);
+        }
+      }
+      const count = surface === 'soil' ? 7 : solid ? 2 : 5;
       for (let i = 0; i < count; i++) this.debris(x, y, z, colour, surface === 'soil' ? 1.5 : 3, surface === 'soil' ? 0.12 : 0.05, 0.7, nx, ny, nz);
       // Dust cloud hanging off the hit.
       const d = spawnDefaults();
@@ -232,7 +281,8 @@ export class Effects {
       return;
     }
     const cd = kind === 'flash' ? LOCAL_LIGHTS.flashbangCd : LOCAL_LIGHTS.explosionCd;
-    this.flashLight(x, y + 0.5, z, cd, kind === 'flash' ? _white : this.explosionColour, kind === 'flash' ? 0.12 : 0.06);
+    this.flashLight(x, y + 0.5, z, cd, kind === 'flash' ? _white : this.explosionColour, kind === 'flash' ? 0.12 : 0.38, kind === 'frag');
+    // 1 The flash: one bright core for a few frames.
     const core = spawnDefaults();
     core.x = x;
     core.y = y + 0.4;
@@ -243,36 +293,118 @@ export class Effects {
     core.growMs = 6;
     core.lifeSeconds = 0.12;
     this.sparks.spawn(core);
-    if (kind === 'frag') {
-      for (let i = 0; i < 30; i++) this.debris(x, y + 0.2, z, 0x6b5a47, 6, 0.08, 1.4);
-      for (let i = 0; i < 12; i++) {
-        const d = spawnDefaults();
-        const a = (i / 12) * Math.PI * 2;
-        d.x = x;
-        d.y = y + 0.3;
-        d.z = z;
-        d.vx = Math.cos(a) * 4;
-        d.vy = 1.5 + Math.random();
-        d.vz = Math.sin(a) * 4;
-        d.sizeM = 0.8;
-        d.growMs = 1.8;
-        d.lifeSeconds = 3.5;
-        d.colour = 0x5a4a3a;
-        d.opacity = 0.8;
-        d.drag = 1.6;
-        d.gravity = -0.15;
-        this.dust.spawn(d);
-      }
+    if (kind !== 'frag') return;
+    const R = (): number => Math.random() - 0.5;
+    // 2 The fireball: a grenade's is small and brief — billows boiling out and up, burning out as they go.
+    const f = spawnDefaults();
+    for (let i = 0; i < 10; i++) {
+      f.x = x + R() * 0.4;
+      f.y = y + 0.2 + Math.random() * 0.3;
+      f.z = z + R() * 0.4;
+      f.vx = R() * 7;
+      f.vy = 1 + Math.random() * 4;
+      f.vz = R() * 7;
+      f.sizeM = 0.7 + Math.random() * 0.4;
+      f.growMs = 2.5;
+      f.lifeSeconds = 0.25 + Math.random() * 0.25;
+      f.drag = 5;
+      f.heat = 0.85 + Math.random() * 0.15;
+      this.fire.spawn(f);
     }
+    // 3 The cloud: dust and explosive smoke following the fire, lit by it from inside for a moment, then
+    // rising, spreading and thinning for seconds.
+    const d = spawnDefaults();
+    for (let i = 0; i < 16; i++) {
+      d.x = x + R() * 0.8;
+      d.y = y + 0.3 + Math.random() * 0.6;
+      d.z = z + R() * 0.8;
+      d.vx = R() * 5;
+      d.vy = 1.2 + Math.random() * 3;
+      d.vz = R() * 5;
+      d.sizeM = 0.9 + Math.random() * 0.6;
+      d.growMs = 0.9 + Math.random() * 0.5;
+      d.lifeSeconds = 4 + Math.random() * 3;
+      d.colour = i % 3 === 0 ? 0x4a4440 : 0x6e6252;
+      d.opacity = 0.85;
+      d.drag = 1.6;
+      d.gravity = -0.12;
+      d.delaySeconds = 0.03 + Math.random() * 0.12;
+      d.heat = 0.6 + Math.random() * 0.4;
+      this.dust.spawn(d);
+    }
+    // 4 The dust ring: thrown out flat along the ground by the shock and rolling to a stop.
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2 + Math.random() * 0.4;
+      const sp = 6 + Math.random() * 4;
+      d.x = x;
+      d.y = y + 0.2;
+      d.z = z;
+      d.vx = Math.cos(a) * sp;
+      d.vy = 0.3 + Math.random() * 0.6;
+      d.vz = Math.sin(a) * sp;
+      d.sizeM = 0.6;
+      d.growMs = 1.4;
+      d.lifeSeconds = 2.5 + Math.random() * 1.5;
+      d.colour = 0x7d6e5a;
+      d.opacity = 0.7;
+      d.drag = 2.8;
+      d.gravity = -0.05;
+      d.delaySeconds = 0;
+      d.heat = 0;
+      this.dust.spawn(d);
+    }
+    // 5 Earth and stone: chunks on real arcs that land and stay, plus finer dirt as sprites.
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const out = 2 + Math.random() * 7;
+      this.debris3d.spawn(x + R() * 0.3, y + 0.15, z + R() * 0.3, Math.cos(a) * out, 3 + Math.random() * 8, Math.sin(a) * out, 0.03 + Math.random() * 0.07, i % 4 === 0 ? 0x77746e : 0x5e4f3e, 6 + Math.random() * 5);
+    }
+    for (let i = 0; i < 16; i++) this.debris(x, y + 0.2, z, 0x6b5a47, 6, 0.08, 1.4);
+    // 6 Embers: hot sparks thrown out under gravity.
+    const e = spawnDefaults();
+    e.colour = 0xff9a40;
+    e.intensity = 6e3 * this.preExposure;
+    e.gravity = 9.81;
+    e.drag = 0.6;
+    for (let i = 0; i < 22; i++) {
+      e.x = x;
+      e.y = y + 0.3;
+      e.z = z;
+      e.vx = R() * 16;
+      e.vy = 2 + Math.random() * 9;
+      e.vz = R() * 16;
+      e.sizeM = 0.025 + Math.random() * 0.02;
+      e.lifeSeconds = 0.4 + Math.random() * 0.7;
+      this.sparks.spawn(e);
+    }
+    // 7 The scorch: placed on the ground once the terrain height is known (in update).
+    this.pendingScorch.push(new Vector3(x, y, z));
   }
 
-  update(game: Game, camera: PerspectiveCamera, dt: number): void {
+    update(game: Game, camera: PerspectiveCamera, dt: number): void {
     for (const f of this.flashes) {
       if (f.ttl > 0) {
         f.ttl -= dt;
         if (f.ttl <= 0) f.light.intensity = 0;
+        else if (f.flicker) f.light.intensity = f.peakCd * this.preExposure * (f.ttl / f.seconds) ** 1.6 * (0.8 + Math.random() * 0.4);
       }
     }
+    fireRadiance.value = FIRE_NITS * this.preExposure;
+    smokeGlowRadiance.value = SMOKE_GLOW_NITS * this.preExposure;
+    const world = game.world;
+    this.debris3d.groundAt = (x, z) => world.terrainHeight(x, z);
+    for (const p of this.pendingScorch) {
+      const h = world.terrainHeight(p.x, p.z);
+      // Only a blast at the ground leaves a mark on it.
+      if (p.y - h > 0.8) continue;
+      const sz = 2.4 + Math.random() * 0.8;
+      _q.setFromAxisAngle(_yAxis, Math.random() * 6.28);
+      _m.compose(_p.set(p.x, h + 0.015, p.z), _q, _s.set(sz, 1, sz));
+      this.scorches.setMatrixAt(this.nextScorch, _m);
+      this.nextScorch = (this.nextScorch + 1) % MAX_SCORCHES;
+      this.scorches.instanceMatrix.needsUpdate = true;
+    }
+    this.pendingScorch.length = 0;
     // Tracers from live rounds flagged as tracers.
     let n = 0;
     for (const b of game.projectiles.pool) {
@@ -290,6 +422,8 @@ export class Effects {
     this.tracers.instanceMatrix.needsUpdate = true;
     this.dust.update(camera, dt);
     this.sparks.update(camera, dt);
+    this.fire.update(camera, dt);
+    this.debris3d.update(dt);
   }
 }
 
@@ -304,3 +438,4 @@ const _s = new Vector3();
 const _c = new Color();
 const _white = new Color(1, 1, 1);
 const _zAxis = new Vector3(0, 0, 1);
+const _yAxis = new Vector3(0, 1, 0);

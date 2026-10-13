@@ -15,7 +15,7 @@ const BULB_LIGHTS = 6;
 const BULB_REASSIGN_SECONDS = 0.5;
 
 export class WorldFx {
-  private readonly smoke = softSprites(8 * PUFFS_PER_CLOUD, false);
+  private readonly smoke = softSprites(8 * PUFFS_PER_CLOUD, 'lit');
   private readonly smokeSeeds: Vector3[] = [];
   private readonly grenades: InstancedMesh;
   private readonly pickups: InstancedMesh;
