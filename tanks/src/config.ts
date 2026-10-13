@@ -156,7 +156,10 @@ export interface QualityPreset {
 
 export const QUALITY: Record<'high' | 'low', QualityPreset> = {
   high: {
-    id: 'high', pixelRatioCap: 2, shadowMapSize: 4096, shadowExtent: 140, ao: true, bloom: true,
+    // GTAO off: with the reversed depth buffer three r186's GTAO marks every face turned toward the camera
+    // as fully occluded (a tank's rear, a trunk, a shaded wall rendered at a quarter of their light, near
+    // black); the sky probe's ground bounce already lights shaded faces. Measured in docs/graphics-playbook.md §11.
+    id: 'high', pixelRatioCap: 2, shadowMapSize: 4096, shadowExtent: 140, ao: false, bloom: true,
     grassPerChunk: 5200, grassRadius: 90, treeNearDist: 320, maxParticles: 5000, wreckShadow: true,
   },
   low: {

@@ -178,11 +178,11 @@ export class Pipeline {
   }
 
   private build(q: QualityPreset): void {
-    const high = q.id === 'high';
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
     // TRAA on both presets: on a phone it is what keeps the 2× picture (grass, foliage, wires) from
     // shimmering, and a velocity target costs far less than the pixels FXAA would need to match it.
-    scenePass.setMRT(high ? mrt({ output, normal: packNormalToRGB(normalView), velocity }) : mrt({ output, velocity }));
+    // The normal target exists only for GTAO (config: off on both presets for now), so it costs nothing without it.
+    scenePass.setMRT(q.ao ? mrt({ output, normal: packNormalToRGB(normalView), velocity }) : mrt({ output, velocity }));
     const colour = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
     const velocityTex = scenePass.getTextureNode('velocity');
@@ -230,7 +230,7 @@ export class Pipeline {
     lite.outputColorTransform = false;
     lite.outputNode = chain(aa);
     this.lite = lite;
-    if (high) {
+    if (q.ao) {
       // GTAO from the depth and view normals of the same scene pass, applied to the scene colour
       // BEFORE TRAA, with its noise rotated every frame (useTemporalFiltering) so TRAA averages it
       // out. Applied after TRAA, as it was, the raw per-pixel noise reached the screen as grain.
