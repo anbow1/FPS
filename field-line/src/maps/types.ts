@@ -104,6 +104,8 @@ export interface MapData {
   trees: TreeInstance[];
   bushes: TreeInstance[];
   roads: { a: Vec3; b: Vec3; widthM: number }[];
+  /** Painted lines off the road grid (parking bays): axis-aligned rectangles on a surface at `y`. */
+  paint?: { x0: number; z0: number; x1: number; z1: number; y: number }[];
   track: Vec3[]; // forest dirt track polyline
   playerSpawn: { pos: Vec3; yawRad: number };
   squadSpawns: SquadSpawn[];

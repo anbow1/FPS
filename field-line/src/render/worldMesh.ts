@@ -159,9 +159,9 @@ export function buildStaticWorld(map: MapData, lib: MaterialLibrary): StaticWorl
   }
   const pipes = drainpipes([...facades.values()].flat());
   if (pipes) group.add(staticMesh(pipes, lib.look('metalDark').material, 'drainpipes'));
-  const trim = facadeTrim([...facades.values()].flat(), { stoneM: lib.look('concrete').tileM, plinthM: lib.look('stone').tileM, wallM: (look) => lib.look(look).tileM }, map.halfSizeM - 25);
+  const trim = facadeTrim([...facades.values()].flat(), { stoneM: lib.look('concrete').tileM, plinthM: lib.look('concrete').tileM, wallM: (look) => lib.look(look).tileM }, map.halfSizeM - 25);
   if (trim.stone) group.add(staticMesh(trim.stone, lib.look('concrete').material, 'cornices'));
-  if (trim.plinth) group.add(staticMesh(trim.plinth, lib.look('stone').material, 'plinths'));
+  if (trim.plinth) group.add(staticMesh(trim.plinth, lib.look('concrete').material, 'plinths'));
   for (const [look, g] of trim.parapets) group.add(staticMesh(g, lib.look(look).material, `parapets-${look}`));
   if (trim.details) {
     const sills = staticMesh(trim.details, lib.look('concrete').material, 'sills');
@@ -245,9 +245,9 @@ function staticMesh(geometry: BufferGeometry, material: Material | Material[], n
 function roadMarkings(map: MapData, lib: MaterialLibrary): Mesh {
   const buf = new GeometryBuffer();
   const pending = new Map<number, number[]>();
-  const quad = (x0: number, z0: number, x1: number, z1: number): void => {
+  const quad = (x0: number, z0: number, x1: number, z1: number, y = 0.004): void => {
     const base = buf.positions.length / 3;
-    buf.positions.push(x0, 0.004, z1, x1, 0.004, z1, x1, 0.004, z0, x0, 0.004, z0);
+    buf.positions.push(x0, y, z1, x1, y, z1, x1, y, z0, x0, y, z0);
     for (let i = 0; i < 4; i++) buf.normals.push(0, 1, 0);
     buf.uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
     let list = pending.get(0);
@@ -301,6 +301,7 @@ function roadMarkings(map: MapData, lib: MaterialLibrary): Mesh {
       }
     }
   }
+  for (const p of map.paint ?? []) quad(p.x0, p.z0, p.x1, p.z1, p.y + 0.004);
   flush(buf, pending);
   const mesh = new Mesh(buf.toGeometry(), lib.get('roadPaint'));
   mesh.name = 'roadMarkings';

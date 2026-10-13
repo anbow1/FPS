@@ -25,6 +25,8 @@ export const roomDaylight = uniform(0);
 
 const ROOM_DEPTH_M = 4.2;
 const SHOP_DEPTH_M = 7;
+/** Illuminance of a lit shop's goods by day (lux). */
+const SHOP_DAY_LUX = 1500;
 /** The pane's opening across a façade tile (patterns.ts `facade`). */
 const PANE_U0 = 0.3;
 const PANE_U1 = 0.7;
@@ -113,7 +115,9 @@ export function roomInteriorNode(pane: Node<'float'>): Node<'vec3'> {
       const night = lampColour.mul(lit).mul(level).mul(lightPreExposure).mul(cityNight);
       // Day: light through the window, falling off into the room; the floor gets most, the ceiling least.
       const daySpread = mix(float(1), float(0.25), hit.z.div(depth)).mul(mix(float(1), float(1.3), onFloor)).mul(mix(float(1), float(0.5), onCeiling));
-      const day = roomDaylight.mul(daySpread).div(Math.PI);
+      // Shops keep their lights on all day (~1500 lux on the goods), which is what lets a passer-by see in.
+      const shopLamps = shop.mul(lit).mul(SHOP_DAY_LUX / Math.PI).mul(lightPreExposure).mul(lampShape);
+      const day = roomDaylight.mul(daySpread).div(Math.PI).add(shopLamps);
       let radiance: Node<'vec3'> = albedo.mul(night.mul(lampShape).add(day)).add(night.mul(fitting));
 
       // Curtains just inside the glass (living rooms only): drawn to the sides, some with a sheer net across.

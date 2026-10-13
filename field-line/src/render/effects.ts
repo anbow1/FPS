@@ -326,8 +326,9 @@ export class Effects {
       d.growMs = 0.9 + Math.random() * 0.5;
       d.lifeSeconds = 4 + Math.random() * 3;
       // Pulverised paving and soil is pale; the explosive's own soot darkens a share of it.
-      d.colour = i % 3 === 0 ? 0x5c5650 : i % 3 === 1 ? 0x9a9184 : 0x8a7f70;
-      d.opacity = 0.85;
+      d.colour = i % 3 === 0 ? 0x6a645c : i % 3 === 1 ? 0x9a9184 : 0x8a7f70;
+      // A grenade's cloud is thin: the scene stays visible through it after the first second.
+      d.opacity = 0.6;
       d.drag = 1.6;
       d.gravity = -0.12;
       d.delaySeconds = 0.03 + Math.random() * 0.12;

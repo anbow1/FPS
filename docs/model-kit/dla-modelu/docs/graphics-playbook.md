@@ -1,5 +1,5 @@
 > **Note for a model reading this in the kit:** file paths below point at the
-> reference implementation (`field-line/`, `castaway-lagoon/`, `tanks/`, `contrail/`, `ridgeline/`),
+> reference implementation (`field-line/`, `castaway-lagoon/`, `anbow1/tanks`),
 > which is not in your folder. The techniques, numbers and traps stand on their
 > own; build your own versions to `rules/graphics-quality.md`.
 
@@ -498,6 +498,60 @@ edges that catch light and the small parts people expect.
   glossiest texel), so blinds and frames stay as drawn. Past ~60 m fade to the
   room's mean or sub-pixel rooms sparkle. Needs a per-vertex tile size (bay ×
   storey in metres) to turn UVs into metres.
+
+## 6e. A city by day: architecture, street and wear (FL)
+
+What made the city read as a model, found by a screenshot tour of every kind
+of place (street, façade close up, junction, car park, roof view), and the fix
+for each:
+
+- **Scale of the wall texture.** A façade texture covers one bay × one storey,
+  so a brick sampler written for a metre tile drew bricks 0.8 × 0.25 m. Count
+  the real units per tile instead (`brick(…, 13, 38)`: a course is 65 mm of
+  brick and 10 mm of mortar, ~38 to a 3 m storey) and give such tiles 1024 px.
+- **Windows cut by corners.** World-anchored UVs put a window's edge wherever
+  the corner happened to fall. Fit a whole number of bays per face (the bay
+  stretched to fit) and start u at the face's corner; make each building whole
+  storeys tall plus a parapet zone (`fitStoreys`).
+- **Relief, as geometry** (`render/facadeTrim.ts`): plinth, string course over
+  the shops, cornice (frieze, bed moulding, corona overhanging 0.32 m: the
+  shadow line under it is what the eye reads), parapet above the roof with a
+  coping, stone sills and hoods at every upper window, roof plant (stair
+  housing, AC units, vents, chimneys). Bands on two faces fill the corners and
+  stop against them on the other two, so no faces overlap and fight.
+- **Shops on the ground storey** (`render/shopfront.ts`, in the façade shader):
+  glazing on a stall riser, transom, a painted fascia with "lettering" (strokes
+  on a 3 × 5 grid per character: reads as a name, says nothing), roller
+  shutters; awnings as geometry. Shops keep their lights on by day.
+- **Glass.** A near-white albedo at low opacity reads as frosted plastic in
+  sun. Glass albedo is ~0; let alpha follow Schlick (≈15 % face-on, most of it
+  grazing) so the room shows face-on and the sky at an angle. Tilt each pane a
+  fraction of a degree (hash per pane) so a wall of windows does not mirror one
+  grey.
+- **The road** (`render/cityRoad.ts`): darker, smoother wheel paths per lane;
+  patched rectangles with a sealed seam; bitumen-filled cracks; oil in the
+  parking lane; manholes and kerb gullies — all in world metres, so nothing
+  repeats with the texture. Markings: zebra and stop line at each approach,
+  paint worn through in patches.
+- **Overhead and at the corners** (`render/streetFurniture.ts`): span wires
+  from wall to wall with pendant lamps, signals on each approach, one lens lit
+  at real LED luminance (~9000 cd/m², visible at noon).
+- **Haze.** A clear day over a city is ~15 km visibility (β = 3.9 / V ≈
+  2.6e-4 /m); at 6e-5 the far blocks had the contrast of near ones.
+
+## 6f. Explosions in layers, and debris that stays (FL)
+
+Learned from a study of *hood-warfare* (a three.js FPS): one effect per layer.
+Flash core and a light that dies as `k^1.6` with flicker over ~0.4 s; fireball
+billows whose colour follows a cooling ramp (white-yellow → orange → dull red,
+brightness ∝ heat^2.2); a dust-and-smoke cloud following 30–150 ms later, lit
+orange from inside while young (`emissive ∝ glow`), rising and thinning; a
+dust ring thrown flat along the ground; solid chunks on ballistic arcs that
+bounce, settle and stay (`render/debris.ts`); embers; a scorch decal with a
+ragged, streaked edge. Billow sprites are not discs: two octaves of noise push
+the edge in and out, and a rounded view-space normal lets the sun shade the
+puff (`render/particles.ts`). Put ground debris on the real surface under it
+(pavement, kerb, roof), not the terrain height.
 
 ---
 
@@ -1107,6 +1161,7 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Lamp-lit or other night-only shading in an `If(uniform)` branch: fine at night, by day façades mirror the sky and blocks go black | TSL declares a shared variable (`normalWorld`, `normalWorldGeometry`) where it is first built; built first inside the branch, it is only assigned when the branch runs, and the material's own lighting reads it unset | build it before the branch: `const out = normalWorld.mul(0).toVar()` (FL `materials.ts` `lampLit`) |
 | Lit windows (or any per-object hash) speckle pixel by pixel | the hash key uses `normalWorld`, which carries the normal map | key on `normalWorldGeometry` |
 | Paired limbs or wheels instanced with a mirrored matrix render inside out | instanced draws set the front face per mesh, not per instance | build both sides from symmetric geometry; never negate an axis per instance |
+| Road paint, bullet holes, tracks and scorch marks never show | the renderer uses a reversed depth buffer (near = 1), and three.js passes `polygonOffset` to the GPU unflipped: a negative bias pushes the decal *behind* its surface | with `reversedDepthBuffer: true`, use positive `polygonOffsetFactor` / `Units` |
 
 ---
 

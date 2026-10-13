@@ -120,6 +120,7 @@ export function buildCity(): MapData {
     trees: [],
     bushes: [],
     roads: roadSegments(),
+    paint: b.paint,
     track: [],
     playerSpawn: { pos: new Vec3(0, kerb, 125), yawRad: 0 },
     squadSpawns: [
@@ -185,6 +186,18 @@ function facadeBlock(b: MapBuilder, cx: number, cz: number): void {
 
 function parkingLot(b: MapBuilder, cx: number, cz: number): void {
   const kerb = CITY_SCALE.kerbM;
+  // An asphalt lot laid over the paving (2 cm proud), with the bays painted: a line between each pair of
+  // bays, 5 m long, and an aisle line across the row's head.
+  const lotY = kerb + 0.02;
+  b.boxOnBase('roofTar', cx, kerb, cz, 62, 0.02, 64, 0, { surface: 'asphalt' });
+  for (let row = -2; row <= 2; row++) {
+    for (let i = -6; i <= 7; i++) {
+      const x = cx + (i - 0.5) * 2.6;
+      b.paint.push({ x0: x - 0.06, z0: cz + row * 12 - 2.5, x1: x + 0.06, z1: cz + row * 12 + 2.5, y: lotY });
+    }
+    const head = cz + row * 12 + (row % 2 === 0 ? -2.5 : 2.5);
+    b.paint.push({ x0: cx - 6.5 * 2.6, z0: head - 0.06, x1: cx + 6.5 * 2.6, z1: head + 0.06, y: lotY });
+  }
   // Rows of parked cars, 0.8 m door gap (scale sheet), with two containers and a hut.
   for (let row = -2; row <= 2; row++) {
     for (let i = -6; i <= 6; i++) {

@@ -3,7 +3,7 @@ import { Rng } from '../core/rng.ts';
 import { Vec3 } from '../core/vec.ts';
 import type { Heightfield } from '../game/collision.ts';
 import { sampleHeight } from './terrain.ts';
-import type { BoxLook, Bulb, InteriorVolume, MapBox, MapProp, PropKind } from './types.ts';
+import type { BoxLook, Bulb, InteriorVolume, MapBox, MapData, MapProp, PropKind } from './types.ts';
 
 // Accumulates boxes, props and lights while a map generator runs, and knows
 // how to build the recurring pieces: walls with door and window openings,
@@ -64,6 +64,7 @@ export class MapBuilder {
   readonly props: MapProp[] = [];
   readonly bulbs: Bulb[] = [];
   readonly interiors: InteriorVolume[] = [];
+  readonly paint: NonNullable<MapData['paint']> = [];
   readonly rng: Rng;
 
   constructor(
