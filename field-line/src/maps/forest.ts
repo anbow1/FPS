@@ -14,6 +14,8 @@ import type { MapData, TreeInstance } from './types.ts';
 // slopes settle at a believable talus angle instead of raw noise.
 
 const HALF_M = 400;
+/** Width of the rim hills that close the map (render/ground.ts keeps them under forest, not rock). */
+export const RIM_M = 100;
 const CELL_M = 2;
 const RIDGE_Z_M = -120;
 const SADDLE_X_M = 60;
@@ -50,9 +52,10 @@ function baseHeight(x: number, z: number): number {
   const crest = 26 + ridged2(x / 140, 0.37, 4, 23) * 22;
   const saddle = 1 - 0.55 * Math.exp(-(((x - SADDLE_X_M) / 70) ** 2));
   let h = rolling + across * crest * saddle;
-  // Rim hills close the map edge.
-  const edge = Math.max(Math.abs(x), Math.abs(z)) - (HALF_M - 60);
-  if (edge > 0) h += (edge / 60) ** 2 * 25;
+  // Rim hills close the map edge: forested slopes rising over the last 100 m (steeper, they came out as
+  // bare rock domes on the skyline).
+  const edge = Math.max(Math.abs(x), Math.abs(z)) - (HALF_M - RIM_M);
+  if (edge > 0) h += (edge / RIM_M) ** 2 * 28;
   // The track is cut into the slope: pull it toward a smoothed grade.
   const td = trackDistance(x, z);
   if (td < 12) {
@@ -152,8 +155,8 @@ export function buildForest(): MapData {
   const trees: TreeInstance[] = [];
   const bushes: TreeInstance[] = [];
   const spacingM = 6.5;
-  for (let gz = -HALF_M + 20; gz < HALF_M - 20; gz += spacingM) {
-    for (let gx = -HALF_M + 20; gx < HALF_M - 20; gx += spacingM) {
+  for (let gz = -HALF_M + 8; gz < HALF_M - 8; gz += spacingM) {
+    for (let gx = -HALF_M + 8; gx < HALF_M - 8; gx += spacingM) {
       const x = gx + rng.range(-2.6, 2.6);
       const z = gz + rng.range(-2.6, 2.6);
       const stand = fbm2(x / 130, z / 130, 3, 91) + 0.12;
@@ -165,6 +168,8 @@ export function buildForest(): MapData {
       const lakeR = lakeRadius(lake(), x, z);
       if (lakeR < 1.4) p = 0;
       if (surfaceAt(x, z) === 'rock') p *= 0.3;
+      // The rim hills are forest to the skyline.
+      if (Math.max(Math.abs(x), Math.abs(z)) > HALF_M - RIM_M + 20) p = Math.max(p, 0.8);
       if (rng.next() >= p) {
         if (stand > -0.2 && rng.next() < 0.18 && trackDistance(x, z) > 4 && lakeR > 1.3) bushes.push(plant(b, x, z, rng.range(0.7, 1.4), rng.next()));
         continue;

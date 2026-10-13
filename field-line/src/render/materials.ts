@@ -351,7 +351,8 @@ export class MaterialLibrary {
       case 'bark':
         return standard(set('bark', 256, P.bark, 5), name);
       case 'needles':
-        return leafCard(set('needles', 512, PL.pineSpray, 2, true), name, true);
+        // 1024: single needles are a few texels wide, and at 512 they merged into green blobs.
+        return leafCard(set('needles', 1024, PL.pineSpray, 2, true), name, true);
       case 'leaves':
         return leafCard(set('leaves', 512, () => PL.broadleafCluster(41, 0x3f6420, 0x5c7f2a), 2, true), name, true);
       case 'hazel':

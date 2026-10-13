@@ -71,30 +71,47 @@ export function pineSpray(): TexelSampler {
     segs.push({ ax: 0.5, ay: v0, bx: 0.5 + side * Math.sin(ang) * len, by: v0 + Math.cos(ang) * len, radius: 0.075 * (1 - v0 * 0.4) });
   }
   return (u, v, t) => {
+    // Nearest twig: distance along it (tile units), signed distance across it, and its needle reach.
     let best = 1e9;
     let bestR = 0.1;
     let along = 0;
-    for (const s of segs) {
+    let alongM = 0;
+    let across = 0;
+    let seg = 0;
+    segs.forEach((s, i) => {
       const dx = s.bx - s.ax;
       const dy = s.by - s.ay;
-      const k = Math.max(0, Math.min(1, ((u - s.ax) * dx + (v - s.ay) * dy) / (dx * dx + dy * dy)));
-      // Needles thin out toward each twig's tip.
+      const len = Math.hypot(dx, dy);
+      const k = Math.max(0, Math.min(1, ((u - s.ax) * dx + (v - s.ay) * dy) / (len * len)));
+      // Needles shorten toward each twig's tip.
       const r = s.radius * (1 - k * 0.45);
-      const d = Math.hypot(u - s.ax - dx * k, v - s.ay - dy * k) / r;
+      const px = u - s.ax - dx * k;
+      const py = v - s.ay - dy * k;
+      const d = Math.hypot(px, py) / r;
       if (d < best) {
         best = d;
         bestR = r;
         along = k;
+        alongM = k * len;
+        across = (px * dy - py * dx) / len;
+        seg = i;
       }
-    }
-    // Ragged edge: needle tips at a few different lengths.
-    const ragged = 0.78 + tileNoise(u * 48, v * 48, 48, 211) * 0.3 + tileNoise(u * 13, v * 13, 13, 212) * 0.12;
-    if (best > ragged) return clear(t, inner);
-    if (best * bestR < 0.009) return set(t, twig, 0.9, 0.9, 0.9, 0.7);
-    const edge = best / ragged; // 0 at the twig, 1 at the needle tips
-    const grain = tileNoise(u * 96, v * 96, 96, 213);
-    const c = mix(inner, outer, Math.min(1, edge * 0.8 + along * 0.25 + grain * 0.15));
-    set(t, c, 0.85 + grain * 0.3, Math.sqrt(Math.max(0, 1 - edge * edge)), 0.82, 0.55 + edge * 0.45);
+    });
+    if (best * bestR < 0.0065) return set(t, twig, 0.9, 0.9, 0.9, 0.7);
+    if (best > 1.1) return clear(t, inner);
+    // Needles: straight strokes leaving the twig on both sides, raked ~50° toward its tip, one every
+    // 0.0062 tile; each its own length. Gaps between them let the light through, as in a real spray.
+    const a = Math.abs(across);
+    const rake = (alongM - a * 1.15) / 0.0062;
+    const n = Math.floor(rake);
+    const f = rake - n;
+    const side = across < 0 ? 1 : 2;
+    const reach = bestR * (0.72 + hash2(n, seg * 3 + side, 214) * 0.38);
+    if (f > 0.6 || a > reach) return clear(t, inner);
+    const edge = a / reach; // 0 at the twig, 1 at the needle tip
+    const shade = hash2(n, seg * 7 + side, 215);
+    const c = mix(inner, outer, Math.min(1, edge * 0.75 + along * 0.2 + shade * 0.2));
+    set(t, c, 0.8 + shade * 0.35, 1 - Math.abs(f - 0.3) * 2.5, 0.78, 0.5 + edge * 0.5);
   };
 }
 

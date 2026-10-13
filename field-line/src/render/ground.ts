@@ -3,6 +3,7 @@ import { BufferAttribute, BufferGeometry, type DataArrayTexture, DataTexture, Li
 import { fbm2, tileFbm } from '../core/noise.ts';
 import type { Heightfield } from '../game/collision.ts';
 import type { MapData } from '../maps/types.ts';
+import { RIM_M } from '../maps/forest.ts';
 import { distanceToSegmentXZ, sampleHeight } from '../maps/terrain.ts';
 import type { MaterialLibrary } from './materials.ts';
 import { type Lake, lakeRadius } from '../maps/lake.ts';
@@ -171,7 +172,9 @@ export function splatWeights(map: MapData, x: number, z: number): [number, numbe
   const t = map.terrain;
   const e = t.cellM;
   const slope = Math.hypot(sampleHeight(t, x + e, z) - sampleHeight(t, x - e, z), sampleHeight(t, x, z + e) - sampleHeight(t, x, z - e)) / (2 * e);
-  const rock = smooth(0.45, 0.85, slope);
+  // The forest map's rim hills are wooded slopes, however steep: rock there read as grey domes.
+  const rim = map.id === 'forest' ? smooth(-10, 10, Math.max(Math.abs(x), Math.abs(z)) - (map.halfSizeM - RIM_M)) : 0;
+  const rock = smooth(0.45, 0.85, slope) * (1 - rim * 0.9);
   let track = 0;
   for (let i = 0; i < map.track.length - 1; i++) {
     const a = map.track[i];
