@@ -1,5 +1,5 @@
 import { Break, cameraPosition, exp, float, Fn, hash, If, Loop, max, min, mix, positionWorld, pow, screenCoordinate, select, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
-import { DataTexture, LinearFilter, Mesh, type Node, NodeMaterial, type Object3D, RedFormat, RepeatWrapping, UnsignedByteType, Vector2, Vector3 } from 'three/webgpu';
+import { DataTexture, LinearFilter, Mesh, type Node, NodeMaterial, type Object3D, RedFormat, RepeatWrapping, RGBAFormat, RGFormat, UnsignedByteType, Vector2, Vector3 } from 'three/webgpu';
 import { CLOUD_EXTINCTION_PER_M, CLOUD_FIELD, type CloudData, type CloudLayer, densityAt } from '../sim/cloudField.ts';
 import type { Atmosphere } from './atmosphere.ts';
 
@@ -63,21 +63,25 @@ interface VolumeAtlas {
   rows: number;
 }
 
-function volumeAtlas(bytes: Uint8Array, res: number, cols: number): VolumeAtlas {
+function volumeAtlas(channels: Uint8Array[], res: number, cols: number): VolumeAtlas {
   const rows = Math.ceil(res / cols);
   const tile = res + 2;
   const W = cols * tile;
   const H = rows * tile;
-  const out = new Uint8Array(W * H);
+  const n = channels.length;
+  const out = new Uint8Array(W * H * n);
   const wrap = (i: number): number => (i + res) % res;
   for (let k = 0; k < res; k++) {
     const ox = (k % cols) * tile;
     const oy = Math.floor(k / cols) * tile;
     for (let j = 0; j < tile; j++) {
-      for (let i = 0; i < tile; i++) out[(oy + j) * W + ox + i] = bytes[(k * res + wrap(j - 1)) * res + wrap(i - 1)]!;
+      for (let i = 0; i < tile; i++) {
+        const src = (k * res + wrap(j - 1)) * res + wrap(i - 1);
+        for (let c = 0; c < n; c++) out[((oy + j) * W + ox + i) * n + c] = channels[c]![src]!;
+      }
     }
   }
-  const tex = new DataTexture(out, W, H, RedFormat, UnsignedByteType);
+  const tex = new DataTexture(out, W, H, n === 2 ? RGFormat : RedFormat, UnsignedByteType);
   tex.minFilter = LinearFilter;
   tex.magFilter = LinearFilter;
   tex.unpackAlignment = 1;
@@ -86,7 +90,7 @@ function volumeAtlas(bytes: Uint8Array, res: number, cols: number): VolumeAtlas 
   return { tex, res, cols, rows };
 }
 
-function sampleVolume(v: VolumeAtlas, uvw: V3): F {
+function sampleVolume(v: VolumeAtlas, uvw: V3): Node<'vec2'> {
   const tile = v.res + 2;
   const W = v.cols * tile;
   const H = v.rows * tile;
@@ -95,12 +99,12 @@ function sampleVolume(v: VolumeAtlas, uvw: V3): F {
   const z = uvw.z.fract().mul(v.res).sub(0.5);
   const k0 = z.floor();
   const f = z.sub(k0);
-  const slice = (k: F): F => {
+  const slice = (k: F): Node<'vec2'> => {
     const kw = k.add(v.res).mod(v.res);
     const col = kw.mod(v.cols);
     const row = kw.div(v.cols).floor();
     // Explicit LOD: these fetches sit in loops and branches (non-uniform control flow in WGSL).
-    return texture(v.tex, vec2(col.mul(tile).add(p.x).div(W), row.mul(tile).add(p.y).div(H))).level(float(0)).r;
+    return texture(v.tex, vec2(col.mul(tile).add(p.x).div(W), row.mul(tile).add(p.y).div(H))).level(float(0)).xy;
   };
   return mix(slice(k0), slice(k0.add(1)), f);
 }
@@ -129,9 +133,16 @@ export class Clouds {
     private readonly atmosphere: Atmosphere,
     public quality: CloudQuality,
   ) {
-    this.shape = volumeAtlas(data.shape, CLOUD_FIELD.shapeRes, 8);
-    this.detail = volumeAtlas(data.detail, CLOUD_FIELD.detailRes, 8);
-    const w = new DataTexture(data.weather, CLOUD_FIELD.weatherRes, CLOUD_FIELD.weatherRes, RedFormat, UnsignedByteType);
+    this.shape = volumeAtlas([data.shape, data.billow], CLOUD_FIELD.shapeRes, 8);
+    this.detail = volumeAtlas([data.detail], CLOUD_FIELD.detailRes, 8);
+    // R coverage, G cloud type: one binding for both (every shadow receiver samples it).
+    const W = CLOUD_FIELD.weatherRes;
+    const rg = new Uint8Array(W * W * 4);
+    for (let i = 0; i < W * W; i++) {
+      rg[i * 4] = data.weather[i]!;
+      rg[i * 4 + 1] = data.kind[i]!;
+    }
+    const w = new DataTexture(rg, W, W, RGBAFormat, UnsignedByteType);
     w.minFilter = LinearFilter;
     w.magFilter = LinearFilter;
     w.wrapS = w.wrapT = RepeatWrapping;
@@ -168,16 +179,32 @@ export class Clouds {
   /** Density at a point given as flat-world x, z and true altitude h — cloudField.densityAt, term for term. */
   private density(x: F, h: F, z: F, detail: boolean): F {
     const hf = h.sub(this.base).div(this.top.sub(this.base));
-    const profile = min(hf.div(0.12), 1).mul(min(float(1).sub(hf).div(0.4), 1)).max(0);
     const px = x.add(this.windOffset.x);
     const pz = z.add(this.windOffset.y);
-    const cover = texture(this.weatherTex, vec2(px, pz).div(CLOUD_FIELD.weatherTileM)).level(float(0)).r;
-    const coverage = pow(this.coverage.add(cover.sub(0.5).mul(0.5)).clamp(0, 1), 1.8);
-    const shape = sampleVolume(this.shape, vec3(px, h, pz).div(CLOUD_FIELD.shapeTileM)).mul(profile);
-    const base = max(shape.sub(float(1).sub(coverage)).div(max(coverage, 1e-3)), 0);
-    if (!detail) return base;
-    const det = sampleVolume(this.detail, vec3(px, h, pz).div(CLOUD_FIELD.detailTileM)).mul(0.35);
-    return max(base.sub(det).div(float(1).sub(det)), 0);
+    const weather = texture(this.weatherTex, vec2(px, pz).div(CLOUD_FIELD.weatherTileM)).level(float(0));
+    // cloudTop: the type's top, closing to the layer's top as the coverage reaches an overcast.
+    const c2 = this.coverage.mul(this.coverage);
+    const kind = weather.g.sqrt();
+    const topF = kind.add(float(1).sub(kind).mul(c2).mul(c2)).mul(0.65).add(0.35);
+    const profile = min(hf.div(0.08), 1).mul(topF.sub(hf).div(topF.mul(0.5)).clamp(0, 1)).max(0);
+    const coverage = pow(this.coverage.add(weather.r.sub(0.5).mul(0.5)).clamp(0, 1), 1.3);
+    // Shape and billows in one fetch (R, G): cloudField.billowed.
+    const sb = sampleVolume(this.shape, vec3(px, h, pz).div(CLOUD_FIELD.shapeTileM));
+    // cloudField.overcastSmoothing: billows and erosion fade as the layer closes into a deck.
+    const smoothing = float(1).sub(c2.mul(c2).mul(0.6));
+    const cut = sb.y.oneMinus().mul(CLOUD_FIELD.billowDepth).mul(smoothing);
+    const raw = max(sb.x.sub(cut).div(float(1).sub(cut)), 0);
+    const base = max(raw.mul(profile).sub(float(1).sub(coverage)).div(max(coverage, 1e-3)), 0);
+    // The light march and the ground shadows skip the detail but keep the gain, or light would reach
+    // four times deeper into a cloud than the eye does.
+    if (!detail) return base.mul(CLOUD_FIELD.densityGain).min(1);
+    // Detail warped by the shape, two octaves, wispy at the base and billowy above (cloudField.erode).
+    const warp = raw.sub(0.5).mul(CLOUD_FIELD.detailWarpM);
+    const d = vec3(px.add(warp), h, pz.sub(warp)).div(CLOUD_FIELD.detailTileM);
+    const k = CLOUD_FIELD.detailFine;
+    const det = sampleVolume(this.detail, d).x.mul(0.65).add(sampleVolume(this.detail, d.mul(k).add(vec3(0.37, 0, 0.71))).x.mul(0.35));
+    const mod = mix(det, float(1).sub(det), hf.mul(5).clamp(0, 1)).mul(0.4).mul(smoothing);
+    return max(base.sub(mod).div(float(1).sub(mod)), 0).mul(CLOUD_FIELD.densityGain).min(1);
   }
 
   /** Altitude along a view ray: h(t) = y₀ + t·dy + t²(1 − dy²)/2R (the terrain's curvature drop, inverted). */
@@ -288,13 +315,28 @@ export class Clouds {
               travelled += stepM;
               tauSun.addAssign(this.density(lx.add(sun.x.mul(along)), lh.add(sun.y.mul(along)), lz.add(sun.z.mul(along)), false).mul(stepM));
             }
-            tauSun.mulAssign(sigma);
+            // Half the view's extinction towards the sun: with the edge gain the cores saturate, and at
+            // full extinction the light died in the first tens of metres and every cloud went grey.
+            tauSun.mulAssign(sigma.mul(0.5));
             // Wrenninge octaves: a = 0.6, b = 0.3 — the energy of higher scattering orders.
             let ms: F = float(0);
             for (let k = 0; k < 4; k++) ms = ms.add(exp(tauSun.mul(-(0.3 ** k))).mul(phases[k]!).mul(0.6 ** k));
             const hf = lh.sub(this.base).div(this.top.sub(this.base)).clamp(0, 1);
-            const ambient = skyUp.mul(mix(float(0.7), float(1.5), hf)).add(groundUp.mul(float(1).sub(hf)));
-            const S = sunColour.mul(ms).add(ambient).mul(sigmaT);
+            // Sky light comes in from above, through the cloud over the point: the local density
+            // stands in for the column above it, up to 250 m of it (a sample up there cost a fifth
+            // more per step and lost the device on a software GPU). Diffuse light, so a softened
+            // extinction. Bases and the folds between towers go grey; the tops stay white — the
+            // contrast a flat ambient loses.
+            const upM = min(this.top.sub(lh), float(250)).max(0);
+            const skyVis = exp(dens.mul(upM).mul(CLOUD_EXTINCTION_PER_M * 0.25).negate());
+            const ambient = skyUp.mul(mix(float(0.6), float(1.4), hf)).mul(mix(float(0.45), float(1), skyVis)).add(groundUp.mul(float(1).sub(hf)));
+            // Beer–powder (Schneider 2015): light scattered towards the eye builds up over the first
+            // few tens of metres inside, so the thin rims seen away from the sun are darker than the
+            // body and every billow outlines itself; towards the sun the forward lobe wins and the
+            // rims glow (the silver lining) — the effect fades in that direction.
+            const powder = float(1).sub(exp(sigmaT.mul(-140)).mul(0.6));
+            const powderK = mix(powder, float(1), cosSun.mul(0.5).add(0.5).pow(2));
+            const S = sunColour.mul(ms).mul(powderK).add(ambient).mul(sigmaT);
             const stepT = exp(sigmaT.mul(dt).negate());
             // Integrate S·T over the step analytically (Hillaire 2016).
             scatter.addAssign(T.mul(S.sub(S.mul(stepT)).div(sigmaT)));
