@@ -169,6 +169,7 @@ export function buildStaticWorld(map: MapData, lib: MaterialLibrary): StaticWorl
     group.add(sills);
   }
   if (trim.awnings) group.add(staticMesh(trim.awnings, awningMaterial(), 'awnings'));
+  if (trim.roofPlant) group.add(staticMesh(trim.roofPlant, lib.look('metalDark').material, 'roofPlant'));
 
   let glass: InstancedMesh | null = null;
   const glassColliderIds: number[] = [];

@@ -1,4 +1,4 @@
-import { bumpMap, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalViewGeometry, normalWorld, positionWorld, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, bumpMap, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
@@ -311,7 +311,12 @@ export class MaterialLibrary {
         // Sheet: transmission 1, IOR 1.52. A transmission pass per pane is far
         // over budget with hundreds of panes, so glass is alpha-blended with the
         // same IOR for its Fresnel and reflects the environment probe.
-        const m = new MeshPhysicalNodeMaterial({ name, color: 0xe6ebeb, roughness: 0.02, metalness: 0, ior: 1.52, transparent: true, opacity: 0.18, side: DoubleSide });
+        // Glass scatters almost nothing itself (a near-white albedo lit by the sun read as frosted film); what
+        // it shows is the room through it and the sky off it, traded by Fresnel. Blending weights both by
+        // alpha, so alpha follows Schlick: ~15 % face-on (the room shows), most of it at a grazing look.
+        const m = new MeshPhysicalNodeMaterial({ name, color: 0x0c0e0f, roughness: 0.02, metalness: 0, ior: 1.52, transparent: true, side: DoubleSide });
+        const cosV = abs(dot(normalView, positionViewDirection)).clamp(0, 1);
+        m.opacityNode = mix(float(0.14), float(0.92), pow(float(1).sub(cosV), 5));
         m.depthWrite = false;
         return m;
       }

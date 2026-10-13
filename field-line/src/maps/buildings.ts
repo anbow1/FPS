@@ -131,6 +131,21 @@ export function enterableBuilding(b: MapBuilder, spec: BuildingSpec): void {
   box(spec.wallLook, 0, roofY, z0 + 0.15, W, PARAPET_M, 0.3);
   box(spec.wallLook, x0 + 0.15, roofY, 0, 0.3, PARAPET_M, D - 0.6);
   box(spec.wallLook, x1 - 0.15, roofY, 0, 0.3, PARAPET_M, D - 0.6);
+  // A cornice under the parapet (a projecting band that throws a shadow line) and a coping on it, as on the
+  // façade blocks round it (render/facadeTrim.ts). Out of reach, so they cost nothing as colliders.
+  const band = (look: BoxLook, y: number, h: number, out: number): void => {
+    box(look, 0, y, z1 + out / 2, W + 2 * out, h, out, false);
+    box(look, 0, y, z0 - out / 2, W + 2 * out, h, out, false);
+    box(look, x0 - out / 2, y, 0, out, h, D, false);
+    box(look, x1 + out / 2, y, 0, out, h, D, false);
+  };
+  band('concrete', roofY - 0.45, 0.28, 0.12);
+  band('concrete', roofY - 0.17, 0.14, 0.28);
+  // Coping: strips along the parapet's top only — the roof stays open (the last flight comes up through it).
+  box('concrete', 0, roofY + PARAPET_M, z1 - 0.15, W + 0.1, 0.07, 0.42, false);
+  box('concrete', 0, roofY + PARAPET_M, z0 + 0.15, W + 0.1, 0.07, 0.42, false);
+  box('concrete', x0 + 0.15, roofY + PARAPET_M, 0, 0.42, 0.07, D - 0.74, false);
+  box('concrete', x1 - 0.15, roofY + PARAPET_M, 0, 0.42, 0.07, D - 0.74, false);
 
   const cornerA = new Vec3(wx(x0 + t, z0 + t), baseY, wz(x0 + t, z0 + t));
   const cornerB = new Vec3(wx(x1 - t, z1 - t), roofY, wz(x1 - t, z1 - t));

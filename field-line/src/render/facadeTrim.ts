@@ -26,6 +26,8 @@ export interface FacadeTrim {
   plinth: BufferGeometry | null;
   parapets: Map<BoxLook, BufferGeometry>;
   awnings: BufferGeometry | null;
+  /** Roof plant: air-conditioning units, vents (painted metal). */
+  roofPlant: BufferGeometry | null;
 }
 
 /** Tile sizes (m) of the materials the trim uses, for world-scaled UVs. */
@@ -138,6 +140,7 @@ export function facadeTrim(boxes: readonly MapBox[], tiles: TrimTiles, playHalfM
   const plinth: BufferGeometry[] = [];
   const parapets = new Map<BoxLook, BufferGeometry[]>();
   const awnings: BufferGeometry[] = [];
+  const plant: BufferGeometry[] = [];
   const f = new Frame();
   for (const b of boxes) {
     const fac = b.facade;
@@ -156,6 +159,7 @@ export function facadeTrim(boxes: readonly MapBox[], tiles: TrimTiles, playHalfM
     const wallTile = tiles.wallM(b.look);
     const walls = parapets.get(b.look) ?? [];
     parapets.set(b.look, walls);
+    roofClutter(b, top, walls, plant, wallTile);
     SIDES.forEach((side, faceIndex) => {
       f.normal.copy(rot(side.n));
       f.right.copy(rot(side.r));
@@ -204,7 +208,45 @@ export function facadeTrim(boxes: readonly MapBox[], tiles: TrimTiles, playHalfM
     const g = join(list);
     if (g) walls.set(look, g);
   }
-  return { stone: join(stone), details: join(details), plinth: join(plinth), parapets: walls, awnings: join(awnings) };
+  return { stone: join(stone), details: join(details), plinth: join(plinth), parapets: walls, awnings: join(awnings), roofPlant: join(plant) };
+}
+
+/**
+ * What stands on a flat city roof: the stair and lift housing, air-conditioning units in a row, vent stacks,
+ * and on brick buildings chimney stacks. Seen from any height a bare roof slab reads as a model, not a roof.
+ */
+function roofClutter(b: MapBox, roofY: number, walls: BufferGeometry[], plant: BufferGeometry[], wallTile: number): void {
+  const seed = b.facade?.seed ?? 0;
+  const yaw = b.yawRad ?? 0;
+  const f = new Frame();
+  f.normal.set(Math.sin(yaw), 0, Math.cos(yaw));
+  f.right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  // Frame origin at the roof's centre; along = local X, out = local Z.
+  f.origin.set(b.center.x, roofY, b.center.z);
+  const hx = b.size.x / 2 - 2;
+  const hz = b.size.z / 2 - 2;
+  if (hx < 1 || hz < 1) return;
+  const at = (k: number): [number, number] => [(hash(seed, k, 1) * 2 - 1) * hx, (hash(seed, k, 2) * 2 - 1) * hz];
+  // Stair and lift housing.
+  const [sx, sz] = at(0);
+  walls.push(frameBox(f, sx, 1.4, sz, 3.2, 2.8, 2.6, wallTile, false));
+  // AC units in a row, on a pair of rails.
+  const [ax, az] = at(1);
+  const units = 2 + Math.floor(hash(seed, 3, 3) * 4);
+  for (let i = 0; i < units; i++) plant.push(frameBox(f, ax + (i - units / 2) * 1.25, 0.5, az, 1.0, 0.85, 0.75, 1, false));
+  plant.push(frameBox(f, ax - 0.6, 0.04, az, units * 1.25 + 0.4, 0.08, 0.1, 1, false));
+  // Vent stacks.
+  for (let i = 0; i < 3; i++) {
+    const [vx, vz] = at(4 + i);
+    plant.push(frameBox(f, vx, 0.6, vz, 0.28, 1.2, 0.28, 1, false));
+    plant.push(frameBox(f, vx, 1.25, vz, 0.45, 0.1, 0.45, 1, false));
+  }
+  if (b.look === 'brick' || b.look === 'brickDark') {
+    for (let i = 0; i < 2; i++) {
+      const [cx, cz] = at(8 + i);
+      walls.push(frameBox(f, cx, 0.8, cz, 0.7, 1.6, 1.4, wallTile, false));
+    }
+  }
 }
 
 /**
