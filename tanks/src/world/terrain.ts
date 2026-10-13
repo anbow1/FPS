@@ -102,8 +102,9 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground:
     const wet = float(1).sub(smoothstep(0.2, 2.4, positionWorld.y.sub(uWater).add(fine.sub(0.5).mul(0.8))));
     const beach = float(1).sub(smoothstep(1.2, 3.5, positionWorld.y.sub(uWater))).mul(float(1).sub(wet));
     const rockMask = smoothstep(0.24, 0.36, slope.add(mid.sub(0.5).mul(0.14)).add(macro2.sub(0.5).mul(0.06)));
-    // bare soil: small scattered patches, worn banks on moderate slopes, roads, the beach
-    const soilW = max(max(max(smoothstep(0.74, 0.86, mid.add(fine.sub(0.5).mul(0.4)).add(dry.mul(0.06))), smoothstep(0.15, 0.24, slope).mul(0.7)), smoothstep(0.05, 0.5, road)), beach.mul(0.8));
+    // bare soil: small scattered patches (a few per cent of a grazed meadow: worn spots, molehills — at a
+    // quarter of the ground it read as camouflage), worn banks on moderate slopes, roads, the beach
+    const soilW = max(max(max(smoothstep(0.81, 0.9, mid.add(fine.sub(0.5).mul(0.4)).add(dry.mul(0.06))), smoothstep(0.15, 0.24, slope).mul(0.7)), smoothstep(0.05, 0.5, road)), beach.mul(0.8));
     // layer weights: meadow, soil, rock, mud
     const w = mix(mix(vec4(float(1).sub(soilW), soilW, 0, 0), vec4(0, 0, 1, 0), rockMask), vec4(0, 0, 0, 1), wet).toVar();
     const flat = vec4(0.5, 0.5, 1, 1);

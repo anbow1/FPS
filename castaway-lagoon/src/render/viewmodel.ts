@@ -39,8 +39,11 @@ function sample(keys: readonly Key[], t: number, out: Target): Target {
 }
 
 // Wrist targets (camera space) and hand orientations for each hold.
-const REST_R: Key = [0, 0.19, -0.3, -0.36, -0.3, 0.1, -1.3];
-const REST_L: Key = [0, -0.19, -0.31, -0.37, -0.3, -0.1, 1.3];
+// Empty hands hang at the sides, below the frame (looking ahead you do not see your own relaxed hands): at
+// 0.3 m down only the fingertips peeked over the bottom edge, which read as two stubs. Holds and reaches
+// bring them up from here.
+const REST_R: Key = [0, 0.2, -0.47, -0.34, -0.3, 0.1, -1.3];
+const REST_L: Key = [0, -0.2, -0.48, -0.35, -0.3, -0.1, 1.3];
 const STONE_HOLD: Key = [0, 0.16, -0.2, -0.33, 0.75, 0.15, -2.6];
 const KNIFE_HOLD: Key = [0, 0.17, -0.2, -0.32, 0.55, 0.15, -1.35];
 const RIFLE_HIP = { pos: new Vector3(0.1, -0.095, -0.26), rot: new Euler(0.0, 0.04, -0.06) };

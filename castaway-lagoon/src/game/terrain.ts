@@ -117,9 +117,19 @@ export function heightAt(x: number, z: number): number {
   // The volcano across the sea to the north-east, and its skirt.
   const vr = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
   if (vr < VOLCANO.radiusM * 4) {
-    const cone = VOLCANO.heightM * Math.exp(-((vr / VOLCANO.radiusM) ** 1.25)) * (1 + 0.1 * ridged2(x * 0.004, z * 0.004, 4, 8));
+    const t = vr / VOLCANO.radiusM;
+    const cone = VOLCANO.heightM * Math.exp(-(t ** 1.25)) * (1 + 0.1 * ridged2(x * 0.004, z * 0.004, 4, 8));
     const crater = 30 * Math.exp(-((vr / 45) ** 2));
-    h = Math.max(h, cone - crater - 25);
+    // Erosion: rain cuts gullies straight down a volcano's flanks, leaving radial ridges between them
+    // (a smooth cone read as a placeholder). The noise is sampled round a circle, fast in angle and
+    // slow in radius, so its features run downhill and there is no seam where the angle wraps.
+    const ca = (x - VOLCANO.x) / Math.max(vr, 1);
+    const sa = (z - VOLCANO.z) / Math.max(vr, 1);
+    const flank = smoothstep(0.12, 0.45, t) * Math.exp(-t / 2.2);
+    const spurs = ridged2(ca * 3 + t * 0.35, sa * 3 - t * 0.25, 3, 31) - 0.5;
+    const gullies = ridged2(ca * 7 + t * 0.6, sa * 7 - t * 0.5, 3, 37) - 0.5;
+    const eroded = cone + flank * (spurs * 70 + gullies * 38);
+    h = Math.max(h, eroded - crater - 25);
   }
   return h;
 }
