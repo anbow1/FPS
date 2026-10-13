@@ -1,6 +1,7 @@
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, Group, InstancedMesh, type Material, Matrix4, Mesh, Quaternion, Vector3 } from 'three/webgpu';
 import type { BoxLook, MapBox, MapData } from '../maps/types.ts';
+import { awningMaterial, facadeTrim } from './facadeTrim.ts';
 import type { MaterialLibrary } from './materials.ts';
 
 // Static world geometry. Map boxes are merged per material into a few large
@@ -77,14 +78,23 @@ function appendBox(buf: GeometryBuffer, box: MapBox, rule: UvRule, capRule: UvRu
     const dr = along(f.r);
     const du = along(f.u);
     const base = buf.positions.length / 3;
+    // Façade sides: a whole number of bays from corner to corner (the bay stretched to fit), so no window
+    // is cut by a corner; u starts at the face's left corner, plus a whole-number offset per building so
+    // neighbouring blocks do not repeat each other's rooms (roomInteriors.ts hashes the bay index).
+    const fitted = side && tileSize;
+    const bays = fitted ? Math.max(1, Math.round((2 * dr) / r.tileU)) : 1;
+    const tileU = fitted ? (2 * dr) / bays : r.tileU;
+    const leftU = box.center.x * right[0] + box.center.z * right[2] - dr;
+    const offsetU = fitted ? ((box.facade?.seed ?? 0) % 89) * 3 : 0;
     for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
       const px = box.center.x + n[0] * dn + right[0] * dr * a + up[0] * du * b;
       const py = box.center.y + n[1] * dn + right[1] * dr * a + up[1] * du * b;
       const pz = box.center.z + n[2] * dn + right[2] * dr * a + up[2] * du * b;
       buf.positions.push(px, py, pz);
       buf.normals.push(n[0], n[1], n[2]);
-      if (tileSize) buf.tiles.push(rule.tileU, rule.tileV);
-      if (side) buf.uvs.push((px * right[0] + pz * right[2]) / r.tileU, (py - r.baseY) / r.tileV);
+      if (tileSize) buf.tiles.push(tileU, rule.tileV);
+      if (fitted) buf.uvs.push((px * right[0] + pz * right[2] - leftU) / tileU + offsetU, (py - r.baseY) / r.tileV);
+      else if (side) buf.uvs.push((px * right[0] + pz * right[2]) / r.tileU, (py - r.baseY) / r.tileV);
       else buf.uvs.push((px * right[0] + pz * right[2]) / r.tileU, (px * up[0] + pz * up[2]) / r.tileV);
     }
     let list = pending.get(group);
@@ -149,6 +159,16 @@ export function buildStaticWorld(map: MapData, lib: MaterialLibrary): StaticWorl
   }
   const pipes = drainpipes([...facades.values()].flat());
   if (pipes) group.add(staticMesh(pipes, lib.look('metalDark').material, 'drainpipes'));
+  const trim = facadeTrim([...facades.values()].flat(), { stoneM: lib.look('concrete').tileM, plinthM: lib.look('stone').tileM, wallM: (look) => lib.look(look).tileM }, map.halfSizeM - 25);
+  if (trim.stone) group.add(staticMesh(trim.stone, lib.look('concrete').material, 'cornices'));
+  if (trim.plinth) group.add(staticMesh(trim.plinth, lib.look('stone').material, 'plinths'));
+  for (const [look, g] of trim.parapets) group.add(staticMesh(g, lib.look(look).material, `parapets-${look}`));
+  if (trim.details) {
+    const sills = staticMesh(trim.details, lib.look('concrete').material, 'sills');
+    sills.castShadow = false;
+    group.add(sills);
+  }
+  if (trim.awnings) group.add(staticMesh(trim.awnings, awningMaterial(), 'awnings'));
 
   let glass: InstancedMesh | null = null;
   const glassColliderIds: number[] = [];
@@ -237,7 +257,29 @@ function roadMarkings(map: MapData, lib: MaterialLibrary): Mesh {
     list.push(base, base + 1, base + 2, base, base + 2, base + 3);
   };
   const crossings = map.roads.map((r) => (r.a.x === r.b.x ? r.a.x : r.a.z));
-  const clearOfJunction = (a: number, half: number): boolean => crossings.every((c) => Math.abs(a - c) > half + 2);
+  // Lane lines stop short of each junction, leaving room for the crossing and the stop line.
+  const clearOfJunction = (a: number, half: number): boolean => crossings.every((c) => Math.abs(a - c) > half + 6);
+  // At every junction, on each of its four approaches: a zebra crossing (0.5 m bars, 0.5 m gaps, 3 m long)
+  // just outside the junction and a stop line across the incoming lanes behind it (traffic on the right).
+  const zCentres = map.roads.filter((r) => r.a.x === r.b.x).map((r) => r.a.x);
+  const xCentres = map.roads.filter((r) => r.a.z === r.b.z).map((r) => r.a.z);
+  for (const cx of zCentres) {
+    for (const cz of xCentres) {
+      const half = (map.roads[0]?.widthM ?? 14) / 2;
+      for (const dir of [-1, 1]) {
+        // The road along Z, approached from the ±Z side.
+        for (let x = cx - half + 0.75; x + 0.5 <= cx + half - 0.5; x += 1) quad(x, Math.min(cz + dir * (half + 1), cz + dir * (half + 4)), x + 0.5, Math.max(cz + dir * (half + 1), cz + dir * (half + 4)));
+        const sz = cz + dir * (half + 4.8);
+        const sx0 = dir > 0 ? cx + 0.2 : cx - half + 0.3;
+        quad(sx0, Math.min(sz, sz + dir * 0.3), sx0 + half - 0.5, Math.max(sz, sz + dir * 0.3));
+        // The road along X, approached from the ±X side.
+        for (let z = cz - half + 0.75; z + 0.5 <= cz + half - 0.5; z += 1) quad(Math.min(cx + dir * (half + 1), cx + dir * (half + 4)), z, Math.max(cx + dir * (half + 1), cx + dir * (half + 4)), z + 0.5);
+        const sx = cx + dir * (half + 4.8);
+        const sz0 = dir > 0 ? cz - half + 0.3 : cz + 0.2;
+        quad(Math.min(sx, sx + dir * 0.3), sz0, Math.max(sx, sx + dir * 0.3), sz0 + half - 0.5);
+      }
+    }
+  }
   for (const road of map.roads) {
     const alongZ = road.a.x === road.b.x;
     const c = alongZ ? road.a.x : road.a.z;

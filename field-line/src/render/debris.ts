@@ -28,8 +28,9 @@ export class Debris {
   readonly mesh: InstancedMesh;
   private readonly chunks: Chunk[] = [];
   private next = 0;
-  /** Ground height under a point (the game's terrain); set by the view before the first update. */
-  groundAt: (x: number, z: number) => number = () => 0;
+  /** Height of the highest surface under a point, below `maxY` (terrain, pavement, roofs); set by the effects. */
+  groundAt: (x: number, z: number, maxY: number) => number = () => 0;
+  private tick = 0;
 
   constructor(scene: Scene) {
     // An icosahedron with its corners pushed in and out: a broken, faceted lump rather than a ball.
@@ -83,6 +84,7 @@ export class Debris {
   update(dt: number): void {
     const step = Math.min(dt, 1 / 30);
     let any = false;
+    this.tick++;
     for (let i = 0; i < CAPACITY; i++) {
       const c = this.chunks[i] as Chunk;
       if (!c.alive) continue;
@@ -93,7 +95,8 @@ export class Debris {
         this.mesh.setMatrixAt(i, _zero);
         continue;
       }
-      if (Number.isNaN(c.groundY)) c.groundY = this.groundAt(c.pos.x, c.pos.z);
+      // What is under a flying chunk changes as it crosses a kerb or leaves a roof: look again every few frames.
+      if (Number.isNaN(c.groundY) || (!c.resting && ((i + this.tick) & 3) === 0)) c.groundY = this.groundAt(c.pos.x, c.pos.z, c.pos.y + 0.05);
       const half = c.scale.y * 0.5;
       if (!c.resting) {
         c.vel.y -= GRAVITY * step;

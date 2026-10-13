@@ -16,7 +16,11 @@ const ROAD_WIDTH_M = 4 * CITY_SCALE.laneM; // 14 m
 const INNER_ROAD_M = 60; // road centre lines at ±60 and ±150
 const OUTER_ROAD_M = 150;
 const ROAD_CENTRES = [-OUTER_ROAD_M, -INNER_ROAD_M, INNER_ROAD_M, OUTER_ROAD_M];
-const EDGE_M = 190; // roads run to here; tall buildings close the map beyond
+const EDGE_M = 190;
+/** The road grid as the render needs it (render/cityRoad.ts): positive centre lines (mirrored), width, end. */
+export const CITY_ROADS = { centresM: [INNER_ROAD_M, OUTER_ROAD_M] as const, widthM: ROAD_WIDTH_M, edgeM: EDGE_M } as const;
+/** Wall above the top storey's windows, covered by the cornice and parapet. */
+export const PARAPET_ZONE_M = 1.0; // roads run to here; tall buildings close the map beyond
 
 function onRoad(x: number, z: number): boolean {
   const h = ROAD_WIDTH_M / 2;
@@ -79,7 +83,7 @@ export function buildCity(): MapData {
   // --- Map edge: tall façades behind the outer road, road ends barricaded.
   for (const side of [-1, 1]) {
     for (let a = -180; a <= 180; a += 30) {
-      const h = 24 + (Math.abs(a * 7 + side * 13) % 5) * 5;
+      const h = fitStoreys(24 + (Math.abs(a * 7 + side * 13) % 5) * 5, 3.2);
       const along = a;
       if (ROAD_CENTRES.some((c) => Math.abs(along - c) < roadH + 1)) {
         b.prop('container', along, side * 178, Math.PI / 2, { baseY: 0 });
@@ -87,7 +91,7 @@ export function buildCity(): MapData {
         continue;
       }
       b.boxOnBase('brickDark', along, kerb, side * 180, 26, h, 16, 0, { facade: { storeyM: 3.2, bayM: 3.6, seed: a + side } });
-      b.boxOnBase('concrete', side * 180, kerb, along, 16, h + 4, 26, 0, { facade: { storeyM: 3.2, bayM: 3.6, seed: a * 3 + side } });
+      b.boxOnBase('concrete', side * 180, kerb, along, 16, h + 3.2, 26, 0, { facade: { storeyM: 3.2, bayM: 3.6, seed: a * 3 + side } });
     }
   }
   for (const [x, z, sx, sz] of [[0, -198, 400, 1], [0, 198, 400, 1], [-198, 0, 1, 400], [198, 0, 1, 400]] as const) {
@@ -135,6 +139,14 @@ export function buildCity(): MapData {
   };
 }
 
+/**
+ * A façade block's height: whole storeys plus the parapet zone the cornice covers (render/facadeTrim.ts),
+ * so the top storey's windows are never cut by the roof line.
+ */
+export function fitStoreys(heightM: number, storeyM: number): number {
+  return Math.max(2, Math.round(heightM / storeyM)) * storeyM + PARAPET_ZONE_M;
+}
+
 function roadSegments(): MapData['roads'] {
   const out: MapData['roads'] = [];
   for (const c of ROAD_CENTRES) {
@@ -156,10 +168,11 @@ function facadeBlock(b: MapBuilder, cx: number, cz: number): void {
       const x = cx + sx * (alley / 2 + quad / 2);
       const z = cz + sz * (alley / 2 + quad / 2);
       const seed = Math.abs(cx * 31 + cz * 17 + n * 7);
-      const h = 12 + (seed % 6) * 3.2;
+      const storeyM = seed % 2 === 0 ? 3.0 : 3.4;
+      const h = fitStoreys(12 + (seed % 6) * 3.2, storeyM);
       const look: BoxLook = seed % 3 === 0 ? 'concrete' : seed % 3 === 1 ? 'brick' : 'plaster';
       // Set back 3 m from the kerb for the pavement.
-      b.boxOnBase(look, x, kerb, z, quad - 6, h, quad - 6, 0, { facade: { storeyM: seed % 2 === 0 ? 3.0 : 3.4, bayM: 3.2, seed } });
+      b.boxOnBase(look, x, kerb, z, quad - 6, h, quad - 6, 0, { facade: { storeyM, bayM: 3.2, seed } });
       n++;
     }
   }

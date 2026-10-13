@@ -1,9 +1,11 @@
-import { bumpMap, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, normalMap, normalWorld, positionWorld, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { bumpMap, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalViewGeometry, normalWorld, positionWorld, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
 import { skyVisibilityNode } from './interior.ts';
-import { roomInteriorNode } from './roomInteriors.ts';
+import { roomHash, roomInteriorNode } from './roomInteriors.ts';
+import { shopfront } from './shopfront.ts';
+import { cityRoad } from './cityRoad.ts';
 import { facadeWear } from './facadeWear.ts';
 import * as P from './patterns.ts';
 import * as PL from './plantPatterns.ts';
@@ -203,17 +205,31 @@ export class MaterialLibrary {
   facade(look: BoxLook): LookMaterial {
     let m = this.facades.get(look);
     if (!m) {
-      const wall = this.wallSampler(look);
-      const ts = set(`facade-${look}`, 512, () => P.facade(wall, 0x3c3c3e), 2);
+      const wall = this.wallSampler(look, true);
+      // Real-size bricks need the texels: a course is ~13 px at 1024 over a 3 m storey.
+      const brickLike = look === 'brick' || look === 'brickDark';
+      const ts = set(`facade-${look}`, brickLike ? 1024 : 512, () => P.facade(wall, 0x3c3c3e), 2);
       const mat = wettable(ts, `facade-${look}`);
+      // The ground storey is shopfronts (shopfront.ts), drawn over the window pattern.
+      const sf = shopfront();
       // Clear glass (the texture's glossiest texels) shows the room behind it, so it barely scatters itself.
-      const pane = float(1).sub(smoothstep(0.08, 0.25, texture(ts.ormMap).g));
-      const base = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness));
+      const pane = mix(float(1).sub(smoothstep(0.08, 0.25, texture(ts.ormMap).g)), sf.glass, sf.cover);
+      const base = mix(texture(ts.map).rgb, sf.albedo, sf.cover).mul(mix(float(1), float(0.56), wetness));
       // Weather and people on the wall (facadeWear.ts); the glass stays clean and dark.
       const wear = facadeWear(base, pane);
       const albedo = mix(wear.colour, base.mul(0.2), pane);
       mat.colorNode = albedo;
-      mat.roughnessNode = mix(mix(texture(ts.ormMap).g, float(0.35), wetness), float(0.85), wear.paper);
+      // Glass, frame and fascia are flat: the wall's relief must not show through them.
+      const relief = mix(float(1), float(0.35), wetness);
+      const surface = mix(normalMap(texture(ts.normalMap).xyz, vec2(relief, relief)) as unknown as Node<'vec3'>, normalViewGeometry, sf.cover);
+      // No two panes in a real façade lie in one plane: each is set a fraction of a degree off, so each
+      // reflects its own piece of sky and street instead of the wall of windows mirroring one grey.
+      const ph = roomHash();
+      const paneTilt = vec3(fract(ph.mul(3.1)).sub(0.5), fract(ph.mul(7.7)).sub(0.5).mul(0.6), fract(ph.mul(5.3)).sub(0.5)).mul(0.07);
+      const tilted = normalize(normalViewGeometry.add(cameraViewMatrix.mul(vec4(paneTilt, 0)).xyz));
+      mat.normalNode = mix(surface, tilted, pane);
+      const rough = mix(texture(ts.ormMap).g, sf.roughness, sf.cover);
+      mat.roughnessNode = mix(mix(rough, float(0.35), wetness), float(0.85), wear.paper);
       mat.clearcoatNode = wetness.mul(float(1).sub(wear.paper.mul(0.6)));
       const rooms = roomInteriorNode(pane);
       const lamps = lampLit(albedo);
@@ -233,12 +249,15 @@ export class MaterialLibrary {
     return m;
   }
 
-  private wallSampler(look: BoxLook): TexelSampler {
+  /** `facade`: for a façade tile (one bay × one storey) rather than a metre, so bricks keep their real size. */
+  private wallSampler(look: BoxLook, facade = false): TexelSampler {
+    const cols = facade ? 13 : 4;
+    const rows = facade ? 38 : 12;
     switch (look) {
       case 'brick':
-        return P.brick(0x8a4b3a, 0x8f8b85);
+        return P.brick(0x8a4b3a, 0x8f8b85, cols, rows);
       case 'brickDark':
-        return P.brick(0x6a3f33, 0x7a7672);
+        return P.brick(0x6a3f33, 0x7a7672, cols, rows);
       case 'plaster':
         return P.plaster(0xb3aa9a);
       default:
@@ -296,13 +315,22 @@ export class MaterialLibrary {
         m.depthWrite = false;
         return m;
       }
-      case 'asphalt':
-        return wettable(set('asphalt', 512, () => P.asphalt(0x3a3a3c, 0.92), 2), name);
+      case 'asphalt': {
+        // The city's roads: the aggregate texture plus the street's wear and furniture (cityRoad.ts).
+        const m = wettable(set('asphalt', 512, () => P.asphalt(0x3a3a3c, 0.92), 1.4), name);
+        cityRoad(m);
+        return m;
+      }
       case 'roadPaint': {
         const m = wettable(set('roadPaint', 64, () => P.finish(0xd6d6d0, 0.6, 0, 8), 0.3), name);
         m.polygonOffset = true;
-        m.polygonOffsetFactor = -2;
-        m.polygonOffsetUnits = -2;
+        // The depth buffer is reversed (near = 1) and three.js passes the bias through unflipped, so a
+        // positive bias pulls the paint toward the camera; the negative one hid every marking under the road.
+        m.polygonOffsetFactor = 2;
+        m.polygonOffsetUnits = 2;
+        // Worn by tyres: the paint is gone in patches, down to the asphalt.
+        const worn = smoothstep(0.3, 0.75, mx_noise_float(positionWorld.xz.mul(2.3))).mul(0.8);
+        m.colorNode = mix(m.colorNode as Node<'vec3'>, vec3(0.04, 0.04, 0.042), worn);
         return m;
       }
       case 'grass':

@@ -43,9 +43,11 @@ export class Decals {
       transparent: true,
       opacity: 0.6,
       depthWrite: false,
+      // Reversed depth buffer (near = 1) and three.js passes the bias through unflipped: positive pulls
+      // the mark toward the camera. A negative one pushed every track and scorch under the ground.
       polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -4,
+      polygonOffsetFactor: 2,
+      polygonOffsetUnits: 4,
     });
     addThermalConst(trackMat, 0.1);
     this.tracks = new DecalRing(trackGeo, trackMat, 6000);
@@ -55,8 +57,8 @@ export class Decals {
       opacity: 0.85,
       depthWrite: false,
       polygonOffset: true,
-      polygonOffsetFactor: -3,
-      polygonOffsetUnits: -6,
+      polygonOffsetFactor: 3,
+      polygonOffsetUnits: 6,
     });
     addThermalConst(scorchMat, 0.14);
     this.scorch = new DecalRing(trackGeo, scorchMat, 240);

@@ -27,6 +27,7 @@ import { Undergrowth } from './undergrowth.ts';
 import { VIEWMODEL_LAYER, VM_SCALE, ViewModel } from './viewmodel.ts';
 import { WorldFx } from './worldFx.ts';
 import { buildStaticWorld, type StaticWorld } from './worldMesh.ts';
+import { buildStreetFurniture } from './streetFurniture.ts';
 import { buildWetStreet, puddleAmount, rainRate, wetTime } from './wetStreet.ts';
 import { Rain } from './rain.ts';
 import { roomDaylight } from './roomInteriors.ts';
@@ -125,6 +126,8 @@ export class GameView {
     this.world = buildStaticWorld(map, lib);
     this.props = buildProps(map.props, lib);
     stage.scene.add(this.world.group, this.props.group);
+    const furniture = buildStreetFurniture(map, lib);
+    if (furniture) stage.scene.add(furniture);
     // The city in the rain: standing water, rings and reflections on the street, and the rain itself.
     if (map.id === 'city') {
       stage.scene.add(buildWetStreet(map, this.settings.quality));

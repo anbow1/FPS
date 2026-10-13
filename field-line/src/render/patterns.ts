@@ -74,17 +74,25 @@ export function pavement(colour: number): TexelSampler {
  * 0.25 × 0.083 m per brick with its joint — a tiling round-off of the real
  * 0.225 × 0.075 m module. Sheet: brick red #8A4B3A rough 0.80.
  */
-export function brick(colour: number, mortar: number): TexelSampler {
+/**
+ * Brick in running bond, `cols` bricks across and `rows` courses up the tile (even, so the bond wraps).
+ * A metre tile takes 4 × 12; a façade tile (one bay by one storey) takes real counts, about 13 × 38:
+ * a course is 65 mm of brick and 10 mm of mortar, so a 3 m storey holds some 38–40 of them.
+ */
+export function brick(colour: number, mortar: number, cols = 4, rows = 12): TexelSampler {
   const c = hex(colour);
   const m = hex(mortar);
+  // Both tilings put a brick at ~0.25 m and a course at ~0.08 m, so the joint shares (~10 mm) are the same.
+  const jointU = 0.04;
+  const jointV = 0.12;
   return (u, v, t) => {
-    const row = Math.floor(v * 12);
+    const row = Math.floor(v * rows);
     const shift = row % 2 === 0 ? 0 : 0.5;
-    const bu = u * 4 + shift;
+    const bu = u * cols + shift;
     const col = Math.floor(bu);
     const fu = bu - col;
-    const fv = v * 12 - row;
-    const joint = fu < 0.04 || fv < 0.12;
+    const fv = v * rows - row;
+    const joint = fu < jointU || fv < jointV;
     const noise = tileFbm(u * 16, v * 16, 16, 3, 7);
     if (joint) {
       put(t, m, 0.9 + noise * 0.15);

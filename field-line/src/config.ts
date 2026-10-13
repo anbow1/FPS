@@ -374,7 +374,8 @@ export const LIGHTING: Record<LightingPresetId, LightingPreset> = {
     sunAzimuthRad: 150 * DEG,
     turbidity: 2.2,
     cloudCover: 0.25,
-    fogDensityPerM: 0.00006,
+    // ~15 km visibility (Koschmieder 3.9 / β): a clear day over a city, so a street 300 m long greys a little.
+    fogDensityPerM: 0.00026,
     fogHeightFalloffPerM: 0.006,
     shadowSoftness: 1,
   },
@@ -408,7 +409,8 @@ export const LIGHTING: Record<LightingPresetId, LightingPreset> = {
     sunAzimuthRad: 250 * DEG,
     turbidity: 4,
     cloudCover: 0.3,
-    fogDensityPerM: 0.00015,
+    // Low sun through more air and evening haze: ~10 km.
+    fogDensityPerM: 0.0004,
     fogHeightFalloffPerM: 0.005,
     shadowSoftness: 1.4,
   },

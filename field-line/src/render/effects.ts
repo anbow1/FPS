@@ -4,6 +4,7 @@ import { LOCAL_LIGHTS, type SurfaceKind } from '../config.ts';
 import type { GameEvent } from '../game/events.ts';
 import type { Game } from '../game/game.ts';
 import { lightColour } from './colour.ts';
+import { supportHeight } from '../game/movement.ts';
 import { Debris } from './debris.ts';
 import { fireRadiance, ParticlePool, smokeGlowRadiance, spawnDefaults } from './particles.ts';
 
@@ -26,7 +27,7 @@ const MAX_TRACERS = 64;
 const FLASH_LIGHTS = 4;
 const MAX_SCORCHES = 12;
 /** Pre-exposure is applied on top of these (cd/m²): a fireball's billows and smoke lit from inside. */
-const FIRE_NITS = 2.2e4;
+const FIRE_NITS = 4.5e4;
 const SMOKE_GLOW_NITS = 5e3;
 
 // Decal tint per surface (sRGB): the chipped or dented look of each material.
@@ -81,7 +82,7 @@ export class Effects {
 
   constructor(scene: Scene) {
     // Decals: a round crater with a soft edge, tinted per material, a hair off the surface.
-    const decalMat = new MeshStandardNodeMaterial({ roughness: 0.9, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    const decalMat = new MeshStandardNodeMaterial({ roughness: 0.9, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 4 }); // reversed depth: positive pulls toward the camera
     const r = length(uv().sub(0.5));
     decalMat.opacityNode = float(1).sub(smoothstep(0.32, 0.5, r)).mul(0.92);
     decalMat.colorNode = vec3(1, 1, 1).mul(smoothstep(0.0, 0.35, r).mul(0.5).add(0.5));
@@ -108,7 +109,7 @@ export class Effects {
     const e = lightColour(2200);
     this.explosionColour.setRGB(e.r, e.g, e.b);
     // Scorch marks: soot thrown out in streaks from a dark centre, a ragged edge (no stamped disc).
-    const scorchMat = new MeshStandardNodeMaterial({ roughness: 0.97, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    const scorchMat = new MeshStandardNodeMaterial({ roughness: 0.97, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 3 });
     const q = uv().sub(0.5).mul(2);
     const rr = length(q);
     const rays = mx_noise_float(vec2(atan(q.y, q.x).mul(2.5), 3.1)).mul(0.5).add(0.5);
@@ -304,9 +305,9 @@ export class Effects {
       f.vx = R() * 7;
       f.vy = 1 + Math.random() * 4;
       f.vz = R() * 7;
-      f.sizeM = 0.7 + Math.random() * 0.4;
-      f.growMs = 2.5;
-      f.lifeSeconds = 0.25 + Math.random() * 0.25;
+      f.sizeM = 1.1 + Math.random() * 0.6;
+      f.growMs = 3;
+      f.lifeSeconds = 0.3 + Math.random() * 0.3;
       f.drag = 5;
       f.heat = 0.85 + Math.random() * 0.15;
       this.fire.spawn(f);
@@ -324,7 +325,8 @@ export class Effects {
       d.sizeM = 0.9 + Math.random() * 0.6;
       d.growMs = 0.9 + Math.random() * 0.5;
       d.lifeSeconds = 4 + Math.random() * 3;
-      d.colour = i % 3 === 0 ? 0x4a4440 : 0x6e6252;
+      // Pulverised paving and soil is pale; the explosive's own soot darkens a share of it.
+      d.colour = i % 3 === 0 ? 0x5c5650 : i % 3 === 1 ? 0x9a9184 : 0x8a7f70;
       d.opacity = 0.85;
       d.drag = 1.6;
       d.gravity = -0.12;
@@ -345,7 +347,7 @@ export class Effects {
       d.sizeM = 0.6;
       d.growMs = 1.4;
       d.lifeSeconds = 2.5 + Math.random() * 1.5;
-      d.colour = 0x7d6e5a;
+      d.colour = 0x9a8f7e;
       d.opacity = 0.7;
       d.drag = 2.8;
       d.gravity = -0.05;
@@ -357,7 +359,7 @@ export class Effects {
     for (let i = 0; i < 26; i++) {
       const a = Math.random() * Math.PI * 2;
       const out = 2 + Math.random() * 7;
-      this.debris3d.spawn(x + R() * 0.3, y + 0.15, z + R() * 0.3, Math.cos(a) * out, 3 + Math.random() * 8, Math.sin(a) * out, 0.03 + Math.random() * 0.07, i % 4 === 0 ? 0x77746e : 0x5e4f3e, 6 + Math.random() * 5);
+      this.debris3d.spawn(x + R() * 0.3, y + 0.15, z + R() * 0.3, Math.cos(a) * out, 3 + Math.random() * 8, Math.sin(a) * out, 0.04 + Math.random() * 0.1, i % 3 === 0 ? 0x5e4f3e : 0x8a857c, 6 + Math.random() * 5);
     }
     for (let i = 0; i < 16; i++) this.debris(x, y + 0.2, z, 0x6b5a47, 6, 0.08, 1.4);
     // 6 Embers: hot sparks thrown out under gravity.
@@ -392,9 +394,9 @@ export class Effects {
     fireRadiance.value = FIRE_NITS * this.preExposure;
     smokeGlowRadiance.value = SMOKE_GLOW_NITS * this.preExposure;
     const world = game.world;
-    this.debris3d.groundAt = (x, z) => world.terrainHeight(x, z);
+    this.debris3d.groundAt = (x, z, maxY) => supportHeight(world, x, z, 0, maxY, null);
     for (const p of this.pendingScorch) {
-      const h = world.terrainHeight(p.x, p.z);
+      const h = supportHeight(world, p.x, p.z, 0, p.y + 0.3, null);
       // Only a blast at the ground leaves a mark on it.
       if (p.y - h > 0.8) continue;
       const sz = 2.4 + Math.random() * 0.8;

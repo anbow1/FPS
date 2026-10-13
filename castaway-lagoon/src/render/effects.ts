@@ -53,7 +53,7 @@ export class Effects {
     this.flashCard = new Mesh(new PlaneGeometry(0.16, 0.16), flashMat);
     this.flashCard.visible = false;
     viewModel.muzzleAnchor.add(this.flashCard);
-    const decalMat = new MeshStandardNodeMaterial({ color: 0x1b1714, roughness: 0.9, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    const decalMat = new MeshStandardNodeMaterial({ color: 0x1b1714, roughness: 0.9, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: 4 }); // reversed depth: a positive bias pulls toward the camera
     const d = uv().sub(0.5).length().mul(2);
     decalMat.opacityNode = float(1).sub(smoothstep(0.35, 1.0, d)).mul(0.9);
     this.decals = new InstancedMesh(new CircleGeometry(0.5, 10), decalMat, DECALS);
