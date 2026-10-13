@@ -341,7 +341,7 @@ Measured on the forest map (SwiftShader, 640×360): 516 → ~130 draw calls,
    them), which is the cheap "invisible proxy" the high-end pipelines add
    separately. Impostors therefore need no collision of their own.
 
-### 5.6 Grass from real blades (`render/grassField.ts`, shared by all three games)
+### 5.6 Grass from real blades (`render/grassField.ts`, shared by all four games)
 
 Grass cards (a few crossed quads per tuft) read as paper on a phone at any
 distance under 10 m, and every tuft is its own instance. The shared field
@@ -378,6 +378,13 @@ draws **individual Bezier blades**, generated entirely in the vertex stage:
    `stamp(x, z, r, dirX, dirZ, strength)` is called for the feet each frame
    (bigger when prone), for hulls in Tanks and with a 4 m radius for
    explosions; cells decay back exponentially over a few seconds.
+6b. **Wind from a point** (`blow`): a rotor's downwash or a blast lays the
+   blades outward over a disc and sets them thrashing (A channel of the
+   trampling map, decaying in 0.35 s). Held, not accumulated: call it every
+   frame while it blows. Ridgeline drives it from the rotor (§12.6).
+6c. **Functions instead of grids**: the ground height and the density may be
+   TSL functions of the root (`GrassGroundNode`, `GrassSurfaceNode`), and the
+   density function may return the ground's colour for the blades to take.
 7. **Per-game scale.** `widthScale`/`heightScale` and the colours are options:
    Tanks views the ground from 3–10 m up, so its blades are 3.2× wider, 1.3×
    taller and brighter (thin blades at that range alias into stripes darker
@@ -1281,6 +1288,41 @@ in the same place when you come back.
   callback (see §11).
 - The game logic reads the same density formula (`sim/cloudField.ts`), so
   what the player sees hiding him is what the AI cannot see through.
+- **What made them read as clouds, not grey cotton** (Ridgeline, after a
+  screenshot tour: soft blobs of one height, flat grey, blurred edges):
+  1. **Cloud types in the weather map** (its G channel): a type 0…1 sets
+     each cloud's relative top, 0.35 (flat stratocumulus) to 1 (cumulus to
+     the layer's top), so one layer holds towers beside low heaps. The
+     spread closes as the coverage reaches 1, or an overcast has holes.
+  2. **Height profile**: a flat base rounded over the bottom 8 %, tapering
+     over the upper half of the cloud's own top (towers narrow as they rise).
+  3. **Detail erosion, Schneider's way**: two octaves of the Worley detail
+     (the second 3.1× finer), its coordinates warped by the shape value
+     (±130 m, curls the edges), and inverted above the base — wispy
+     undersides, billowy tops. Detail voxels went from 50 m to ~7 m.
+  4. **Billows in the shape volume** (its G channel, a Worley fbm with cells
+     of 1.1 km to 280 m, fetched with the shape in one RG lookup): a remap
+     `(shape − cut) / (1 − cut)`, `cut = 0.4 (1 − billow)`, carves grooves
+     between cells and leaves domes. The light march sees them, so a body
+     shades as heaped billows, not a smooth slab; zero extra fetches.
+  5. **Hard edges**: density × 4, clamped to 1, after the erosion. The
+     coverage remap ramps density over the shape noise's own scale (100 m+),
+     a dozen pixels of fuzz from a few kilometres. Keep the gain in the
+     light march and the ground shadows too, but march the light at **half
+     the view extinction**, or the saturated cores go grey.
+  6. **Sky occlusion inside the cloud**: the local density stands in for the
+     column above (`exp(−ρ σ min(top − h, 250 m) · 0.25)`) and scales the
+     ambient term. A real sample up there cost a fifth more per step and
+     **lost the WebGL device** on SwiftShader (black frames, "context
+     lost"): count fetches per step before adding any.
+  7. **Beer–powder** (Schneider 2015) on the sun term, at 60 %:
+     `1 − 0.6 exp(−140 σt)`, faded out towards the sun. Rims seen away from
+     the sun darken and every billow outlines itself.
+  8. **Overcasts are smoother**: billows and erosion scale by
+     `1 − 0.6 c⁴`; at full coverage a deck otherwise comes out holed.
+  9. Every one of these changes the coverage statistics: re-fit the coverage
+     exponent against the test that measures cloudy columns (1.8 → 1.3
+     here), on the CPU and in the shader together.
 
 ### 12.5 Vehicles, wrecks and effects in the open
 
@@ -1298,6 +1340,59 @@ in the same place when you come back.
   scattering lobe; its noise scale is for big trails, so keep widths ≥ 0.25 m.
 
 ---
+
+### 12.6 The ground from a helicopter (Ridgeline)
+
+A colour-only terrain shader (fields, heath, strata from noise) holds up from
+1 km and falls apart below 100 m: the pad, a low hover and the pilot's seat
+showed flat green plates. What fixed it, all from the other games' kits:
+
+1. **One land-cover function for every consumer** (`render/landCover.ts`):
+   world position, baked normal and cover map in; air-view albedo, the
+   close-range layer weights (meadow, soil, rock, litter) and the grass
+   density (tall sward, short stubble/heath, sedge, canopy shade) out. Pure
+   ALU plus its inputs, so the terrain runs it per fragment and the grass per
+   blade (vertex stage, `texture().level(0)` for the maps).
+2. **Close-range layers as ratios** (`render/groundTextures.ts`, after Tanks):
+   four procedural 512² layers (256² Low) with height in alpha and normal +
+   cavity AO in a second array. The terrain multiplies its air-view colour by
+   each layer's albedo **divided by the layer's mean**: the mips average the
+   ratio to 1, so from altitude the land is exactly what it was, and from the
+   pad it has blades, clods, pebbles, joints and needles. Height blend,
+   stochastic tiling on High, rock projected on the slope's own plane, and a
+   second lookup 7.3× coarser and rotated, which carries the pattern to a few
+   hundred metres where the first has mipped away. Skip all lookups beyond
+   4 km. Where the air view has no colour for a layer (worn heath, the floor
+   under the crowns seen from below them), use the layer's own mean colour.
+3. **Meadow mottling** (two noise lookups at 1.9 m and 7.3 m: tussocks,
+   yellower and bluer patches), **worn bare patches**, **mower's swaths**
+   (2.6 m bands, faded by 2.5 km before they alias), tracks as darker earth
+   instead of white lines, and a wider per-field brightness range. Procedural
+   noise has no mips: fade every such term out by distance.
+4. **Real grass blades** from the shared `grassField.ts`, now taking the ground
+   and the density as shader functions, fed from **two small maps baked
+   round the camera** (105 m at 0.5 m texels, one quad pass each, again when
+   the camera has moved 4 m): density (RGBA8) and colour + height (RGBA16F,
+   height relative to the camera's ground). Evaluating the land cover and
+   the mesh height per blade vertex (twenty noises, nine loads, half a
+   million vertices) **lost the GPU device**. The height is the rendered
+   mesh's own (`meshHeightNode`: level-0 vertices are the bilinear at the
+   10 m lattice, cut b–c like the patch index buffer); blades take the
+   colour of the field they stand in (`groundTint` 0.8); off above 90 m. The
+   ridge shadow reaches them through `material.userData.shadowFactor`.
+   Bake passes write `fragmentNode` (the colour path would clamp heights).
+4b. **Matte blades** (`matte: true`: a physical material with
+   `specularIntensity: 0`): a blade's shading normal leans up, so from a few
+   metres up it is seen at a grazing angle where Fresnel reflects ~40 % of
+   the sky; under Ridgeline's bright sky probe the meadow turned to frost.
+   A Lambert material lost the sky's diffuse light too and drew black dashes.
+5. **Rotor downwash**: `grass.blow(x, z, r, strength)` lays the blades outward
+   from the hub's ground point and sets them thrashing (the trampling map's
+   A channel, decaying in 0.35 s; the shader pulses the push and whips each
+   blade across it at its own phase). Strength from the thrust over the
+   weight, the rotor speed squared and `(1 − h / 2.5D)²`; radius
+   `R · (1.7 + h/D)`; the trampling window follows the helicopter, not the
+   chase camera (`update(..., focus)`), at 0.45 m cells (58 m).
 
 ## 13. Cockpits, displays and the HUD
 
