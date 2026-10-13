@@ -183,7 +183,9 @@ export class Foliage {
     const nearM = FOLIAGE_LOD.nearCrownM[quality];
     const shrubM = FOLIAGE_LOD.shrubM[quality];
     const nearCrown = pineCrown(12, 8, true, 1, 11);
-    const farCrown = pineCrown(4, 5, false, 1.15, 23);
+    // Mid distance (between the full crown and the impostor): fewer, wider whorls, still crossed. Four flat whorls
+    // read as a bare pole with a few twigs against the sky.
+    const farCrown = pineCrown(7, 6, true, 1.12, 23);
     const trunk = pineTrunk();
     const shrubs = [shrubGeometry(5), shrubGeometry(17)];
     const needles = swayingMaterial(lib.get('needles'), 0.18);
