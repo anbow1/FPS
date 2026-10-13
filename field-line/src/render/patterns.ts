@@ -251,12 +251,13 @@ export function grass(): TexelSampler {
     const patch = tileFbm(u * 3, v * 3, 3, 3, 83);
     const fine = tileFbm(u * 24, v * 24, 24, 3, 84);
     const base: Rgb = [ground[0] + (moss[0] - ground[0]) * fine, ground[1] + (moss[1] - ground[1]) * fine, ground[2] + (moss[2] - ground[2]) * fine];
-    const [hit, r] = fibreAt(u, v, 40, 3, 0.05, 0.0028, 85);
-    if (hit >= 0) {
+    // Sparse enough that moss and earth show between them (three per cell read as a doormat).
+    const [hit, r] = fibreAt(u, v, 36, 2, 0.05, 0.0026, 85);
+    if (hit >= 0 && r > 0.25) {
       const dryK = Math.min(1, Math.max(0, patch * 1.5 - 0.3 + (r - 0.5) * 0.6));
       const c: Rgb = [green[0] + (dry[0] - green[0]) * dryK, green[1] + (dry[1] - green[1]) * dryK, green[2] + (dry[2] - green[2]) * dryK];
-      put(t, c, 0.8 + hit * 0.3);
-      t.height = 0.5 + hit * 0.5;
+      put(t, c, 0.78 + hit * 0.15);
+      t.height = 0.45 + hit * 0.25;
       t.ao = 1;
     } else {
       put(t, base, 0.7 + fine * 0.3);
@@ -285,8 +286,8 @@ export function soil(colour = 0x6b5a47, litter = 0): TexelSampler {
       const [hit, r] = fibreAt(u, v, 48, 2, 0.032, 0.0018, 94);
       if (hit >= 0 && r < litter) {
         const k = (r / litter) * 0.8;
-        put(t, [needle[0] + (oldNeedle[0] - needle[0]) * k, needle[1] + (oldNeedle[1] - needle[1]) * k, needle[2] + (oldNeedle[2] - needle[2]) * k], 0.85 + hit * 0.3);
-        t.height = 0.6 + hit * 0.4;
+        put(t, [needle[0] + (oldNeedle[0] - needle[0]) * k, needle[1] + (oldNeedle[1] - needle[1]) * k, needle[2] + (oldNeedle[2] - needle[2]) * k], 0.85 + hit * 0.15);
+        t.height = 0.55 + hit * 0.2;
       }
     }
   };
