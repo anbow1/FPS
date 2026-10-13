@@ -1,4 +1,4 @@
-import { abs, bumpMap, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, bumpMap, cameraPosition, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, screenCoordinate, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
@@ -99,6 +99,12 @@ function leafCard(ts: TextureSet, name: string, translucent: boolean): MeshStand
   const m = translucent ? translucentLeaf(ts, name) : standard(ts, name);
   m.alphaTest = 0.5;
   m.side = DoubleSide;
+  // Leaves within an arm's length of the eye dissolve (a screen-space dither, smoothed by TRAA): standing in
+  // a bush, a card a few centimetres from the lens filled a corner of the screen with one blurred leaf.
+  // In the shadow pass the camera is the light's, far away, so shadows keep every leaf.
+  const near = smoothstep(0.3, 0.85, positionWorld.distance(cameraPosition));
+  const dither = fract(sin(dot(screenCoordinate.xy, vec2(12.9898, 78.233))).mul(43758.5453));
+  m.opacityNode = texture(ts.map).a.mul(step(dither, near));
   return m;
 }
 
