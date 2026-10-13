@@ -239,6 +239,18 @@ function streetDressing(b: MapBuilder): void {
       if (k % 5 === 0) {
         b.prop('lampPost', c - roadH - 0.8, a, Math.PI / 2, { baseY: kerb });
         b.prop('lampPost', a, c + roadH + 0.8, 0, { baseY: kerb });
+      } else if (k % 4 === 2 && Math.abs(c) < EDGE_M - 30) {
+        // Street trees every 20 m on both pavements, 1.3 m in from the kerb in a grated pit; three-quarter
+        // size so the crowns clear the façades 3 m behind them.
+        for (const [tx, tz] of [
+          [c - roadH - 1.3, a + 2.5],
+          [c + roadH + 1.3, a + 2.5],
+          [a + 2.5, c - roadH - 1.3],
+          [a + 2.5, c + roadH + 1.3],
+        ] as const) {
+          b.prop('streetTree', tx, tz, (k * 1.7) % 6.28, { baseY: kerb, scale: 0.72 + ((k * 7) % 5) * 0.03 });
+          b.boxOnBase('metalDark', tx, kerb, tz, 1.2, 0.012, 1.2, 0, { blocksVision: false });
+        }
       }
       // Wrecks and barriers mid-road: cover in the open.
       if (hash % 37 === 3) b.prop('carWreck', c + 1.5, a, 0.4 + (hash % 10) * 0.2, { colourIndex: hash % 6 });

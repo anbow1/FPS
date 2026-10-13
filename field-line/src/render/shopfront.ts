@@ -1,4 +1,4 @@
-import { dot, float, floor, fract, max, mix, sin, step, uv, vec2, vec3 } from 'three/tsl';
+import { abs, dot, float, floor, fract, max, mix, sin, step, uv, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 import { roomHash } from './roomInteriors.ts';
 
@@ -56,15 +56,26 @@ export function shopfront(): Shopfront {
   const paintB = mix(paintA, vec3(0.03, 0.04, 0.11), step(0.55, pick));
   const paintC = mix(paintB, vec3(0.02, 0.02, 0.02), step(0.72, pick));
   const paint = mix(paintC, vec3(0.55, 0.5, 0.38), step(0.88, pick));
-  // Lettering: 8–14 characters centred on the fascia; strokes on a 3 × 5 grid with a gap column.
+  // Lettering: 8–14 characters centred on the fascia, each drawn as thin strokes between the nodes of a
+  // 3 × 5 grid (vertical strokes on three columns, horizontal on five rows), every stroke on or off by hash.
+  // Lines, not filled cells: it reads as a sans-serif name from across the street, not as a pixel font.
   const chars = floor(mix(float(8), float(15), fract(h.mul(7.9))));
   const bandU = f.x.sub(0.5).div(0.62).mul(chars).add(chars.mul(0.5));
   const charIdx = floor(bandU);
-  const inBand = step(0, bandU).mul(step(bandU, chars)).mul(box(f, 0, 0.8, 1, 0.93));
-  const sub = vec2(floor(fract(bandU).mul(4)), floor(f.y.sub(0.8).div(0.13).mul(5)));
+  const inBand = step(0, bandU).mul(step(bandU, chars)).mul(box(f, 0, 0.795, 1, 0.935));
+  // Glyph space: x 0…2 across the character (its last quarter is the gap), y 0…4 up the band.
+  const gx = fract(bandU).div(0.75).mul(2);
+  const gy = f.y.sub(0.8).div(0.13).mul(4);
+  const key = charIdx.add(h.mul(97));
+  const vx = floor(gx.add(0.5));
+  const vy = floor(gy).clamp(0, 3);
+  const vOn = step(0.5, hash(vec2(key.mul(7).add(vx), vy), 3)).mul(step(abs(gx.sub(vx)), 0.14));
+  const hy = floor(gy.add(0.5));
+  const hx = floor(gx).clamp(0, 1);
+  const hOn = step(0.56, hash(vec2(key.mul(5).add(hx), hy.add(20)), 4)).mul(step(abs(gy.sub(hy)), 0.1));
+  const inGlyph = step(-0.15, gx).mul(step(gx, 2.15)).mul(step(-0.1, gy)).mul(step(gy, 4.1));
   const space = step(fract(h.mul(3.3).add(charIdx.mul(0.37))), 0.12);
-  const stroke = step(0.48, hash(vec2(charIdx.mul(4).add(sub.x), sub.y.add(h.mul(97))), 3)).mul(step(sub.x, 2.5));
-  const letters = inBand.mul(stroke).mul(float(1).sub(space));
+  const letters = inBand.mul(inGlyph).mul(max(vOn, hOn)).mul(float(1).sub(space));
   const ink = mix(vec3(0.75, 0.62, 0.32), vec3(0.85, 0.84, 0.8), step(0.5, fract(h.mul(17.3))));
   const inkOnPaint = mix(ink, vec3(0.04, 0.04, 0.04), step(0.88, pick));
   const fasciaColour = mix(paint, inkOnPaint, letters);

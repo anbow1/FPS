@@ -129,10 +129,39 @@ export class MapBuilder {
       place(cursor, o.startM, 0, heightM, look);
       place(o.startM, o.startM + o.widthM, 0, o.bottomM, look);
       place(o.startM, o.startM + o.widthM, o.topM, heightM, look);
-      if (o.glass) place(o.startM, o.startM + o.widthM, o.bottomM, o.topM, 'glass');
+      if (o.glass) {
+        place(o.startM, o.startM + o.widthM, o.bottomM, o.topM, 'glass');
+        this.windowFrame(alongX, sign, x0, z0, baseY, thicknessM, o, interior);
+      }
       cursor = o.startM + o.widthM;
     }
     place(cursor, lengthM, 0, heightM, look);
+  }
+
+  /**
+   * The frame round a glazed opening (head, jambs, a bottom rail, a mullion in a wide one), set in the plane
+   * of the pane, and a sill under it that stands proud of both faces of the wall (stone outside, a board
+   * inside). Without them a window is a hole with glass in it.
+   */
+  private windowFrame(alongX: boolean, sign: number, x0: number, z0: number, baseY: number, thicknessM: number, o: Opening, interior: boolean): void {
+    const F = 0.065;
+    const depth = 0.1;
+    const strip = (fromM: number, toM: number, bottomM: number, topM: number, look: BoxLook, deep: number): void => {
+      const mid = (fromM + toM) / 2;
+      const len = toM - fromM;
+      const cx = alongX ? x0 + sign * mid : x0;
+      const cz = alongX ? z0 : z0 + sign * mid;
+      this.boxOnBase(look, cx, baseY + bottomM, cz, alongX ? len : deep, topM - bottomM, alongX ? deep : len, 0, { interior, blocksVision: false });
+    };
+    const a = o.startM;
+    const b = o.startM + o.widthM;
+    strip(a, b, o.topM - F, o.topM, 'metalDark', depth);
+    strip(a, a + F, o.bottomM, o.topM - F, 'metalDark', depth);
+    strip(b - F, b, o.bottomM, o.topM - F, 'metalDark', depth);
+    strip(a + F, b - F, o.bottomM, o.bottomM + F, 'metalDark', depth);
+    if (o.widthM > 1.3) strip((a + b) / 2 - F / 2, (a + b) / 2 + F / 2, o.bottomM + F, o.topM - F, 'metalDark', depth);
+    // Windows only (a glazed door reaches the floor and has no sill).
+    if (o.bottomM > 0.3) strip(a - 0.06, b + 0.06, o.bottomM - 0.05, o.bottomM, 'concrete', thicknessM + 0.14);
   }
 
   /**
