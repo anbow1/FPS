@@ -125,10 +125,12 @@ export function heightAt(x: number, z: number): number {
     // slow in radius, so its features run downhill and there is no seam where the angle wraps.
     const ca = (x - VOLCANO.x) / Math.max(vr, 1);
     const sa = (z - VOLCANO.z) / Math.max(vr, 1);
-    const flank = smoothstep(0.12, 0.45, t) * Math.exp(-t / 2.2);
-    const spurs = ridged2(ca * 3 + t * 0.35, sa * 3 - t * 0.25, 3, 31) - 0.5;
-    const gullies = ridged2(ca * 7 + t * 0.6, sa * 7 - t * 0.5, 3, 37) - 0.5;
-    const eroded = cone + flank * (spurs * 70 + gullies * 38);
+    // The far mesh is a 20 m grid: features must span several cells (about ten spurs and twenty gullies
+    // round the cone, 60–200 m apart) or they average away.
+    const flank = smoothstep(0.1, 0.4, t) * Math.exp(-t / 2.4);
+    const spurs = ridged2(ca * 1.6 + t * 0.3, sa * 1.6 - t * 0.2, 2, 31) - 0.5;
+    const gullies = ridged2(ca * 3.5 + t * 0.5, sa * 3.5 - t * 0.4, 2, 37) - 0.5;
+    const eroded = cone + flank * (spurs * 110 + gullies * 55);
     h = Math.max(h, eroded - crater - 25);
   }
   return h;
