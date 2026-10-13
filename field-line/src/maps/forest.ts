@@ -58,7 +58,8 @@ function baseHeight(x: number, z: number): number {
   if (td < 12) {
     const smooth = fbm2(x / 400, z / 400, 2, 11) * 9 + across * crest * saddle * 0.92;
     const k = 1 - td / 12;
-    h += (smooth - h) * k * k * 0.8;
+    // At most 0.8 m of cut or fill: a worn forest track sits a little below the ground, not in a trench.
+    h += Math.max(-0.8, Math.min(0.8, (smooth - h) * 0.8)) * k * k;
   }
   // Farm meadow is levelled.
   const fd = Math.hypot(x - FARM.x, z - FARM.z);
