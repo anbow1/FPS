@@ -98,20 +98,25 @@ export function pineSpray(): TexelSampler {
       }
     });
     if (best * bestR < 0.0065) return set(t, twig, 0.9, 0.9, 0.9, 0.7);
-    if (best > 1.1) return clear(t, inner);
-    // Needles: straight strokes leaving the twig on both sides, raked ~50° toward its tip, one every
-    // 0.0062 tile; each its own length. Gaps between them let the light through, as in a real spray.
+    // Ragged outline, as before: the spray's mass and its coverage stay (thin strokes alone left the crowns
+    // bare from below and vanished under the alpha test at a distance).
+    const ragged = 0.78 + tileNoise(u * 48, v * 48, 48, 211) * 0.3 + tileNoise(u * 13, v * 13, 13, 212) * 0.12;
+    if (best > ragged) return clear(t, inner);
+    // Needles inside it: straight strokes leaving the twig on both sides, raked ~50° toward its tip, one
+    // every 0.0062 tile, drawn in colour and relief; only in the outer quarter do the gaps between them open,
+    // so the edge is bristly instead of a blob's.
     const a = Math.abs(across);
     const rake = (alongM - a * 1.15) / 0.0062;
     const n = Math.floor(rake);
     const f = rake - n;
     const side = across < 0 ? 1 : 2;
-    const reach = bestR * (0.72 + hash2(n, seg * 3 + side, 214) * 0.38);
-    if (f > 0.6 || a > reach) return clear(t, inner);
-    const edge = a / reach; // 0 at the twig, 1 at the needle tip
+    const edge = best / ragged; // 0 at the twig, 1 at the needle tips
+    const onNeedle = f < 0.6;
+    if (!onNeedle && edge > 0.75) return clear(t, inner);
     const shade = hash2(n, seg * 7 + side, 215);
-    const c = mix(inner, outer, Math.min(1, edge * 0.75 + along * 0.2 + shade * 0.2));
-    set(t, c, 0.8 + shade * 0.35, 1 - Math.abs(f - 0.3) * 2.5, 0.78, 0.5 + edge * 0.5);
+    const c = mix(inner, outer, Math.min(1, edge * 0.75 + along * 0.2 + (onNeedle ? shade * 0.25 : 0)));
+    const k = onNeedle ? 0.85 + shade * 0.3 : 0.55;
+    set(t, c, k, onNeedle ? 1 - Math.abs(f - 0.3) * 2.5 : 0.1, 0.8, onNeedle ? 0.55 + edge * 0.45 : 0.4);
   };
 }
 
