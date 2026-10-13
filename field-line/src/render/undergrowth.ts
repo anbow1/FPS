@@ -1,5 +1,5 @@
 import { time, vec2 } from 'three/tsl';
-import { type BufferGeometry, Color, Group, type Material, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
+import { type BufferGeometry, Color, CylinderGeometry, Group, type Material, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
 import { GrassField } from './grassField.ts';
 import { InstanceStream } from './instanceStream.ts';
 import { fbm2 } from '../core/noise.ts';
@@ -10,7 +10,7 @@ import type { MapData } from '../maps/types.ts';
 import { addSway, swayingMaterial, windVector } from './foliage.ts';
 import { splatWeights } from './ground.ts';
 import type { MaterialLibrary } from './materials.ts';
-import { card, foldedStrip, merge, rand } from './meshkit.ts';
+import { card, foldedStrip, merge, rand, tube } from './meshkit.ts';
 
 // Render-only ground cover, the forest's equivalent of the lagoon's jungle
 // floor: a field of real grass blades wherever the ground is grass
@@ -38,15 +38,59 @@ interface Kind {
 const FERN: Kind = { densityPerM2: 0.06, fade: { high: [60, 80], low: [30, 42] }, sinkM: 1.4, scale: [0.7, 1.4] };
 const LOW_DENSITY = 0.3;
 
+/** Forest-floor litter: cones and twigs close round the player, fallen branches a little further. */
+const CONE: Kind = { densityPerM2: 0.5, fade: { high: [16, 22], low: [9, 12] }, sinkM: 0.1, scale: [0.8, 1.25] };
+const TWIG: Kind = { densityPerM2: 0.25, fade: { high: [16, 22], low: [9, 12] }, sinkM: 0.1, scale: [0.7, 1.4] };
+const BRANCH: Kind = { densityPerM2: 0.012, fade: { high: [40, 55], low: [24, 32] }, sinkM: 0.3, scale: [0.8, 1.3] };
+
+/** A pine cone lying on its side: an ovoid of overlapping scales (ridged rings), ~8 cm. */
+function coneGeometry(): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+  for (let i = 0; i < 4; i++) {
+    const t = i / 3;
+    const r = 0.012 + Math.sin(Math.PI * (0.15 + t * 0.75)) * 0.02;
+    parts.push(new CylinderGeometry(r * 0.6, r, 0.024, 6).rotateZ(Math.PI / 2).translate(-0.036 + t * 0.072, r * 0.9, 0));
+  }
+  return merge(parts, 'cone');
+}
+
+/** A dead twig: a thin crooked stick with a side shoot, lying flat. */
+function twigGeometry(seed: number): BufferGeometry {
+  const len = 0.35 + rand(seed, 1) * 0.3;
+  const bend = (rand(seed, 2) - 0.5) * 0.08;
+  const main = tube([new Vector3(-len / 2, 0.008, 0), new Vector3(0, 0.012, bend), new Vector3(len / 2, 0.008, -bend * 0.5)], [0.008, 0.007, 0.004], 5, 1);
+  const side = tube([new Vector3(0.02, 0.01, bend), new Vector3(0.1, 0.012, bend + 0.08)], [0.005, 0.003], 4, 1);
+  return merge([main, side], 'twig');
+}
+
+/** A fallen branch: a crooked bough with two side limbs, ~2 m, resting on the ground. */
+function branchGeometry(seed: number): BufferGeometry {
+  const L = 1.6 + rand(seed, 1) * 0.8;
+  const pts = [0, 0.33, 0.66, 1].map((t, k) => new Vector3(-L / 2 + t * L, 0.04 - t * 0.015, (rand(seed, 10 + k) - 0.5) * 0.18));
+  const parts = [tube(pts, [0.05, 0.04, 0.03, 0.015], 7, 1)];
+  for (let k = 0; k < 2; k++) {
+    const from = pts[1 + k] as Vector3;
+    const dir = rand(seed, 20 + k) > 0.5 ? 1 : -1;
+    parts.push(tube([from, from.clone().add(new Vector3(0.25, 0.03, dir * 0.3)), from.clone().add(new Vector3(0.45, 0.02, dir * 0.6))], [0.022, 0.014, 0.006], 5, 1));
+  }
+  return merge(parts, 'branch');
+}
+
 const REED: Kind = { densityPerM2: 0, fade: { high: [70, 95], low: [40, 55] }, sinkM: 2.2, scale: [0.8, 1.25] };
 
-/** A clump of reeds: tall narrow blade cards, splayed a little, ~1.7 m high. */
+/**
+ * A clump of reeds: eight reed-bed cards (reedBed texture: stems of uneven height, leaves, plumes) of
+ * different heights, fanned round the clump and leaning out a little, ~1.4–2.2 m high. Uneven cards in a
+ * fan give the clump a ragged top and a soft edge; five equal cards read as a block of hedge.
+ */
 function reedGeometry(): BufferGeometry {
   const parts: BufferGeometry[] = [];
-  for (let i = 0; i < 5; i++) {
-    const g = card(0.42, 1.7);
-    g.rotateX((rand(19, i) - 0.5) * 0.25);
-    g.rotateY((i / 5) * Math.PI + rand(23, i) * 0.4);
+  for (let i = 0; i < 8; i++) {
+    const h = 1.5 + rand(29, i) * 0.7;
+    const g = card(0.9, h);
+    g.translate((rand(31, i) - 0.5) * 0.5, 0, (rand(37, i) - 0.5) * 0.5);
+    g.rotateX((rand(19, i) - 0.5) * 0.3);
+    g.rotateY((i / 8) * Math.PI + rand(23, i) * 0.5);
     parts.push(g);
   }
   const g = merge(parts, 'reeds');
@@ -157,6 +201,17 @@ export class Undergrowth {
       : [];
 
     const fernMat = swayingMaterial(lib.get('fern'), 0.04, [...FERN.fade[quality], FERN.sinkM]);
+    // The forest floor's litter: cones and twigs where the needles lie, the odd fallen branch. Up close the
+    // floor otherwise reads as bare earth.
+    if (area.ferns) {
+      const floor = (x: number, z: number, w: readonly number[]): number => ((w[1] ?? 0) * 1.2 + (w[0] ?? 0) * 0.15 - (w[2] ?? 0) - (w[3] ?? 0) * 3) * Math.max(0, fbm2(x / 17, z / 17, 3, 83) * 1.6 + 0.2);
+      const lift = (list: Placement[], dy: number): Placement[] => list.map((p) => ({ ...p, y: p.y + 0.04 + dy }));
+      const bark = lib.get('bark');
+      const brown = (t: number, c: Color): Color => c.setRGB(0.62 + t * 0.2, 0.5 + t * 0.15, 0.42);
+      this.add(lift(scatter(CONE, floor), 0), [coneGeometry()], bark, CONE.fade[quality][1], false, brown);
+      this.add(lift(scatter(TWIG, floor), 0), [twigGeometry(3), twigGeometry(7), twigGeometry(11)], bark, TWIG.fade[quality][1], false, brown);
+      this.add(lift(scatter(BRANCH, floor), 0), [branchGeometry(5), branchGeometry(9)], bark, BRANCH.fade[quality][1], quality === 'high', (t, c) => c.setRGB(0.55 + t * 0.2, 0.5 + t * 0.15, 0.45));
+    }
     // No fern shadows: they would double the draw calls in every sun cascade for a few dark patches.
     this.add(ferns, [fernGeometry(9, 1.1, 3)], fernMat, FERN.fade[quality][1], false, (t, c) => c.setScalar(0.85 + t * 0.3));
 
@@ -175,7 +230,7 @@ export class Undergrowth {
         if (rng.next() > clump || depth > 0.35 || depth < -0.12) continue;
         reeds.push({ x, y: ground - 0.05, z, yawRad: rng.range(0, Math.PI * 2), scale: rng.range(0.8, 1.25), tint: fbm2(x / 13, z / 13, 2, 73) });
       }
-      const reedMat = swayingMaterial(lib.get('grassTuft'), 0.05, [...REED.fade[quality], REED.sinkM]);
+      const reedMat = swayingMaterial(lib.get('reedBed'), 0.05, [...REED.fade[quality], REED.sinkM]);
       this.add(reeds, [reedGeometry()], reedMat, REED.fade[quality][1], quality === 'high', (t, c) => c.setRGB(0.72 + t * 0.12, 0.86 + t * 0.1, 0.62));
     }
   }

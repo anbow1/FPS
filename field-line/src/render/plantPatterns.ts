@@ -143,6 +143,60 @@ export function grassTuft(): TexelSampler {
   };
 }
 
+/**
+ * A slice of reed bed (common reed): thin stems of uneven height — so the top of the bed is ragged, not a
+ * hedge — each with a couple of long leaves arching off it and, on most, a feathery purple-brown plume.
+ * The card is tall: u across, v up; stems rise from the bottom edge.
+ */
+export function reedBed(): TexelSampler {
+  const stems: { x: number; h: number; lean: number; shade: number; plume: boolean; leaves: { at: number; side: number; len: number }[] }[] = [];
+  for (let i = 0; i < 34; i++) {
+    const h = 0.48 + hash2(i, 1, 41) * 0.5;
+    const leaves = [0, 1, 2].filter((k) => hash2(i, 10 + k, 41) > 0.3).map((k) => ({ at: 0.25 + k * 0.22 + hash2(i, 20 + k, 41) * 0.1, side: hash2(i, 30 + k, 41) > 0.5 ? 1 : -1, len: 0.12 + hash2(i, 40 + k, 41) * 0.12 }));
+    stems.push({ x: 0.04 + hash2(i, 2, 41) * 0.92, h, lean: (hash2(i, 3, 41) - 0.5) * 0.12, shade: hash2(i, 4, 41), plume: hash2(i, 5, 41) > 0.35, leaves });
+  }
+  const stemLow: Rgb = hex(0x4a5e2c);
+  const stemHigh: Rgb = hex(0x9a9658);
+  const leaf: Rgb = hex(0x5e7436);
+  const plumeC: Rgb = hex(0x7a5a46);
+  return (u, v, t) => {
+    for (const st of stems) {
+      const s = v / st.h;
+      // Plume: a slim, drooping, fuzzy panicle above the stem's tip.
+      if (st.plume && v > st.h - 0.02 && v < st.h + 0.11) {
+        const k = (v - (st.h - 0.02)) / 0.13;
+        const cx = st.x + st.lean + k * k * 0.03;
+        const w = 0.016 * Math.sin(Math.PI * Math.min(1, k * 1.1)) + 0.002;
+        const fuzz = tileNoise(u * 256, v * 256, 256, 43);
+        if (Math.abs(u - cx) < w * (0.7 + fuzz * 0.6)) {
+          set(t, mix(plumeC, stemHigh, fuzz * 0.4), 0.85 + fuzz * 0.3, 0.6, 0.8, 0.8);
+          return;
+        }
+      }
+      if (s > 1) continue;
+      const cx = st.x + st.lean * s * s;
+      if (Math.abs(u - cx) < 0.0045) {
+        set(t, mix(stemLow, stemHigh, s * 0.8 + st.shade * 0.2), 0.8 + s * 0.3, 1, 0.55, 0.5 + 0.5 * s);
+        return;
+      }
+      for (const lf of st.leaves) {
+        // A leaf leaves the stem at `at` of its height, arches outward and droops at the end.
+        const y0 = lf.at * st.h;
+        const dy = v - y0;
+        if (dy < -0.02 || dy > lf.len) continue;
+        const k = Math.max(0, dy) / lf.len;
+        const lx = cx + lf.side * (k * lf.len * 0.55 + k * k * 0.04);
+        const w = 0.006 * (1 - k * 0.8);
+        if (Math.abs(u - lx) < w) {
+          set(t, mix(leaf, stemHigh, k * 0.5 + st.shade * 0.2), 0.8 + k * 0.3, 0.7, 0.6, 0.55 + 0.45 * s);
+          return;
+        }
+      }
+    }
+    clear(t, leaf);
+  };
+}
+
 /** A spray of ovate leaves on a twig (hazel, alder buckthorn): the broadleaf undergrowth card. */
 export function broadleafCluster(seed: number, base: number, alt: number): TexelSampler {
   const leaves: { cx: number; cy: number; a: number; len: number; w: number; shade: number }[] = [];

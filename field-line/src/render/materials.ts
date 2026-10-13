@@ -354,6 +354,8 @@ export class MaterialLibrary {
         return leafCard(set('buckthorn', 512, () => PL.broadleafCluster(9, 0x2c4a1c, 0x4a6a2a), 2, true), name, true);
       case 'fern':
         return leafCard(set('fern', 256, PL.fernFrond, 2, true), name, true);
+      case 'reedBed':
+        return leafCard(set('reedBed', 512, PL.reedBed, 1.2, true), name, false);
       case 'grassTuft':
         // No translucency: a blade is too thin to matter, and grass is the heaviest overdraw in the scene.
         return leafCard(set('grassTuft', 256, PL.grassTuft, 1.5, true), name, false);
