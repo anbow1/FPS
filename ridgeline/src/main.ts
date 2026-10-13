@@ -17,6 +17,8 @@ import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
 import { TargetView } from './render/targetView.ts';
 import { Forest } from './render/forest.ts';
+import { buildGrass } from './render/groundGrass.ts';
+import { makeGroundLayers } from './render/groundTextures.ts';
 import { buildTerrainTextures } from './render/terrainTextures.ts';
 import { bakeCloudData } from './sim/cloudField.ts';
 import { Helicopter } from './sim/helicopter.ts';
@@ -86,10 +88,12 @@ async function main(): Promise<void> {
   const terrainData = await bakeTerrain((f) => (loading.textContent = `Ridgeline — raising the ridges ${Math.round(f * 100)} %`));
   loading.textContent = 'Ridgeline — painting the land';
   const terrainTextures = await buildTerrainTextures(terrainData);
+  // What the ground shows from a few metres: grass, soil, rock and litter layers (groundTextures.ts).
+  const groundLayers = params.has('nogroundtex') ? null : await makeGroundLayers(settings.quality === 'high' ? 512 : 256);
   // The ridges' shadows and the valleys' sky occlusion, baked on the GPU for this sun (again when it moves).
   const terrainShadow = params.has('noterrainshadow') ? null : new TerrainShadow(terrainTextures, { sunM: 6000, skyM: 1200 });
   terrainShadow?.bake(stage.renderer, lighting.sunDir);
-  const terrain = new TerrainRenderer(terrainData, terrainTextures, terrainShadow ? terrainShadow.target.texture : null);
+  const terrain = new TerrainRenderer(terrainData, terrainTextures, terrainShadow ? terrainShadow.target.texture : null, groundLayers, settings.quality === 'high');
   console.log(`terrain baked in ${(performance.now() - t0).toFixed(0)} ms`);
   stage.scene.add(terrain.mesh);
   // Forests of impostor trees, generated on the GPU from the land cover round the camera (forest.ts).
@@ -108,6 +112,9 @@ async function main(): Promise<void> {
     const forest = new Forest(stage.renderer, terrainTextures, terrainShadow ? terrainShadow.target.texture : null, rings, high ? 320 : 192);
     for (const f of forest.meshes) stage.scene.add(f);
   }
+  // Grass blades round the camera near the ground, flattened by the rotor's downwash (groundGrass.ts).
+  const grass = params.has('nograss') ? null : buildGrass(stage.renderer, terrainTextures, terrainShadow ? terrainShadow.target.texture : null, settings.quality === 'high');
+  if (grass) stage.scene.add(grass.field.group);
   loading.textContent = 'Ridgeline — growing the clouds';
   const clouds = new Clouds(await bakeCloudData(), atmosphere, CLOUD_QUALITY[settings.quality]);
   const applyPresetClouds = (): void => {
@@ -390,6 +397,23 @@ async function main(): Promise<void> {
         rig.update(view.renderPos, view.renderRot, { pilot: cfg.pilotEye, gunner: cfg.gunnerEye }, heli.vibration, cfg.lengthM, frameS, groundAt);
         stage.camera.updateMatrixWorld();
         terrain.update(stage.camera);
+        if (grass) {
+          const cam = stage.camera.position;
+          // Downwash: the column reaches the ground below about two and a half diameters, strongest
+          // close in and under load; at flat pitch on the pad it still stirs the grass.
+          const D = 2 * cfg.rotor.radiusM;
+          const h = heli.radarAltitudeM;
+          const load = Math.min(1.2, heli.rotor.thrustN / (heli.massKg * PHYSICS.gravityMs2));
+          const reach = Math.max(0, 1 - h / (2.5 * D));
+          const strength = Math.min(1, (0.3 + 0.7 * load) * (heli.rpmPct / 100) ** 2 * reach * reach);
+          const under = groundAt(cam.x, cam.z);
+          grass.update(cam, cam.y - under, under, frameS, clockS, stage.camera.fov, canvas.height, {
+            x: view.renderPos.x,
+            z: view.renderPos.z,
+            radiusM: cfg.rotor.radiusM * (1.7 + h / D),
+            strength,
+          });
+        }
         if (clockS > messageUntilS) message = '';
         if (clockS - seenAtS > 0.3) {
           seenAtS = clockS;

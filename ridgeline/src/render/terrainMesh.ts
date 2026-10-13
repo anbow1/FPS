@@ -1,6 +1,8 @@
-import { abs, attribute, cameraPosition, clamp, cos, dot, float, floor, fract, hash, int, ivec2, length, max, min, mix, mx_noise_float, normalize, positionWorld, sin, smoothstep, step, texture, textureLoad, transformNormalToView, vec2, vec3 } from 'three/tsl';
+import { abs, attribute, cameraPosition, clamp, dFdx, dFdy, dot, float, floor, Fn, fract, If, int, ivec2, length, max, mix, mx_noise_float, normalize, positionWorld, property, select, smoothstep, texture, textureLoad, transformNormalToView, vec2, vec3, vec4 } from 'three/tsl';
 import { Box3, BufferAttribute, Color, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, type PerspectiveCamera, type Texture, Vector3 } from 'three/webgpu';
 import { TERRAIN, type TerrainData } from '../sim/terrain.ts';
+import type { GroundLayers } from './groundTextures.ts';
+import { type LandSurface, landSurface } from './landCover.ts';
 import type { TerrainTextures } from './terrainTextures.ts';
 
 // Terrain by CDLOD (Strugar 2009, "Continuous Distance-Dependent Level of
@@ -51,6 +53,10 @@ export class TerrainRenderer {
     tex: TerrainTextures,
     /** The baked sun and sky visibility of the near grid (terrainShadow.ts), or null for none. */
     private readonly shadow: Texture | null = null,
+    /** Close-range texture layers (groundTextures.ts), or null for the colours from the air alone. */
+    private readonly ground: GroundLayers | null = null,
+    /** High: stochastic tiling (two lookups per layer, no repeat); Low: one. */
+    private readonly fancy = true,
   ) {
     for (let l = 0; l < LEVELS; l++) this.ranges.push(LEAF_RANGE_M * 2 ** l);
     const g = new InstancedBufferGeometry();
@@ -107,97 +113,25 @@ export class TerrainRenderer {
     const uvF = P.xz.div(TERRAIN.farSizeM).add(0.5);
     const nrm = normalize(mix(texture(tex.nearNormal, uvN), texture(tex.farNormal, uvF), t).xyz.mul(2).sub(1));
     const cov = mix(texture(tex.nearCover, uvN), texture(tex.farCover, uvF), t);
-    const forest = cov.r;
-    const rock = cov.g;
-    const snow = cov.b;
-    const water = smoothstep(0.35, 0.65, cov.a);
-    const macro = mx_noise_float(P.xz.div(1400)).mul(0.5).add(0.5);
-    const fine = mx_noise_float(P.xz.div(5)).mul(0.5).add(0.5).mul(0.6).add(mx_noise_float(P.xz.div(1.3)).mul(0.2).add(0.2));
-
-    // Farmland as seen from the air: blocks of fields whose grid turns from one district (~6 km) to
-    // the next, each block cut into one to four strips of its own crop, desaturated sheet colours with
-    // per-field brightness and in-field moisture patches, hedgerows, the odd farm track along a block
-    // edge, and small villages of roofs and gardens.
-    const district = floor(P.xz.div(1500));
-    const dId = hash(district.x.mul(3.17).add(district.y.mul(11.3)));
-    const angle = dId.mul(1.4).sub(0.7);
-    const ca = cos(angle);
-    const sa = sin(angle);
-    const r = vec2(P.x.mul(ca).sub(P.z.mul(sa)), P.x.mul(sa).add(P.z.mul(ca)));
-    const fieldSize = vec2(mix(float(80), float(160), dId), mix(float(110), float(230), hash(dId.mul(9.1))));
-    const row = floor(r.y.div(fieldSize.y));
-    const q = vec2(r.x.div(fieldSize.x).add(hash(row.mul(13.7).add(dId)).mul(0.9)), r.y.div(fieldSize.y));
-    const cell = floor(q);
-    const blockId = hash(cell.x.mul(7.31).add(cell.y.mul(157.7)).add(dId.mul(41)));
-    const f0 = fract(q);
-    // Strips across the block.
-    const strips = floor(blockId.mul(4)).add(1);
-    const stripCoord = f0.x.mul(strips);
-    const stripIdx = floor(stripCoord);
-    const id = hash(blockId.mul(91.7).add(stripIdx.mul(3.3)));
-    // Mostly grass: meadow, pasture, fresh-cut hay; a few ploughed and dry plots.
-    const crop = mix(
-      mix(lin(0x56693a), lin(0x46602c), smoothstep(0.25, 0.3, id)),
-      mix(mix(lin(0x6f8045), lin(0x6b5a47), smoothstep(0.7, 0.74, id)), lin(0x958d5c), smoothstep(0.88, 0.92, id)),
-      smoothstep(0.5, 0.54, id),
-    );
-    // Satellite colour is greyer than the swatches: pull a quarter of the way to luminance, vary per field.
-    const cropGrey = vec3(dot(crop, vec3(0.2126, 0.7152, 0.0722)));
-    const moisture = mx_noise_float(P.xz.div(55).add(id.mul(30))).mul(0.5).add(0.5);
-    const field = mix(crop, cropGrey, 0.12).mul(float(0.88).add(hash(id.mul(5.1)).mul(0.24))).mul(float(0.92).add(moisture.mul(0.16)));
-    const edgeX = min(fract(stripCoord), float(1).sub(fract(stripCoord))).mul(fieldSize.x).div(strips);
-    const edgeY = min(f0.y, float(1).sub(f0.y)).mul(fieldSize.y);
-    const blockEdge = min(min(f0.x, float(1).sub(f0.x)).mul(fieldSize.x), edgeY);
-    const hedge = float(1).sub(smoothstep(3, 7, blockEdge)).mul(step(0.35, hash(cell.x.add(cell.y.mul(5.3)))));
-    const furrow = float(1).sub(smoothstep(0.6, 1.6, edgeX)).mul(0.5);
-    // A farm track along some block rows.
-    const track = float(1).sub(smoothstep(2, 4, edgeY)).mul(step(hash(row.mul(2.9).add(dId)), 0.25));
-    // Crop rows: faint stripes along each strip.
-    const rows = abs(fract(r.x.div(6).add(id.mul(3))).sub(0.5)).mul(0.08).add(0.96);
-    let farm: Node<'vec3'> = mix(field.mul(rows), lin(0x34472a), max(hedge.mul(0.8), furrow.mul(0.3)));
-    farm = mix(farm, lin(0x9b9488), track.mul(0.7));
-    // Villages: a few hundred metres of roofs, gardens and lanes where a coarse noise peaks.
-    const villageN = mx_noise_float(P.xz.div(2600).add(vec2(31, 7)));
-    const village = smoothstep(0.55, 0.62, villageN);
-    const plot = floor(P.xz.div(22));
-    const plotId = hash(plot.x.mul(1.7).add(plot.y.mul(37.1)));
-    const roof = mix(lin(0x8a4a38), lin(0x6e6a66), step(0.55, plotId));
-    const built = mix(mix(lin(0x55663c), roof, step(0.62, plotId)), lin(0x8d8a84), step(0.9, plotId));
-    const farmland = mix(farm, built, village);
-    const lowland = float(1).sub(smoothstep(380, 520, P.y)).mul(smoothstep(0.93, 0.98, nrm.y));
-    const heath = mix(mix(lin(0x5d6a3a), lin(0x6d6c46), macro), lin(0x4f5a34), fine.mul(0.5));
-    let albedo: Node<'vec3'> = mix(heath, farmland, lowland);
-    // Forest canopy: dark greens with crown-scale variation.
-    const canopy = mix(lin(0x2a3820), lin(0x3c4a2a), mx_noise_float(P.xz.div(60)).mul(0.5).add(0.5));
-    albedo = mix(albedo, canopy, smoothstep(0.3, 0.6, forest));
-    // Rock: strata — bands that follow the height, bent by noise as folded beds are — in two greys and
-    // a warm iron stain, cut by darker cracks across them.
-    const bend = mx_noise_float(P.xz.div(900)).mul(60).add(mx_noise_float(P.xz.div(140)).mul(12));
-    // Bed thickness varies too (the height scale is itself bent by noise), so the bands never repeat evenly.
-    const bed = fract(P.y.add(bend).div(mx_noise_float(P.xz.div(700)).mul(7).add(19)));
-    const beds = smoothstep(0.1, 0.45, bed).mul(float(1).sub(smoothstep(0.7, 0.98, bed))).mul(0.6).add(mx_noise_float(P.xz.div(55)).mul(0.25));
-    const stain = smoothstep(0.35, 0.75, mx_noise_float(P.xz.div(320).add(vec2(5, 9))));
-    // Beds show only on steep faces: on a gentle slope bands of constant height become contour rings.
-    // (and in patches: whole outcrops, not every slope).
-    const cliff = smoothstep(0.62, 0.45, nrm.y).mul(smoothstep(0.0, 0.3, mx_noise_float(P.xz.div(1100).add(vec2(13, 4)))));
-    const tone = mx_noise_float(P.xz.div(180)).mul(0.5).add(0.5);
-    let rockColour: Node<'vec3'> = mix(lin(0x5e5a55), lin(0x8a857d), mix(tone, beds, cliff));
-    rockColour = mix(rockColour, lin(0x7a6450), stain.mul(0.45));
-    const crack = smoothstep(0.82, 0.95, abs(mx_noise_float(vec2(P.x.add(P.z).div(38), P.y.div(9)))));
-    rockColour = rockColour.mul(float(1).sub(crack.mul(0.35).mul(cliff)));
-    // Exposed rock also where the fragment's own slope is steep, not only where the baked cover says so.
-    const steep = smoothstep(0.82, 0.62, nrm.y).mul(float(1).sub(water));
-    const rockMask = max(rock, steep.mul(0.85));
-    albedo = mix(albedo, rockColour, rockMask);
-    // Snow settles on the flatter ground and slides off the steep faces, whatever the cover map says.
-    const snowHere = snow.mul(smoothstep(0.55, 0.78, nrm.y));
-    albedo = mix(albedo, lin(0xe8edf2), snowHere);
-    albedo = albedo.mul(float(0.85).add(macro.mul(0.3))).mul(float(0.9).add(fine.mul(0.2)));
+    const land = landSurface(P, nrm, cov);
+    const water = land.water;
+    const rockMask = land.rock;
+    const snowHere = land.snow;
+    let albedo: Node<'vec3'> = land.albedo;
+    let detailN: Node<'vec3'> = vec3(0);
+    let roughLand: Node<'float'> = mix(float(0.92), float(0.62), snowHere);
+    if (this.ground) {
+      const d = this.closeRange(this.ground, P, nrm, land);
+      albedo = d.albedo;
+      detailN = d.normal;
+      roughLand = mix(d.roughness, float(0.62), snowHere);
+    }
     const waterColour = mix(lin(0x0d2a36), lin(0x1f3e44), cov.a.oneMinus().mul(2).clamp(0, 1));
     m.colorNode = mix(albedo, waterColour, water);
-    m.roughnessNode = mix(mix(float(0.92), float(0.62), snowHere), float(0.07), water);
+    m.roughnessNode = mix(roughLand, float(0.07), water);
     // Water normals: flat with a little wind ripple. Land: the baked normal, roughened below the grid's
-    // 50 m by noise — crags and gullies on rock, a gentle undulation elsewhere.
+    // 10 m by noise — crags and gullies on rock, a gentle undulation elsewhere — and the close-range
+    // layers' own relief on top.
     const ripple = vec3(mx_noise_float(P.xz.div(35)).mul(0.04), 1, mx_noise_float(P.xz.div(35).add(17)).mul(0.04));
     const crag = rockMask.mul(0.55).add(0.12);
     const detail = vec3(
@@ -205,7 +139,7 @@ export class TerrainRenderer {
       0,
       mx_noise_float(P.xz.div(31).add(7.7)).add(mx_noise_float(P.xz.div(9).add(1.9)).mul(0.5)),
     ).mul(crag);
-    m.normalNode = transformNormalToView(normalize(mix(nrm.add(detail), ripple, water)));
+    m.normalNode = transformNormalToView(normalize(mix(nrm.add(detail).add(detailN), ripple, water)));
     // The mountains' own light (terrainShadow.ts): sun shadow from the ridges, and sky occlusion for the
     // ambient. Both fade to 1 outside the near grid, which the bake does not cover.
     if (this.shadow) {
@@ -217,6 +151,104 @@ export class TerrainRenderer {
       m.userData.shadowFactor = sunVis;
     }
     return m;
+  }
+
+  /**
+   * The close-range layers over the colours from the air (docs/graphics-playbook.md §2–3): each layer
+   * sampled in world metres, height-blended with its neighbours so pebbles and tufts poke through instead
+   * of cross-fading, with stochastic tiling on High (after Inigo Quilez: two offset lookups chosen by a
+   * low-frequency index) and a second, rotated lookup 7.3× coarser that carries the pattern out to a few
+   * hundred metres, where the first has mipped away. Colour is the layer's ratio to its own mean, so
+   * from altitude the land keeps its field colours exactly; soil and litter take their own colour where
+   * the air view had none for them (worn heath, the floor under the trees seen from below the crowns).
+   * Runs in one Fn, which also writes the shading normal's detail and the roughness (shader properties).
+   */
+  private closeRange(g: GroundLayers, P: Node<'vec3'>, nrm: Node<'vec3'>, land: LandSurface): { albedo: Node<'vec3'>; normal: Node<'vec3'>; roughness: Node<'float'> } {
+    const fancy = this.fancy;
+    const outN = property('vec3', 'rlDetailN');
+    const outR = property('float', 'rlRough');
+    const means = g.means.map((c) => vec3(c[0], c[1], c[2]));
+    const albedo = Fn(() => {
+      const wp = P.xz;
+      const dist = length(P.sub(cameraPosition));
+      // Rock on a slope: sampled on the plane facing it, so the pattern does not stretch down the face.
+      const an = abs(nrm);
+      const side = select(an.x.greaterThan(an.z), P.zy, P.xy);
+      const rockPlane = select(an.y.greaterThan(0.72), wp, side);
+      const rot = (v: Node<'vec2'>): Node<'vec2'> => vec2(v.x.mul(0.82).sub(v.y.mul(0.57)), v.x.mul(0.57).add(v.y.mul(0.82)));
+      const uvs = [wp.div(2.6), wp.div(2.2), rockPlane.div(3.6), wp.div(2.4)].map((u) => u.toVar());
+      const uvFar = uvs.map((u) => rot(u).div(7.3).toVar());
+      // Gradients outside the branches: WGSL allows derivatives only in uniform control flow.
+      const grads = uvs.map((u) => [dFdx(u).toVar(), dFdy(u).toVar()] as const);
+      const gradsFar = uvFar.map((u) => [dFdx(u).toVar(), dFdy(u).toVar()] as const);
+      const idx = mx_noise_float(wp.div(170)).mul(0.5).add(0.5).toVar();
+      const farK = smoothstep(12, 90, dist).mul(0.75).toVar();
+      const w = land.layers.toVar();
+      const wi = [w.x, w.y, w.z, w.w];
+      const A = [0, 1, 2, 3].map(() => vec4(1, 1, 1, 0.3).toVar());
+      const N = [0, 1, 2, 3].map(() => vec4(0.5, 0.5, 0.78, 1).toVar());
+      // Beyond a few kilometres every mip is the mean: skip the lookups.
+      If(dist.lessThan(4000), () => {
+        for (let i = 0; i < 4; i++) {
+          If(wi[i]!.greaterThan(0.01), () => {
+            const [dx, dy] = grads[i]!;
+            const at = (uv: Node<'vec2'>, ddx: Node<'vec2'>, ddy: Node<'vec2'>): [Node<'vec4'>, Node<'vec4'>] => [
+              texture(g.albedo, uv).depth(int(i)).grad(ddx, ddy),
+              texture(g.normal, uv).depth(int(i)).grad(ddx, ddy),
+            ];
+            const uv = uvs[i]!;
+            if (fancy) {
+              const l = idx.mul(8);
+              const ia = floor(l);
+              const f = fract(l);
+              const oa = vec2(3, 7).mul(ia).sin();
+              const ob = vec2(3, 7).mul(ia.add(1)).sin();
+              const [a0, n0] = at(uv.add(oa), dx, dy);
+              const [a1, n1] = at(uv.add(ob), dx, dy);
+              const m = smoothstep(0.2, 0.8, f.sub(dot(a0.rgb.sub(a1.rgb), vec3(1)).mul(0.1)));
+              A[i]!.assign(mix(a0, a1, m));
+              N[i]!.assign(mix(n0, n1, m));
+            } else {
+              const [a0, n0] = at(uv, dx, dy);
+              A[i]!.assign(a0);
+              N[i]!.assign(n0);
+            }
+            const [fx, fy] = gradsFar[i]!;
+            const [af, nf] = at(uvFar[i]!, fx, fy);
+            const near = A[i]!.rgb.div(means[i]!);
+            const far = af.rgb.div(means[i]!);
+            A[i]!.assign(vec4(near.mul(mix(vec3(1), far, farK)), A[i]!.a));
+            N[i]!.assign(vec4(mix(N[i]!.xy, nf.xy, farK.mul(0.5)), mix(N[i]!.z, nf.z, farK.mul(0.5)), 1));
+          });
+        }
+      });
+      // Height blend: the taller texel of the neighbouring layers wins the transition.
+      const hw0 = w.mul(vec4(A[0]!.a, A[1]!.a, A[2]!.a, A[3]!.a).add(0.35));
+      const hm = max(max(hw0.x, hw0.y), max(hw0.z, hw0.w)).sub(0.18);
+      const hw1 = max(hw0.sub(hm), 0);
+      const hw = hw1.div(max(hw1.x.add(hw1.y).add(hw1.z).add(hw1.w), 1e-4)).toVar();
+      // What each layer is painted over: the air view, or the layer's own colour where that had none.
+      const tone = land.macro.mul(0.3).add(0.85);
+      const soilTarget = mix(land.albedo, means[1]!.mul(tone), max(float(1).sub(land.lowland), land.bare));
+      const underCanopy = land.forest.mul(smoothstep(900, 300, dist));
+      const litterTarget = mix(land.albedo, means[3]!.mul(tone).mul(mix(float(1), float(0.62), land.forest)), mix(float(1), underCanopy, land.forest));
+      const target = land.albedo.mul(hw.x.add(hw.z)).add(soilTarget.mul(hw.y)).add(litterTarget.mul(hw.w));
+      // A sward is never one green: tussocks and patches of other grasses, yellower and bluer, at a
+      // couple of metres and at seven, fading out before the noise could alias (it has no mips).
+      const mottleK = float(1).sub(smoothstep(150, 600, dist));
+      const m1 = mx_noise_float(wp.div(1.9));
+      const m2 = mx_noise_float(wp.div(7.3).add(vec2(4.1, 2.7)));
+      const sward = vec3(1).add(vec3(0.08, 0.035, -0.14).mul(m2).mul(mottleK)).mul(m1.mul(0.13).mul(mottleK).add(1));
+      const ratio = A[0]!.rgb.mul(sward).mul(hw.x).add(A[1]!.rgb.mul(hw.y)).add(A[2]!.rgb.mul(hw.z)).add(A[3]!.rgb.mul(hw.w));
+      // Cavity AO, normalised by its mean so the far view keeps its brightness.
+      const ao = dot(hw, vec4(N[0]!.z, N[1]!.z, N[2]!.z, N[3]!.z)).mul(0.45).add(0.55).div(0.45 * 0.78 + 0.55);
+      const k = float(1).sub(land.snow).mul(float(1).sub(land.water));
+      const ln = N[0]!.xy.mul(2).sub(1).mul(hw.x).add(N[1]!.xy.mul(2).sub(1).mul(hw.y)).add(N[2]!.xy.mul(2).sub(1).mul(hw.z)).add(N[3]!.xy.mul(2).sub(1).mul(hw.w));
+      outN.assign(vec3(ln.x, 0, ln.y).mul(k).mul(0.9));
+      outR.assign(dot(hw, vec4(0.9, 0.95, 0.82, 0.93)));
+      return mix(land.albedo, target.mul(ratio).mul(ao), k);
+    })();
+    return { albedo, normal: outN, roughness: outR };
   }
 
   /** Selects the patches for this camera; call after the camera's matrices are current. */
@@ -298,3 +330,28 @@ export function terrainHeightNode(near: Texture, far: Texture, xz: Node<'vec2'>)
   return mix(sample(near, TERRAIN.nearRes, TERRAIN.nearSizeM), sample(far, TERRAIN.farRes, TERRAIN.farSizeM), t);
 }
 
+
+/**
+ * The height of the rendered surface itself within the near grid, for things that stand on it (the
+ * grass): level-0 patches put their vertices on the 10 m lattice, each the grid's bilinear there —
+ * the mean of the four texel centres round it, half a cell off — and cut every cell from (i+1, j) to
+ * (i, j+1) as the patch's index buffer does. Nine loads; exact where the near patches are unmorphed
+ * (inside 570 m of the camera).
+ */
+export function meshHeightNode(near: Texture, xz: Node<'vec2'>): Node<'float'> {
+  const cell = TERRAIN.nearSizeM / TERRAIN.nearRes;
+  const g = xz.div(cell);
+  const I = floor(g);
+  const f = g.sub(I);
+  const s0 = clamp(I.add(TERRAIN.nearRes / 2 - 1), vec2(0), vec2(TERRAIN.nearRes - 3));
+  const L = (a: number, b: number): Node<'float'> => (textureLoad(near, ivec2(int(s0.x.add(a)), int(s0.y.add(b)))) as unknown as Node<'vec4'>).x;
+  const l = [0, 1, 2].map((b) => [0, 1, 2].map((a) => L(a, b)));
+  const at = (a: number, b: number): Node<'float'> => l[b]![a]!.add(l[b]![a + 1]!).add(l[b + 1]![a]!).add(l[b + 1]![a + 1]!).mul(0.25);
+  const v00 = at(0, 0);
+  const v10 = at(1, 0);
+  const v01 = at(0, 1);
+  const v11 = at(1, 1);
+  const lower = v00.add(v10.sub(v00).mul(f.x)).add(v01.sub(v00).mul(f.y));
+  const upper = v11.add(v01.sub(v11).mul(float(1).sub(f.x))).add(v10.sub(v11).mul(float(1).sub(f.y)));
+  return max(select(f.x.add(f.y).lessThanEqual(1), lower, upper), TERRAIN.seaLevelM);
+}
