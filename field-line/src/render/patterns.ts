@@ -198,35 +198,97 @@ export function fabric(colour: number): TexelSampler {
 }
 
 /** Terrain layers. Sheet: fresh grass #4A6030, dry soil #6B5A47, granite #7A7672. */
+/**
+ * Short straight fibres scattered in every direction (dead grass, fallen needles), wrapping with the tile:
+ * `cells` per side, `per` fibres in each, each `len` long and `width` wide (tile units). Returns the hit
+ * fibre's shade 0…1 and a second random for its colour, or −1 where there is none. Directions are random
+ * per fibre, so the litter tangles rather than weaves.
+ */
+function fibreAt(u: number, v: number, cells: number, per: number, len: number, width: number, seed: number): [number, number] {
+  const cx = Math.floor(u * cells);
+  const cy = Math.floor(v * cells);
+  let best: [number, number] = [-1, 0];
+  let bestTop = -1;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const gx = (((cx + dx) % cells) + cells) % cells;
+      const gy = (((cy + dy) % cells) + cells) % cells;
+      for (let k = 0; k < per; k++) {
+        const h = (n: number): number => hash2(gx * 7 + k, gy * 13 + n, seed);
+        // The fibre's centre, in this cell's neighbour copy (so fibres cross cell and tile edges).
+        const fx = (cx + dx + h(1)) / cells;
+        const fy = (cy + dy + h(2)) / cells;
+        const a = h(3) * Math.PI;
+        const l = len * (0.6 + h(4) * 0.8);
+        const ox = u - fx;
+        const oy = v - fy;
+        const along = ox * Math.cos(a) + oy * Math.sin(a);
+        const across = -ox * Math.sin(a) + oy * Math.cos(a);
+        if (Math.abs(along) > l / 2 || Math.abs(across) > width) continue;
+        // Later fibres lie on top: keep the highest-ordered hit.
+        const top = h(5);
+        if (top > bestTop) {
+          bestTop = top;
+          best = [1 - Math.abs(across) / width, h(6)];
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Meadow ground under the grass blades (the blades themselves are geometry, grassField.ts): dark soil and
+ * moss with a tangle of dead and green grass fibres lying in every direction. The old crossed anisotropic
+ * noise wove it like a carpet.
+ */
 export function grass(): TexelSampler {
-  const fresh = hex(0x4a6030);
-  const dry = hex(0x6d7343);
+  const ground = hex(0x3b3f22);
+  const moss = hex(0x4a6030);
+  const green = hex(0x56702f);
+  const dry = hex(0x8a8150);
   return (u, v, t) => {
-    const blade = tileNoise(u * 160, v * 40, 160, 81) * 0.6 + tileNoise(u * 40, v * 160, 40, 82) * 0.4;
     const patch = tileFbm(u * 3, v * 3, 3, 3, 83);
-    const k = Math.min(1, Math.max(0, patch * 1.6 - 0.4));
-    t.r = fresh[0] + (dry[0] - fresh[0]) * k;
-    t.g = fresh[1] + (dry[1] - fresh[1]) * k;
-    t.b = fresh[2] + (dry[2] - fresh[2]) * k;
-    const s = 0.75 + blade * 0.45;
-    t.r *= s;
-    t.g *= s;
-    t.b *= s;
-    t.height = blade;
-    t.rough = 0.88;
-    t.ao = 0.75 + blade * 0.25;
+    const fine = tileFbm(u * 24, v * 24, 24, 3, 84);
+    const base: Rgb = [ground[0] + (moss[0] - ground[0]) * fine, ground[1] + (moss[1] - ground[1]) * fine, ground[2] + (moss[2] - ground[2]) * fine];
+    const [hit, r] = fibreAt(u, v, 40, 3, 0.05, 0.0028, 85);
+    if (hit >= 0) {
+      const dryK = Math.min(1, Math.max(0, patch * 1.5 - 0.3 + (r - 0.5) * 0.6));
+      const c: Rgb = [green[0] + (dry[0] - green[0]) * dryK, green[1] + (dry[1] - green[1]) * dryK, green[2] + (dry[2] - green[2]) * dryK];
+      put(t, c, 0.8 + hit * 0.3);
+      t.height = 0.5 + hit * 0.5;
+      t.ao = 1;
+    } else {
+      put(t, base, 0.7 + fine * 0.3);
+      t.height = fine * 0.4;
+      t.ao = 0.7;
+    }
+    t.rough = 0.9;
   };
 }
 
-export function soil(colour = 0x6b5a47): TexelSampler {
+/**
+ * Bare earth, and the forest floor when `litter` is set: clods and a few pebbles, with fallen needles lying
+ * in every direction in rusty browns (the needles were all streaked one way before).
+ */
+export function soil(colour = 0x6b5a47, litter = 0): TexelSampler {
   const c = hex(colour);
+  const needle = hex(0x7a5232);
+  const oldNeedle = hex(0x5a4430);
   return (u, v, t) => {
     const clod = tileFbm(u * 10, v * 10, 10, 4, 91);
-    const pebble = tileNoise(u * 72, v * 72, 72, 92);
-    const needles = tileNoise(u * 200, v * 30, 200, 93) > 0.8 ? 0.8 : 1;
-    put(t, c, (0.78 + clod * 0.35) * (pebble > 0.85 ? 1.2 : 1) * needles);
-    t.height = clod * 0.6 + (pebble > 0.85 ? 0.4 : 0);
+    const pebble = tileFbm(u * 48, v * 48, 48, 2, 92);
+    put(t, c, (0.78 + clod * 0.35) * (pebble > 0.72 ? 1.12 : 1));
+    t.height = clod * 0.6 + (pebble > 0.72 ? (pebble - 0.72) * 1.5 : 0);
     t.rough = 0.95;
+    if (litter > 0) {
+      const [hit, r] = fibreAt(u, v, 48, 2, 0.032, 0.0018, 94);
+      if (hit >= 0 && r < litter) {
+        const k = (r / litter) * 0.8;
+        put(t, [needle[0] + (oldNeedle[0] - needle[0]) * k, needle[1] + (oldNeedle[1] - needle[1]) * k, needle[2] + (oldNeedle[2] - needle[2]) * k], 0.85 + hit * 0.3);
+        t.height = 0.6 + hit * 0.4;
+      }
+    }
   };
 }
 

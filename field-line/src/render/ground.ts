@@ -1,4 +1,4 @@
-import { attribute, cameraPosition, float, int, length, max, mix, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3, vec4 } from 'three/tsl';
+import { attribute, bumpMap, cameraPosition, float, int, length, max, mix, mx_noise_float, normalMap, normalWorld, positionWorld, smoothstep, texture, vec2, vec3, vec4 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, type DataArrayTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, Mesh, MeshStandardNodeMaterial, NoColorSpace, type Node, RepeatWrapping, RGBAFormat, UnsignedByteType } from 'three/webgpu';
 import { fbm2, tileFbm } from '../core/noise.ts';
 import type { Heightfield } from '../game/collision.ts';
@@ -90,10 +90,31 @@ export function buildFarRing(map: MapData): Mesh {
   g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  const mesh = new Mesh(g, map.id === 'city' ? new MeshStandardNodeMaterial({ color: 0x3a3a3c, roughness: 0.92 }) : splatMaterial(null));
+  const material = map.id === 'city' ? new MeshStandardNodeMaterial({ color: 0x3a3a3c, roughness: 0.92 }) : map.id === 'forest' ? farForestMaterial(inner) : splatMaterial(null);
+  const mesh = new Mesh(g, material);
   mesh.receiveShadow = false;
   mesh.name = 'farRing';
   return mesh;
+}
+
+/**
+ * The hills beyond the forest map, under forest themselves: dark conifer canopy with its clumps of crowns
+ * (two scales of noise in colour, and in a bumped normal so the sun picks out the crowns' lit sides) and
+ * the odd clearing, blending in from the map's edge. On the meadow material they read as bare grey domes.
+ */
+function farForestMaterial(innerM: number): MeshStandardNodeMaterial {
+  const m = new MeshStandardNodeMaterial({ name: 'far forest', roughness: 1, metalness: 0 });
+  const p = positionWorld.xz;
+  const crowns = mx_noise_float(p.div(9)).mul(0.5).add(0.5);
+  const stands = mx_noise_float(p.div(70).add(13.1)).mul(0.5).add(0.5);
+  const clearing = smoothstep(0.78, 0.86, mx_noise_float(p.div(160).add(41.7)).mul(0.5).add(0.5));
+  const canopy = mix(vec3(0.018, 0.034, 0.014), vec3(0.04, 0.062, 0.026), crowns.mul(0.6).add(stands.mul(0.4)));
+  const meadow = vec3(0.07, 0.09, 0.035);
+  const edge = max(positionWorld.x.abs(), positionWorld.z.abs()).sub(innerM);
+  const forestK = smoothstep(0, 60, edge).mul(float(1).sub(clearing));
+  m.colorNode = mix(meadow, canopy, forestK);
+  m.normalNode = bumpMap(crowns.mul(forestK), float(2.2));
+  return m;
 }
 
 function heightfieldGeometry(t: Heightfield, splatAt: ((x: number, z: number) => [number, number, number, number]) | null, shadeAt: ((x: number, z: number) => number) | null = null): BufferGeometry {
@@ -259,7 +280,7 @@ function splatMaterial(lakeFx: LakeFx | null): MeshStandardNodeMaterial {
   // environment probe count too). At 19 textures the terrain failed to draw on WebGPU.
   const layers = makeTextureArray([
     makeTextureSet(512, P.grass(), 2),
-    makeTextureSet(512, P.soil(), 3),
+    makeTextureSet(512, P.soil(0x6b5a47, 0.85), 3), // the forest floor: earth under fallen needles
     makeTextureSet(512, P.rock(), 4),
     makeTextureSet(512, P.soil(0x5a4a3a), 3), // compacted, darker dirt on the track
   ]);
