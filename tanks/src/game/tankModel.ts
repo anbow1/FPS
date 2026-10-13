@@ -47,6 +47,41 @@ export interface TankModel {
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
+// Fittings that make a hull read as a machine rather than a shape: weld beads where plates meet, bolt
+// heads, steel tow cables, tools in their clamps, spare track links, lifting eyes. Small, so they skip
+// nothing in a draw (they merge into the per-material meshes), and each a real object a tank carries.
+
+/** A steel cable along a smooth curve through `pts`. */
+function cable(pts: THREE.Vector3[], r: number): THREE.BufferGeometry {
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 8, r, 6, false);
+}
+
+/** A ring (cable eye, lifting eye) standing upright, turned by `ry` about Y. */
+function ringAt(R: number, r: number, x: number, y: number, z: number, ry = 0): THREE.BufferGeometry {
+  return new THREE.TorusGeometry(R, r, 6, 14).rotateY(ry).translate(x, y, z);
+}
+
+/** A weld bead: a thin rod along each edge of a polyline (closed when `loop`). */
+function seam(pts: THREE.Vector3[], r: number, loop: boolean): THREE.BufferGeometry[] {
+  const out: THREE.BufferGeometry[] = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  const n = loop ? pts.length : pts.length - 1;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i]!;
+    const b = pts[(i + 1) % pts.length]!;
+    const d = b.clone().sub(a);
+    const g = new THREE.CylinderGeometry(r, r, d.length(), 5, 1, true);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, d.normalize()));
+    out.push(g.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2));
+  }
+  return out;
+}
+
+/** One spare track link lying on a plate tilted by `rx`: the shoe, its centre guide horn and the pin bosses. */
+function trackLink(x: number, y: number, z: number, rx: number): THREE.BufferGeometry[] {
+  return [box(0.6, 0.035, 0.15, x, y, z, rx), box(0.07, 0.07, 0.11, x, y + 0.04, z, rx), cyl(0.03, 0.03, 0.62, 8, 'x', x, y, z - 0.075)];
+}
+
 interface Layout {
   roadWheels: WheelSpec[];
   sprocket: WheelSpec;
@@ -236,6 +271,7 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
   const steel = vehicleMaterial('steelWorn', uniforms, { params: { roughness: 0.45 } });
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0x0a0f12, roughness: 0.04, metalness: 0.0, envMapIntensity: 1.6 });
   const headlightMat = new THREE.MeshStandardNodeMaterial({ color: 0xe8e8e0, roughness: 0.1, emissive: 0xfff2d8, emissiveIntensity: 0 });
+  const tailMat = new THREE.MeshStandardNodeMaterial({ color: 0x5a0d0a, roughness: 0.25 });
   const layout = layoutFor(style);
   const linkPitch = 0.16;
 
@@ -250,6 +286,7 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
   const hullGlass: THREE.BufferGeometry[] = [];
   const hullSteel: THREE.BufferGeometry[] = [];
   const lights: THREE.BufferGeometry[] = [];
+  const tail: THREE.BufferGeometry[] = [];
   let turretPivot: THREE.Vector3;
   let hullBox: TankModel['hullBox'];
   const exhaust: THREE.Vector3[] = [];
@@ -283,6 +320,34 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
     hullPaint.push(box(0.66, 0.04, 0.6, 1.53, 1.02, 3.55), box(0.66, 0.04, 0.6, -1.53, 1.02, 3.55));
     turretPivot = V(0, 1.8, 0.1);
     hullBox = { c: V(0, 1.15, 0.05), h: V(1.9, 0.65, 3.85) };
+    // Weld beads along the top plate's sides and across the glacis break.
+    hullPaint.push(...seam([V(-1.86, 1.8, -3.8), V(-1.86, 1.8, 2.3), V(1.86, 1.8, 2.3), V(1.86, 1.8, -3.8)], 0.016, false));
+    hullPaint.push(...seam([V(-1.86, 1.26, 3.95), V(1.86, 1.26, 3.95)], 0.016, false));
+    // Bolt heads on the skirt panels, two rows each.
+    for (let i = 0; i < 7; i++) {
+      const z0 = -3.45 + i * 1.0;
+      const thick = i >= 4 ? 0.1 : 0.06;
+      for (const s of [-1, 1]) for (const y of [0.6, 0.96]) for (let k = 0; k < 4; k++) hullDark.push(cyl(0.022, 0.022, 0.03, 6, 'x', s * (1.86 + thick + 0.012), y, z0 + 0.14 + k * 0.23));
+    }
+    // Tow cables along the rear deck, their eyes over pins at both ends.
+    for (const s of [-1, 1]) {
+      hullDark.push(cable([V(s * 1.45, 1.83, -3.6), V(s * 1.5, 1.85, -2.6), V(s * 1.45, 1.85, -1.6), V(s * 1.5, 1.83, -0.75)], 0.024));
+      for (const z of [-3.68, -0.66]) hullDark.push(ringAt(0.07, 0.02, s * 1.47, 1.86, z, Math.PI / 2));
+    }
+    // Pioneer tools in clamps on the left of the deck: a shovel and a crowbar.
+    hullDark.push(cyl(0.02, 0.02, 1.25, 8, 'z', -1.62, 1.86, 0.55), box(0.22, 0.03, 0.3, -1.62, 1.86, 1.32), cyl(0.018, 0.018, 1.5, 8, 'z', -1.36, 1.84, 0.35));
+    for (const z of [0.05, 0.95]) hullDark.push(box(0.4, 0.05, 0.06, -1.5, 1.83, z));
+    // Spare track links on the upper glacis, lying with the plate.
+    const glacis = Math.atan2(1.8 - 1.26, 3.95 - 2.3);
+    for (let i = 0; i < 4; i++) {
+      for (const t of [0.22, 0.42]) hullDark.push(...trackLink(-1.05 + i * 0.7, 1.26 + (1.8 - 1.26) * t + 0.035, 3.95 - (3.95 - 2.3) * t, glacis));
+    }
+    // Tail lamps in their guards; rubber mud flaps ahead of the tracks.
+    for (const s of [-1, 1]) {
+      tail.push(box(0.16, 0.08, 0.03, s * 1.62, 1.55, -3.85));
+      hullDark.push(box(0.22, 0.14, 0.08, s * 1.62, 1.55, -3.79));
+      hullRubber.push(box(0.6, 0.34, 0.02, s * 1.53, 0.84, 3.86));
+    }
   } else {
     hullPaint.push(prismX([[-3.45, 1.0], [3.3, 1.0], [3.58, 1.12], [1.85, 1.6], [-3.5, 1.56]], -1.72, 1.72));
     hullPaint.push(prismX([[-3.3, 0.5], [2.9, 0.5], [3.45, 1.0], [-3.45, 1.0]], -1.1, 1.1));
@@ -320,6 +385,24 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
     hullGlass.push(box(0.2, 0.06, 0.03, 0, 1.62, 1.95));
     turretPivot = V(0, 1.58, 0.35);
     hullBox = { c: V(0, 1.05, 0.05), h: V(1.85, 0.56, 3.5) };
+    // Weld beads along the deck edges.
+    hullPaint.push(...seam([V(-1.72, 1.6, -3.4), V(-1.72, 1.6, 1.85), V(1.72, 1.6, 1.85), V(1.72, 1.6, -3.4)], 0.016, false));
+    // The unditching log across the rear, on its two brackets.
+    hullDark.push(cyl(0.14, 0.14, 3.0, 14, 'x', 0, 1.78, -3.38));
+    for (const s of [-1, 1]) hullDark.push(box(0.08, 0.3, 0.3, s * 1.1, 1.66, -3.38));
+    // Tow cables along the fenders, eyes at both ends.
+    for (const s of [-1, 1]) {
+      hullDark.push(cable([V(s * 1.78, 1.07, -2.6), V(s * 1.8, 1.08, -1.0), V(s * 1.78, 1.08, 0.4), V(s * 1.8, 1.07, 2.0)], 0.022));
+      for (const z of [-2.68, 2.08]) hullDark.push(ringAt(0.065, 0.018, s * 1.79, 1.08, z, Math.PI / 2));
+    }
+    // Spare track links on the lower front plate.
+    const lower = Math.atan2(1.0 - 0.5, 3.45 - 2.9);
+    for (let i = 0; i < 4; i++) hullDark.push(...trackLink(-1.05 + i * 0.7, 0.78, 3.2, -lower));
+    // Tail lamps; rubber mud flaps ahead of the tracks.
+    for (const s of [-1, 1]) {
+      tail.push(box(0.14, 0.08, 0.03, s * 1.55, 1.45, -3.5));
+      hullRubber.push(box(0.56, 0.32, 0.02, s * 1.5, 0.82, 3.5));
+    }
   }
   // return rollers + suspension arms
   for (const s of [-1, 1] as const) {
@@ -341,6 +424,7 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
   addMesh(hull, hullGlass, glass, O);
   addMesh(hull, hullSteel, steel, O);
   addMesh(hull, lights, headlightMat, O);
+  addMesh(hull, tail, tailMat, O);
 
   // ---------------------------------------------------------------- running gear
   const { tyre, disc } = roadWheelGeom(layout.roadWheels[0]!.r, 0.58);
@@ -434,6 +518,10 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
     // antennas + wind sensor
     tDark.push(cyl(0.008, 0.015, 2.4, 6, 'y', 1.45, 2.0, -2.05), cyl(0.008, 0.015, 2.4, 6, 'y', -1.45, 2.0, -2.05));
     tDark.push(cyl(0.015, 0.015, 0.5, 6, 'y', 0.1, 1.07, -1.9));
+    // Weld bead round the roof plate, lifting eyes at its corners, jerry cans in the bustle basket.
+    tPaint.push(...seam([V(-1.62, 0.82, -2.2), V(1.62, 0.82, -2.2), V(1.66, 0.82, 0.9), V(1.32, 0.82, 1.78), V(-1.32, 0.82, 1.78), V(-1.66, 0.82, 0.9)], 0.015, true));
+    for (const [x, z] of [[-1.42, -1.95], [1.42, -1.95], [-1.25, 1.45], [1.25, 1.45]] as const) tDark.push(ringAt(0.055, 0.016, x, 0.88, z));
+    for (const x of [-1.35, 1.5]) tPaint.push(box(0.17, 0.34, 0.26, x, 0.74, -2.5), box(0.05, 0.03, 0.1, x, 0.92, -2.5));
     gunPivot = V(0, 0.4, 1.7);
     turretBox = { c: V(0, 0.42, -0.2), h: V(1.8, 0.45, 2.15) };
   } else {
@@ -472,6 +560,11 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
     tDark.push(cyl(0.12, 0.12, 1.6, 12, 'x', 0, 0.45, -1.55));
     tPaint.push(box(1.1, 0.3, 0.3, 0.6, 0.3, -1.45));
     tDark.push(cyl(0.008, 0.015, 2.3, 6, 'y', -0.9, 1.6, -0.9));
+    // Lifting eyes on the dome.
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + (i * Math.PI) / 2;
+      tDark.push(ringAt(0.055, 0.016, Math.sin(a) * 1.05, 0.52, Math.cos(a) * 1.05, a));
+    }
     gunPivot = V(0, 0.3, 1.15);
     turretBox = { c: V(0, 0.33, 0), h: V(1.4, 0.42, 1.5) };
   }
@@ -518,7 +611,7 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
   roofMg.position.set(west ? -0.72 : 0.55, west ? 1.1 : 1.02, west ? 0.3 : 1.0);
   turret.add(roofMg);
 
-  const materials: THREE.Material[] = [paint, dark, rubber, steel, glass, headlightMat, tl.mat, tr.mat];
+  const materials: THREE.Material[] = [paint, dark, rubber, steel, glass, headlightMat, tailMat, tl.mat, tr.mat];
   const model: TankModel = {
     root, hull, turret, gun, muzzle, coax, roofMg, sight, turretPivot, gunPivot, uniforms, materials,
     trackMats: [tl.mat, tr.mat], trackTex: [tl.tex, tr.tex], wheels, wheelSpecs: layout.roadWheels,
