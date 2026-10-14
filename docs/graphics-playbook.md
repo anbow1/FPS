@@ -575,6 +575,33 @@ the edge in and out, and a rounded view-space normal lets the sun shade the
 puff (`render/particles.ts`). Put ground debris on the real surface under it
 (pavement, kerb, roof), not the terrain height.
 
+## 6h. Animals and enemies (lagoon `render/creatures.ts`, `render/guerrillas.ts`)
+
+- **The same rigid-segment rig as the soldiers** (§6c), one InstancedMesh per
+  segment per species, posed from the headless logic each frame through a small
+  matrix stack (`push`/`t`/`rx`/`emit`/`pop`). Bodies are lathes along the
+  spine (`along()`, flattened for the croc's head and the boar's wedge), limbs
+  tapered capsules hanging along −Y from their joint.
+- **Joints bent the animal's way.** A cat's fore leg: upper arm back to the
+  elbow, forearm straight down; its hind leg: thigh forward to the knee, shin
+  back to the hock. Straight posts read as a toy. Stalking folds the elbows up
+  behind the shoulders. Tails hang down and back (a *negative* `rx` swings −Y
+  backwards) and curl at the tip; a charging boar carries it straight up.
+- **Gait from speed**: one phase per animal advanced by speed / stride length;
+  walk = lateral sequence, gallop = the pairs close in phase with a spine flex;
+  the croc and shark get a travelling lateral wave (`sin(φ − k·0.9)`, larger
+  toward the tail); the croc swims with its legs folded back.
+- **One material, per-vertex kind** (tiger stripes along z or y, bristle, scutes,
+  countershaded skin, plain eyes and teeth), patterns in **`positionGeometry`**:
+  in an instanced mesh `positionLocal` is already the instanced position, so
+  stripes crawl over a walking animal and countershading follows world height
+  (a shark at −2 m went all belly white).
+- **What sells the threat**: the croc's eyes and nostrils standing proud so they
+  are what shows at the waterline; the shark's dorsal fin breaking the surface;
+  muzzle flash, smoke and a tracer (life cut at the first raycast hit) for every
+  enemy shot; blood puffs, or a red cloud and a ripple under water; HUD arcs
+  pointing at whoever hit you.
+
 ---
 
 ## 7. Water and the shoreline
@@ -1182,6 +1209,7 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Low cloud layer turns blocky on phones | one bilinear tap upsampling a ¼-resolution layer | a 4-tap tent when the layer is below ½ resolution |
 | Lamp-lit or other night-only shading in an `If(uniform)` branch: fine at night, by day façades mirror the sky and blocks go black | TSL declares a shared variable (`normalWorld`, `normalWorldGeometry`) where it is first built; built first inside the branch, it is only assigned when the branch runs, and the material's own lighting reads it unset | build it before the branch: `const out = normalWorld.mul(0).toVar()` (FL `materials.ts` `lampLit`) |
 | Lit windows (or any per-object hash) speckle pixel by pixel | the hash key uses `normalWorld`, which carries the normal map | key on `normalWorldGeometry` |
+| Camouflage or coat patterns slide over a moving instanced figure; countershading follows world height | in an instanced mesh `positionLocal` is the position *after* the instance matrix | key segment-space patterns to `positionGeometry` (§6h) |
 | Paired limbs or wheels instanced with a mirrored matrix render inside out | instanced draws set the front face per mesh, not per instance | build both sides from symmetric geometry; never negate an axis per instance |
 | Shaded faces turned toward the camera (a vehicle's rear, trunks, walls) render near black on High only | three r186's GTAO under a reversed depth buffer marks them fully occluded (seen in its AO target: black on every camera-facing plane, white on the ground); depth-derived normals and a flipped depth both make it worse; the pipeline multiplied the whole colour by it | compare High with a no-AO preset at one view before trusting AO; Tanks runs without GTAO until it is fixed upstream |
 | Road paint, bullet holes, tracks and scorch marks never show | the renderer uses a reversed depth buffer (near = 1), and three.js passes `polygonOffset` to the GPU unflipped: a negative bias pushes the decal *behind* its surface | with `reversedDepthBuffer: true`, use positive `polygonOffsetFactor` / `Units` |
