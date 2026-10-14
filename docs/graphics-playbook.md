@@ -575,6 +575,28 @@ the edge in and out, and a rounded view-space normal lets the sun shade the
 puff (`render/particles.ts`). Put ground debris on the real surface under it
 (pavement, kerb, roof), not the terrain height.
 
+## 6i. Headlight beams in the air (lagoon `render/lightBeams.ts`)
+
+Also from *Halcyon* (its landing lights in the haze). A beam is light scattered
+toward the eye along the view ray, so integrate exactly that:
+`L = ∫ σ(y)·p(θ)·I(ω)/r²·e^(−σt) dt`.
+
+- **Proxy**: one cone mesh per vehicle, back faces only, no depth test, additive.
+  The back face is the far end of the ray's path through the cone; the scene
+  depth (a copy in the buffer's own format, §11) cuts it where something solid
+  is in front, so the beam stops at the ground and never draws over the bonnet.
+- **Lamp**: a low beam, not a round spot: ±24° wide, a sharp flat top just above
+  the axis, softer below, aimed ~4° down. Candela from the light's own setting.
+- **Phase**: two-lobe Henyey–Greenstein (0.8 × g 0.7 + 0.2 × g −0.3): bright
+  halos looking into the lamps, and from the driver's seat the beams still show.
+- **σ**: the stage's fog + 0.0018 /m of humid floor + 0.02 × rain, falling with
+  height like the fog. In physical units nothing fades by time of day: a few
+  nits vanish at noon and make a bright fan at night.
+- 14 samples bunched toward the camera (`t ∝ u²`; from the driver's seat the
+  near metres are brightest), jittered with interleaved gradient noise per
+  pixel and frame; TRAA averages it. Off = scale the proxy to nothing (no
+  fragments, no recompile).
+
 ## 6h. Animals and enemies (lagoon `render/creatures.ts`, `render/guerrillas.ts`)
 
 - **The same rigid-segment rig as the soldiers** (§6c), one InstancedMesh per
@@ -942,6 +964,29 @@ mixed over the analytic sky by its weight. Rules learnt:
   specular scaled by `1 − weight`) and Tanks (lakes).
 - The frame governor switches it off through a uniform (a branch on a uniform
   is uniform control flow) right after the sun shafts, before resolution.
+
+### 7.13 A wake that lasts (lagoon `render/wakeFoam.ts`)
+
+From the seaplane scene *Halcyon* (an AI-made three.js demo): what sells a
+moving hull is not the bow wave but the white trail it leaves, widening and
+tearing into lace far behind. The ripple field (§7.7) cannot hold it: its
+window is 24–32 m and it only knows how stirred the water is *now*.
+
+- A second CPU field round the camera: 0.5 m cells, 192² on High (96 m),
+  one R8 texture. Each 1/15 s step: `f ← (f + k·∇²f)·e^(−Δt/τ)` with
+  τ = 9 s and diffusion 0.05 m²/s, so a trail widens as it thins. Re-centre
+  by whole cells as for the ripples; stop stepping once everything is under
+  0.004 and upload one clear frame.
+- Stamp along the segment each source moved since last frame (every 0.3 m,
+  the amount shared out) so a long frame leaves no gaps; a jump over 8 m is
+  a teleport and stamps once. The transom (propeller wash, by throttle and
+  speed) and both quarters (by speed²) are sources; every splash leaves a
+  patch of bubbles too.
+- A source leaves about `rate × 0.5 m / speed` per cell: aim for ~0.7 at
+  cruising speed. At 1.2+ the whole trail is a white sheet; the look is a
+  white core with lace at the edges.
+- The water shader feeds the amount to the surf's `laceCover` (own offset and
+  scale so it never repeats the surf's net): thin foam is lace, not grey.
 
 ---
 ## 8. Phones: budget and stutter-proofing
