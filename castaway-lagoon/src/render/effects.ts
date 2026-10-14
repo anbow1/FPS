@@ -1,7 +1,8 @@
 import { float, smoothstep, uv, vec3, vec4 } from 'three/tsl';
-import { AdditiveBlending, CircleGeometry, type Camera, DoubleSide, Group, InstancedMesh, Matrix4, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, type Scene, Vector3 } from 'three/webgpu';
+import { AdditiveBlending, BufferAttribute, BufferGeometry, CircleGeometry, type Camera, DoubleSide, Group, InstancedMesh, LineBasicNodeMaterial, LineSegments, Matrix4, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, type Scene, Vector3 } from 'three/webgpu';
 import { lightColour } from './colour.ts';
 import { WATER_LEVEL_M } from '../config.ts';
+import { newHit } from '../game/colliders.ts';
 import type { LagoonEvent } from '../game/events.ts';
 import type { LagoonGame } from '../game/game.ts';
 import type { SurfaceKind } from '../game/terrain.ts';
@@ -18,6 +19,12 @@ import { addRipple } from './waterFx.ts';
 const MUZZLE_FLASH_CD = 60000; // lighting sheet: rifle muzzle flash peak
 const MUZZLE_FLASH_K = 2400;
 const DECALS = 96;
+/** Tracer streaks of the guerrillas' rounds: how many at once, how long each streak (m), and how fast it moves (the round's own speed). */
+const TRACERS = 24;
+const TRACER_LENGTH_M = 7;
+const TRACER_SPEED_MS = 715;
+/** A tracer's luminance (cd/m²): a burning pyrotechnic pellet, bright even at noon. */
+const TRACER_NITS = 4e5;
 
 export class Effects {
   readonly lit = new ParticlePool(900, false);
@@ -34,6 +41,11 @@ export class Effects {
   private readonly up = new Vector3(0, 0, 1);
   private fireAcc = 0;
   private readonly group = new Group();
+  private readonly tracerPos = new Float32Array(TRACERS * 6);
+  private readonly tracers: { o: Vector3; d: Vector3; t: number; life: number }[] = [];
+  private readonly tracerLines: LineSegments;
+  private tracerCount = 0;
+  private readonly hit = newHit();
 
   constructor(
     scene: Scene,
@@ -42,6 +54,16 @@ export class Effects {
   ) {
     this.group.name = 'effects';
     this.group.add(this.lit.mesh, this.glow.mesh, this.flashLight);
+    // Tracers: one line per round in flight, additive, in physical luminance like the flash.
+    const tg = new BufferGeometry();
+    tg.setAttribute('position', new BufferAttribute(this.tracerPos, 3));
+    const tm = new LineBasicNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false });
+    tm.colorNode = vec4(vec3(1, 0.45, 0.15).mul(U.preExposure.mul(TRACER_NITS)), 1);
+    this.tracerLines = new LineSegments(tg, tm);
+    this.tracerLines.frustumCulled = false;
+    this.tracerLines.name = 'tracers';
+    this.group.add(this.tracerLines);
+    for (let i = 0; i < TRACERS; i++) this.tracers.push({ o: new Vector3(), d: new Vector3(), t: 0, life: 0 });
     const fc = lightColour(MUZZLE_FLASH_K);
     this.flashLight.color.setRGB(fc.r, fc.g, fc.b);
     // Flash card: a star-shaped glow drawn in the rifle's own frame.
@@ -107,6 +129,35 @@ export class Effects {
       case 'canHit':
         this.burst(SPECS.spark, this.v.copy(canPos(game, e.id)), 6, 3, this.glow);
         break;
+      case 'enemyShot': {
+        // Seen from outside: a flash ball, a puff, and every third round a tracer.
+        this.glow.spawn(SPECS.muzzle, this.v.set(e.origin.x + e.dir.x * 0.1, e.origin.y + e.dir.y * 0.1, e.origin.z + e.dir.z * 0.1), this.w.set(e.dir.x, e.dir.y, e.dir.z));
+        this.lit.spawn(SPECS.gunSmoke, this.v.set(e.origin.x, e.origin.y, e.origin.z), this.w.set(e.dir.x * 1.5, 0.3, e.dir.z * 1.5));
+        if (Math.random() < 0.34) {
+          const tr = this.tracers.find((t) => t.t >= t.life);
+          if (tr) {
+            tr.o.set(e.origin.x, e.origin.y, e.origin.z);
+            tr.d.set(e.dir.x, e.dir.y, e.dir.z);
+            tr.t = 0;
+            // It burns out where the round stops: the first thing on its line, or 400 m.
+            const range = game.world.collision.raycast(e.origin, e.dir, 400, this.hit, true) ? this.hit.distanceM : 400;
+            tr.life = range / TRACER_SPEED_MS;
+          }
+        }
+        break;
+      }
+      case 'threatHit': {
+        // Under water a cloud; in the air a few droplets and a mist, thrown along the round.
+        if (e.pos.y < WATER_LEVEL_M - 0.1) {
+          this.lit.spawn(SPECS.bloodWater, this.v.set(e.pos.x, Math.min(e.pos.y, WATER_LEVEL_M - 0.05), e.pos.z), this.w.set(0, 0.1, 0));
+          addRipple(e.pos.x, e.pos.z, 0.3);
+          break;
+        }
+        const n = e.killed ? 10 : 6;
+        for (let i = 0; i < n; i++) this.lit.spawn(SPECS.blood, this.v.set(e.pos.x, e.pos.y, e.pos.z), this.w.set(e.dir.x * 2 + (Math.random() - 0.5) * 2, Math.random() * 1.5, e.dir.z * 2 + (Math.random() - 0.5) * 2));
+        this.lit.spawn(SPECS.bloodMist, this.v.set(e.pos.x, e.pos.y, e.pos.z), this.w.set(e.dir.x * 0.6, 0.1, e.dir.z * 0.6));
+        break;
+      }
       case 'shot': {
         this.flashTimer = 0.034;
         this.flashCard.rotation.z = Math.random() * Math.PI;
@@ -201,6 +252,31 @@ export class Effects {
     }
     this.lit.update(dt, camera, preExposure);
     this.glow.update(dt, camera, preExposure);
+    this.updateTracers(dt);
+  }
+
+  /** Each tracer: a streak moving down its line at the round's speed until it has gone far enough. */
+  private updateTracers(dt: number): void {
+    let n = 0;
+    for (const t of this.tracers) {
+      if (t.t >= t.life) continue;
+      t.t += dt;
+      const head = Math.min(t.t * TRACER_SPEED_MS, TRACER_SPEED_MS * t.life);
+      const tail = Math.max(0, head - TRACER_LENGTH_M);
+      const o = n * 6;
+      this.tracerPos[o] = t.o.x + t.d.x * tail;
+      this.tracerPos[o + 1] = t.o.y + t.d.y * tail;
+      this.tracerPos[o + 2] = t.o.z + t.d.z * tail;
+      this.tracerPos[o + 3] = t.o.x + t.d.x * head;
+      this.tracerPos[o + 4] = t.o.y + t.d.y * head;
+      this.tracerPos[o + 5] = t.o.z + t.d.z * head;
+      n++;
+    }
+    if (n === 0 && this.tracerCount === 0) return;
+    this.tracerCount = n;
+    const g = this.tracerLines.geometry;
+    g.setDrawRange(0, n * 2);
+    (g.getAttribute('position') as BufferAttribute).needsUpdate = true;
   }
 }
 

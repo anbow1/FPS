@@ -34,6 +34,22 @@ L headlights): it pitches and rolls over the dunes, drags in soft sand,
 stops at deep water; the bonnet and the passenger door open with E. Swim too far and a current carries
 you back.
 
+The lagoon is not safe. A **tiger** hunts the jungle: it stalks low through
+the trees, charges the last stretch and leaps; it backs off after a strike and
+comes again, keeps away from someone standing by a burning fire at night, and
+runs when badly hurt. **Wild boars** root about at the edge of the trees and
+charge whoever walks up to them. **Crocodiles** lie in the shallows with only
+their eyes showing, or bask on the sand, and lunge at anyone wading or walking
+close. **Sharks** in the deep water circle a swimmer, closer and closer, fin
+out, then strike (the boat is safe). **Guerrillas** have a camp in the jungle
+west of the shelter, walk a patrol along the beach, and every few minutes a
+party comes down on the shelter: they see you (less at night, unless your lamp
+is lit or you stand in firelight), hear your shots, take cover by the trees and
+fire real rounds — the dead drop their ammunition and sometimes a field
+dressing. Wounds heal by themselves only half way; Q treats them with the best
+thing you carry (a dressing, a jungle herb, aloe, food). At zero you black out
+and come round at the shelter. `?peaceful` starts the lagoon without them.
+
 | | |
 |---|---|
 | Move / sprint / jump · swim up | WASD · Shift · Space |
@@ -42,6 +58,7 @@ you back.
 | Boat: board or leave · throttle · tiller | E · W/S · A/D |
 | Jeep: get in or out · drive / brake · steer · headlights | E · W/S · A/D · L |
 | Interact / pick up / harvest / examine | E |
+| Treat wounds (dressing, herb, aloe, food) | Q |
 | Shoot · slash · throw (hold to wind up) | Mouse 1 |
 | Aim the rifle | Mouse 2 |
 | Reload | R |
@@ -61,13 +78,16 @@ src/config.ts          every tunable (physics, player, stone, rifle, knife, weat
 src/core/              fixed-step loop, rebindable input, noise, seeded RNG, vector helpers
 src/game/              logic only, no THREE: terrain height function, world layout, collision,
                        player, bodies (stones, shells, cans), bullets, equipment, inventory,
-                       time of day and weather, and the fixed step order in game.ts
+                       time of day and weather, the animals (fauna.ts) and the guerrillas
+                       (guerrillas.ts) with their hit spheres (targets.ts), and the fixed
+                       step order in game.ts
 src/render/            stage and post chain, exposure, texture sets, sky, lighting and exposure, ground, water,
                        palms, jungle, undergrowth, rocks, outpost, props, arms, viewmodel,
-                       particles, effects, rain, ambient life
+                       particles, effects, rain, ambient life, the animals (creatures.ts),
+                       the guerrillas (guerrillas.ts) and their camp (camp.ts)
 src/audio/             synthesised positional audio (no samples)
 src/ui/                HUD, menus, inventory, icons
-tests/lagoon.test.ts   headless logic tests
+tests/lagoon.test.ts   headless logic tests; tests/threats.test.ts the animals, guerrillas and wounds
 ```
 
 Everything is procedural: textures are generated at load, models are built

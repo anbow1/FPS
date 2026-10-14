@@ -24,6 +24,7 @@ export const PROP_MODELS: ReadonlySet<string> = new Set([
   'lantern',
   'log',
   'map',
+  'medkit',
   'none',
   'photo',
   'radio',

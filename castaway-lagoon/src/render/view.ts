@@ -32,6 +32,9 @@ import { JeepView } from './jeep.ts';
 import { createRipples } from './waterFx.ts';
 import type { RippleField } from './rippleField.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
+import { CreatureView } from './creatures.ts';
+import { GuerrillaView } from './guerrillas.ts';
+import { buildCamp, type CampView } from './camp.ts';
 
 // The render system: reads game state once per display frame and writes
 // transforms and uniforms (rules §10 — logic never touches THREE). Owns the
@@ -68,6 +71,10 @@ export class LagoonView {
   /** The carried lamp hangs from this pivot, which follows the left hand (swingLamp). */
   private readonly lampCarry = new Group();
   private readonly boat = new BoatView();
+  /** The animals and the guerrillas (game/fauna.ts, game/guerrillas.ts), and the guerrillas' camp. */
+  private creatures: CreatureView | null = null;
+  private guerrillas: GuerrillaView | null = null;
+  private camp: CampView | null = null;
   private readonly jeep = new JeepView();
   private readonly boatTmp = { x: 0, y: 0, z: 0 };
   private readonly lampAnchor = new Vector3();
@@ -131,6 +138,15 @@ export class LagoonView {
     stage.scene.add(this.outpost.group, this.outpost.dock, this.lampCarry, this.boat.group, this.jeep.group);
     this.props = new Props(game);
     stage.scene.add(this.props.group);
+    if (game.fauna) {
+      this.creatures = new CreatureView();
+      stage.scene.add(this.creatures.group);
+    }
+    if (game.band) {
+      this.guerrillas = new GuerrillaView();
+      this.camp = buildCamp(game.band.camp);
+      stage.scene.add(this.guerrillas.group, this.camp.group);
+    }
     this.viewModel = new ViewModel();
     stage.camera.add(this.viewModel.root);
     this.effects = new Effects(stage.scene, this.viewModel, this.outpost.firePos);
@@ -224,6 +240,9 @@ export class LagoonView {
     this.lighting.update(env, this.stage.camera, dt);
     placeWater(this.water.mesh, this.stage.camera.position);
     this.props.update(game);
+    if (this.creatures && game.fauna) this.creatures.update(game.fauna.creatures, alpha, dt);
+    if (this.guerrillas && game.band) this.guerrillas.update(game.band.members, alpha, dt);
+    this.camp?.update(env.daylight.night, this.lighting.preExposure, U.time.value);
     this.viewModel.root.updateMatrixWorld(true);
     this.viewModel.update(game, dt, pendingYawRad, pendingPitchRad);
     this.updateLocalLights(game, dt);

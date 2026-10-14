@@ -176,7 +176,7 @@ export class LagoonGame {
     if (options.threats) {
       this.fauna = new Fauna();
       this.fauna.populate(this.ctx);
-      this.band = new GuerrillaBand(this.rng, this.world.trees);
+      this.band = new GuerrillaBand(this.rng, this.world.trees, this.world.collision);
       this.band.populate(this.rng);
     } else {
       this.fauna = null;

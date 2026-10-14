@@ -211,6 +211,15 @@ export class Props {
         g.add(b, handle);
         break;
       }
+      case 'medkit': {
+        // A field dressing in its olive pouch, the sealed packet's pale end showing.
+        const b = new Mesh(new BoxGeometry(0.15, 0.06, 0.1), M.cotCanvas);
+        b.position.y = 0.03;
+        const pack = new Mesh(new BoxGeometry(0.07, 0.04, 0.09), M.paper);
+        pack.position.set(0.07, 0.035, 0);
+        g.add(b, pack);
+        break;
+      }
       case 'beans': {
         const tin = shared('beans', () => new MeshStandardNodeMaterial({ map: labelTexture('#2e6a8a', 'BEANS'), roughness: 0.45, metalness: 0.2 }));
         for (let k = 0; k < 2; k++) {

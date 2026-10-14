@@ -1,6 +1,6 @@
 import { GUERRILLA, LAGOON_PLAYER, RIFLE } from '../config.ts';
 import type { Rng } from '../core/rng.ts';
-import { newHit, type RayHit, WATER_HIT } from './colliders.ts';
+import { type CollisionWorld, newHit, type RayHit, WATER_HIT } from './colliders.ts';
 import type { HitPart, P3 } from './events.ts';
 import { type HitSphere, setSphere, type Target } from './targets.ts';
 import { bearing, depthAt, sightLine, type ThreatContext, trunkAvoidance, turnToward, wrapAngle } from './threatContext.ts';
@@ -498,6 +498,12 @@ function closestToPoint(o: P3, d: P3, maxT: number, x: number, y: number, z: num
 
 // ------------------------------------------------------------------ the band
 
+/** The camp's crates round its fire (x east, z south of it), solid for the player and drawn by render/camp.ts. */
+export const CAMP_CRATES: readonly { x: number; z: number; hx: number; hy: number; hz: number; yawRad: number }[] = [
+  { x: 2.6, z: 1.8, hx: 0.45, hy: 0.25, hz: 0.3, yawRad: 0.3 },
+  { x: 3.2, z: 2.6, hx: 0.35, hy: 0.2, hz: 0.25, yawRad: -0.2 },
+];
+
 export interface LootDrop {
   pos: P3;
   ammo: number;
@@ -517,9 +523,16 @@ export class GuerrillaBand {
   private readonly respawn: { role: GuerrillaRole; s: number }[] = [];
   private readonly trees: readonly { x: number; z: number }[];
 
-  constructor(rng: Rng, trees: readonly { x: number; z: number }[]) {
+  constructor(rng: Rng, trees: readonly { x: number; z: number }[], collision?: CollisionWorld) {
     this.trees = trees;
-    this.camp = findCamp(rng);
+    this.camp = findCamp(rng, trees);
+    if (collision) {
+      for (const c of CAMP_CRATES) {
+        const x = this.camp.x + c.x;
+        const z = this.camp.z + c.z;
+        collision.add({ kind: 'box', x, y: heightAt(x, z) + c.hy, z, hx: c.hx, hy: c.hy, hz: c.hz, yawRad: c.yawRad, surface: 'wood' });
+      }
+    }
     this.route = patrolRoute(this.camp);
     this.raidS = rng.range(GUERRILLA.raidEveryS[0], GUERRILLA.raidEveryS[1]);
   }
@@ -652,8 +665,8 @@ function flatEnough(x: number, z: number): boolean {
   return n.y > 0.85;
 }
 
-/** A level clearing in the jungle west of the shelter, 60–100 m from it. */
-function findCamp(rng: Rng): P3 {
+/** A level clearing in the jungle west of the shelter, 60–100 m from it, no trunk within five metres. */
+function findCamp(rng: Rng, trees: readonly { x: number; z: number }[]): P3 {
   for (let i = 0; i < 2000; i++) {
     const a = Math.PI + rng.range(-0.7, 0.5);
     const r = rng.range(60, 100);
@@ -661,6 +674,7 @@ function findCamp(rng: Rng): P3 {
     const z = OUTPOST_CENTRE.z + Math.sin(a) * r;
     if (shoreDistance(x, z) < beachWidth(x, z) + 12 || !flatEnough(x, z)) continue;
     if (Math.hypot(x - LAGOON_CENTRE.x, z - LAGOON_CENTRE.z) > LAGOON_PLAYER.borderStartM - 20) continue;
+    if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 5)) continue;
     return { x, y: heightAt(x, z), z };
   }
   return { x: OUTPOST_CENTRE.x - 80, y: heightAt(OUTPOST_CENTRE.x - 80, OUTPOST_CENTRE.z), z: OUTPOST_CENTRE.z };

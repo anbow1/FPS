@@ -593,3 +593,113 @@ summary {
   opacity: 0;
   pointer-events: none;
 }
+
+/* Health: a quiet bar bottom-left, shown while hurt or healing; red and pulsing when low. */
+.health {
+  position: absolute;
+  left: 28px;
+  bottom: 26px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  opacity: 0;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+.health.on {
+  opacity: 1;
+}
+.health svg {
+  width: 18px;
+  height: 18px;
+}
+.health i {
+  position: relative;
+  display: block;
+  width: min(200px, 34vw);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--glass);
+  overflow: hidden;
+}
+.health b,
+.health u {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+}
+.health b {
+  background: #d9cfb6;
+  transition: background 0.3s;
+}
+/* The part a treatment is still healing: a paler band ahead of the bar. */
+.health u {
+  background: rgba(150, 200, 120, 0.55);
+  text-decoration: none;
+}
+.health.low b {
+  background: #e0674f;
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.health em {
+  font-style: normal;
+  color: var(--ink-dim);
+}
+.health em kbd {
+  font-size: 11px;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Being hurt: the screen's edges flush red, and an arc by the crosshair points to where it came from. */
+.hurt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(120, 0, 0, 0) 45%, rgba(130, 8, 4, 0.75) 100%);
+  opacity: 0;
+}
+.hit-arcs {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.hit-arcs i {
+  position: absolute;
+  left: -70px;
+  top: -70px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  border: 4px solid transparent;
+  border-top-color: rgba(230, 70, 50, 0.95);
+  opacity: 0;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.6));
+}
+.down {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  opacity: 0;
+  transition: opacity 0.6s;
+  pointer-events: none;
+  text-align: center;
+}
+.down.on {
+  opacity: 1;
+}

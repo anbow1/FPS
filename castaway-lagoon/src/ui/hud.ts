@@ -1,4 +1,6 @@
-import { LAGOON_PLAYER, TIME_OF_DAY, type TimeOfDayId, TIME_ORDER, WEATHER, WEATHER_ORDER, type WeatherId } from '../config.ts';
+import { HEALTH, LAGOON_PLAYER, SPECIES, TIME_OF_DAY, type TimeOfDayId, TIME_ORDER, WEATHER, WEATHER_ORDER, type WeatherId } from '../config.ts';
+import type { P3, ThreatKind } from '../game/events.ts';
+import type { ItemId } from '../game/items.ts';
 import type { LagoonEvent } from '../game/events.ts';
 import { type LagoonGame, sleepUntil } from '../game/game.ts';
 import { ITEM_ICONS, TIME_ICONS, WEATHER_ICONS } from './icons.ts';
@@ -7,7 +9,15 @@ import { ITEM_ICONS, TIME_ICONS, WEATHER_ICONS } from './icons.ts';
 // over something you can use, a quiet interaction prompt below the centre
 // zone, pick-up toasts, the ammo or stone count only while that tool is in
 // hand, an examine card, and a time/weather strip that appears when T or N is
-// pressed and fades away. Nothing else stays on screen.
+// pressed and fades away. Health shows only while hurt or healing; a wound
+// flushes the screen's edges red and an arc by the crosshair points to where
+// it came from. Nothing else stays on screen.
+
+const HIT_ARC_S = 1.4;
+
+function causeName(c: ThreatKind | 'fall'): string {
+  return c === 'fall' ? 'a fall' : c === 'guerrilla' ? 'guerrillas' : `a ${SPECIES[c].label.toLowerCase()}`;
+}
 
 const TOAST_SECONDS = 2.6;
 const STRIP_SECONDS = 3.2;
@@ -24,6 +34,19 @@ export class Hud {
   private readonly airFill: HTMLElement;
   private readonly current: HTMLElement;
   private readonly fade: HTMLElement;
+  private readonly health: HTMLElement;
+  private readonly healthFill: HTMLElement;
+  private readonly healthHeal: HTMLElement;
+  private readonly healthHint: HTMLElement;
+  private readonly hurtEdge: HTMLElement;
+  private readonly arcs: HTMLElement[] = [];
+  private readonly down: HTMLElement;
+  private readonly hits: { from: P3 | null; t: number }[] = [];
+  private hurtPulse = 0;
+  private downFade = 0;
+  private lastHint = '';
+  /** First-time warnings, once each per game. */
+  private readonly warned = new Set<string>();
   private stripTimer = 0;
   private messageTimer = 0;
   private lastPrompt = '';
@@ -43,6 +66,10 @@ export class Hud {
       <div class="message"></div>
       <div class="air"><span>Air</span><i><b></b></i></div>
       <div class="current">The current is carrying you back</div>
+      <div class="hurt"></div>
+      <div class="hit-arcs"><i></i><i></i><i></i><i></i></div>
+      <div class="health"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.2 0 3.6 1.2 5.3 3.2 1.7-2 3.1-3.2 5.3-3.2 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z" fill="currentColor"/></svg><i><u></u><b></b></i><em></em></div>
+      <div class="down"></div>
       <div class="fade"></div>`;
     const q = (sel: string): HTMLElement => {
       const el = root.querySelector<HTMLElement>(sel);
@@ -60,6 +87,13 @@ export class Hud {
     this.airFill = q('.air b');
     this.current = q('.current');
     this.fade = q('.fade');
+    this.health = q('.health');
+    this.healthFill = q('.health b');
+    this.healthHeal = q('.health u');
+    this.healthHint = q('.health em');
+    this.hurtEdge = q('.hurt');
+    this.down = q('.down');
+    root.querySelectorAll<HTMLElement>('.hit-arcs i').forEach((el) => this.arcs.push(el));
   }
 
   set visible(v: boolean) {
@@ -73,9 +107,38 @@ export class Hud {
       (this.examine.querySelector('h3') as HTMLElement).textContent = e.title;
       (this.examine.querySelector('p') as HTMLElement).textContent = e.text;
     } else if (e.type === 'message') {
-      this.message.textContent = e.text;
-      this.messageTimer = 2.2;
+      this.say(e.text, 2.2);
+    } else if (e.type === 'hurt') {
+      this.hurtPulse = Math.min(1, this.hurtPulse + 0.35 + e.amount / 60);
+      if (e.from) {
+        this.hits.unshift({ from: { ...e.from }, t: HIT_ARC_S });
+        if (this.hits.length > this.arcs.length) this.hits.length = this.arcs.length;
+      }
+    } else if (e.type === 'blackout') {
+      this.down.textContent = `You black out — ${causeName(e.cause)}`;
+      this.hits.length = 0;
+    } else if (e.type === 'wake') {
+      this.say('You come round at the shelter, patched up', 3.5);
+    } else if (e.type === 'treat') {
+      this.toast(e.item in ITEM_ICONS ? ITEM_ICONS[e.item as keyof typeof ITEM_ICONS] : '', `+${e.hp} health`);
+      this.say(e.text, 2.2);
+    } else if (e.type === 'threatCall') {
+      // The first sign of each danger gets a word, once.
+      const first = (key: string, text: string): void => {
+        if (this.warned.has(key)) return;
+        this.warned.add(key);
+        this.say(text, 3.2);
+      };
+      if (e.kind === 'tiger' && (e.call === 'growl' || e.call === 'roar')) first('tiger', 'A growl in the trees — something big is stalking you');
+      else if (e.kind === 'guerrilla' && e.call === 'shout') first('guerrilla', 'Voices, shouting — armed men in the jungle');
+      else if (e.kind === 'boar' && e.call === 'squeal') first('boar', 'A boar — it is coming at you');
+      else if (e.kind === 'croc') first('croc', 'Something big in the water — get out of it');
     }
+  }
+
+  private say(text: string, seconds: number): void {
+    this.message.textContent = text;
+    this.messageTimer = seconds;
   }
 
   private toast(icon: string, text: string): void {
@@ -163,9 +226,49 @@ export class Hud {
       const t = Math.min(1, eq.action.elapsedSeconds / eq.action.durationSeconds);
       dark = t < 0.35 ? t / 0.35 : t > 0.7 ? (1 - t) / 0.3 : 1;
     }
-    this.fade.style.opacity = dark.toFixed(3);
+    // Blacked out: dark while down, light again on waking.
+    this.downFade += ((game.downS > 0 ? 1 : 0) - this.downFade) * Math.min(1, dt * (game.downS > 0 ? 2.5 : 1.2));
+    this.down.classList.toggle('on', game.downS > 0.6);
+    this.fade.style.opacity = Math.max(dark, this.downFade).toFixed(3);
+    this.updateHealth(game, dt);
     this.messageTimer = Math.max(0, this.messageTimer - dt);
     this.message.classList.toggle('on', this.messageTimer > 0);
+  }
+
+  private updateHealth(game: LagoonGame, dt: number): void {
+    const p = game.player;
+    const k = p.health / HEALTH.max;
+    const healing = game.healPool > 0;
+    this.health.classList.toggle('on', k < 0.995 || healing || game.sinceHurtS < 4);
+    this.health.classList.toggle('low', k < 0.3);
+    this.healthFill.style.transform = `scaleX(${k.toFixed(3)})`;
+    this.healthHeal.style.transform = `scaleX(${Math.min(1, (p.health + game.healPool) / HEALTH.max).toFixed(3)})`;
+    // A hint to treat the wound, when there is something to treat it with.
+    const kit = HEALTH.treatments.find((t) => game.inventory.has(t.item as ItemId));
+    const hint = k < 0.75 && !healing && kit ? `<kbd>Q</kbd> ${kit.item === 'medkit' ? 'Dress the wound' : 'Treat wounds'}` : '';
+    if (hint !== this.lastHint) {
+      this.healthHint.innerHTML = hint;
+      this.lastHint = hint;
+    }
+    // Red edges: a flush on each hit, a slow throb while badly hurt.
+    this.hurtPulse = Math.max(0, this.hurtPulse - dt * 1.1);
+    const throb = k < 0.3 ? (0.25 + 0.2 * Math.sin(performance.now() * 0.006)) * (1 - k / 0.3) : 0;
+    this.hurtEdge.style.opacity = Math.min(1, this.hurtPulse + throb).toFixed(3);
+    // Direction arcs: rotated to where each hit came from, relative to where the player faces.
+    for (let i = 0; i < this.arcs.length; i++) {
+      const el = this.arcs[i] as HTMLElement;
+      const h = this.hits[i];
+      if (!h || !h.from) {
+        el.style.opacity = '0';
+        continue;
+      }
+      h.t -= dt;
+      const bearing = Math.atan2(-(h.from.x - p.pos.x), -(h.from.z - p.pos.z));
+      const rel = bearing - p.yawRad;
+      el.style.transform = `rotate(${(-rel).toFixed(3)}rad)`;
+      el.style.opacity = Math.max(0, h.t / HIT_ARC_S).toFixed(3);
+    }
+    while (this.hits.length > 0 && (this.hits[this.hits.length - 1] as { t: number }).t <= 0) this.hits.pop();
   }
 
   private renderStrip(time: TimeOfDayId, weather: WeatherId): void {

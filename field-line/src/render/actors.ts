@@ -1,4 +1,4 @@
-import { attribute, float, mix, mx_noise_float, positionLocal, step, vec3 } from 'three/tsl';
+import { attribute, float, mix, mx_noise_float, positionGeometry, step, vec3 } from 'three/tsl';
 import {
   BoxGeometry,
   BufferAttribute,
@@ -273,8 +273,9 @@ function soldierMaterial(): MeshPhysicalNodeMaterial {
   const kind = attribute('kind', 'float');
   const camo = step(1.5, kind);
   const fabric = step(0.5, kind);
-  // Four-colour woodland-style blotches in each segment's own space (sheet uniform #5A5E48 as the base).
-  const p = positionLocal.mul(6.5);
+  // Four-colour woodland-style blotches in each segment's own space (sheet uniform #5A5E48 as the base):
+  // positionGeometry, as positionLocal is already instanced and the blotches would crawl as he moves.
+  const p = positionGeometry.mul(6.5);
   const n1 = mx_noise_float(p);
   const n2 = mx_noise_float(p.mul(1.7).add(vec3(3.1, 7.7, 1.3)));
   const base = vec3(0.1, 0.11, 0.065); // #5A5E48 in linear

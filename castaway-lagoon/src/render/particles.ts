@@ -169,9 +169,16 @@ export const SPECS = {
   smoke: spec({ colour: [0.22, 0.21, 0.2], sizeM: 0.35, growPerS: 0.5, lifeS: 4.5, drag: 0.4, gravity: -0.03, opacity: 0.1 }),
   gunSmoke: spec({ colour: [0.6, 0.6, 0.6], sizeM: 0.12, growPerS: 0.5, lifeS: 1.2, drag: 2, gravity: -0.02, opacity: 0.18 }),
   rainSplash: spec({ colour: [0.75, 0.8, 0.85], sizeM: 0.03, lifeS: 0.25, drag: 0.5, stretch: 0.08, opacity: 0.6 }),
+  // A hit on a body: a few dark droplets and a brief fine mist, nothing more (no gore).
+  blood: spec({ colour: [0.16, 0.012, 0.01], sizeM: 0.018, lifeS: 0.7, drag: 0.6, stretch: 0.04, bounce: false, opacity: 0.95 }),
+  bloodMist: spec({ colour: [0.22, 0.03, 0.025], sizeM: 0.14, growPerS: 0.6, lifeS: 0.45, drag: 4, gravity: 0.05, opacity: 0.4 }),
+  // A wound in the water: a cloud that spreads and fades.
+  bloodWater: spec({ colour: [0.2, 0.03, 0.03], sizeM: 0.4, growPerS: 0.8, lifeS: 3, drag: 3, gravity: 0, opacity: 0.3 }),
   // Glow pool (colour × luminance in cd/m² set per pool).
   spark: spec({ colour: [1, 0.55, 0.2], sizeM: 0.012, lifeS: 0.35, drag: 0.5, stretch: 0.05, bounce: true }),
   ember: spec({ colour: [1, 0.42, 0.12], sizeM: 0.018, lifeS: 2.2, drag: 0.9, gravity: -0.06 }),
   flame: spec({ colour: [1, 0.46, 0.12], sizeM: 0.085, growPerS: -0.06, lifeS: 0.45, drag: 1.2, gravity: -0.3, stretch: 1.4, opacity: 0.55 }),
+  // Another rifle's flash, seen from outside: a short-lived ball of hot gas at the muzzle.
+  muzzle: spec({ colour: [1, 0.62, 0.28], sizeM: 0.32, growPerS: 1.5, lifeS: 0.05, drag: 0, gravity: 0, opacity: 1 }),
 } as const;
 

@@ -1,4 +1,5 @@
-import type { LagoonEvent } from '../game/events.ts';
+import { HEALTH } from '../config.ts';
+import type { LagoonEvent, ThreatCall, ThreatKind } from '../game/events.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { FURNITURE, OUTPOST, outpostToWorld } from '../game/outpost.ts';
 import type { SurfaceKind } from '../game/terrain.ts';
@@ -46,6 +47,7 @@ export class LagoonAudio {
   private birdTimer = 2;
   private frogTimer = 3;
   private howlTimer = 25;
+  private heartS = 0;
   private patterAcc = 0;
   private crackleTimer = 0;
   private t = 0;
@@ -148,6 +150,18 @@ export class LagoonAudio {
       this.crackleTimer = 0.05 + Math.random() * 0.4;
       const { out, when } = s.voice(firePos(), 0.05, 1);
       s.noiseBurst(out, when, { type: 'highpass', freq: 1500 + Math.random() * 3000, gain: 0.05 + Math.random() * 0.12, attack: 0.001, decay: 0.012 + Math.random() * 0.03 });
+    }
+    // Badly hurt: the heartbeat in the ears, faster the worse it is.
+    const hp = game.player.health / HEALTH.max;
+    if (hp < 0.35 && game.downS <= 0) {
+      this.heartS -= dt;
+      if (this.heartS <= 0) {
+        this.heartS = 0.55 + hp * 1.2;
+        const { out, when } = s.voice(null, 0);
+        const g = (0.35 - hp) * 1.4;
+        s.tone(out, when, { type: 'sine', freq: 58, to: 40, gain: 0.5 * g, attack: 0.01, decay: 0.12 });
+        s.tone(out, when + 0.18, { type: 'sine', freq: 52, to: 38, gain: 0.35 * g, attack: 0.01, decay: 0.12 });
+      }
     }
     // Wildlife.
     this.birdTimer -= dt;
@@ -302,6 +316,45 @@ export class LagoonAudio {
         break;
       case 'shot':
         this.gunshot();
+        break;
+      case 'enemyShot':
+        this.distantShot(e.origin);
+        break;
+      case 'whiz': {
+        // A round going past: the supersonic crack right by the ear, then the air tearing.
+        const { out, when } = s.voice(e.pos, 0, 1);
+        s.noiseBurst(out, when, { type: 'highpass', freq: 3500, gain: 0.5, attack: 0.0005, decay: 0.015 });
+        s.noiseBurst(out, when + 0.004, { type: 'bandpass', freq: 2200, sweepTo: 700, q: 2, gain: 0.12, attack: 0.002, decay: 0.12 });
+        break;
+      }
+      case 'hurt': {
+        // The blow itself, and the player's own grunt.
+        const { out, when } = s.voice(null, 0.05);
+        s.noiseBurst(out, when, { type: 'lowpass', freq: 380, gain: 0.5, attack: 0.002, decay: 0.12, buffer: s.brown });
+        s.tone(out, when + 0.03, { type: 'sawtooth', freq: 150 + Math.random() * 30, to: 105, gain: 0.07, attack: 0.02, decay: 0.2 });
+        s.noiseBurst(out, when + 0.03, { type: 'bandpass', freq: 600, q: 2, gain: 0.05, attack: 0.02, decay: 0.18 });
+        break;
+      }
+      case 'blackout': {
+        const { out, when } = s.voice(null, 0.3);
+        s.noiseBurst(out, when, { type: 'lowpass', freq: 200, gain: 0.4, attack: 0.3, decay: 2.5, buffer: s.brown });
+        break;
+      }
+      case 'treat': {
+        const { out, when } = s.voice(null, 0.05);
+        s.noiseBurst(out, when, { type: 'bandpass', freq: 2400, q: 0.8, gain: 0.05, attack: 0.08, decay: 0.4, buffer: s.pink });
+        s.noiseBurst(out, when + 0.5, { type: 'bandpass', freq: 1800, q: 0.8, gain: 0.04, attack: 0.08, decay: 0.3, buffer: s.pink });
+        break;
+      }
+      case 'threatHit': {
+        // A round or the blade going into a body: a short wet thump at it.
+        const { out, when } = s.voice(e.pos, 0.05, 2);
+        s.noiseBurst(out, when, { type: 'lowpass', freq: 520, gain: 0.35, attack: 0.001, decay: 0.07, buffer: s.brown });
+        if (e.kind !== 'guerrilla' && e.kind !== 'shark') this.call(e.pos, e.kind, e.killed ? 'die' : 'pain');
+        break;
+      }
+      case 'threatCall':
+        this.call(e.pos, e.kind, e.call);
         break;
       case 'dryFire': {
         const { out, when } = s.voice(null, 0);
@@ -556,6 +609,98 @@ export class LagoonAudio {
       [1.05, 0.08],
     ] as const) {
       s.noiseBurst(out, when + delay, { type: 'lowpass', freq: 700, gain: g, attack: 0.01, decay: 0.35, buffer: s.brown });
+    }
+  }
+
+  /** Another AK, somewhere out there: the crack carries, the blast is dulled by distance, then the echoes. */
+  private distantShot(at: Pos): void {
+    const s = this.s;
+    const d = s.distanceTo(at);
+    const { out, when } = s.voice(at, 0.6, 6);
+    const dull = Math.max(400, 2500 - d * 12);
+    s.noiseBurst(out, when, { type: 'highpass', freq: 2200, gain: 0.5, attack: 0.0005, decay: 0.02 });
+    s.noiseBurst(out, when, { type: 'lowpass', freq: dull, sweepTo: 180, gain: 0.9, attack: 0.001, decay: 0.2, buffer: s.brown });
+    s.tone(out, when, { type: 'sine', freq: 85, to: 36, gain: 0.5, attack: 0.001, decay: 0.2 });
+    s.noiseBurst(out, when + 0.3 + d * 0.002, { type: 'lowpass', freq: 600, gain: 0.18, attack: 0.01, decay: 0.4, buffer: s.brown });
+  }
+
+  /**
+   * Animal and human voices, synthesised: a growl is a low buzz (a sawtooth a little over 50 Hz)
+   * through a chesty noise band, pulsed at ~25 Hz like a rattling throat; a roar the same rising and
+   * falling, louder; a boar grunts in short low pulses and squeals high; a crocodile hisses; a man
+   * shouts a two-formant vowel.
+   */
+  private call(at: Pos, kind: ThreatKind, call: ThreatCall): void {
+    const s = this.s;
+    const { out, when } = s.voice(at, 0.25, kind === 'tiger' ? 6 : 3);
+    const pulses = (n: number, gap: number, freq: number, gain: number, decay: number): void => {
+      for (let k = 0; k < n; k++) s.noiseBurst(out, when + k * gap, { type: 'bandpass', freq: freq * (0.9 + Math.random() * 0.2), q: 1.4, gain: gain * (0.7 + Math.random() * 0.5), attack: 0.01, decay, buffer: s.brown });
+    };
+    switch (call) {
+      case 'growl':
+        s.tone(out, when, { type: 'sawtooth', freq: 62, to: 52, gain: 0.12, attack: 0.15, decay: 1.1 });
+        pulses(22, 0.045, 320, 0.22, 0.05);
+        break;
+      case 'roar':
+        s.tone(out, when, { type: 'sawtooth', freq: 95, to: 140, gain: 0.3, attack: 0.25, decay: 0.5, glide: 0.4 });
+        s.tone(out, when + 0.5, { type: 'sawtooth', freq: 140, to: 70, gain: 0.25, attack: 0.02, decay: 0.9 });
+        s.noiseBurst(out, when, { type: 'bandpass', freq: 450, sweepTo: 260, q: 1, gain: 0.6, attack: 0.25, decay: 1.2, buffer: s.brown });
+        pulses(26, 0.05, 380, 0.25, 0.06);
+        break;
+      case 'snarl':
+        s.noiseBurst(out, when, { type: 'bandpass', freq: 900, q: 1.5, gain: 0.35, attack: 0.02, decay: 0.3 });
+        s.tone(out, when, { type: 'sawtooth', freq: 160, to: 110, gain: 0.12, attack: 0.02, decay: 0.3 });
+        break;
+      case 'grunt':
+        for (let k = 0; k < 3; k++) {
+          s.noiseBurst(out, when + k * 0.16, { type: 'lowpass', freq: 420, gain: 0.25, attack: 0.01, decay: 0.08, buffer: s.brown });
+          s.tone(out, when + k * 0.16, { type: 'sawtooth', freq: 95 + Math.random() * 15, to: 80, gain: 0.08, attack: 0.01, decay: 0.09 });
+        }
+        break;
+      case 'squeal':
+        s.tone(out, when, { type: 'sawtooth', freq: 700, to: 1500, gain: 0.12, attack: 0.03, decay: 0.45, glide: 0.25 });
+        s.noiseBurst(out, when, { type: 'bandpass', freq: 2200, q: 3, gain: 0.15, attack: 0.03, decay: 0.45 });
+        break;
+      case 'hiss':
+        s.noiseBurst(out, when, { type: 'highpass', freq: 2500, gain: 0.25, attack: 0.15, decay: 0.9 });
+        s.noiseBurst(out, when, { type: 'lowpass', freq: 160, gain: 0.2, attack: 0.1, decay: 0.6, buffer: s.brown }); // a low rumble under it
+        break;
+      case 'bite':
+        s.noiseBurst(out, when, { type: 'lowpass', freq: 300, gain: 0.5, attack: 0.002, decay: 0.15, buffer: s.brown });
+        s.noiseBurst(out, when + 0.01, { type: 'bandpass', freq: 1800, q: 3, gain: 0.2, attack: 0.001, decay: 0.03 });
+        if (kind === 'tiger') pulses(8, 0.04, 450, 0.3, 0.05);
+        break;
+      case 'splash':
+        this.splash(at, 4, 30, false);
+        break;
+      case 'pain':
+        if (kind === 'boar') s.tone(out, when, { type: 'sawtooth', freq: 1100, to: 1600, gain: 0.12, attack: 0.02, decay: 0.3 });
+        else if (kind === 'tiger') {
+          s.tone(out, when, { type: 'sawtooth', freq: 180, to: 120, gain: 0.2, attack: 0.02, decay: 0.4 });
+          pulses(8, 0.04, 500, 0.25, 0.05);
+        } else if (kind === 'croc') s.noiseBurst(out, when, { type: 'highpass', freq: 2000, gain: 0.2, attack: 0.02, decay: 0.4 });
+        break;
+      case 'die':
+        if (kind === 'guerrilla') {
+          s.tone(out, when, { type: 'sawtooth', freq: 140, to: 90, gain: 0.08, attack: 0.02, decay: 0.35 });
+          s.noiseBurst(out, when + 0.3, { type: 'lowpass', freq: 300, gain: 0.25, attack: 0.01, decay: 0.15, buffer: s.brown }); // falling
+        } else if (kind === 'tiger') {
+          s.tone(out, when, { type: 'sawtooth', freq: 110, to: 45, gain: 0.2, attack: 0.05, decay: 1.4 });
+          pulses(20, 0.06, 300, 0.18, 0.06);
+        } else if (kind === 'boar') s.tone(out, when, { type: 'sawtooth', freq: 900, to: 300, gain: 0.12, attack: 0.02, decay: 0.7 });
+        break;
+      case 'shout': {
+        // "Hey!" twice: a voiced vowel (saw at ~150 Hz) through two formant bands.
+        for (const k of [0, 0.45]) {
+          const f0 = 140 + Math.random() * 40;
+          s.tone(out, when + k, { type: 'sawtooth', freq: f0, to: f0 * 0.85, gain: 0.05, attack: 0.03, decay: 0.3 });
+          s.noiseBurst(out, when + k, { type: 'bandpass', freq: 650, q: 5, gain: 0.25, attack: 0.03, decay: 0.3, buffer: s.pink });
+          s.noiseBurst(out, when + k, { type: 'bandpass', freq: 1900, q: 6, gain: 0.12, attack: 0.03, decay: 0.25, buffer: s.pink });
+        }
+        break;
+      }
+      default:
+        break;
     }
   }
 
