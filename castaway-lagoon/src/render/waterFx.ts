@@ -4,6 +4,7 @@ import { WATER_LEVEL_M, WAVES } from '../config.ts';
 import { hexToLinear } from './colour.ts';
 import { heightAt } from '../game/terrain.ts';
 import { RippleField } from './rippleField.ts';
+import { WakeFoam } from './wakeFoam.ts';
 import { U } from './uniforms.ts';
 
 // Surface disturbances on the lagoon: splashes, bullets and wading legs push
@@ -15,6 +16,7 @@ import { U } from './uniforms.ts';
 type N2 = Node<'vec2'>;
 
 let field: RippleField | null = null;
+let foamField: WakeFoam | null = null;
 
 /** The lagoon's ripple field, 32 m (High) or 24 m (Low) round the player; land cells stay still. */
 export function createRipples(quality: 'high' | 'low'): RippleField {
@@ -28,9 +30,24 @@ export function createRipples(quality: 'high' | 'low'): RippleField {
   return field;
 }
 
-/** A splash of the given strength (≈ 0.2 knife … 1.75 heavy stone) at (x, z). */
+/**
+ * The foam the boat and splashes leave (wakeFoam.ts), 96 m (High) or 64 m (Low) round the camera:
+ * it lasts ~15 s, the trail widening as it thins.
+ */
+export function createWakeFoam(quality: 'high' | 'low'): WakeFoam {
+  foamField = new WakeFoam({ cells: quality === 'high' ? 192 : 128, cellM: 0.5, lifeS: 9, spreadM2PerS: 0.08 });
+  return foamField;
+}
+
+/** A splash of the given strength (≈ 0.2 knife … 1.75 heavy stone) at (x, z): rings, and a patch of bubbles. */
 export function addRipple(x: number, z: number, strength: number): void {
   field?.disturb(x, z, 0.12 + strength * 0.15, 0.012 + strength * 0.04);
+  foamField?.stamp(x, z, 0.25 + strength * 0.35, strength * 0.6);
+}
+
+/** Lasting foam (0–1) from the boat's wake and splashes. */
+export function wakeFoam(p: N2): Node<'float'> {
+  return foamField ? foamField.sample(p) : float(0);
 }
 
 /** Slope and agitation from the ripple field: vec3(∂h/∂x, ∂h/∂z, agitation). */

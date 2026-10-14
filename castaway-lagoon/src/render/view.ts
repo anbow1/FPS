@@ -29,7 +29,8 @@ import { U } from './uniforms.ts';
 import { buildWater, placeWater } from './water.ts';
 import { BoatView } from './boat.ts';
 import { JeepView } from './jeep.ts';
-import { createRipples } from './waterFx.ts';
+import { createRipples, createWakeFoam } from './waterFx.ts';
+import type { WakeFoam } from './wakeFoam.ts';
 import type { RippleField } from './rippleField.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 import { CreatureView } from './creatures.ts';
@@ -56,6 +57,7 @@ export class LagoonView {
   private caustics!: Caustics;
   private grass: GrassField | null = null;
   private ripples!: RippleField;
+  private foam!: WakeFoam;
   /** CPU milliseconds per part of render() (F3, benchmark). */
   readonly cpu = new CpuTimer();
   outpost!: OutpostView;
@@ -77,6 +79,13 @@ export class LagoonView {
   private camp: CampView | null = null;
   private readonly jeep = new JeepView();
   private readonly boatTmp = { x: 0, y: 0, z: 0 };
+  /** Where each foam source on the hull was last frame (stern, then the two quarters), to draw unbroken trails. */
+  private readonly wakeLast = [
+    { x: 0, z: 0 },
+    { x: 0, z: 0 },
+    { x: 0, z: 0 },
+  ];
+  private wakeLastValid = false;
   private readonly lampAnchor = new Vector3();
   private readonly lampPrevAnchor = new Vector3();
   private readonly lampPrevVel = new Vector3();
@@ -155,6 +164,7 @@ export class LagoonView {
     stage.scene.add(this.rain.mesh, this.life.group);
     await progress('Filling the lagoon', 0.5);
     this.ripples = createRipples(stage.quality);
+    this.foam = createWakeFoam(stage.quality);
     this.water = buildWater(stage.quality);
     for (const t of this.water.ocean.targets) stage.passTimer.name(t, 'water');
     // one FFT at load, so its pipelines and targets exist before the first frame
@@ -265,6 +275,7 @@ export class LagoonView {
     if (!p.inBoat && !p.inJeep && p.pos.y < WATER_LEVEL_M - 0.05 && wadeSpeed > 0.2) this.ripples.disturb(p.pos.x, p.pos.z, 0.3, Math.min(0.004, wadeSpeed * 0.0015) * dt * 60);
     this.wake(game, dt);
     this.ripples.update(dt, this.stage.camera.position.x, this.stage.camera.position.z);
+    this.foam.update(dt, this.stage.camera.position.x, this.stage.camera.position.z);
     const d = env.daylight;
     const lightDir = d.night > 0.5 ? d.moonDir : d.sunDir;
     const lowSun = 1 - Math.min(1, Math.max(0, d.sunDir.y - 0.05) / 0.6);
@@ -302,13 +313,34 @@ export class LagoonView {
     this.lampOn = lampOn;
   }
 
-  /** The boat's bow wave and wake in the ripple field, and spray off the bow at speed. */
+  /** The boat's bow wave and wake in the ripple field, the foam it leaves, and spray off the bow at speed. */
   private wake(game: LagoonGame, dt: number): void {
     const b = game.boat;
     const speed = Math.hypot(b.vel.x, b.vel.z);
-    if (speed < 0.4 || b.grounded) return;
+    if (speed < 0.4 || b.grounded) {
+      this.wakeLastValid = false;
+      return;
+    }
     const k = dt * 60;
     const t = this.boatTmp;
+    // Foam: the propeller's wash streams from the transom, white while it churns, and each quarter
+    // sheds a thinner line where the hull parts the water; both thin and widen behind (wakeFoam.ts).
+    const churn = Math.min(1, speed / 4);
+    // A source leaves about rate × 0.5 m / speed in each cell it crosses: 12/s gives ~1.2 (white) at 5 m/s.
+    const sources: [number, number, number, number][] = [
+      // along, across, radius, foam per second
+      [-BOAT.lengthM * 0.55, 0, 0.5, 6 * Math.abs(b.throttle) + 6 * churn],
+      [-BOAT.lengthM * 0.3, -BOAT.beamM * 0.55, 0.35, 5 * churn * churn],
+      [-BOAT.lengthM * 0.3, BOAT.beamM * 0.55, 0.35, 5 * churn * churn],
+    ];
+    sources.forEach(([along, across, radius, rate], i) => {
+      b.toWorld(along, 0, across, t);
+      const last = this.wakeLast[i] as { x: number; z: number };
+      if (this.wakeLastValid) this.foam.stampLine(last.x, last.z, t.x, t.z, radius, rate * dt);
+      last.x = t.x;
+      last.z = t.z;
+    });
+    this.wakeLastValid = true;
     b.toWorld(BOAT.lengthM * 0.4, 0, 0, t);
     this.ripples.disturb(t.x, t.z, 0.6, Math.min(0.005, speed * 0.001) * k);
     b.toWorld(-BOAT.lengthM * 0.55, 0, 0, t);

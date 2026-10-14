@@ -9,7 +9,7 @@ import { screenReflection } from './screenReflection.ts';
 import { skyRadiance } from './sky.ts';
 import { causticFoamMap } from './textures.ts';
 import { U } from './uniforms.ts';
-import { rainRings, splashRipples, underwaterTint } from './waterFx.ts';
+import { rainRings, splashRipples, underwaterTint, wakeFoam } from './waterFx.ts';
 import { laceCover, shoreSurface, surfFoam } from './shoreWaves.ts';
 import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
 
@@ -229,7 +229,10 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' |
   const surf = surfFoam(p.xz, vShoreS, vBreak, vShoreDir);
   const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.01, 0.06, depth)).mul(0.3), float(0));
   const crestFoam = smoothstep(0.8, 1.6, vCrest).mul(smoothstep(1.3, 2.4, U.waveScale));
-  const foam = clamp(max(surf, edgeLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))), 0, 1);
+  // The boat's wake and old splashes (wakeFoam.ts): foam that lasts, torn into lace as it thins.
+  // Its own lace offset and a finer scale, so a trail never repeats the surf's pattern.
+  const wakeLace = laceCover(p.xz.mul(1.4).add(vec2(11.3, 4.7)), wakeFoam(p.xz).mul(0.85), float(5.3));
+  const foam = clamp(max(max(surf, edgeLace), wakeLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))), 0, 1);
 
   const foamLight = U.sunIrradiance.mul(max(dot(N, U.sunDir), 0)).add(U.skyIrradiance).div(Math.PI).mul(0.8);
 
