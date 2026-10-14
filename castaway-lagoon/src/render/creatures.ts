@@ -361,8 +361,9 @@ function sharkGeometry(): Record<string, BufferGeometry> {
     // Caudal fin on a short keel: the upper lobe long and swept back, the lower shorter.
     tail: joined(
       [
-        tag(new ConeGeometry(0.11, 0.6, 4, 1).scale(0.12, 1, 1).rotateX(0.9).translate(0, 0.22, 0.18), S, SKIN),
-        tag(new ConeGeometry(0.09, 0.38, 4, 1).scale(0.12, 1, 1).rotateX(Math.PI - 0.85).translate(0, -0.14, 0.12), S, SKIN),
+        // Broad at the root (a narrow cone reads as a stick from any angle off the side).
+        tag(new ConeGeometry(0.19, 0.68, 4, 1).scale(0.1, 1, 1).rotateX(0.95).translate(0, 0.24, 0.2), S, SKIN),
+        tag(new ConeGeometry(0.14, 0.4, 4, 1).scale(0.1, 1, 1).rotateX(Math.PI - 0.85).translate(0, -0.15, 0.13), S, SKIN),
         tag(ell(0.06, 0.07, 0.12, 0, 0, 0.06, 8), S, SKIN),
       ],
       'shark tail',
