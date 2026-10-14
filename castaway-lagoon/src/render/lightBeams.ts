@@ -129,7 +129,8 @@ export class HeadlightBeams {
         let lit: Node<'float'> = float(0);
         for (const lamp of [lampA, lampB]) {
           const v = p.sub(lamp);
-          const r2 = max(dot(v, v), 0.04);
+          // Inside ~0.4 m the lamp is not a point: its reflector's aperture bounds the brightness.
+          const r2 = max(dot(v, v), 0.16);
           const along = dot(v, axis);
           const az = max(along, 1e-3);
           // Low beam: ±24° wide, a sharp flat top just above the axis, softer below; nothing behind the lamp.
