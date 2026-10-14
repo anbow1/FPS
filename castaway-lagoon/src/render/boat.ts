@@ -55,13 +55,16 @@ export class BoatView {
     // y up from the transom top). Rounded cowling over a darker lower cowl, a streamlined leg, the
     // anti-cavitation plate, the gearcase torpedo with its skeg, and a three-blade propeller.
     this.motor.position.set(0, GUNWALE_Y - 0.02, BOAT.lengthM / 2 + 0.05);
-    const rbox = (w: number, h: number, d: number, r: number, x: number, y: number, z: number): BufferGeometry =>
-      new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2, h / 2, d / 2) * 0.999).translate(x, y, z);
+    // Every part non-indexed so they merge (the rounded box already is: toNonIndexed would warn).
+    const rbox = (w: number, h: number, d: number, r: number, x: number, y: number, z: number): BufferGeometry => {
+      const g = new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2, h / 2, d / 2) * 0.999).translate(x, y, z);
+      return g.index ? g.toNonIndexed() : g;
+    };
     const upper = new Mesh(rbox(0.25, 0.22, 0.4, 0.08, 0, 0.27, 0.17), cowl);
     const lowerCowl = mergeGeometries([
-      rbox(0.27, 0.1, 0.43, 0.03, 0, 0.12, 0.17).toNonIndexed(),
+      rbox(0.27, 0.1, 0.43, 0.03, 0, 0.12, 0.17),
       // Transom bracket and its two clamp screws with T handles, inside the transom.
-      rbox(0.17, 0.2, 0.07, 0.02, 0, -0.02, 0.0).toNonIndexed(),
+      rbox(0.17, 0.2, 0.07, 0.02, 0, -0.02, 0.0),
       ...[-0.05, 0.05].flatMap((x) => [new CylinderGeometry(0.012, 0.012, 0.1, 8).rotateX(Math.PI / 2).translate(x, -0.08, -0.06).toNonIndexed(), new CylinderGeometry(0.008, 0.008, 0.07, 6).rotateZ(Math.PI / 2).translate(x, -0.08, -0.11).toNonIndexed()]),
       // Tiller grip, rubber.
       new CylinderGeometry(0.026, 0.024, 0.15, 10).rotateX(Math.PI / 2 - 0.12).translate(0, 0.17, -0.55).toNonIndexed(),
@@ -71,7 +74,7 @@ export class BoatView {
         // The leg's streamlined section: an ellipse 1.7 times as long as it is wide.
         new CylinderGeometry(0.055, 0.045, 0.64, 16).scale(0.72, 1, 1.7).translate(0, -0.33, 0.14).toNonIndexed(),
         // Anti-cavitation plate over the propeller.
-        rbox(0.2, 0.01, 0.26, 0.004, 0, -0.66, 0.19).toNonIndexed(),
+        rbox(0.2, 0.01, 0.26, 0.004, 0, -0.66, 0.19),
         // Gearcase: a torpedo along the thrust line, rounded nose forward, tapering aft to the hub.
         new CylinderGeometry(0.044, 0.04, 0.24, 14).rotateX(Math.PI / 2).translate(0, -0.78, 0.13).toNonIndexed(),
         new SphereGeometry(0.044, 14, 8).scale(1, 1, 1.4).translate(0, -0.78, 0.01).toNonIndexed(),
