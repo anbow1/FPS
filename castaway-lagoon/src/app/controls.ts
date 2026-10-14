@@ -15,6 +15,7 @@ export type LagoonAction =
   | 'jump'
   | 'dive'
   | 'interact'
+  | 'heal'
   | 'lamp'
   | 'fire'
   | 'aim'
@@ -38,6 +39,7 @@ export const LAGOON_BINDINGS: Record<LagoonAction, readonly string[]> = {
   jump: ['Space'],
   dive: ['KeyC', 'ControlLeft'],
   interact: ['KeyE'],
+  heal: ['KeyQ'],
   lamp: ['KeyL'],
   fire: ['Mouse0'],
   aim: ['Mouse2'],
@@ -92,6 +94,7 @@ export class LagoonControls {
     intent.move.rise = i.held('jump');
     intent.move.dive = i.held('dive');
     intent.interactPressed = i.pressed('interact');
+    intent.heal = i.pressed('heal');
     intent.toggleLamp = i.pressed('lamp');
     const t = intent.triggers;
     t.firePressed = i.pressed('fire');

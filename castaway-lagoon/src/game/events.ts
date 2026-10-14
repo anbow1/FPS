@@ -1,4 +1,4 @@
-import type { TimeOfDayId } from '../config.ts';
+import type { SpeciesId, TimeOfDayId } from '../config.ts';
 import type { SurfaceKind } from './terrain.ts';
 
 // Everything logic tells render, audio and HUD about, once per step. The
@@ -44,7 +44,22 @@ export type LagoonEvent =
   | { type: 'lamp'; lit: boolean }
   | { type: 'fire'; what: 'fed' | 'lit' | 'out' }
   | { type: 'boat'; what: 'board' | 'leave' | 'engineStart' | 'bump' | 'ground' }
-  | { type: 'jeep'; what: 'enter' | 'exit' | 'start' | 'bump' | 'door' | 'bonnet' | 'lights' };
+  | { type: 'jeep'; what: 'enter' | 'exit' | 'start' | 'bump' | 'door' | 'bonnet' | 'lights' }
+  // Threats (game/fauna.ts, game/guerrillas.ts) and the player's body.
+  | { type: 'hurt'; amount: number; from: P3 | null; cause: ThreatKind | 'fall' }
+  | { type: 'blackout'; cause: ThreatKind | 'fall' }
+  | { type: 'wake' }
+  | { type: 'treat'; item: string; hp: number; text: string }
+  | { type: 'threatHit'; pos: P3; dir: P3; kind: ThreatKind; part: HitPart; killed: boolean }
+  | { type: 'threatCall'; pos: P3; kind: ThreatKind; call: ThreatCall }
+  | { type: 'enemyShot'; origin: P3; dir: P3 }
+  | { type: 'whiz'; pos: P3 };
+
+/** Anything that can hurt the player. */
+export type ThreatKind = SpeciesId | 'guerrilla';
+export type HitPart = 'head' | 'torso' | 'limb';
+/** A creature's or a guerrilla's voice and body noises, for audio. */
+export type ThreatCall = 'growl' | 'roar' | 'snarl' | 'grunt' | 'squeal' | 'hiss' | 'bite' | 'splash' | 'shout' | 'pain' | 'die' | 'step';
 
 export class EventQueue {
   private items: LagoonEvent[] = [];

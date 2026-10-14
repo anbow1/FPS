@@ -1,12 +1,15 @@
-import { PHYSICS, RIFLE } from '../config.ts';
+import { PHYSICS, RIFLE, WEAPON_DAMAGE } from '../config.ts';
 import { knockCan } from './bodies.ts';
 import { type CollisionWorld, newHit, type RayHit, WATER_HIT } from './colliders.ts';
 import type { EventQueue, P3 } from './events.ts';
+import { rayTargets, type Target } from './targets.ts';
 import type { TinCan } from './world.ts';
 
 // Rifle bullets as point masses with gravity and quadratic drag, ray-cast
 // segment by segment every step (rules §5). Each step's segment is tested
-// against the terrain, shapes, the water surface, leaf volumes and the cans.
+// against the terrain, shapes, the water surface, leaf volumes, the cans, and
+// the creatures and guerrillas (targets.ts) — those a little under the
+// surface too, as a round keeps some of its energy for the first half metre.
 
 interface Bullet {
   pos: P3;
@@ -43,7 +46,7 @@ export class Bullets {
     b.vel.z = dir.z * RIFLE.muzzleVelocityMs;
   }
 
-  step(dt: number, cans: TinCan[]): void {
+  step(dt: number, cans: TinCan[], targets: Iterable<Target> = []): void {
     for (const b of this.pool) {
       if (!b.alive) continue;
       const speed = Math.hypot(b.vel.x, b.vel.y, b.vel.z);
@@ -61,6 +64,15 @@ export class Bullets {
       if (canT && (!found || canT.t < this.hit.distanceM)) {
         knockCan(canT.can, d, 1);
         this.events.push({ type: 'canHit', id: canT.can.id });
+        b.alive = false;
+        continue;
+      }
+      // Creatures and men: anything hit before the wall (or within 0.8 m past a water surface).
+      const wallT = found ? this.hit.distanceM + (this.hit.colliderIndex === WATER_HIT ? 0.8 : 0) : len;
+      const th = rayTargets(b.pos, d, wallT, targets);
+      if (th) {
+        const killed = th.target.hurt(WEAPON_DAMAGE.rifle, th.part, d, true);
+        this.events.push({ type: 'threatHit', pos: { x: th.x, y: th.y, z: th.z }, dir: { ...d }, kind: th.target.kind, part: th.part, killed });
         b.alive = false;
         continue;
       }

@@ -18,7 +18,8 @@ export type ItemId =
   | 'lamp'
   | 'lighter'
   | 'fishhooks'
-  | 'log';
+  | 'log'
+  | 'medkit';
 
 export interface ItemSpec {
   name: string;
@@ -45,9 +46,10 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
   lighter: { name: 'Lighter', description: 'Half-empty disposable lighter. Enough for a fire or two.', tool: false },
   log: { name: 'Firewood', description: 'A split log from the stack. Press 4 and throw it on the fire, or put it on with E.', tool: false },
   fishhooks: { name: 'Fishhook Tin', description: 'A dozen hooks and a spool of line in an old tobacco tin.', tool: false },
+  medkit: { name: 'Field Dressing', description: 'A sealed pressure bandage taken from a guerrilla. Q treats your wounds.', tool: false },
 };
 
-export const ITEM_ORDER: readonly ItemId[] = ['rifle', 'knife', 'stone', 'ammo762', 'herb', 'hibiscus', 'aloe', 'coconut', 'beans', 'flare', 'canteen', 'rope', 'backpack', 'lamp', 'lighter', 'fishhooks', 'log'];
+export const ITEM_ORDER: readonly ItemId[] = ['rifle', 'knife', 'stone', 'ammo762', 'herb', 'hibiscus', 'aloe', 'coconut', 'beans', 'flare', 'canteen', 'rope', 'backpack', 'lamp', 'lighter', 'fishhooks', 'log', 'medkit'];
 
 export function isItemId(v: string): v is ItemId {
   return Object.hasOwn(ITEMS, v);

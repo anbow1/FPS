@@ -343,3 +343,120 @@ export const GRAPHICS = {
   grassDensity: { high: 1, low: 0.2 },
   rainDrops: { high: 14000, low: 5000 },
 } as const;
+
+/**
+ * The player's body (game/game.ts). Hit points, not physiology: a full 100, and wounds that heal by
+ * themselves only up to a point — beyond it a herb, food or a field dressing does it (Q).
+ */
+export const HEALTH = {
+  max: 100,
+  /** Without fresh damage for this long, health comes back by itself… */
+  regenDelayS: 8,
+  regenPerS: 1.5,
+  /** …but only up to here. */
+  regenCapFraction: 0.5,
+  /** Healing over time from one treatment (hit points, seconds): crushed herb, aloe gel, food, a dressing. */
+  treatments: [
+    { item: 'medkit', hp: 60, seconds: 4, verb: 'You dress the wound' },
+    { item: 'herb', hp: 30, seconds: 6, verb: 'You crush a herb onto the wound' },
+    { item: 'aloe', hp: 18, seconds: 5, verb: 'You spread aloe gel on the cuts' },
+    { item: 'beans', hp: 15, seconds: 8, verb: 'You eat the beans' },
+    { item: 'coconut', hp: 10, seconds: 6, verb: 'You drink the coconut' },
+  ],
+  /** A blackout: the screen goes dark this long before waking at the shelter. */
+  blackoutS: 4,
+  /** Wake with this much. */
+  respawnFraction: 0.6,
+  /** Falling this fast onto the ground hurts (m/s at impact, damage per m/s beyond). */
+  fallSafeMs: 9,
+  fallDamagePerMs: 9,
+} as const;
+
+/** What a creature is, per species (game/fauna.ts). Speeds and weights are real orders of magnitude; damage is game balance. */
+export interface SpeciesSpec {
+  label: string;
+  health: number;
+  /** Bullet damage multiplier on the body (hide, scutes); the head always takes full. */
+  armour: number;
+  /** Ground or water speeds (m/s): wandering, stalking or circling, and flat out. */
+  walkMs: number;
+  stalkMs: number;
+  runMs: number;
+  turnRadS: number;
+  /** Sight range by day and night (m), and a gunshot heard within this range (m). */
+  sightM: number;
+  nightSightM: number;
+  hearM: number;
+  /** Attack: reach (m), damage, seconds between attacks. */
+  reachM: number;
+  damage: number;
+  cooldownS: number;
+  /** Below this share of health it flees. */
+  fleeFraction: number;
+  /** Seconds before a dead or lost one is replaced, out of sight. */
+  respawnS: number;
+  /** Size scale of the model and the hit volume (1 = an adult). */
+  scale: number;
+}
+
+export const SPECIES = {
+  // Bengal-sized tiger: ~200 kg, sprints at ~15 m/s over short distances (here 11), ambushes from 10–20 m.
+  tiger: { label: 'Tiger', health: 170, armour: 1, walkMs: 1.5, stalkMs: 1.1, runMs: 11, turnRadS: 3.2, sightM: 45, nightSightM: 60, hearM: 220, reachM: 2.2, damage: 34, cooldownS: 2.2, fleeFraction: 0.25, respawnS: 240, scale: 1 },
+  // Wild boar: ~80 kg, charges at ~10 m/s (here 7.5), tusk slash.
+  boar: { label: 'Wild boar', health: 80, armour: 1, walkMs: 0.9, stalkMs: 1.4, runMs: 7.5, turnRadS: 2.4, sightM: 18, nightSightM: 14, hearM: 120, reachM: 1.3, damage: 17, cooldownS: 1.4, fleeFraction: 0.3, respawnS: 150, scale: 1 },
+  // Saltwater crocodile: 4 m, swims ~4 m/s in bursts, lunges ~10 m/s over a body length.
+  croc: { label: 'Crocodile', health: 200, armour: 0.55, walkMs: 0.8, stalkMs: 1.2, runMs: 9, turnRadS: 2, sightM: 22, nightSightM: 22, hearM: 60, reachM: 2.4, damage: 40, cooldownS: 3, fleeFraction: 0.3, respawnS: 300, scale: 1 },
+  // Reef/bull shark: 2.5–3 m, cruises at ~1.5 m/s, attacks at ~8 m/s.
+  shark: { label: 'Shark', health: 140, armour: 0.8, walkMs: 1.4, stalkMs: 2.4, runMs: 8, turnRadS: 1.8, sightM: 35, nightSightM: 35, hearM: 0, reachM: 1.8, damage: 42, cooldownS: 5, fleeFraction: 0.2, respawnS: 240, scale: 1 },
+} as const satisfies Record<string, SpeciesSpec>;
+
+export type SpeciesId = keyof typeof SPECIES;
+
+/**
+ * Guerrillas (game/guerrillas.ts): irregulars in a jungle camp west of the beach, with AKs. Their
+ * aim is deliberately human: a cone that tightens while they hold still on a target they can see.
+ */
+export const GUERRILLA = {
+  health: 100,
+  walkMs: 1.4,
+  runMs: 4.2,
+  sightM: 70,
+  nightSightM: 28,
+  /** A lit lamp or the camp fire shows the player at night from this far. */
+  litSightM: 60,
+  fovRad: 2.1,
+  hearM: 160,
+  /** Seconds of clear sight before they shoot (shorter once alerted). */
+  noticeS: 1.4,
+  engageMinM: 12,
+  engageMaxM: 45,
+  burstMin: 2,
+  burstMax: 5,
+  roundsPerMinute: 600,
+  burstPauseS: [0.9, 2.2] as const,
+  /** Aim error (rad, standard deviation) at first sight, and the floor it settles to. */
+  spreadStartRad: 0.07,
+  spreadFloorRad: 0.012,
+  spreadSettleS: 2.5,
+  /** Damage per hit on the player (torso), and the head multiplier. */
+  damage: 13,
+  headMultiplier: 2,
+  magazineRounds: 30,
+  reloadS: 2.8,
+  /** Damage on them per part, as a multiplier of the player's AK round (RIFLE_DAMAGE). */
+  partMultiplier: { head: 3, torso: 1, limb: 0.6 },
+  /** Patrol size and how many at the camp. */
+  patrolSize: 2,
+  campSize: 3,
+  respawnS: 200,
+  /** A raid on the shelter every so often (s), while the player is near it. */
+  raidEveryS: [240, 420] as const,
+  raidSize: 3,
+} as const;
+
+/** The player's 7.62 round on a body (hit points), and the knife and a thrown stone. */
+export const WEAPON_DAMAGE = {
+  rifle: 42,
+  knife: 45,
+  stone: 6,
+} as const;

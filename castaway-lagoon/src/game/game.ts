@@ -1,5 +1,5 @@
 import { Rng } from '../core/rng.ts';
-import { BOAT, FIRE, INTERACT, JEEP, KNIFE, LAGOON_PLAYER, LOG, RIFLE, STONE, TIME_OF_DAY, type TimeOfDayId, WATER_LEVEL_M, type WeatherId } from '../config.ts';
+import { BOAT, FIRE, HEALTH, INTERACT, JEEP, KNIFE, LAGOON_PLAYER, LOG, RIFLE, STONE, TIME_OF_DAY, type TimeOfDayId, WATER_LEVEL_M, WEAPON_DAMAGE, type WeatherId } from '../config.ts';
 import { Bodies, type BodyRest, knockCan } from './bodies.ts';
 import { Bullets } from './bullets.ts';
 import { newHit, type RayHit } from './colliders.ts';
@@ -9,9 +9,13 @@ import { Campfire } from './fire.ts';
 import { Jeep } from './jeep.ts';
 import { DOCK, FURNITURE, outpostToWorld, OUTPOST } from './outpost.ts';
 import { type ActionKind, Equipment, type Triggers } from './equipment.ts';
-import { type EquipSlot, EventQueue, type P3 } from './events.ts';
+import { type EquipSlot, EventQueue, type P3, type ThreatKind } from './events.ts';
+import { Fauna } from './fauna.ts';
+import { GuerrillaBand } from './guerrillas.ts';
+import { rayTargets, type Target } from './targets.ts';
+import type { ThreatContext } from './threatContext.ts';
 import { Inventory } from './inventory.ts';
-import { ITEMS } from './items.ts';
+import { type ItemId, ITEMS } from './items.ts';
 import { type MoveIntent, Player } from './player.ts';
 import { heightAt } from './terrain.ts';
 import { waterSurfaceY, waveScale } from './waves.ts';
@@ -24,7 +28,9 @@ import { buildWorld, crateContents, type Interactable, type LagoonWorld } from '
 //   3. what the eye is on (interaction focus)
 //   4. interaction and tool input → actions
 //   5. action timeline: mid-action moments (release, hit, pick-up) and completions
-//   6. free bodies (stones, shells, cans), then bullets
+//   6. the threats: creatures and guerrillas sense, move and strike
+//   7. free bodies (stones, shells, cans), then bullets (which hit the threats)
+//   8. the player's wounds: regeneration, treatment, blackout and waking
 
 export interface LagoonIntent {
   move: Omit<MoveIntent, 'slowed'>;
@@ -37,6 +43,8 @@ export interface LagoonIntent {
   cycleWeather: boolean;
   setTime: TimeOfDayId | null;
   setWeather: WeatherId | null;
+  /** Q: treat wounds with the best thing carried (HEALTH.treatments). */
+  heal: boolean;
 }
 
 export function emptyIntent(): LagoonIntent {
@@ -51,8 +59,19 @@ export function emptyIntent(): LagoonIntent {
     cycleWeather: false,
     setTime: null,
     setWeather: null,
+    heal: false,
   };
 }
+
+export interface GameOptions {
+  /** Creatures and guerrillas (off for tests of other mechanics, and ?peaceful). */
+  threats: boolean;
+}
+
+/** Nothing hunts the player in the first moments, while they find their feet (s of game time). */
+export const THREATS_AFTER_S = 45;
+/** How far a noise carries to ears that listen for it (m): a rifle shot, a knife on wood. */
+const SHOT_HEARD_M = 220;
 
 const HANDS_ACTIONS: readonly ActionKind[] = ['pickup', 'harvest', 'openCrate', 'sleep'];
 
@@ -93,8 +112,24 @@ export class LagoonGame {
   private readonly eye: P3 = { x: 0, y: 0, z: 0 };
   private readonly fwd: P3 = { x: 0, y: 0, z: 0 };
   private readonly rested: BodyRest[] = [];
+  /** The lagoon's animals and the guerrillas (null with threats off). */
+  readonly fauna: Fauna | null;
+  readonly band: GuerrillaBand | null;
+  /** A loud noise made this step, for the threats' ears. */
+  private noise: { pos: P3; radiusM: number } | null = null;
+  /** Seconds since the player was last hurt. */
+  sinceHurtS = 99;
+  /** Healing still to come from a treatment (hit points), and its rate (per s). */
+  healPool = 0;
+  private healRate = 0;
+  /** Blacked out: seconds until waking at the shelter (0 when up). */
+  downS = 0;
+  /** What last hurt the player (HUD, the blackout message). */
+  lastCause: ThreatKind | 'fall' | null = null;
+  private readonly ctx: ThreatContext;
+  private readonly targetList: Target[] = [];
 
-  constructor(seed: number, time: TimeOfDayId, weather: WeatherId) {
+  constructor(seed: number, time: TimeOfDayId, weather: WeatherId, options: GameOptions = { threats: true }) {
     this.rng = new Rng(seed);
     this.world = buildWorld(seed);
     this.player = new Player(this.world.spawn.pos, this.world.spawn.yawRad);
@@ -122,6 +157,167 @@ export class LagoonGame {
       this.jeepSpots.push(this.world.interactables[this.world.interactables.length - 1] as Interactable);
     }
     this.placeJeepSpots();
+    this.ctx = {
+      dt: 0,
+      timeS: 0,
+      rng: this.rng,
+      events: this.events,
+      collision: this.world.collision,
+      player: this.player,
+      eye: this.eye,
+      look: this.fwd,
+      playerDown: false,
+      night: 0,
+      fire: null,
+      lampLit: false,
+      noise: null,
+      hurtPlayer: (amount, from, cause) => this.hurt(amount, from, cause),
+    };
+    if (options.threats) {
+      this.fauna = new Fauna();
+      this.fauna.populate(this.ctx);
+      this.band = new GuerrillaBand(this.rng, this.world.trees);
+      this.band.populate(this.rng);
+    } else {
+      this.fauna = null;
+      this.band = null;
+    }
+  }
+
+  /** Everything the player's weapons can hit this step. */
+  targets(): readonly Target[] {
+    const out = this.targetList;
+    out.length = 0;
+    if (this.fauna) for (const c of this.fauna.creatures) if (c.alive) out.push(c);
+    if (this.band) for (const g of this.band.members) if (g.alive) out.push(g);
+    return out;
+  }
+
+  /** Damage to the player from `from` (null: no direction), by `cause`. Blacks out at zero. */
+  hurt(amount: number, from: P3 | null, cause: ThreatKind | 'fall'): void {
+    const p = this.player;
+    if (this.downS > 0 || amount <= 0) return;
+    p.health = Math.max(0, p.health - amount);
+    this.sinceHurtS = 0;
+    this.lastCause = cause;
+    this.events.push({ type: 'hurt', amount, from: from ? { ...from } : null, cause });
+    if (p.health > 0) return;
+    // Down: tools away, out of the boat or the jeep, the screen goes dark.
+    this.downS = HEALTH.blackoutS;
+    this.healPool = 0;
+    const eq = this.equipment;
+    eq.finish();
+    if (eq.slot !== 'hands') eq.switchTo('hands');
+    if (p.inBoat) this.leaveBoat();
+    if (p.inJeep) this.leaveJeep();
+    this.events.push({ type: 'blackout', cause });
+  }
+
+  /** Wakes at the shelter's cot, patched up; whatever was on the player has gone off elsewhere. */
+  private wake(): void {
+    const p = this.player;
+    const cot = this.world.interactables.find((i) => i.kind === 'sleep');
+    const at = cot ? cot.pos : this.world.spawn.pos;
+    p.pos.x = at.x + 0.6;
+    p.pos.z = at.z;
+    p.pos.y = this.world.collision.groundAt(p.pos.x, p.pos.z, at.y + 1, 1.5);
+    p.prev.x = p.pos.x;
+    p.prev.y = p.pos.y;
+    p.prev.z = p.pos.z;
+    p.vel.x = p.vel.y = p.vel.z = 0;
+    p.swimming = false;
+    p.underwater = false;
+    p.airS = LAGOON_PLAYER.breathSeconds;
+    p.health = HEALTH.max * HEALTH.respawnFraction;
+    this.sinceHurtS = 0;
+    // Hunters lose the trail; raiders go back into the jungle.
+    if (this.fauna) for (const c of this.fauna.creatures) if (c.alive) {
+      c.awareness = 0;
+      if (Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 60) {
+        const spot = this.fauna.findSpot(c.kind, this.rng, p.pos, null);
+        if (spot) {
+          c.pos.x = c.prev.x = spot.x;
+          c.pos.y = c.prev.y = spot.y;
+          c.pos.z = c.prev.z = spot.z;
+          c.home.x = spot.x;
+          c.home.z = spot.z;
+        }
+      }
+      c.setState(c.kind === 'croc' ? 'lurk' : c.kind === 'shark' ? 'cruise' : 'wander');
+    }
+    if (this.band) {
+      for (let i = this.band.members.length - 1; i >= 0; i--) {
+        const g = this.band.members[i];
+        if (!g) continue;
+        if (g.role === 'raider') this.band.members.splice(i, 1);
+        else if (g.alive) {
+          g.awareness = 0;
+          g.setState(g.role === 'patrol' ? 'patrol' : 'camp');
+        }
+      }
+    }
+    this.downS = 0;
+    this.events.push({ type: 'wake' });
+  }
+
+  /** Q: the best treatment carried (a dressing first), healing over a few seconds. */
+  private treat(): void {
+    const p = this.player;
+    if (this.downS > 0) return;
+    if (p.health >= HEALTH.max - 0.5) {
+      this.events.push({ type: 'message', text: 'No wounds to treat' });
+      return;
+    }
+    if (this.healPool > 0) {
+      this.events.push({ type: 'message', text: 'Still treating the last wound' });
+      return;
+    }
+    const t = HEALTH.treatments.find((tr) => this.inventory.has(tr.item as ItemId));
+    if (!t) {
+      this.events.push({ type: 'message', text: 'Nothing to treat wounds with — jungle herbs grow at the edge of the trees' });
+      return;
+    }
+    this.inventory.remove(t.item as ItemId, 1);
+    this.healPool = t.hp;
+    this.healRate = t.hp / t.seconds;
+    this.events.push({ type: 'treat', item: t.item, hp: t.hp, text: t.verb });
+  }
+
+  /** Regeneration up to a cap, treatment over time. */
+  private heal(dt: number): void {
+    const p = this.player;
+    this.sinceHurtS += dt;
+    if (this.healPool > 0) {
+      const h = Math.min(this.healPool, this.healRate * dt);
+      this.healPool -= h;
+      p.health = Math.min(HEALTH.max, p.health + h);
+      if (p.health >= HEALTH.max) this.healPool = 0;
+    }
+    const cap = HEALTH.max * HEALTH.regenCapFraction;
+    if (this.sinceHurtS > HEALTH.regenDelayS && p.health < cap) p.health = Math.min(cap, p.health + HEALTH.regenPerS * dt);
+  }
+
+  /** The threats' turn: context for their senses, then the animals and the band. */
+  private stepThreats(dt: number): void {
+    if (!this.fauna && !this.band) return;
+    const c = this.ctx;
+    c.dt = dt;
+    c.timeS = this.timeSeconds;
+    c.playerDown = this.downS > 0;
+    c.night = this.env.daylight.night;
+    c.fire = this.fire.lit ? this.firePitPos : null;
+    c.lampLit = this.lampLit;
+    c.noise = this.noise;
+    if (this.timeSeconds < THREATS_AFTER_S) return;
+    this.fauna?.step(c);
+    if (this.band) {
+      this.band.step(c, true);
+      for (const d of this.band.drops) {
+        const y = heightAt(d.pos.x, d.pos.z);
+        this.addInteractable({ kind: 'pickup', model: 'ammoBox', item: 'ammo762', count: d.ammo, pos: { x: d.pos.x, y, z: d.pos.z }, yawRad: this.rng.range(0, 6.28), radiusM: 0.25, name: `${d.ammo} rounds of 7.62` });
+        if (d.medkit) this.addInteractable({ kind: 'pickup', model: 'medkit', item: 'medkit', count: 1, pos: { x: d.pos.x + 0.4, y: heightAt(d.pos.x + 0.4, d.pos.z + 0.2), z: d.pos.z + 0.2 }, yawRad: this.rng.range(0, 6.28), radiusM: 0.2, name: 'Field Dressing' });
+      }
+    }
   }
 
   get interactables(): readonly Interactable[] {
@@ -129,6 +325,18 @@ export class LagoonGame {
   }
 
   step(intent: LagoonIntent, dt: number): void {
+    this.noise = null;
+    // Blacked out: nothing the player does counts until waking.
+    if (this.downS > 0) {
+      const m = intent.move;
+      m.moveForward = m.moveRight = 0;
+      m.jump = m.sprint = m.dive = m.rise = false;
+      intent.triggers = { firePressed: false, fireHeld: false, fireReleased: false, aimHeld: false, reloadPressed: false, selectSlot: null };
+      intent.interactPressed = false;
+      intent.heal = false;
+      intent.lookYawRad = 0;
+      intent.lookPitchRad = 0;
+    }
     // 1. Environment.
     if (intent.setTime) this.env.setTime(intent.setTime);
     else if (intent.cycleTime) this.env.cycleTime();
@@ -159,7 +367,10 @@ export class LagoonGame {
     this.boat.step(inBoat ? { throttle: intent.move.moveForward, steer: intent.move.moveRight } : { throttle: 0, steer: 0 }, dt, water.timeS, water.waveScale, this.world.collision, this.events);
     if (inBoat) this.ride();
     else if (inJeep) this.driveSeat();
-    else this.player.step({ ...intent.move, slowed }, dt, this.world.collision, this.events, water);
+    else {
+      this.player.step({ ...intent.move, slowed }, dt, this.world.collision, this.events, water);
+      if (this.player.landingMs > HEALTH.fallSafeMs) this.hurt((this.player.landingMs - HEALTH.fallSafeMs) * HEALTH.fallDamagePerMs, null, 'fall');
+    }
     if (this.boatSpot) this.boat.toWorld(-0.3, 0.2, 0, this.boatSpot.pos);
     // Both hands are for swimming: whatever was held goes on the back.
     if (this.player.swimming && eq.slot !== 'hands' && eq.action.kind !== 'lower') {
@@ -185,6 +396,7 @@ export class LagoonGame {
 
     // 4. Interaction and tools.
     if (intent.interactPressed) this.interact();
+    if (intent.heal) this.treat();
     if (intent.triggers.selectSlot) this.select(intent.triggers.selectSlot);
     this.useTool(intent.triggers);
 
@@ -205,7 +417,10 @@ export class LagoonGame {
       if (!target || distance(target.pos, this.player.pos) > 3.2) eq.finish();
     }
 
-    // 6. Bodies and bullets.
+    // 6. Threats.
+    this.stepThreats(dt);
+
+    // 7. Bodies and bullets.
     this.rested.length = 0;
     this.bodies.step(dt, this.world.cans, this.rested);
     for (const r of this.rested) {
@@ -217,7 +432,14 @@ export class LagoonGame {
       if (r.underwater && depth > LAGOON_PLAYER.maxWadeDepthM * 0.7) continue; // lost to the lagoon floor
       this.addInteractable({ kind: 'pickup', model: 'stone', item: 'stone', count: 1, pos: { x: r.body.pos.x, y: r.body.pos.y - STONE.radiusM, z: r.body.pos.z }, yawRad: r.body.rot.y, radiusM: 0.2, name: 'Stone' });
     }
-    this.bullets.step(dt, this.world.cans);
+    this.bullets.step(dt, this.world.cans, this.targets());
+
+    // 8. Wounds.
+    this.heal(dt);
+    if (this.downS > 0) {
+      this.downS -= dt;
+      if (this.downS <= 0) this.wake();
+    }
     this.timeSeconds += dt;
   }
 
@@ -376,6 +598,7 @@ export class LagoonGame {
     normalize(dir);
     this.bullets.fire(this.eye, dir);
     this.events.push({ type: 'shot', origin: { ...this.eye }, dir });
+    this.noise = { pos: { ...this.eye }, radiusM: SHOT_HEARD_M };
     // Aim kick moves the view; the viewmodel gets its own visual kick.
     const kick = RIFLE.recoilPitchRad * (1 - eq.adsBlend * 0.35);
     p.pitchRad += kick;
@@ -670,6 +893,13 @@ export class LagoonGame {
 
   private knifeHit(): void {
     const reach = KNIFE.reachM;
+    // A creature or a man within reach: the blade goes in.
+    const th = rayTargets(this.eye, this.fwd, reach + 0.3, this.targets());
+    if (th) {
+      const killed = th.target.hurt(WEAPON_DAMAGE.knife, th.part, this.fwd, true);
+      this.events.push({ type: 'threatHit', pos: { x: th.x, y: th.y, z: th.z }, dir: { ...this.fwd }, kind: th.target.kind, part: th.part, killed });
+      return;
+    }
     const f = this.focus;
     if (f && f.kind === 'harvest' && distance(f.pos, this.eye) < reach + 0.6) {
       this.take(f); // a clean cut: the knife harvests without kneeling

@@ -26,6 +26,7 @@ export const ITEM_ICONS: Record<ItemId, string> = {
   log: svg('<rect x="8" y="24" width="44" height="16" rx="8" fill="#7a5634"/><ellipse cx="50" cy="32" rx="6" ry="8" fill="#c9a26a"/><ellipse cx="50" cy="32" rx="3" ry="4" fill="none" stroke="#8a6a3c"/>'),
   fishhooks: svg('<rect x="12" y="22" width="40" height="24" rx="4" fill="#b9a36a"/><path d="M26 28v10a4 4 0 0 0 8 0" fill="none" stroke="#e1e3e6" stroke-width="2.5"/><path d="M40 28v8a3 3 0 0 0 6 0" fill="none" stroke="#e1e3e6" stroke-width="2"/>'),
   rope: svg('<g fill="none" stroke="#c8ae7a" stroke-width="5"><ellipse cx="32" cy="32" rx="22" ry="18"/><ellipse cx="32" cy="32" rx="14" ry="11"/></g><path d="M50 40l8 14" stroke="#c8ae7a" stroke-width="5"/>'),
+  medkit: svg('<rect x="12" y="20" width="40" height="28" rx="5" fill="#7a7656"/><rect x="12" y="20" width="40" height="7" rx="3" fill="#5f5c42"/><rect x="20" y="31" width="24" height="10" rx="2" fill="#ece6d4"/>'),
 };
 
 export const TIME_ICONS: Record<TimeOfDayId, string> = {

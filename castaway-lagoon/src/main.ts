@@ -95,6 +95,7 @@ class App {
         buttons: [
           { code: 'Mouse0', label: 'FIRE', col: 0, row: 0, big: true },
           { code: 'KeyE', label: 'USE', col: 0, row: 1.45, mode: 'tap' },
+          { code: 'KeyQ', label: 'HEAL', col: 3.45, row: 1.45, mode: 'tap' },
           { code: 'Mouse2', label: 'AIM', col: 1.45, row: 0, mode: 'toggle' },
           { code: 'Space', label: 'JUMP', col: 1.45, row: 1.45, mode: 'tap' },
           { code: 'KeyC', label: 'DIVE', col: 2.45, row: 1.45 },
@@ -143,7 +144,8 @@ class App {
 
   async start(time: TimeOfDayId, weather: WeatherId): Promise<void> {
     this.state = 'loading';
-    const game = new LagoonGame(20260927, time, weather);
+    // ?peaceful: the lagoon without its animals and guerrillas (screenshots of the scenery).
+    const game = new LagoonGame(20260927, time, weather, { threats: !new URLSearchParams(location.search).has('peaceful') });
     this.game = game;
     const progress: Progress = async (label, f) => {
       this.menus.showLoading(label, f);

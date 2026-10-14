@@ -41,7 +41,7 @@ function lookAt(game: LagoonGame, target: Interactable, standoffM = 1.2): void {
 }
 
 function newGame(): LagoonGame {
-  return new LagoonGame(1234, 'noon', 'clear');
+  return new LagoonGame(1234, 'noon', 'clear', { threats: false });
 }
 
 describe('lagoon terrain', () => {
@@ -260,7 +260,7 @@ describe('shelter', () => {
   });
 
   it('sleeps on the cot from night until morning, standing still meanwhile', () => {
-    const g = new LagoonGame(1234, 'night', 'clear');
+    const g = new LagoonGame(1234, 'night', 'clear', { threats: false });
     const cot = g.interactables.find((i) => i.kind === 'sleep') as Interactable;
     lookAt(g, cot, 0.8);
     expect(sleepUntil('night')).toBe('morning');
@@ -482,7 +482,7 @@ describe('render contract', () => {
   it('knows how to draw (or deliberately not draw) every interactable a new game has', () => {
     // An unknown model throws while the props are built and the game never finishes loading.
     for (const time of ['noon', 'night'] as const) {
-      const g = new LagoonGame(1234, time, 'clear');
+      const g = new LagoonGame(1234, time, 'clear', { threats: false });
       const unknown = g.interactables.filter((i) => !PROP_MODELS.has(i.model)).map((i) => i.model);
       expect(unknown).toEqual([]);
     }

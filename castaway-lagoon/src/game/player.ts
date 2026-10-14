@@ -1,4 +1,4 @@
-import { LAGOON_PLAYER as P, PHYSICS, WATER_LEVEL_M } from '../config.ts';
+import { HEALTH, LAGOON_PLAYER as P, PHYSICS, WATER_LEVEL_M } from '../config.ts';
 import type { CollisionWorld } from './colliders.ts';
 import type { EventQueue, P3 } from './events.ts';
 import { heightAt, LAGOON_CENTRE, normalAt, type SurfaceKind } from './terrain.ts';
@@ -62,6 +62,10 @@ export class Player {
   waterY = WATER_LEVEL_M;
   /** Current strength at the world's edge, 0–1 (HUD hint). */
   current = 0;
+  /** Hit points (config HEALTH); the game deals damage and heals (game.ts). */
+  health: number = HEALTH.max;
+  /** Impact speed of a landing this step (m/s), 0 otherwise: the game turns a hard one into damage. */
+  landingMs = 0;
   private strokeS = 0;
   /** Advances with distance walked: drives head bob and hand sway. */
   stridePhase = 0;
@@ -100,6 +104,7 @@ export class Player {
   }
 
   step(intent: MoveIntent, dt: number, collision: CollisionWorld, events: EventQueue, water: WaterState): void {
+    this.landingMs = 0;
     this.prev.x = this.pos.x;
     this.prev.y = this.pos.y;
     this.prev.z = this.pos.z;
@@ -171,6 +176,7 @@ export class Player {
     if (this.pos.y <= ground + 0.02 && this.vel.y <= 0) {
       if (!wasGrounded) {
         const impact = -this.vel.y;
+        this.landingMs = impact;
         events.push({ type: 'land', surface: this.groundInfo.surface, impactSpeedMs: impact });
       }
       this.pos.y = ground;
