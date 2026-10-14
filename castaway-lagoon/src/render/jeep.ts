@@ -23,6 +23,7 @@ import {
 } from 'three/webgpu';
 import { JEEP } from '../config.ts';
 import type { Jeep } from '../game/jeep.ts';
+import { HeadlightBeams } from './lightBeams.ts';
 import { tube } from './meshkit.ts';
 
 // The old jeep as drawn, in the logic's frame (game/jeep.ts): forward −Z,
@@ -196,6 +197,8 @@ function wheelGeometry(): { tyre: BufferGeometry; rim: BufferGeometry } {
 export class JeepView {
   readonly group = new Group();
   readonly headlights: SpotLight[] = [];
+  /** The beams in the air (lightBeams.ts), seen at night, in haze and rain. */
+  private readonly beams = new HeadlightBeams(new Vector3(-0.285, 0.26, -1.68), new Vector3(0.285, 0.26, -1.68), new Vector3(0, -0.68, -10.32));
   /** Radiance of the lamp glasses when lit, pre-exposed. */
   readonly glassGlow = uniform(0);
   private readonly wheels: { pivot: Group; spin: Group; front: boolean }[] = [];
@@ -325,7 +328,7 @@ export class JeepView {
     light.position.set(0, 0.28, -1.68);
     light.target.position.set(0, -0.4, -12);
     light.castShadow = false;
-    this.group.add(light, light.target);
+    this.group.add(light, light.target, this.beams.mesh);
     this.headlights.push(light);
 
     // ---- kit on the tail and side: spare wheel, jerry can, shovel
@@ -395,5 +398,6 @@ export class JeepView {
     // One light for two lamps: twice one lamp's intensity.
     for (const l of this.headlights) l.intensity = 2 * JEEP.headlightCd * preExposure * on;
     this.glassGlow.value = 3e4 * preExposure * on;
+    this.beams.update(g, JEEP.headlightCd * preExposure * on);
   }
 }
