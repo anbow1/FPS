@@ -1,4 +1,6 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, Shape, ShapeGeometry, Vector2 } from 'three/webgpu';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { BoxGeometry, BufferAttribute, BufferGeometry, ConeGeometry, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, Shape, ShapeGeometry, SphereGeometry, Vector2 } from 'three/webgpu';
 import { BOAT } from '../config.ts';
 import type { Boat } from '../game/boat.ts';
 
@@ -27,8 +29,10 @@ export class BoatView {
     this.group.rotation.order = 'YXZ';
     const paint = new MeshStandardNodeMaterial({ name: 'boat paint', color: 0x2e5a66, roughness: 0.55, metalness: 0.1, side: DoubleSide });
     const wood = new MeshStandardNodeMaterial({ name: 'boat seat', color: 0x8a6a45, roughness: 0.8 });
-    const cowl = new MeshStandardNodeMaterial({ name: 'outboard cowl', color: 0x8f8b80, roughness: 0.45 });
-    const metal = new MeshStandardNodeMaterial({ name: 'outboard leg', color: 0x3a3c3d, roughness: 0.4, metalness: 0.7 });
+    const cowl = new MeshStandardNodeMaterial({ name: 'outboard cowl', color: 0xcfccc2, roughness: 0.42 });
+    const metal = new MeshStandardNodeMaterial({ name: 'outboard leg', color: 0x3a3c3d, roughness: 0.45, metalness: 0.35 });
+    const dark = new MeshStandardNodeMaterial({ name: 'outboard trim', color: 0x1d1f20, roughness: 0.7 });
+    const bronze = new MeshStandardNodeMaterial({ name: 'outboard propeller', color: 0x8a8d8f, roughness: 0.3, metalness: 1 });
 
     const hull = new Mesh(hullGeometry(), paint);
     hull.castShadow = true;
@@ -47,27 +51,51 @@ export class BoatView {
       this.group.add(seat);
     }
 
-    // Outboard: clamped on the transom, pivoting for the tiller.
+    // Outboard: a small two-stroke clamped on the transom, pivoting for the tiller (motor frame: +z aft,
+    // y up from the transom top). Rounded cowling over a darker lower cowl, a streamlined leg, the
+    // anti-cavitation plate, the gearcase torpedo with its skeg, and a three-blade propeller.
     this.motor.position.set(0, GUNWALE_Y - 0.02, BOAT.lengthM / 2 + 0.05);
-    const body = new Mesh(new BoxGeometry(0.22, 0.26, 0.34), cowl);
-    body.position.set(0, 0.18, 0.14);
-    const leg = new Mesh(new CylinderGeometry(0.035, 0.04, 0.85, 8), metal);
-    leg.position.set(0, -0.37, 0.12);
-    const foot = new Mesh(new BoxGeometry(0.08, 0.1, 0.3), metal);
-    foot.position.set(0, -0.78, 0.1);
-    const tiller = new Mesh(new CylinderGeometry(0.018, 0.018, 0.55, 6).rotateX(Math.PI / 2), metal);
-    tiller.position.set(0, 0.12, -0.3);
+    const rbox = (w: number, h: number, d: number, r: number, x: number, y: number, z: number): BufferGeometry =>
+      new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2, h / 2, d / 2) * 0.999).translate(x, y, z);
+    const upper = new Mesh(rbox(0.25, 0.22, 0.4, 0.08, 0, 0.27, 0.17), cowl);
+    const lowerCowl = mergeGeometries([
+      rbox(0.27, 0.1, 0.43, 0.03, 0, 0.12, 0.17).toNonIndexed(),
+      // Transom bracket and its two clamp screws with T handles, inside the transom.
+      rbox(0.17, 0.2, 0.07, 0.02, 0, -0.02, 0.0).toNonIndexed(),
+      ...[-0.05, 0.05].flatMap((x) => [new CylinderGeometry(0.012, 0.012, 0.1, 8).rotateX(Math.PI / 2).translate(x, -0.08, -0.06).toNonIndexed(), new CylinderGeometry(0.008, 0.008, 0.07, 6).rotateZ(Math.PI / 2).translate(x, -0.08, -0.11).toNonIndexed()]),
+      // Tiller grip, rubber.
+      new CylinderGeometry(0.026, 0.024, 0.15, 10).rotateX(Math.PI / 2 - 0.12).translate(0, 0.17, -0.55).toNonIndexed(),
+    ]);
+    const leg = new Mesh(
+      mergeGeometries([
+        // The leg's streamlined section: an ellipse 1.7 times as long as it is wide.
+        new CylinderGeometry(0.055, 0.045, 0.64, 16).scale(0.72, 1, 1.7).translate(0, -0.33, 0.14).toNonIndexed(),
+        // Anti-cavitation plate over the propeller.
+        rbox(0.2, 0.01, 0.26, 0.004, 0, -0.66, 0.19).toNonIndexed(),
+        // Gearcase: a torpedo along the thrust line, rounded nose forward, tapering aft to the hub.
+        new CylinderGeometry(0.044, 0.04, 0.24, 14).rotateX(Math.PI / 2).translate(0, -0.78, 0.13).toNonIndexed(),
+        new SphereGeometry(0.044, 14, 8).scale(1, 1, 1.4).translate(0, -0.78, 0.01).toNonIndexed(),
+        // Skeg under the gearcase, protecting the propeller.
+        new BoxGeometry(0.012, 0.12, 0.14).translate(0, -0.86, 0.17).toNonIndexed(),
+        // Tiller arm from the cowl's front, rising a little toward the hand.
+        new CylinderGeometry(0.016, 0.022, 0.45, 8).rotateX(Math.PI / 2 - 0.12).translate(0, 0.14, -0.26).toNonIndexed(),
+      ]) as BufferGeometry,
+      metal,
+    );
+    const trim = new Mesh(lowerCowl as BufferGeometry, dark);
     this.prop.position.set(0, -0.78, 0.27);
+    const hub = new Mesh(new ConeGeometry(0.03, 0.08, 12).rotateX(Math.PI / 2).translate(0, 0, 0.03), bronze);
+    this.prop.add(hub);
     for (let k = 0; k < 3; k++) {
-      const blade = new Mesh(new BoxGeometry(0.02, 0.09, 0.012), metal);
-      blade.position.y = 0.045;
+      // A twisted blade: a flat ellipse set at its pitch angle on the hub.
+      const blade = new Mesh(new SphereGeometry(1, 12, 6).scale(0.045, 0.08, 0.006).rotateY(0.55).translate(0, 0.075, 0), bronze);
       const arm = new Group();
       arm.rotation.z = (k / 3) * Math.PI * 2;
       arm.add(blade);
       this.prop.add(arm);
     }
-    this.motor.add(body, leg, foot, tiller, this.prop);
-    for (const m of [body, leg, foot, tiller]) m.castShadow = true;
+    this.motor.add(upper, trim, leg, this.prop);
+    for (const m of [upper, trim, leg]) m.castShadow = true;
     this.group.add(this.motor);
 
     // Depth-only cap that keeps the water surface out of the hull.

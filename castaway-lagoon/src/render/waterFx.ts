@@ -35,7 +35,7 @@ export function createRipples(quality: 'high' | 'low'): RippleField {
  * it lasts ~15 s, the trail widening as it thins.
  */
 export function createWakeFoam(quality: 'high' | 'low'): WakeFoam {
-  foamField = new WakeFoam({ cells: quality === 'high' ? 192 : 128, cellM: 0.5, lifeS: 9, spreadM2PerS: 0.08 });
+  foamField = new WakeFoam({ cells: quality === 'high' ? 192 : 128, cellM: 0.5, lifeS: 9, spreadM2PerS: 0.05 });
   return foamField;
 }
 

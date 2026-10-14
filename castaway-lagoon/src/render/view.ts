@@ -326,12 +326,13 @@ export class LagoonView {
     // Foam: the propeller's wash streams from the transom, white while it churns, and each quarter
     // sheds a thinner line where the hull parts the water; both thin and widen behind (wakeFoam.ts).
     const churn = Math.min(1, speed / 4);
-    // A source leaves about rate × 0.5 m / speed in each cell it crosses: 12/s gives ~1.2 (white) at 5 m/s.
+    // A source leaves about rate × 0.5 m / speed in each cell it crosses: 7/s gives ~0.7 at 5 m/s,
+    // white in the middle and lace at the edges (more turned the trail into a solid white sheet).
     const sources: [number, number, number, number][] = [
       // along, across, radius, foam per second
-      [-BOAT.lengthM * 0.55, 0, 0.5, 6 * Math.abs(b.throttle) + 6 * churn],
-      [-BOAT.lengthM * 0.3, -BOAT.beamM * 0.55, 0.35, 5 * churn * churn],
-      [-BOAT.lengthM * 0.3, BOAT.beamM * 0.55, 0.35, 5 * churn * churn],
+      [-BOAT.lengthM * 0.55, 0, 0.4, 3.5 * Math.abs(b.throttle) + 3.5 * churn],
+      [-BOAT.lengthM * 0.3, -BOAT.beamM * 0.45, 0.28, 2.5 * churn * churn],
+      [-BOAT.lengthM * 0.3, BOAT.beamM * 0.45, 0.28, 2.5 * churn * churn],
     ];
     sources.forEach(([along, across, radius, rate], i) => {
       b.toWorld(along, 0, across, t);

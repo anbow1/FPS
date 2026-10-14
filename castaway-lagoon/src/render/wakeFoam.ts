@@ -29,7 +29,7 @@ const MAX_STEPS = 2;
 /** The window is re-centred once the focus has moved this many cells away. */
 const RECENTRE_CELLS = 16;
 /** Foam is held up to this much: a churned patch stays white a while before it starts to thin. */
-const MAX_FOAM = 1.6;
+const MAX_FOAM = 1.2;
 /** Below this everywhere the water counts as clear and the field stops stepping. */
 const CLEAR = 0.004;
 
