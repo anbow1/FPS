@@ -252,7 +252,8 @@ export class Hud {
     }
     // Red edges: a flush on each hit, a slow throb while badly hurt.
     this.hurtPulse = Math.max(0, this.hurtPulse - dt * 1.1);
-    const throb = k < 0.3 ? (0.25 + 0.2 * Math.sin(performance.now() * 0.006)) * (1 - k / 0.3) : 0;
+    // Full strength from 15 % down; a ramp from 0 at 30 % left a quarter-health player with almost none.
+    const throb = k < 0.35 ? (0.3 + 0.15 * Math.sin(performance.now() * 0.006)) * Math.min(1, (0.35 - k) / 0.2) : 0;
     this.hurtEdge.style.opacity = Math.min(1, this.hurtPulse + throb).toFixed(3);
     // Direction arcs: rotated to where each hit came from, relative to where the player faces.
     for (let i = 0; i < this.arcs.length; i++) {
