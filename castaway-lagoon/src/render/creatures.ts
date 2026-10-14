@@ -212,7 +212,16 @@ const COLOURS = {
 function tigerGeometry(): Record<string, BufferGeometry> {
   const T = COLOURS;
   return {
-    chest: joined([tag(ell(0.25, 0.32, 0.5, 0, 0, 0), T.tiger, STRIPE_Z), tag(ell(0.2, 0.16, 0.42, 0, -0.18, 0.02), T.tigerWhite, STRIPE_Z)], 'tiger chest'),
+    // The chest carries the barrel of the belly back to the hips: two ellipsoids end to end pinch at the waist.
+    chest: joined(
+      [
+        tag(ell(0.25, 0.32, 0.5, 0, 0, 0), T.tiger, STRIPE_Z),
+        tag(ell(0.2, 0.16, 0.42, 0, -0.18, 0.02), T.tigerWhite, STRIPE_Z),
+        tag(ell(0.235, 0.27, 0.44, 0, -0.01, 0.38), T.tiger, STRIPE_Z),
+        tag(ell(0.17, 0.12, 0.36, 0, -0.16, 0.38), T.tigerWhite, STRIPE_Z),
+      ],
+      'tiger chest',
+    ),
     hips: joined([tag(ell(0.24, 0.28, 0.46, 0, 0, 0), T.tiger, STRIPE_Z), tag(ell(0.18, 0.13, 0.36, 0, -0.16, -0.02), T.tigerWhite, STRIPE_Z)], 'tiger hips'),
     neck: joined([tag(ell(0.17, 0.2, 0.26, 0, 0, -0.1), T.tiger, STRIPE_Z), tag(ell(0.14, 0.12, 0.2, 0, -0.1, -0.12), T.tigerWhite, STRIPE_Z)], 'tiger neck'),
     head: joined(
