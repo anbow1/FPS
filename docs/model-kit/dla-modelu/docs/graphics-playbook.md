@@ -580,6 +580,39 @@ the edge in and out, and a rounded view-space normal lets the sun shade the
 puff (`render/particles.ts`). Put ground debris on the real surface under it
 (pavement, kerb, roof), not the terrain height.
 
+## 6j. A machine that reads as used, not a clean model (Ridgeline Warden, both flight games)
+
+From the STRIX helicopter scene (an AI-made three.js demo): its realism is the
+number of parts and the grime between them, not any single material. What
+changed the Warden from a toy to a machine, in order of effect:
+
+- **Real albedo.** Military greens are ~#434A35 (linear ~0.055), not black-green:
+  darker paint swallows every seam, panel and stain. Check the paint against a
+  reference before adding detail; satin (roughness ~0.7) not dead matte, so the
+  sky's sheen shows the shape.
+- **Grime where the airflow and the rags do not reach**: the baked per-vertex AO
+  (`aoBake.ts`) darkens the albedo itself (×0.6 warm grey in cavities), not only
+  the indirect light.
+- **The wash**: a soft band ~3 cm either side of every seam and access-panel
+  edge (`panelPattern().wash`). The 3 mm seam is under a pixel at ten metres;
+  the band shows the panel layout. Uneven (noise ×0.75…1.1).
+- **Wash-down streaks** on the sides (noise stretched vertically, horizontal
+  coordinate z on the sides and x fore and aft), **warmer, darker undersides**
+  (oil mist, exhaust film, dust), **soot behind side exhausts** on the upper
+  sides only (`sootPatch`).
+- **Parts**: sensor housings with several coated windows (near-black glass,
+  gold specular), missiles with seeker domes, bands, wings and fins, a rocket
+  pod's honeycomb of tubes (a shader on the end cap), flattened exhaust ducts
+  turning out, antennas, wire cutters, position lights, an IR jammer, flare
+  dispensers, steps, rounded tyres with hub caps and bolts. Each is cheap; their
+  number is what reads.
+- **Shape**: noses and avionics bays are boxes with rounded edges, not
+  ellipsoids (flat crown and belly, near-vertical sides in the loft stations).
+- **Contact occlusion** (`contactShadow.ts`): a soft ellipse under the parked or
+  low aircraft multiplies the terrain's and grass's `aoNode` (sky light only),
+  fading over the first 7 m of climb. It is the dark core under the craft that
+  pins it to the ground.
+
 ## 6i. Headlight beams in the air (lagoon `render/lightBeams.ts`)
 
 Also from *Halcyon* (its landing lights in the haze). A beam is light scattered
