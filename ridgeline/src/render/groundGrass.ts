@@ -1,6 +1,7 @@
 import { float, Fn, normalize, positionWorld, texture, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { HalfFloatType, LinearFilter, MeshBasicNodeMaterial, type Node, QuadMesh, RenderTarget, type Texture, UnsignedByteType, Vector2, type Vector3, type WebGPURenderer } from 'three/webgpu';
 import { TERRAIN } from '../sim/terrain.ts';
+import { contactOcclusion } from './contactShadow.ts';
 import { GrassField } from './grassField.ts';
 import { landSurface } from './landCover.ts';
 import { meshHeightNode } from './terrainMesh.ts';
@@ -100,6 +101,7 @@ export function buildGrass(renderer: WebGPURenderer, tex: TerrainTextures, shado
   );
   // The ridges' shadow (terrainShadow.ts) on the blades as on the ground under them; the cloud shadow
   // multiplies on top (clouds.shadeReceivers reads this).
+  field.material.aoNode = contactOcclusion(positionWorld.xz);
   if (shadow) field.material.userData.shadowFactor = texture(shadow, positionWorld.xz.div(TERRAIN.nearSizeM).add(0.5)).r;
   field.group.visible = false;
   const centre = new Vector2(1e9, 1e9);

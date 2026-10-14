@@ -1,6 +1,7 @@
 import { abs, attribute, cameraPosition, clamp, dFdx, dFdy, dot, float, floor, Fn, fract, If, int, ivec2, length, max, mix, mx_noise_float, normalize, positionWorld, property, select, smoothstep, texture, textureLoad, transformNormalToView, vec2, vec3, vec4 } from 'three/tsl';
 import { Box3, BufferAttribute, Color, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, type PerspectiveCamera, type Texture, Vector3 } from 'three/webgpu';
 import { TERRAIN, type TerrainData } from '../sim/terrain.ts';
+import { contactOcclusion } from './contactShadow.ts';
 import type { GroundLayers } from './groundTextures.ts';
 import { type LandSurface, landSurface } from './landCover.ts';
 import type { TerrainTextures } from './terrainTextures.ts';
@@ -142,10 +143,12 @@ export class TerrainRenderer {
     m.normalNode = transformNormalToView(normalize(mix(nrm.add(detail).add(detailN), ripple, water)));
     // The mountains' own light (terrainShadow.ts): sun shadow from the ridges, and sky occlusion for the
     // ambient. Both fade to 1 outside the near grid, which the bake does not cover.
+    // Under a parked or low helicopter the ground sees less sky (contactShadow.ts).
+    m.aoNode = contactOcclusion(positionWorld.xz);
     if (this.shadow) {
       const vis = texture(this.shadow, uvN);
       const sunVis = mix(vis.r, float(1), t);
-      m.aoNode = mix(vis.g, float(1), t).mul(0.85).add(0.15);
+      m.aoNode = mix(vis.g, float(1), t).mul(0.85).add(0.15).mul(contactOcclusion(positionWorld.xz));
       // ShadowNode calls this with the shadow factor; clouds.shadeReceivers multiplies its own on top.
       m.receivedShadowNode = ((shadow: Node<'vec4'>) => shadow.mul(sunVis)) as unknown as () => Node;
       m.userData.shadowFactor = sunVis;

@@ -20,7 +20,7 @@ import { HELICOPTERS, type HeliId } from '../config.ts';
 import type { Hardpoints } from '../sim/weapons.ts';
 import { box, fuselage, lathe, type Station, surface, tube } from './airframe.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
-import { bandMaterials, bladeAntenna, dispenser, irJammer, missile, navLight, opticsMaterial, rocketPod, sensorTurret, step, suppressor, wireCutter } from './heliDetail.ts';
+import { bandMaterials, bladeAntenna, dispenser, irJammer, missile, navLight, opticsMaterial, rocketPod, sensorTurret, step, suppressor, wheel, wireCutter } from './heliDetail.ts';
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
 
@@ -506,14 +506,7 @@ export function buildHeli(id: HeliId): HeliModel {
   for (const [wx, wy, wz] of cfg.wheels) {
     const tail = wz > 0;
     const r = tail ? 0.2 : 0.33;
-    const wheel = mesh(new CylinderGeometry(r, r, tail ? 0.14 : 0.2, 20), tyre);
-    wheel.rotation.z = Math.PI / 2;
-    wheel.position.set(wx, wy + r, wz);
-    root.add(wheel);
-    const hub = mesh(new CylinderGeometry(r * 0.5, r * 0.5, tail ? 0.16 : 0.22, 12), metal);
-    hub.rotation.z = Math.PI / 2;
-    hub.position.copy(wheel.position);
-    root.add(hub);
+    root.add(wheel(wx, wy + r, wz, r, tail ? 0.14 : 0.2, tyre, metal, wx < 0 ? -1 : 1));
     if (tail) {
       root.add(
         mesh(

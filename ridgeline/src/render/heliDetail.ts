@@ -324,3 +324,32 @@ export function step(x: number, y: number, z: number, side: 1 | -1, m: Material)
   g.position.set(x, y, z);
   return g;
 }
+
+/**
+ * A landing-gear wheel, axle along x, centred at (x, y, z): a rounded tyre (a torus stretched to the
+ * tyre's width), the rim inside it, a hub cap and a ring of bolt heads on the outer face.
+ */
+export function wheel(x: number, y: number, z: number, r: number, width: number, tyre: Material, rim: Material, outward: 1 | -1): Group {
+  const g = new Group();
+  const section = width * 0.5;
+  const t = mesh(new TorusGeometry(r - section, section, 12, 36), tyre);
+  t.scale.set(1, 1, 1.15);
+  t.rotation.y = Math.PI / 2;
+  g.add(t);
+  const disc = mesh(new CylinderGeometry(r - section * 1.4, r - section * 1.4, width * 0.8, 24), rim);
+  disc.rotation.z = Math.PI / 2;
+  g.add(disc);
+  const cap = mesh(new CylinderGeometry(r * 0.22, r * 0.26, 0.05, 16), rim);
+  cap.rotation.z = Math.PI / 2;
+  cap.position.x = outward * (width * 0.4 + 0.02);
+  g.add(cap);
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    const bolt = mesh(new CylinderGeometry(0.012, 0.012, 0.03, 6), rim, false);
+    bolt.rotation.z = Math.PI / 2;
+    bolt.position.set(outward * (width * 0.4 + 0.01), Math.cos(a) * r * 0.36, Math.sin(a) * r * 0.36);
+    g.add(bolt);
+  }
+  g.position.set(x, y, z);
+  return g;
+}

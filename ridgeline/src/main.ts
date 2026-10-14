@@ -9,6 +9,7 @@ import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
 import { CombatView, EMISSIVE_EXPOSURE } from './render/combatView.ts';
 import { HeliCockpit } from './render/heliCockpit.ts';
 import { HeliView } from './render/heliView.ts';
+import { updateContact } from './render/contactShadow.ts';
 import { SkyLighting } from './render/lighting.ts';
 import { Rain } from './render/rain.ts';
 import { canopyFlow, canopyFlowSpeed, canopyRain, canopyTime } from './render/canopyRain.ts';
@@ -389,6 +390,7 @@ async function main(): Promise<void> {
         const inside = rig.mode === 'cockpit' || rig.mode === 'gunner';
         view.setSeat(rig.mode === 'cockpit' ? 'pilot' : rig.mode === 'gunner' ? 'gunner' : null);
         view.update(heli, alpha, frameS, true);
+        updateContact(view.renderPos, view.renderRot, groundAt(view.renderPos.x, view.renderPos.z));
         // The cannon follows its turret; fired missiles leave the rails.
         view.model.gunYaw.rotation.y = -arm.gunAzRad;
         view.model.gunPitch.rotation.x = arm.gunElRad;
