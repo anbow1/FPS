@@ -1,5 +1,5 @@
-import { attribute } from 'three/tsl';
-import { BufferAttribute, type Group, Matrix3, Matrix4, Mesh, MeshStandardNodeMaterial, Vector3 } from 'three/webgpu';
+import { attribute, materialColor, mix, smoothstep, vec3 } from 'three/tsl';
+import { BufferAttribute, type Group, Matrix3, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, Vector3 } from 'three/webgpu';
 
 // Ambient occlusion baked once per airframe at load: every opaque surface is
 // rasterised into a voxel grid of the model (8 cm cells), then each vertex
@@ -138,14 +138,20 @@ export function bakeAmbientOcclusion(root: Group): void {
     }
     g.setAttribute('ao', new BufferAttribute(ao, 1));
   }
-  // Feed it to the indirect light of every baked material.
+  // Feed it to the indirect light of every baked material, and to its colour: grime and exhaust
+  // film collect where the airflow, the rain and the ground crew's rags do not reach (seams,
+  // corners, under fittings). That darkening of the albedo itself, not of the light, is what
+  // makes a model read as a used machine instead of a clean toy.
   const done = new Set<MeshStandardNodeMaterial>();
   for (const { mesh } of meshes) {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const m of mats) {
       if (!(m instanceof MeshStandardNodeMaterial) || done.has(m)) continue;
+      const ao = attribute('ao', 'float');
       // Remap so open skin stays at 1 and only real cavities darken.
-      m.aoNode = attribute('ao', 'float').mul(1.15).clamp(0, 1);
+      m.aoNode = ao.mul(1.15).clamp(0, 1);
+      const grime = mix(vec3(0.6, 0.57, 0.52), vec3(1, 1, 1), smoothstep(0.3, 0.85, ao));
+      m.colorNode = ((m.colorNode ?? materialColor) as Node<'vec3'>).mul(grime);
       done.add(m);
     }
   }

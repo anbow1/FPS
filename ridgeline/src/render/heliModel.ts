@@ -20,6 +20,7 @@ import { HELICOPTERS, type HeliId } from '../config.ts';
 import type { Hardpoints } from '../sim/weapons.ts';
 import { box, fuselage, lathe, type Station, surface, tube } from './airframe.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
+import { bandMaterials, bladeAntenna, dispenser, irJammer, missile, navLight, opticsMaterial, rocketPod, sensorTurret, step, suppressor, wireCutter } from './heliDetail.ts';
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
 
@@ -311,12 +312,19 @@ export function buildHeli(id: HeliId): HeliModel {
   const cfg = HELICOPTERS[id];
   const s = SHAPES[id];
   const root = new Group();
-  const skin = paintMaterial({ name: `${id} paint`, base: s.paint, roughness: 0.8, panels: { frameM: 0.5, splitM: 0.6, seamM: 0.003, access: 0.3, rivets: true, tape: false } });
+  // Satin rather than dead matte (0.8 read as felt): the shape shows in the sky's sheen. Soot from the
+  // turned-out exhausts streaks the boom's upper sides behind them.
+  const skin = paintMaterial({
+    name: `${id} paint`,
+    base: s.paint,
+    roughness: 0.7,
+    panels: { frameM: 0.5, splitM: 0.6, seamM: 0.003, access: 0.3, rivets: true, tape: false },
+    sootPatch: { z0: s.nacelleZ[1] - 0.1, z1: s.nacelleZ[1] + 2.6, minY: 0.12 },
+  });
   const darker = plain('fittings', 0x232622, 0.7);
   const metal = plain('hub metal', 0x3a3b3c, 0.45, 0.6);
   const flat = plain(`${id} flat`, s.paint, 0.82);
   const black = plain('black', 0x111212, 0.6);
-  const sensorGlass = plain('sensor glass', 0x0b0d10, 0.08, 0.2);
 
   // ---- body: fuselage and boom, and the cheek fairings along the lower sides
   root.add(mesh(fuselage(s.stations, { stepM: 0.1, perQuarter: 16 }), skin));
@@ -339,34 +347,10 @@ export function buildHeli(id: HeliId): HeliModel {
   pilotFigure.position.set(...cfg.pilotEye);
   root.add(gunnerFigure, pilotFigure);
 
-  // ---- nose: sensor turret (drum, side "ears" with their windows) and the small night-vision turret above
+  // ---- nose: sensor turret (drum, side housings with their coated windows) and the night-flying turret above
   const nose = plain('turret', s.nose, 0.5);
-  const tz = s.turretZ;
-  const yoke = mesh(new CylinderGeometry(0.16, 0.2, 0.22, 14), nose);
-  yoke.position.set(0, -0.48, tz + 0.25);
-  root.add(yoke);
-  const drum = mesh(new CylinderGeometry(s.turretR, s.turretR, 0.62, 22), nose);
-  drum.rotation.z = Math.PI / 2;
-  drum.position.set(0, -0.7, tz);
-  root.add(drum);
-  for (const side of [-1, 1]) {
-    const ear = mesh(box(-0.1, -0.2, -0.26, 0.1, 0.2, 0.22), nose);
-    ear.position.set(side * 0.43, -0.7, tz);
-    root.add(ear);
-    const win = mesh(new BoxGeometry(0.15, 0.24, 0.02), sensorGlass, false);
-    win.position.set(side * 0.43, -0.7, tz - 0.27);
-    root.add(win);
-  }
-  const drumWin = mesh(new BoxGeometry(0.34, 0.22, 0.02), sensorGlass, false);
-  drumWin.position.set(0, -0.7, tz - s.turretR - 0.005);
-  root.add(drumWin);
-  const pnvs = mesh(new CylinderGeometry(0.15, 0.15, 0.24, 16), nose);
-  pnvs.position.set(0, 0.25, s.stations[1]!.z + 0.05);
-  root.add(pnvs);
-  const pnvsWin = mesh(new SphereGeometry(0.13, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), sensorGlass, false);
-  pnvsWin.rotation.x = -Math.PI / 2;
-  pnvsWin.position.set(0, 0.25, s.stations[1]!.z - 0.05);
-  root.add(pnvsWin);
+  const optics = opticsMaterial();
+  root.add(sensorTurret(s.turretZ, -0.7, s.turretR, s.stations[1]!.z, nose, darker, optics));
 
   // ---- chin cannon on its turret: the ring is fixed; azimuth turns `gunYaw`, elevation `gunPitch` (pivot at the breech)
   const ring = mesh(new CylinderGeometry(0.24, 0.27, 0.2, 18), darker);
@@ -387,6 +371,10 @@ export function buildHeli(id: HeliId): HeliModel {
   jacket.position.set(0, -0.01, -0.7);
   gunPitch.add(jacket);
   const hardpoints: Hardpoints = { gun: [0, -1.28, s.gunZ], pods: [], rails: [] };
+  const podMat = plain('rocket pod', 0x3d4234, 0.72);
+  const missileMat = plain('missile', 0x3f4639, 0.6);
+  const seekerMat = opticsMaterial();
+  const bands = bandMaterials();
   const missileRounds: Group[] = [];
 
   // ---- engines: pods with intakes in front and exhaust suppressors turned out
@@ -404,10 +392,12 @@ export function buildHeli(id: HeliId): HeliModel {
       ],
       side * s.nacelleX,
       s.nacelleY,
-      24,
+      28,
       true,
+      // A rounded-square section (superellipse, n = 3), not a tube: the cowlings are flat-sided.
+      (t) => 1 / Math.cbrt(Math.abs(Math.cos(t)) ** 3 + Math.abs(Math.sin(t)) ** 3),
     );
-    root.add(mesh(pod, flat));
+    root.add(mesh(pod, skin));
     const intake = mesh(new CylinderGeometry(R * 0.66, R * 0.66, 0.05, 20), black, false);
     intake.rotation.x = Math.PI / 2;
     intake.position.set(side * s.nacelleX, s.nacelleY, z0 - 0.01);
@@ -415,15 +405,8 @@ export function buildHeli(id: HeliId): HeliModel {
     const spinner = mesh(new SphereGeometry(R * 0.22, 12, 8), metal);
     spinner.position.set(side * s.nacelleX, s.nacelleY, z0 + 0.02);
     root.add(spinner);
-    // The suppressor: a flattened duct bending out and down from the pod's tail.
-    const duct = mesh(box(-0.16, -0.22, -0.3, 0.16, 0.22, 0.45), flat);
-    duct.position.set(side * (s.nacelleX + 0.22), s.nacelleY + 0.02, z1 + 0.05);
-    duct.rotation.y = side * 0.55;
-    root.add(duct);
-    const outlet = mesh(new BoxGeometry(0.26, 0.36, 0.02), black, false);
-    outlet.position.set(side * (s.nacelleX + 0.48), s.nacelleY + 0.02, z1 + 0.42);
-    outlet.rotation.y = side * 0.55;
-    root.add(outlet);
+    // The suppressor: a flattened duct turning out and a little down from the pod's tail.
+    root.add(suppressor(side as 1 | -1, side * s.nacelleX, s.nacelleY, z1, skin, black));
     // Pylon fairing joining the pod to the body.
     root.add(mesh(box(side * 0.35 - 0.12 * side, s.nacelleY - 0.3, z0 + 0.4, side * (s.nacelleX - R * 0.5), s.nacelleY + 0.1, z1 - 0.6).translate(0, 0, 0), flat));
 
@@ -447,37 +430,47 @@ export function buildHeli(id: HeliId): HeliModel {
     const inboard = side * (0.5 + w.span * 0.38);
     const outboard = side * (0.5 + w.span * 0.82);
     for (const px of [inboard, outboard]) root.add(mesh(box(px - 0.05, ty - 0.32, w.z - 0.32, px + 0.05, w.y, w.z + 0.3), darker));
-    // Inboard: a rocket pod, its front face a honeycomb of tubes (dark disc).
-    const pod19 = mesh(new CylinderGeometry(0.21, 0.21, 1.7, 18), plain('rocket pod', 0x3d4234, 0.75));
-    pod19.rotation.x = Math.PI / 2;
-    pod19.position.set(inboard, ty - 0.55, w.z - 0.05);
-    root.add(pod19);
-    const face = mesh(new CylinderGeometry(0.19, 0.19, 0.02, 18), black, false);
-    face.rotation.x = Math.PI / 2;
-    face.position.set(inboard, ty - 0.55, w.z - 0.91);
-    root.add(face);
+    // Inboard: a rocket pod, its end faces a honeycomb of tubes.
+    root.add(rocketPod(inboard, ty - 0.55, w.z - 0.05, podMat, darker));
     hardpoints.pods.push([inboard, ty - 0.55, w.z - 1.0]);
-    // Outboard: a launcher rail with four anti-armour missiles.
+    // Outboard: a launcher (body and two rail arms) with four anti-armour missiles.
     root.add(mesh(box(outboard - 0.06, ty - 0.48, w.z - 0.75, outboard + 0.06, ty - 0.3, w.z + 0.7), darker));
+    for (const dy of [-0.42, -0.68]) root.add(mesh(box(outboard - 0.2, ty + dy + 0.085, w.z - 0.6, outboard + 0.2, ty + dy + 0.11, w.z + 0.55), darker));
     for (const [dx, dy] of [
       [-0.12, -0.42],
       [0.12, -0.42],
       [-0.12, -0.68],
       [0.12, -0.68],
     ] as const) {
-      const round = new Group();
-      const m = mesh(new CylinderGeometry(0.09, 0.09, 1.55, 12), plain('missile', 0x3f4639, 0.6));
-      m.rotation.x = Math.PI / 2;
-      m.position.set(outboard + dx, ty + dy, w.z - 0.05);
-      round.add(m);
-      const cone = mesh(new SphereGeometry(0.09, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), plain('seeker', 0x1c1f1c, 0.2, 0.3));
-      cone.rotation.x = -Math.PI / 2;
-      cone.position.set(outboard + dx, ty + dy, w.z - 0.83);
-      round.add(cone);
+      const round = missile(missileMat, seekerMat, darker, bands);
+      round.position.set(outboard + dx, ty + dy, w.z - 0.05 - 0.08);
       root.add(round);
       missileRounds.push(round);
       hardpoints.rails.push([outboard + dx, ty + dy, w.z - 0.9]);
     }
+    // Position light on the wing tip: red to port, green to starboard.
+    root.add(navLight(side * (0.5 + w.span) + side * 0.02, w.y - w.span * 0.06 - 0.02, w.z, side < 0 ? 0xff2a1a : 0x2aff5a, darker));
+  }
+
+  // ---- small parts: antennas, wire cutters, IR jammer, flare dispensers, boarding steps
+  const topAt = (z: number): { top: number; bot: number; w: number } => {
+    const st0 = s.stations.find((q, i) => i + 1 < s.stations.length && q.z <= z && s.stations[i + 1]!.z >= z) ?? s.stations[0]!;
+    const st1 = s.stations[s.stations.indexOf(st0) + 1] ?? st0;
+    const f = st1.z === st0.z ? 0 : (z - st0.z) / (st1.z - st0.z);
+    return { top: st0.top + (st1.top - st0.top) * f, bot: st0.bot + (st1.bot - st0.bot) * f, w: st0.w + (st1.w - st0.w) * f };
+  };
+  root.add(bladeAntenna(0, topAt(3.3).top - 0.02, 3.3, 0.2, 0.22, darker));
+  root.add(bladeAntenna(0, topAt(-1.6).bot + 0.02, -1.6, 0.16, 0.2, darker, true));
+  root.add(bladeAntenna(0, topAt(5.6).bot + 0.02, 5.6, 0.14, 0.18, darker, true));
+  const roof = s.canopy[2]!;
+  root.add(wireCutter(0, roof.roofY - 0.02, roof.z - 0.35, 0.2, darker));
+  root.add(wireCutter(0, s.canopy[4]!.roofY - 0.02, s.canopy[4]!.z + 0.15, 0.14, darker));
+  root.add(wireCutter(0, topAt(s.turretZ + 1.5).bot + 0.05, s.turretZ + 1.5, 0.26, darker, true));
+  root.add(irJammer(0, topAt(1.15).top - 0.04, 1.15, darker, optics));
+  for (const side of [-1, 1] as const) {
+    const zb = 4.6;
+    root.add(dispenser(side * (topAt(zb).w * 0.92 + 0.03), (topAt(zb).top + topAt(zb).bot) / 2 + 0.05, zb, side, darker, black));
+    for (const zs of [-2.6, -1.6]) root.add(step(side * (s.cheeks.x + 0.33), -0.3, zs, side, metal));
   }
 
   // ---- tail: swept fin, low stabilator, tail wheel

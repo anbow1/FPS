@@ -77,6 +77,11 @@ export interface PaintSpec {
   camo?: { dark: number; light: number; scaleM: number };
   /** Exhaust soot from this station aft (m) to the nozzle exit. */
   soot?: { fromZ: number; toZ: number };
+  /**
+   * Soot washed onto the skin behind exhausts that open to the sides (a helicopter's): a patch from z0
+   * that fades out by z1, on the upper sides only (above `minY`), streaked along the flow.
+   */
+  sootPatch?: { z0: number; z1: number; minY: number };
   /** Lifting surfaces: a darker, glossier coating band along the leading edge (surf.x = chord from LE). */
   leadingEdge?: boolean;
   /**
@@ -200,6 +205,22 @@ export function paintMaterial(spec: PaintSpec): MeshStandardNodeMaterial {
     const soot = smoothstep(spec.soot.fromZ, spec.soot.toZ, P.z).mul(mx_noise_float(vec2(surf.x.mul(1.2), surf.y.mul(3))).mul(0.25).add(0.75));
     colour = mix(colour, lin(0x2b2b2c), soot.mul(0.55));
   }
+  if (spec.sootPatch) {
+    const sp = spec.sootPatch;
+    const along = smoothstep(sp.z0, sp.z0 + 0.35, P.z).mul(float(1).sub(smoothstep(sp.z0 + 0.35, sp.z1, P.z)));
+    const flow = mx_noise_float(vec2(P.z.mul(0.9), P.y.mul(9))).mul(0.35).add(0.75);
+    colour = mix(colour, lin(0x232220), along.mul(smoothstep(sp.minY, sp.minY + 0.25, P.y)).mul(flow).clamp(0, 1).mul(0.7));
+  }
+  // Wash-down streaks on the sides: rain and wash water run down from every seam and fastener
+  // row and leave thin darker trails (horizontal coordinate along the face: z on the sides, x fore and aft).
+  const nL = normalLocal;
+  const sideFace = float(1).sub(smoothstep(0.45, 0.8, abs(nL.y)));
+  const across = P.z.mul(abs(nL.x)).add(P.x.mul(abs(nL.z)));
+  const trail = smoothstep(0.5, 0.85, mx_noise_float(vec2(across.mul(9), P.y.mul(0.7))));
+  const patch = smoothstep(-0.1, 0.5, mx_noise_float(vec2(across.mul(1.1), P.y.mul(0.35)).add(4.1)));
+  colour = colour.mul(float(1).sub(trail.mul(patch).mul(sideFace).mul(0.14)));
+  // Undersides collect oil mist, exhaust film and dust: darker and warmer than the sides.
+  colour = mix(colour, colour.mul(vec3(0.8, 0.76, 0.68)), smoothstep(-0.1, -0.75, nL.y).mul(0.7));
   m.colorNode = colour;
   const rough = float(spec.roughness).add(p.panelId.sub(0.5).mul(0.06)).sub(p.tape.mul(spec.panels.tape ? 0.1 : 0)).add(p.seam.mul(0.1));
   m.roughnessNode = rough.clamp(0.25, 1);
