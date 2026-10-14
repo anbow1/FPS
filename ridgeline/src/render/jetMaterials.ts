@@ -93,6 +93,8 @@ export interface PaintSpec {
 
 interface PanelPattern {
   seam: F;
+  /** A soft band either side of every seam and access-panel edge: where grime settles (the model maker's wash). */
+  wash: F;
   access: F;
   rivet: F;
   tape: F;
@@ -140,7 +142,12 @@ function panelPattern(style: PanelStyle): PanelPattern {
   const qx = abs(lu.sub(cu)).sub(hu).add(r);
   const qy = abs(lv.sub(cv)).sub(hv).add(r);
   const rect = vec2(max(qx, 0), max(qy, 0)).length().add(min(max(qx, qy), 0)).sub(r);
-  const access = lineAA(abs(rect), style.seamM * 0.8).mul(step(1 - style.access, hash(panelId.mul(9.7))));
+  const hasAccess = step(1 - style.access, hash(panelId.mul(9.7)));
+  const access = lineAA(abs(rect), style.seamM * 0.8).mul(hasAccess);
+  // Grime settles in and beside the seams (a few cm, fading out): that band, not the hairline
+  // seam itself, is what shows a panel layout from ten metres away.
+  const washD = min(dSeam, mix(float(9), abs(rect), hasAccess));
+  const wash = float(1).sub(smoothstep(style.seamM, style.seamM + 0.028, washD));
   // Rivet rows 25 mm inside the frame seams, 60 mm pitch; gone before a rivet is a pixel.
   let rivet: F = float(0);
   if (style.rivets) {
@@ -150,7 +157,7 @@ function panelPattern(style: PanelStyle): PanelPattern {
     rivet = lineAA(dot, 0.0045).mul(float(1).sub(smoothstep(0.004, 0.012, fwidth(u))));
   }
   const tape = style.tape ? lineAA(dSeam, 0.035) : float(0);
-  return { seam, access, rivet, tape, panelId };
+  return { seam, wash, access, rivet, tape, panelId };
 }
 
 /** The airframe paint. Requires the `surf` attribute (airframe.ts geometry). */
@@ -178,6 +185,9 @@ export function paintMaterial(spec: PaintSpec): MeshStandardNodeMaterial {
   colour = colour.mul(float(0.965).add(p.panelId.mul(0.07)));
   if (spec.panels.tape) colour = mix(colour, colour.mul(1.08), p.tape.mul(0.8));
   colour = colour.mul(float(1).sub(p.seam.mul(0.42))).mul(float(1).sub(p.access.mul(0.3)));
+  // The wash: uneven, heavier low on the airframe where the dirt runs to.
+  const washNoise = mx_noise_float(P.mul(3.7)).mul(0.35).add(0.75);
+  colour = colour.mul(float(1).sub(p.wash.mul(washNoise).mul(0.2)));
   colour = colour.mul(float(1).sub(p.rivet.mul(0.12)));
   let doorLine: F = float(0);
   for (const d of spec.doors ?? []) {

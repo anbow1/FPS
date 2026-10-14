@@ -188,8 +188,9 @@ const SHAPES: Record<HeliId, Shape> = {
       x: 0.6,
       stations: [st(-4.6, -0.3, -0.62, 0.05, -0.46, 0.4, 0.4, 0.5, 0.5), st(-4.0, -0.12, -0.86, 0.3, -0.46), st(0.6, -0.1, -0.86, 0.34, -0.45), st(1.6, -0.25, -0.62, 0.12, -0.45, 0.4, 0.4, 0.5, 0.5)],
     },
-    paint: 0x353c2d,
-    nose: 0x2a2e27,
+    // A real attack-helicopter green (sRGB ~#434A35): darker than this swallowed every detail.
+    paint: 0x434a35,
+    nose: 0x3a4032,
     canopy: [
       { z: -5.42, sillY: 0.1, sillHalf: 0.45, roofY: 0.16, roofHalf: 0.3 },
       { z: -4.6, sillY: 0.1, sillHalf: 0.47, roofY: 0.74, roofHalf: 0.3 },
