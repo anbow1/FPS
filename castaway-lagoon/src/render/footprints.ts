@@ -1,8 +1,7 @@
-import { abs, attribute, float, Fn, length, max, min, mix, normalize, positionGeometry, smoothstep, uniform, vec2, vec3 } from 'three/tsl';
-import { CustomBlending, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicNodeMaterial, type Node, OneFactor, OneMinusSrcAlphaFactor, PlaneGeometry, Quaternion, Vector2, Vector3 } from 'three/webgpu';
+import { abs, attribute, cameraViewMatrix, float, Fn, length, max, min, mix, normalize, positionGeometry, smoothstep, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { InstancedBufferAttribute, InstancedMesh, Matrix4, MeshStandardNodeMaterial, type Node, PlaneGeometry, Quaternion, Vector2, Vector3 } from 'three/webgpu';
 import { WATER_LEVEL_M } from '../config.ts';
 import { heightAt, normalAt, surfaceAt } from '../game/terrain.ts';
-import { U } from './uniforms.ts';
 
 // Tracks in the sand, after the beach in "Tidewater" (an AI-made three.js
 // fishing game): a trail of footprints behind the walker is what makes a beach
@@ -92,22 +91,20 @@ export class Footprints {
   constructor() {
     const geo = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     this.kind = new InstancedBufferAttribute(new Float32Array(MAX_PRINTS), 1);
-    this.fade = new InstancedBufferAttribute(new Float32Array(MAX_PRINTS * 2), 2);
+    this.fade = new InstancedBufferAttribute(new Float32Array(MAX_PRINTS * 4), 4);
     geo.setAttribute('printKind', this.kind);
     geo.setAttribute('printFade', this.fade);
-    const mat = new MeshBasicNodeMaterial({ name: 'footprints', transparent: true, depthWrite: false });
-    // Premultiplied: darken by alpha, add the sunlit wall's light on top.
-    mat.blending = CustomBlending;
-    mat.blendSrc = OneFactor;
-    mat.blendDst = OneMinusSrcAlphaFactor;
+    // A lit decal: disturbed sand with its own normal (floor, sloping walls, a pushed-up rim), so the sun
+    // and the palms' shadows shade it like the beach around it; inside it the wind ripples are gone.
+    const mat = new MeshStandardNodeMaterial({ name: 'footprints', transparent: true, depthWrite: false, metalness: 0 });
     mat.polygonOffset = true;
     // Reversed depth buffer: positive offsets pull toward the camera.
     mat.polygonOffsetFactor = 2;
     mat.polygonOffsetUnits = 2;
     const kind = attribute('printKind', 'float');
-    const fadeWet = attribute('printFade', 'vec2');
-    const strength = fadeWet.x;
-    const wet = fadeWet.y;
+    const inst = attribute('printFade', 'vec4');
+    const strength = inst.x;
+    const wet = inst.y;
     const size = vec2(
       kind.lessThan(1.5).select(float(SIZE.footL[0]), kind.lessThan(2.5).select(float(SIZE.paw[0]), float(SIZE.hoof[0]))),
       kind.lessThan(1.5).select(float(SIZE.footL[1]), kind.lessThan(2.5).select(float(SIZE.paw[1]), float(SIZE.hoof[1]))),
@@ -121,25 +118,30 @@ export class Footprints {
     const gy = printDistance(pm.add(vec2(0, e)), kind).sub(printDistance(pm.sub(vec2(0, e)), kind));
     const g = normalize(vec2(gx, gy).add(vec2(1e-6, 0)));
     // Wet sand holds a sharp edge; dry sand slumps into a soft dish.
-    const soft = mix(float(0.012), float(0.004), wet);
+    const soft = mix(float(0.014), float(0.005), wet);
     const inside = smoothstep(soft, soft.negate(), d);
-    const wall = smoothstep(soft.mul(-2.5), float(0), d).mul(float(1).sub(smoothstep(float(0), soft, d)));
-    // The inner wall faces −g: toward the sun it is lit, away from it in shadow.
-    const facing = mix(float(0), float(1), smoothstep(-1, 1, g.x.mul(this.sunXZ.x).add(g.y.mul(this.sunXZ.y)).negate()));
-    const sunUp = max(U.sunDir.y, 0);
-    const darken = inside.mul(mix(float(0.16), float(0.3), wet)).add(wall.mul(float(1).sub(facing)).mul(0.38).mul(smoothstep(0.02, 0.25, sunUp)));
-    const lit = wall.mul(facing).mul(0.1).mul(smoothstep(0.02, 0.25, sunUp));
-    const sand = vec3(0.62, 0.55, 0.42);
-    const light = U.sunIrradiance.mul(sunUp).add(U.skyIrradiance).div(Math.PI).mul(sand);
-    // Premultiplied through the normal output (a fragmentNode would skip the scene pass's other
-    // MRT outputs, and WebGL then drops the draw): light added, the sand below darkened by alpha.
-    mat.colorNode = light.mul(lit).mul(strength);
-    mat.opacityNode = darken.mul(strength);
+    const wall = smoothstep(soft.mul(-2.2), float(0), d).mul(float(1).sub(smoothstep(float(0), soft, d)));
+    const rim = smoothstep(float(0), soft, d).mul(float(1).sub(smoothstep(soft, soft.mul(3).add(0.008), d)));
+    // Normal: up, tilted toward the middle on the walls and away from it on the rim; in world space via
+    // the print's heading (instance attribute), then to view space for the lighting.
+    const tilt = rim.mul(0.35).sub(wall.mul(mix(float(1.1), float(1.6), wet)));
+    const c = inst.z;
+    const sn = inst.w;
+    const right = vec3(c, 0, sn.negate());
+    const fwd = vec3(sn.negate(), 0, c.negate());
+    const nWorld = normalize(vec3(0, 1, 0).add(right.mul(g.x.mul(tilt))).add(fwd.mul(g.y.mul(tilt))));
+    mat.normalNode = normalize(cameraViewMatrix.mul(vec4(nWorld, 0)).xyz);
+    // Disturbed sand is a little darker than the wind-dried crust; wet prints darker still, and glossier.
+    const dry = vec3(0.6, 0.54, 0.42);
+    mat.colorNode = mix(dry.mul(mix(float(0.9), float(1.05), rim)), dry.mul(0.62), wet);
+    mat.roughnessNode = mix(float(0.95), float(0.55), wet);
+    mat.opacityNode = max(inside.mul(0.92), max(wall, rim.mul(0.55))).mul(strength);
     this.mesh = new InstancedMesh(geo, mat, MAX_PRINTS);
     this.mesh.name = 'footprints';
     this.mesh.count = 0;
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 1;
+    this.mesh.receiveShadow = true;
   }
 
   /** A print at (x, z) facing `yawRad` (logic convention: forward −sin, −cos); only on sand. */
@@ -172,8 +174,10 @@ export class Footprints {
     for (let i = 0; i < this.prints.length; i++) {
       const pr = this.prints[i]!;
       const t = pr.age / pr.life;
-      fade[i * 2] = Math.min(1, pr.age * 8) * (1 - t * t);
-      fade[i * 2 + 1] = pr.wet ? 1 : 0;
+      fade[i * 4] = Math.min(1, pr.age * 8) * (1 - t * t);
+      fade[i * 4 + 1] = pr.wet ? 1 : 0;
+      fade[i * 4 + 2] = Math.cos(pr.yaw);
+      fade[i * 4 + 3] = Math.sin(pr.yaw);
     }
     this.fade.needsUpdate = true;
     if (!this.dirty) return;
