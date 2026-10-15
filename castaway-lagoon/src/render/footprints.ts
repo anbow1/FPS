@@ -1,4 +1,4 @@
-import { abs, attribute, float, Fn, length, max, min, mix, normalize, positionGeometry, smoothstep, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, attribute, float, Fn, length, max, min, mix, normalize, positionGeometry, smoothstep, uniform, vec2, vec3 } from 'three/tsl';
 import { CustomBlending, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicNodeMaterial, type Node, OneFactor, OneMinusSrcAlphaFactor, PlaneGeometry, Quaternion, Vector2, Vector3 } from 'three/webgpu';
 import { WATER_LEVEL_M } from '../config.ts';
 import { heightAt, normalAt, surfaceAt } from '../game/terrain.ts';
@@ -131,8 +131,10 @@ export class Footprints {
     const lit = wall.mul(facing).mul(0.1).mul(smoothstep(0.02, 0.25, sunUp));
     const sand = vec3(0.62, 0.55, 0.42);
     const light = U.sunIrradiance.mul(sunUp).add(U.skyIrradiance).div(Math.PI).mul(sand);
-    // Straight to the target (premultiplied): light added, the sand below darkened by alpha.
-    mat.fragmentNode = vec4(light.mul(lit).mul(strength), darken.mul(strength));
+    // Premultiplied through the normal output (a fragmentNode would skip the scene pass's other
+    // MRT outputs, and WebGL then drops the draw): light added, the sand below darkened by alpha.
+    mat.colorNode = light.mul(lit).mul(strength);
+    mat.opacityNode = darken.mul(strength);
     this.mesh = new InstancedMesh(geo, mat, MAX_PRINTS);
     this.mesh.name = 'footprints';
     this.mesh.count = 0;

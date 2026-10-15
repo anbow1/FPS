@@ -415,8 +415,10 @@ export function grassInputs(world: LagoonWorld, clear: (x: number, z: number) =>
       // beach grass: clumps on the dry upper beach, where the sand meets the soil
       const clump = smooth(0.55, 0.7, fbm2(x * 0.35, z * 0.35, 2, 91));
       const upper = smooth(bw * 0.45, bw * 0.8, d);
-      // ...and single tufts scattered thinly over the upper beach between them (dune grass).
-      const scatter = 0.16 * smooth(bw * 0.3, bw * 0.65, d);
+      // ...and lone tufts over the upper beach between them (dune grass): one cell in six or so at half
+      // density, so the blades bunch into tufts a metre apart instead of standing alone like hairs.
+      const cellHash = (((Math.sin(i * 12.9898 + j * 78.233) * 43758.5453) % 1) + 1) % 1;
+      const scatter = cellHash > 0.84 ? 0.55 * smooth(bw * 0.3, bw * 0.65, d) : 0;
       const beach = w.sand * Math.max(upper * clump, scatter) * open;
       const meadow = w.grass * open * (1 - shade * 0.5);
       const o = (j * size + i) * 4;
