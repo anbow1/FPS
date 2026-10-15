@@ -580,6 +580,29 @@ the edge in and out, and a rounded view-space normal lets the sun shade the
 puff (`render/particles.ts`). Put ground debris on the real surface under it
 (pavement, kerb, roof), not the terrain height.
 
+## 6k. A trodden beach (lagoon `render/footprints.ts`, `render/wrack.ts`)
+
+From the beach in *Tidewater* (an AI-made three.js fishing game): sand reads as
+a real beach when it is not clean.
+
+- **Footprints** as lit decals, not darkening: a dark layer is lost in the wind
+  ripples' own contrast. Each print is a small quad on the ground (normal from
+  the terrain, turned to the heading) whose shape is a signed distance in the
+  shader — bare foot (heel, arch, ball, five toes, mirrored for the right), a
+  tiger's pug (lobed pad, four toes), a boar's cloven hoof with dewclaws. Inside:
+  flat disturbed sand without ripples, a little darker; walls: the normal tilted
+  toward the middle from the outline's gradient (central differences, 2 mm);
+  outside: a pushed-up rim tilted out. A standard material (receives shadows), so
+  the sun and the palms shade the dents like the beach. Wet sand: sharper edge,
+  darker, glossier, gone in 30 s (the swash); dry: soft, four minutes. One per
+  step, alternately either side of the track; animals leave theirs too.
+- **The wrack line**: seaweed (flattened lumpy blobs), shells, bleached twigs,
+  coconut husks in uneven heaps along the top of the swash (bisect the shore
+  distance along rays from the lagoon's middle), never a tidy row.
+- **Dune grass in tufts**: lone blades at low density look like hairs stuck in
+  the sand; switch on single density cells at half density instead (a tuft per
+  cell), a metre or more apart.
+
 ## 6j. A machine that reads as used, not a clean model (Ridgeline Warden, both flight games)
 
 From the STRIX helicopter scene (an AI-made three.js demo): its realism is the

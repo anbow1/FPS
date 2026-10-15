@@ -353,7 +353,7 @@ export class LagoonView {
       if (c.kind === 'tiger') step(c.id, c.pos.x, c.pos.z, vx, vz, 0.55, 0.13, ['paw', 'paw']);
       else step(c.id, c.pos.x, c.pos.z, vx, vz, 0.32, 0.09, ['hoof', 'hoof']);
     }
-    this.prints.update(dt, game.env.daylight.sunDir);
+    this.prints.update(dt);
   }
 
   /** The boat's bow wave and wake in the ripple field, the foam it leaves, and spray off the bow at speed. */

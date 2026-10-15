@@ -1,5 +1,5 @@
-import { abs, attribute, cameraViewMatrix, float, Fn, length, max, min, mix, normalize, positionGeometry, smoothstep, uniform, vec2, vec3, vec4 } from 'three/tsl';
-import { InstancedBufferAttribute, InstancedMesh, Matrix4, MeshStandardNodeMaterial, type Node, PlaneGeometry, Quaternion, Vector2, Vector3 } from 'three/webgpu';
+import { abs, attribute, cameraViewMatrix, float, Fn, length, max, min, mix, normalize, positionGeometry, smoothstep, vec2, vec3, vec4 } from 'three/tsl';
+import { InstancedBufferAttribute, InstancedMesh, Matrix4, MeshStandardNodeMaterial, type Node, PlaneGeometry, Quaternion, Vector3 } from 'three/webgpu';
 import { WATER_LEVEL_M } from '../config.ts';
 import { heightAt, normalAt, surfaceAt } from '../game/terrain.ts';
 
@@ -84,8 +84,6 @@ export class Footprints {
   private readonly s = new Vector3();
   private readonly p = new Vector3();
   private readonly nrm = { x: 0, y: 1, z: 0 };
-  /** The sun's direction in the ground plane, for the walls' light and shade. */
-  private readonly sunXZ = uniform(new Vector2(0.6, 0.8));
   private dirty = true;
 
   constructor() {
@@ -124,7 +122,7 @@ export class Footprints {
     const rim = smoothstep(float(0), soft, d).mul(float(1).sub(smoothstep(soft, soft.mul(3).add(0.008), d)));
     // Normal: up, tilted toward the middle on the walls and away from it on the rim; in world space via
     // the print's heading (instance attribute), then to view space for the lighting.
-    const tilt = rim.mul(0.35).sub(wall.mul(mix(float(1.1), float(1.6), wet)));
+    const tilt = rim.mul(0.35).sub(wall.mul(mix(float(1.4), float(1.8), wet)));
     const c = inst.z;
     const sn = inst.w;
     const right = vec3(c, 0, sn.negate());
@@ -133,7 +131,7 @@ export class Footprints {
     mat.normalNode = normalize(cameraViewMatrix.mul(vec4(nWorld, 0)).xyz);
     // Disturbed sand is a little darker than the wind-dried crust; wet prints darker still, and glossier.
     const dry = vec3(0.6, 0.54, 0.42);
-    mat.colorNode = mix(dry.mul(mix(float(0.9), float(1.05), rim)), dry.mul(0.62), wet);
+    mat.colorNode = mix(dry.mul(mix(float(0.8), float(1.02), rim)), dry.mul(0.6), wet);
     mat.roughnessNode = mix(float(0.95), float(0.55), wet);
     mat.opacityNode = max(inside.mul(0.92), max(wall, rim.mul(0.55))).mul(strength);
     this.mesh = new InstancedMesh(geo, mat, MAX_PRINTS);
@@ -157,9 +155,7 @@ export class Footprints {
     this.dirty = true;
   }
 
-  update(dtS: number, sunDir: { x: number; z: number }): void {
-    const sl = Math.hypot(sunDir.x, sunDir.z);
-    if (sl > 1e-3) this.sunXZ.value.set(sunDir.x / sl, sunDir.z / sl);
+  update(dtS: number): void {
     let removed = 0;
     for (const pr of this.prints) {
       pr.age += dtS;
