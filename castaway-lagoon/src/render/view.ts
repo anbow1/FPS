@@ -30,6 +30,8 @@ import { buildWater, placeWater } from './water.ts';
 import { BoatView } from './boat.ts';
 import { JeepView } from './jeep.ts';
 import { createRipples, createWakeFoam } from './waterFx.ts';
+import { Footprints, type PrintKind } from './footprints.ts';
+import { buildWrack } from './wrack.ts';
 import type { WakeFoam } from './wakeFoam.ts';
 import type { RippleField } from './rippleField.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
@@ -58,6 +60,9 @@ export class LagoonView {
   private grass: GrassField | null = null;
   private ripples!: RippleField;
   private foam!: WakeFoam;
+  /** Tracks in the sand (footprints.ts), and how far each walker has gone since its last print. */
+  private readonly prints = new Footprints();
+  private readonly strides = new Map<number, { x: number; z: number; dist: number; side: number }>();
   /** CPU milliseconds per part of render() (F3, benchmark). */
   readonly cpu = new CpuTimer();
   outpost!: OutpostView;
@@ -164,6 +169,7 @@ export class LagoonView {
     stage.scene.add(this.rain.mesh, this.life.group);
     await progress('Filling the lagoon', 0.5);
     this.ripples = createRipples(stage.quality);
+    stage.scene.add(this.prints.mesh, buildWrack());
     this.foam = createWakeFoam(stage.quality);
     this.water = buildWater(stage.quality);
     for (const t of this.water.ocean.targets) stage.passTimer.name(t, 'water');
@@ -269,6 +275,7 @@ export class LagoonView {
       const speed = Math.hypot(p.vel.x, p.vel.z);
       if (p.grounded && speed > 0.3) this.grass.stamp(p.pos.x, p.pos.z, 0.35, p.vel.x, p.vel.z, Math.min(0.2, speed * 0.05));
     }
+    this.walkTracks(game, dt);
     this.cpu.lap('streaming');
     // Wading and swimming push a wake that grows with speed (per 1/60 s, so frame rate does not matter).
     const wadeSpeed = Math.hypot(p.vel.x, p.vel.z);
@@ -311,6 +318,42 @@ export class LagoonView {
     this.outpost.lantern.color.setRGB(lamp.r, lamp.g, lamp.b);
     this.outpost.fire.color.setRGB(fire.r, fire.g, fire.b);
     this.lampOn = lampOn;
+  }
+
+  /**
+   * Footprints on the sand: one print per step, alternately left and right of the walker's track, for
+   * the player on foot and for the tiger and the boars (their tracks tell the player who came by).
+   */
+  private walkTracks(game: LagoonGame, dt: number): void {
+    const step = (id: number, x: number, z: number, vx: number, vz: number, stepM: number, halfGaitM: number, kinds: [PrintKind, PrintKind]): void => {
+      let st = this.strides.get(id);
+      if (!st) {
+        st = { x, z, dist: 0, side: 0 };
+        this.strides.set(id, st);
+      }
+      st.dist += Math.hypot(x - st.x, z - st.z);
+      st.x = x;
+      st.z = z;
+      if (st.dist < stepM) return;
+      st.dist = 0;
+      st.side = 1 - st.side;
+      const yaw = Math.atan2(-vx, -vz);
+      const rx = Math.cos(yaw);
+      const rz = -Math.sin(yaw);
+      const s = st.side === 0 ? -1 : 1;
+      this.prints.add(x + rx * s * halfGaitM, z + rz * s * halfGaitM, yaw, kinds[st.side] as PrintKind);
+    };
+    const p = game.player;
+    if (p.grounded && !p.inBoat && !p.inJeep && !p.swimming && Math.hypot(p.vel.x, p.vel.z) > 0.3) step(-1, p.pos.x, p.pos.z, p.vel.x, p.vel.z, 0.72, 0.11, ['footL', 'footR']);
+    else this.strides.delete(-1);
+    for (const c of game.fauna?.creatures ?? []) {
+      if (!c.alive || (c.kind !== 'tiger' && c.kind !== 'boar') || c.airborne > 0 || c.speedMs < 0.2) continue;
+      const vx = c.pos.x - c.prev.x;
+      const vz = c.pos.z - c.prev.z;
+      if (c.kind === 'tiger') step(c.id, c.pos.x, c.pos.z, vx, vz, 0.55, 0.13, ['paw', 'paw']);
+      else step(c.id, c.pos.x, c.pos.z, vx, vz, 0.32, 0.09, ['hoof', 'hoof']);
+    }
+    this.prints.update(dt, game.env.daylight.sunDir);
   }
 
   /** The boat's bow wave and wake in the ripple field, the foam it leaves, and spray off the bow at speed. */

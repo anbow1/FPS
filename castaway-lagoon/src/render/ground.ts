@@ -415,7 +415,9 @@ export function grassInputs(world: LagoonWorld, clear: (x: number, z: number) =>
       // beach grass: clumps on the dry upper beach, where the sand meets the soil
       const clump = smooth(0.55, 0.7, fbm2(x * 0.35, z * 0.35, 2, 91));
       const upper = smooth(bw * 0.45, bw * 0.8, d);
-      const beach = w.sand * upper * clump * open;
+      // ...and single tufts scattered thinly over the upper beach between them (dune grass).
+      const scatter = 0.16 * smooth(bw * 0.3, bw * 0.65, d);
+      const beach = w.sand * Math.max(upper * clump, scatter) * open;
       const meadow = w.grass * open * (1 - shade * 0.5);
       const o = (j * size + i) * 4;
       data[o] = Math.round(Math.min(1, meadow * 1.2) * 255);
