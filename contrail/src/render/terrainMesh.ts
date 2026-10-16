@@ -200,7 +200,14 @@ export class TerrainRenderer {
     const clump = mx_noise_float(P.xz.div(1.6)).mul(0.6).add(mx_noise_float(P.xz.div(0.42)).mul(0.4));
     const tuft = smoothstep(0.35, 0.7, mx_noise_float(P.xz.div(0.9).add(vec2(4.1, 2.7))));
     const airfield = float(1).sub(smoothstep(700, 760, abs(P.x.sub(200)))).mul(float(1).sub(smoothstep(1700, 1780, abs(P.z)))).mul(land);
-    const mown = mix(lin(0x56663a), lin(0x64733f), step(0.5, fract(P.x.div(9)))).mul(float(0.9).add(fine.mul(0.15)));
+    // Stripe edges anti-aliased by their own footprint, and the contrast gone once a stripe nears a pixel.
+    const swath = P.x.div(9);
+    const swathW = max(fwidth(swath), 1e-4);
+    // A triangle wave, so both edges of a stripe (a quarter and three quarters across) are smoothed.
+    const tri = abs(fract(swath).sub(0.5)).mul(2);
+    const blur = smoothstep(0.15, 0.4, swathW);
+    const stripe = smoothstep(float(0.5).sub(swathW.mul(2)), float(0.5).add(swathW.mul(2)), tri).mul(float(1).sub(blur)).add(blur.mul(0.5));
+    const mown = mix(lin(0x56663a), lin(0x64733f), stripe).mul(float(0.9).add(fine.mul(0.15)));
     albedo = mix(albedo, mown, airfield.mul(0.85));
     albedo = albedo.mul(float(1).add(clump.mul(0.16).mul(close)));
     albedo = mix(albedo, albedo.mul(vec3(1.25, 1.15, 0.85)), tuft.mul(0.22).mul(close));
