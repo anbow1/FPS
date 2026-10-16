@@ -1,5 +1,5 @@
 import { float, mix, mx_noise_float, normalLocal, positionLocal, smoothstep, vec2, vec3 } from 'three/tsl';
-import { BoxGeometry, type BufferGeometry, Color, CylinderGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Node, type Scene, type Vector3 } from 'three/webgpu';
+import { BoxGeometry, type BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Node, type Scene, Shape, Vector2, type Vector3 } from 'three/webgpu';
 import type { TargetKind } from '../config.ts';
 import type { GroundForce, GroundTarget } from '../sim/targets.ts';
 import { box } from './airframe.ts';
@@ -26,6 +26,13 @@ import { plain } from './jetMaterials.ts';
 
 /** Ground footprint half length and half width (m), for the contact shadows. */
 const FOOTPRINT: Record<TargetKind, [number, number]> = { tank: [3.9, 2.0], apc: [3.5, 1.55], truck: [3.8, 1.3] };
+
+/** A hull from its side profile ([z, y] round the outline, −z forward), extruded across ±halfWidth. */
+function hullProfile(points: [number, number][], halfWidth: number): BufferGeometry {
+  const shape = new Shape(points.map(([z, y]) => new Vector2(z, y)));
+  // Shape x is the hull's z; extruded along its z, turned so the extrusion runs across the hull (x).
+  return new ExtrudeGeometry(shape, { depth: halfWidth * 2, bevelEnabled: false }).rotateY(-Math.PI / 2).translate(halfWidth, 0, 0);
+}
 
 interface VehicleView {
   root: Group;
@@ -162,9 +169,20 @@ export class TargetView {
     let turret: Group | null = null;
     if (kind === 'tank') {
       // Hull with a sloped glacis, an engine deck with its grille, fenders over the tracks.
-      add(box(-1.55, 0.55, -3.4, 1.55, 1.55, 3.4), paint);
-      add(box(-1.5, 0.55, -3.9, 1.5, 1.25, -3.4), paint);
-      add(new BoxGeometry(3.0, 0.5, 0.9).rotateX(-0.6).translate(0, 1.4, -3.55), paint);
+      add(
+        hullProfile(
+          [
+            [3.4, 0.55],
+            [3.45, 1.55],
+            [-2.75, 1.55],
+            [-3.9, 1.05],
+            [-3.85, 0.8],
+            [-3.45, 0.55],
+          ],
+          1.55,
+        ),
+        paint,
+      );
       for (let k = 0; k < 7; k++) add(at(new BoxGeometry(2.2, 0.04, 0.08), 0, 1.57, 1.6 + k * 0.22), this.dark, root, false);
       for (const side of [-1, 1]) {
         // Track run: the belt over the wheels (links in the material), sprocket at the back, idler in front.
@@ -208,10 +226,23 @@ export class TargetView {
       add(new CylinderGeometry(0.008, 0.012, 2.4, 5).translate(-0.9, 1.95, 1.3), this.dark, turret, false);
     } else if (kind === 'apc') {
       // Boat-shaped hull on eight wheels, a trim vane on the bow, hatches and periscopes, a small turret.
-      add(box(-1.4, 0.9, -2.9, 1.4, 2.1, 3.3), paint);
-      add(new BoxGeometry(2.8, 1.0, 1.2).rotateX(0.7).translate(0, 1.55, -3.15), paint);
-      add(new BoxGeometry(2.8, 0.6, 0.9).rotateX(-0.7).translate(0, 0.95, -3.0), paint);
-      add(new BoxGeometry(2.4, 0.05, 0.7).rotateX(0.9).translate(0, 1.45, -3.75), paint);
+      add(
+        hullProfile(
+          [
+            [3.3, 0.8],
+            [3.3, 2.1],
+            [-2.3, 2.1],
+            [-3.5, 1.45],
+            [-2.75, 0.75],
+            [2.95, 0.75],
+          ],
+          1.4,
+        ),
+        paint,
+      );
+      // The trim vane, folded flat against the upper glacis (rises 0.65 m over 1.2 m).
+      const glacis = Math.atan2(0.65, 1.2);
+      add(new BoxGeometry(2.4, 0.04, 1.2).rotateX(-glacis).translate(0, 1.8 + Math.cos(glacis) * 0.05, -2.92 - Math.sin(glacis) * 0.05), paint);
       for (const side of [-1, 1]) {
         for (let k = 0; k < 4; k++) root.add(wheel(side * 1.35, 0.55, -2.2 + k * 1.45, 0.55, 0.42, this.rubber, this.steel, side as 1 | -1));
         for (let k = 0; k < 3; k++) add(at(new BoxGeometry(0.04, 0.12, 0.18), side * 1.41, 1.85, -1.5 + k * 1.3), this.glass, root, false);
