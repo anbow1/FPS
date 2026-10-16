@@ -16,6 +16,8 @@ import { BufferAttribute, type Group, Matrix3, Matrix4, Mesh, MeshStandardNodeMa
 const CELL_M = 0.08;
 const RANGE_M = 1.6;
 const RAYS = 20;
+/** Materials already wired to `ao`: a material shared by several baked models gets the grime once, not once per bake. */
+const wired = new WeakSet<MeshStandardNodeMaterial>();
 
 /** Directions over the +z hemisphere: a Fibonacci spiral, cosine-distributed. */
 function hemisphere(n: number): Vector3[] {
@@ -142,17 +144,16 @@ export function bakeAmbientOcclusion(root: Group): void {
   // film collect where the airflow, the rain and the ground crew's rags do not reach (seams,
   // corners, under fittings). That darkening of the albedo itself, not of the light, is what
   // makes a model read as a used machine instead of a clean toy.
-  const done = new Set<MeshStandardNodeMaterial>();
   for (const { mesh } of meshes) {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const m of mats) {
-      if (!(m instanceof MeshStandardNodeMaterial) || done.has(m)) continue;
+      if (!(m instanceof MeshStandardNodeMaterial) || wired.has(m)) continue;
       const ao = attribute('ao', 'float');
       // Remap so open skin stays at 1 and only real cavities darken.
       m.aoNode = ao.mul(1.15).clamp(0, 1);
       const grime = mix(vec3(0.6, 0.57, 0.52), vec3(1, 1, 1), smoothstep(0.3, 0.85, ao));
       m.colorNode = ((m.colorNode ?? materialColor) as Node<'vec3'>).mul(grime);
-      done.add(m);
+      wired.add(m);
     }
   }
 }
