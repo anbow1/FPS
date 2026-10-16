@@ -97,8 +97,15 @@ function buildGrid(spec: GridSpec, trees: { x: number; z: number; r: number }[],
     const tl = Math.hypot(1, hx);
     tan.push(1 / tl, hx / tl, 0, 1);
     const w = splatAt(x, z, y, ny, isNear);
+    const shade = isNear ? treeShade(bin, x, z) : farShade(x, z);
+    // Under the crowns the floor is leaf litter, not turf: grass needs the light the canopy takes.
+    if (isNear) {
+      const moved = w.grass * smooth(0.95, 0.72, shade) * 0.85;
+      w.grass -= moved;
+      w.litter += moved;
+    }
     splat.push(w.sand, w.grass, w.litter, w.rock);
-    extra.push(w.path, isNear ? treeShade(bin, x, z) : farShade(x, z), canopyAt(x, z, y, ny));
+    extra.push(w.path, shade, canopyAt(x, z, y, ny));
     return pos.length / 3 - 1;
   };
   for (let j = 0; j < nz; j++) {
