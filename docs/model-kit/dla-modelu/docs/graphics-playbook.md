@@ -545,6 +545,17 @@ for each:
   at real LED luminance (~9000 cd/m², visible at noon).
 - **Haze.** A clear day over a city is ~15 km visibility (β = 3.9 / V ≈
   2.6e-4 /m); at 6e-5 the far blocks had the contrast of near ones.
+- **Windows set back in the wall** (`render/facadeReveal.ts`): frame and glass
+  sit ~13 cm behind the face. Per pixel of the opening, follow the view ray to
+  the glass plane (`f + (v·right, v.y) / (−v·n) · depth / tileSize`); sample
+  frame and glass there, and where it lands outside the opening the ray hit the
+  reveal: draw the wall's own texture with the jamb's or head's normal. Trace
+  the sun the same way back from the glass to the face for the head's and the
+  jamb's shadow. Sample with `.grad(dFdx(uv()), dFdy(uv()))` so the jump at the
+  edge does not throw the mip level. Without it, windows read as printed on.
+- **Car colours like a car park**: mostly white, black, greys and silver, then
+  blues and reds (repeat entries to weight them). A row of every-colour cars
+  reads as toys; one colour everywhere reads as a bug (it was: §11).
 
 ## 6g. Ground and plants up close (FL forest, found by a screenshot tour)
 
@@ -565,6 +576,13 @@ for each:
   round the camera; without them a forest floor reads as bare earth.
 - **Cap cut and fill** where a road is pulled to a grade: a smooth target
   surface far below the local ground carves a trench along the whole road.
+- **A conifer floor is a mat, not earth** (FL `patterns.ts` `needleLitter`):
+  needles cover nearly all of it in layers drawn top-down (fresh rust ones,
+  sparse, over browns over dark rotted ones; stop at the first layer that
+  covers a texel), moss cushions in patches with fresh needles lying on them,
+  twigs and egg-shaped cones with a scale lattice. Clods with a few needles
+  read as bare tan dirt from standing height. Preview a sampler by dumping it
+  to PPM in a throwaway vitest before building.
 
 ## 6f. Explosions in layers, and debris that stays (FL)
 
@@ -1319,6 +1337,8 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Camouflage or coat patterns slide over a moving instanced figure; countershading follows world height | in an instanced mesh `positionLocal` is the position *after* the instance matrix | key segment-space patterns to `positionGeometry` (§6h) |
 | Paired limbs or wheels instanced with a mirrored matrix render inside out | instanced draws set the front face per mesh, not per instance | build both sides from symmetric geometry; never negate an axis per instance |
 | Shaded faces turned toward the camera (a vehicle's rear, trunks, walls) render near black on High only | three r186's GTAO under a reversed depth buffer marks them fully occluded (seen in its AO target: black on every camera-facing plane, white on the ground); depth-derived normals and a flipped depth both make it worse; the pipeline multiplied the whole colour by it | compare High with a no-AO preset at one view before trusting AO; Tanks runs without GTAO until it is fixed upstream |
+| Most parked cars the same colour (the palette's fallback) | `hash >> n` on a hash above 2³¹ is negative in JS; `negative % len` stays negative and the array lookup is `undefined` | shift hashes with `>>>`; clamp indices with `Math.abs` |
+| A baked model's shared materials get darker each time another model is baked | the AO bake multiplies a material's `colorNode` by grime per bake | mark materials once (`WeakSet`) |
 | Road paint, bullet holes, tracks and scorch marks never show | the renderer uses a reversed depth buffer (near = 1), and three.js passes `polygonOffset` to the GPU unflipped: a negative bias pushes the decal *behind* its surface | with `reversedDepthBuffer: true`, use positive `polygonOffsetFactor` / `Units` |
 
 ---
@@ -1458,6 +1478,14 @@ in the same place when you come back.
 
 - **Vehicles on slopes**: pitch and roll each model from four ground samples
   around it, every frame for movers.
+- **Ground vehicles as machines** (Ridgeline `render/targetView.ts`, §6j):
+  tracks with a link groove every 15 cm in the material, road wheels, sprocket,
+  idler and return rollers, skirts with rubber edges, stowage bins, smoke
+  dischargers, a cupola gun, an antenna; tyred wheels (`heliDetail.wheel`),
+  hatches and periscopes on carriers; a glazed cab, grille, lamps, mirrors and a
+  hooped cover on trucks. Field paint dusty below ~1.3 m, streaked on the sides,
+  faded on top. Build and AO-bake one template per kind and paint, clone it per
+  vehicle (shared geometry: no bake when a column spawns).
 - **Destroyed**: swap to a charred material, throw the turret askew; a smoke
   column as an `InstancedMesh` of dark puffs that rise, swell and drift on a
   loop (7 per wreck, one draw for all), plus a flickering emissive fire for

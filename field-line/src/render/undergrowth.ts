@@ -172,8 +172,11 @@ export class Undergrowth {
     this.grass = new GrassField(
       { heights: map.terrain.heightsM, originX: map.terrain.originX, originZ: map.terrain.originZ, cellM: map.terrain.cellM, samplesX: map.terrain.samplesX, samplesZ: map.terrain.samplesZ, split: 'bc' },
       grassDensity(area.bounds, (x, z) => {
-        if (mown(x, z) || blocked(x, z)) return [0, 0, 0, 0];
+        if (blocked(x, z)) return [0, 0, 0, 0];
         const w = field.at(x, z);
+        // Mown ground is a lawn of short blades, not bare texture: the field's second kind (the
+        // lagoon's beach grass; no Field Line map has a beach) is cut grass here. None on the track.
+        if (mown(x, z)) return [0, Math.max(0, Math.min(1, 1 - (w[3] ?? 0) * 3 - (w[2] ?? 0) * 2)), 0, 0];
         // sedge in the damp margin round the lake, none in the water itself
         if (lake) {
           const r = lakeRadius(lake, x, z);
@@ -188,7 +191,13 @@ export class Undergrowth {
         radiusM: GRASS_FIELD.radiusM[quality],
         wind: vec2(windVector.x, windVector.z),
         time,
-        colours: { meadow: [0.085, 0.15, 0.035], beach: [0.3, 0.27, 0.14], sedge: [0.06, 0.12, 0.045], dry: [0.36, 0.3, 0.12] },
+        colours: { meadow: [0.085, 0.15, 0.035], beach: [0.075, 0.14, 0.04], sedge: [0.06, 0.12, 0.045], dry: [0.36, 0.3, 0.12] },
+        // Meadow, lawn (mown, 5–10 cm), sedge.
+        kindHeightsM: [
+          [0.24, 0.5],
+          [0.05, 0.1],
+          [0.4, 0.75],
+        ],
       },
     );
     this.group.add(this.grass.group);
