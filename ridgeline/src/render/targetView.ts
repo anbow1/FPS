@@ -185,9 +185,13 @@ export class TargetView {
       );
       for (let k = 0; k < 7; k++) add(at(new BoxGeometry(2.2, 0.04, 0.08), 0, 1.57, 1.6 + k * 0.22), this.dark, root, false);
       for (const side of [-1, 1]) {
-        // Track run: the belt over the wheels (links in the material), sprocket at the back, idler in front.
-        add(box(-0.32, 0.02, -3.6, 0.32, 0.12, 3.5).translate(side * 1.6, 0, 0), this.track);
-        add(box(-0.32, 0.86, -3.3, 0.32, 0.95, 3.2).translate(side * 1.6, 0, 0), this.track);
+        // Track: the belt along the ground and back over the return rollers (links in the material), wrapped
+        // round the idler in front and the sprocket behind (open-ended, so the wheels show through the ends;
+        // a flat run with square ends read as a plank under the wheels).
+        add(box(-0.32, 0.02, -3.35, 0.32, 0.12, 3.3).translate(side * 1.6, 0, 0), this.track);
+        add(box(-0.32, 0.95, -3.35, 0.32, 1.04, 3.3).translate(side * 1.6, 0, 0), this.track);
+        add(new CylinderGeometry(0.44, 0.44, 0.64, 18, 1, true).rotateZ(Math.PI / 2).translate(side * 1.6, 0.6, -3.35), this.track);
+        add(new CylinderGeometry(0.48, 0.48, 0.64, 18, 1, true).rotateZ(Math.PI / 2).translate(side * 1.6, 0.6, 3.3), this.track);
         for (let k = 0; k < 6; k++) add(new CylinderGeometry(0.38, 0.38, 0.5, 16).rotateZ(Math.PI / 2).translate(side * 1.6, 0.42, -2.6 + k * 1.05), this.dark);
         add(new CylinderGeometry(0.4, 0.4, 0.55, 12).rotateZ(Math.PI / 2).translate(side * 1.6, 0.6, 3.3), this.steel);
         add(new CylinderGeometry(0.34, 0.34, 0.5, 16).rotateZ(Math.PI / 2).translate(side * 1.6, 0.6, -3.35), this.dark);
