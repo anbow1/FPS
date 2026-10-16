@@ -66,48 +66,111 @@ export function sand(): TexelSampler {
   };
 }
 
-/** Jungle floor: layered fallen leaves over dark soil. */
+/**
+ * Jungle floor: a mosaic of fallen leaves over dark soil. Four layers, oldest at the bottom (small,
+ * dark, half rotted, spotted) to freshest on top (larger, lighter, some still olive), each leaf a
+ * pointed lens 6–15 cm long with a midrib and side veins, its edges curled up, and a few bleached
+ * twigs over everything. (Three layers of plain 30–50 cm ovals read as paving slabs: the size of the
+ * pieces is what makes a floor read as litter.)
+ */
 export function leafLitter(): TexelSampler {
-  const soil = hex(0x3d3022);
-  const palette: Rgb[] = [hex(0x6b4a2a), hex(0x43301f), hex(0x8a6a36), hex(0x4f5a2c), hex(0x5a3f24), hex(0x746238)];
-  const layers = [7, 10, 14];
+  const soil = hex(0x34281c);
+  const soilDark = hex(0x221810);
+  const fresh: Rgb[] = [hex(0x8f6e3c), hex(0x7a5530), hex(0x9a7a44), hex(0x6e6a34), hex(0x6b4a2a), hex(0xa07c46)];
+  const old: Rgb[] = [hex(0x5a3d22), hex(0x4a3420), hex(0x3c2a1a), hex(0x5c4428), hex(0x463a26)];
+  const twigC = hex(0x655a4a);
+  // Cells per 3 m tile, leaf half-length and half-width in cells, chance of a leaf in a cell, how rotted.
+  const layers = [
+    { g: 60, hl: 0.72, hw: 0.26, p: 1.0, decay: 0.75 },
+    { g: 46, hl: 0.74, hw: 0.27, p: 0.95, decay: 0.5 },
+    { g: 34, hl: 0.76, hw: 0.28, p: 0.85, decay: 0.25 },
+    { g: 24, hl: 0.78, hw: 0.27, p: 0.6, decay: 0.05 },
+  ];
   return (u, v, t) => {
-    let colour: Rgb = soil;
-    let height = tileFbm(u * 8, v * 8, 8, 3, 21) * 0.2;
+    const grain = tileNoise(u * 300, v * 300, 300, 23);
+    let colour: Rgb = mixRgb(soil, soilDark, tileFbm(u * 12, v * 12, 12, 3, 21));
+    let height = tileFbm(u * 8, v * 8, 8, 3, 21) * 0.15;
     let found = false;
-    for (let L = layers.length - 1; L >= 0 && !found; L--) {
-      const g = layers[L] as number;
+    let rough = 0.95;
+    let ao = 0.55;
+    // Twigs on top: thin bleached rods, a cell in eight.
+    {
+      const g = 14;
       const cx = Math.floor(u * g);
       const cy = Math.floor(v * g);
       for (let dy = -1; dy <= 1 && !found; dy++) {
         for (let dx = -1; dx <= 1 && !found; dx++) {
           const ix = (((cx + dx) % g) + g) % g;
           const iy = (((cy + dy) % g) + g) % g;
-          const r1 = hash2(ix, iy, 31 + L);
-          const r2 = hash2(ix, iy, 47 + L);
-          const r3 = hash2(ix, iy, 59 + L);
-          const px = (cx + dx + 0.2 + r1 * 0.6) / g;
-          const py = (cy + dy + 0.2 + r2 * 0.6) / g;
-          const a = r3 * Math.PI * 2;
+          if (hash2(ix, iy, 501) > 0.13) continue;
+          const px = (cx + dx + hash2(ix, iy, 502)) / g;
+          const py = (cy + dy + hash2(ix, iy, 503)) / g;
+          const a = hash2(ix, iy, 504) * Math.PI;
           const ox = u - px;
           const oy = v - py;
           const lx = (ox * Math.cos(a) + oy * Math.sin(a)) * g;
-          const ly = (-ox * Math.sin(a) + oy * Math.cos(a)) * g;
-          const e = (lx / 0.62) ** 2 + (ly / 0.28) ** 2;
-          if (e < 1) {
-            const vein = Math.abs(ly) < 0.02 ? 0.8 : 1;
-            colour = palette[Math.floor(hash2(ix, iy, 71 + L) * palette.length)] as Rgb;
-            put(t, colour, (0.8 + (1 - e) * 0.25) * vein);
-            height = 0.4 + L * 0.2 + (1 - e) * 0.1;
+          // A gentle bend along its length, and a little thinner toward the tip.
+          const ly = (-ox * Math.sin(a) + oy * Math.cos(a)) * g - (lx * lx - 1) * (hash2(ix, iy, 506) - 0.5) * 0.12;
+          const w = (0.022 + hash2(ix, iy, 505) * 0.018) * (1 - lx * 0.25);
+          if (Math.abs(lx) < 1.1 && Math.abs(ly) < w) {
+            const round = 1 - (ly / w) ** 2;
+            put(t, twigC, (0.6 + round * 0.35) * (0.85 + grain * 0.3));
+            height = 1.25 + round * 0.12;
+            rough = 0.85;
+            ao = 1;
             found = true;
           }
         }
       }
     }
-    if (!found) put(t, colour, 0.85 + height);
+    for (let L = layers.length - 1; L >= 0 && !found; L--) {
+      const { g, hl, hw, p, decay } = layers[L] as (typeof layers)[number];
+      const cx = Math.floor(u * g);
+      const cy = Math.floor(v * g);
+      for (let dy = -1; dy <= 1 && !found; dy++) {
+        for (let dx = -1; dx <= 1 && !found; dx++) {
+          const ix = (((cx + dx) % g) + g) % g;
+          const iy = (((cy + dy) % g) + g) % g;
+          if (hash2(ix, iy, 13 + L) > p) continue;
+          const r1 = hash2(ix, iy, 31 + L);
+          const r2 = hash2(ix, iy, 47 + L);
+          const a = hash2(ix, iy, 59 + L) * Math.PI * 2;
+          const size = 0.8 + hash2(ix, iy, 61 + L) * 0.45;
+          const px = (cx + dx + 0.15 + r1 * 0.7) / g;
+          const py = (cy + dy + 0.15 + r2 * 0.7) / g;
+          const ox = u - px;
+          const oy = v - py;
+          const lx = ((ox * Math.cos(a) + oy * Math.sin(a)) * g) / size;
+          const ly = ((-ox * Math.sin(a) + oy * Math.cos(a)) * g) / size;
+          const along = lx / hl;
+          if (Math.abs(along) >= 1) continue;
+          // A pointed lens: widest a little below the middle, tapering to tip and stalk.
+          const half = hw * Math.pow(1 - along * along, 0.8) * (1 - 0.15 * along);
+          const across = Math.abs(ly) / Math.max(half, 1e-4);
+          if (across >= 1) continue;
+          const pal = decay > 0.4 ? old : fresh;
+          let c = pal[Math.floor(hash2(ix, iy, 71 + L) * pal.length)] as Rgb;
+          // Rot: dark blotches and a greyer, darker leaf the older the layer.
+          const spots = tileNoise(u * g * 1.7, v * g * 1.7, g * 1.7, 90 + L);
+          if (spots > 1 - decay * 0.55) c = mixRgb(c, soilDark, 0.7);
+          c = mixRgb(c, soil, decay * 0.35);
+          // Midrib, side veins running out to the edge, the margin a little darker.
+          const midrib = Math.abs(ly) < 0.012 ? 0.82 : 1;
+          const vein = Math.abs(((lx * 5 + Math.abs(ly) * 7) % 1 + 1) % 1 - 0.5) < 0.05 ? 0.92 : 1;
+          const margin = across > 0.85 ? 0.85 : 1;
+          put(t, c, (0.82 + grain * 0.12) * midrib * vein * margin);
+          // Curled up at the edges, bent along the length.
+          height = 0.3 + L * 0.16 + across * across * 0.18 + (1 - along * along) * 0.05;
+          rough = 0.7 + decay * 0.2;
+          ao = 0.85 + L * 0.05;
+          found = true;
+        }
+      }
+    }
+    if (!found) put(t, colour, 0.8 + height + grain * 0.15);
     t.height = height;
-    t.rough = found ? 0.78 : 0.95;
-    t.ao = found ? 1 : 0.6;
+    t.rough = rough;
+    t.ao = ao;
   };
 }
 

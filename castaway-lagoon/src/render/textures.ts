@@ -15,7 +15,7 @@ export function terrainSet(layer: TerrainLayer): TextureSet {
   let s = sets.get(layer);
   if (!s) {
     const sampler = layer === 'sand' ? P.sand() : layer === 'litter' ? P.leafLitter() : layer === 'grass' ? P.tropicalGrass() : layer === 'rock' ? P.coastRock() : P.moss();
-    const strength = layer === 'rock' ? 5 : layer === 'litter' ? 4 : layer === 'moss' ? 3 : 2.5;
+    const strength = layer === 'rock' ? 5 : layer === 'litter' ? 2.6 : layer === 'moss' ? 3 : 2.5;
     s = makeTextureSet(layer === 'moss' ? 256 : 512, sampler, strength, false, true);
     sets.set(layer, s);
   }
