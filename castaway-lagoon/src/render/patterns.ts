@@ -174,22 +174,76 @@ export function leafLitter(): TexelSampler {
   };
 }
 
-/** Tropical grass turf with sand showing through. */
+/**
+ * Short fibres scattered per cell in random directions (each texel checks its 3 × 3 cells): the top one
+ * covering (u, v), as [crossness 0…1, the fibre's own random], or [-1, 0] (Field Line `patterns.ts`).
+ */
+function fibreAt(u: number, v: number, cells: number, per: number, len: number, width: number, seed: number): [number, number] {
+  const cx = Math.floor(u * cells);
+  const cy = Math.floor(v * cells);
+  let best: [number, number] = [-1, 0];
+  let bestTop = -1;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const gx = (((cx + dx) % cells) + cells) % cells;
+      const gy = (((cy + dy) % cells) + cells) % cells;
+      for (let k = 0; k < per; k++) {
+        const h = (n: number): number => hash2(gx * 7 + k, gy * 13 + n, seed);
+        const fx = (cx + dx + h(1)) / cells;
+        const fy = (cy + dy + h(2)) / cells;
+        const a = h(3) * Math.PI;
+        const l = len * (0.6 + h(4) * 0.8);
+        const ox = u - fx;
+        const oy = v - fy;
+        const along = ox * Math.cos(a) + oy * Math.sin(a);
+        const across = -ox * Math.sin(a) + oy * Math.cos(a);
+        if (Math.abs(along) > l / 2 || Math.abs(across) > width) continue;
+        const top = h(5);
+        if (top > bestTop) {
+          bestTop = top;
+          best = [1 - Math.abs(across) / width, h(6)];
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Tropical turf (3.6 m tile): blades 6–15 cm lying every which way in three layers over dark soil, greens
+ * and yellow-greens with dry straw in patches, thinning to sand where the turf is bare. (Two stretched
+ * noises crossed at 90° wove it like a knitted carpet: playbook §6g.)
+ */
 export function tropicalGrass(): TexelSampler {
-  const lush = hex(0x3f6a22);
-  const yellow = hex(0x5f7a2c);
-  const dark = hex(0x2c4a18);
+  const soil = hex(0x3a3220);
   const sandC = hex(0xbfae88);
+  const greens: Rgb[] = [hex(0x3f6a22), hex(0x4a7428), hex(0x34581c), hex(0x5f7a2c)];
+  const straw = hex(0x8a8150);
+  const layers = [
+    { cells: 34, per: 1, seed: 811, shade: 1.0, height: 0.85 },
+    { cells: 46, per: 2, seed: 812, shade: 0.85, height: 0.6 },
+    { cells: 58, per: 2, seed: 813, shade: 0.68, height: 0.35 },
+  ];
   return (u, v, t) => {
-    const blade = tileNoise(u * 180, v * 45, 180, 81) * 0.6 + tileNoise(u * 45, v * 180, 45, 82) * 0.4;
     const patch = tileFbm(u * 3, v * 3, 3, 3, 83);
     const bare = tileFbm(u * 5, v * 5, 5, 3, 85);
-    let c = mixRgb(mixRgb(dark, lush, blade), yellow, Math.max(0, patch * 1.5 - 0.55));
-    if (bare > 0.66 && blade < 0.45) c = mixRgb(c, sandC, 0.7);
-    put(t, c, 0.8 + blade * 0.35);
-    t.height = blade;
+    // How much of the ground the blades cover: thin where the turf is bare.
+    const cover = 1 - Math.min(1, Math.max(0, (bare - 0.6) / 0.12)) * 0.75;
+    const dryK = Math.max(0, patch * 1.5 - 0.6);
     t.rough = 0.86;
-    t.ao = 0.7 + blade * 0.3;
+    for (const L of layers) {
+      const [hit, r] = fibreAt(u, v, L.cells, L.per, 0.03, 0.0011, L.seed);
+      if (hit < 0 || r > cover) continue;
+      let c = greens[Math.floor(r * 7.3) % greens.length] as Rgb;
+      if (hash2(Math.floor(r * 1e6), 0, 817) < dryK) c = straw;
+      put(t, c, (0.75 + hit * 0.3) * L.shade);
+      t.height = L.height + hit * 0.15;
+      t.ao = 0.6 + L.shade * 0.4;
+      return;
+    }
+    put(t, mixRgb(soil, sandC, Math.min(1, Math.max(0, (bare - 0.55) / 0.15))), 0.85 + patch * 0.2);
+    t.height = 0.1;
+    t.ao = 0.55;
   };
 }
 
