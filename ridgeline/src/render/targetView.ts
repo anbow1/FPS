@@ -201,9 +201,15 @@ export class TargetView {
         add(box(-0.06, 0.62, -3.4, 0.06, 0.76, 3.2).translate(side * 1.96, 0, 0), this.rubber);
         add(box(-0.4, 1.5, -3.5, 0.4, 1.56, 3.4).translate(side * 1.6, 0, 0), paint);
         for (const z of [-1.0, 0.6]) add(at(rbox(0.6, 0.32, 0.9, 0.04), side * 1.62, 1.72, z), paint);
-        // Headlamp guards at the front corners.
-        add(at(new CylinderGeometry(0.08, 0.08, 0.06, 10).rotateX(Math.PI / 2), side * 1.2, 1.32, -3.93), this.lamp, root, false);
+        // Headlamps on the glacis, tail lamps and tow hooks on the rear plate, a jerrycan either side of it.
+        add(at(new CylinderGeometry(0.08, 0.08, 0.08, 10).rotateX(Math.PI / 2), side * 1.2, 1.25, -3.46), this.lamp, root, false);
+        add(at(new BoxGeometry(0.14, 0.09, 0.04), side * 1.3, 1.42, 3.47), this.lamp, root, false);
+        add(at(new BoxGeometry(0.12, 0.16, 0.14), side * 0.85, 0.72, 3.46), this.steel);
+        add(at(rbox(0.2, 0.45, 0.34, 0.03), side * 1.12, 1.12, 3.6), paint);
       }
+      // Engine exhaust louvres across the rear plate.
+      add(at(rbox(1.3, 0.42, 0.08, 0.03), 0, 1.15, 3.47), this.dark);
+      for (let k = 0; k < 5; k++) add(at(new BoxGeometry(1.2, 0.03, 0.05), 0, 0.99 + k * 0.08, 3.52), this.steel, root, false);
       // Turret: a low faceted box, the gun with its mantlet and fume extractor, a commander's cupola with
       // a machine gun, smoke dischargers either side, a stowage rack at the back and an antenna.
       turret = new Group();
