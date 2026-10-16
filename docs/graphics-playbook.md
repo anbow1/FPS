@@ -383,7 +383,14 @@ draws **individual Bezier blades**, generated entirely in the vertex stage:
 7. **Per-game scale.** `widthScale`/`heightScale` and the colours are options:
    Tanks views the ground from 3–10 m up, so its blades are 3.2× wider, 1.3×
    taller and brighter (thin blades at that range alias into stripes darker
-   than the terrain under them).
+   than the terrain under them), and `leanScale: 1.9`: upright blades seen
+   from a turret project as parallel vertical strokes, a meadow of corduroy.
+8. **Bare patches fade in, the grass thins first.** A worn patch whose soil
+   weight steps in over a narrow band, with fine noise on the rim, reads as a
+   stain; widen the band, keep the noise low, and let the blade density fall
+   off slightly before the soil shows. Dry topsoil is grey-brown, not rust.
+9. **Mown ground is a lawn of short blades**, not bare texture (a texture
+   alone tiles visibly down a firing range): a second kind 5–10 cm tall.
 
 Cost measured with the bench (§9.2): about +0.5 M triangles and 3 draws in
 Field Line; in Tanks +0.1–0.4 M.
@@ -571,6 +578,10 @@ for each:
   round the camera; without them a forest floor reads as bare earth.
 - **Cap cut and fill** where a road is pulled to a grade: a smooth target
   surface far below the local ground carves a trench along the whole road.
+- **Turf the same way** (lagoon `patterns.ts` `tropicalGrass`): blades in
+  random directions over dark soil, straw in dry patches, sand where bare.
+  And **no turf under a canopy**: move the grass weight to leaf litter where
+  the baked crown shade is deep.
 - **A conifer floor is a mat, not earth** (FL `patterns.ts` `needleLitter`):
   needles cover nearly all of it in layers drawn top-down (fresh rust ones,
   sparse, over browns over dark rotted ones; stop at the first layer that
@@ -1408,6 +1419,12 @@ in the same place when you come back.
   8 views round the trunk **plus one from above**, unlit albedo and
   object-space normals through a named MRT. The top view blends in with the
   camera's elevation, so from altitude you see crowns, not edge-on cards.
+- **Crowns of clusters, not solids.** A broadleaf lobe as one ruffled
+  icosahedron reads as a green cloud from a hovering helicopter. Build each
+  lobe from dozens of small clusters biased to its outer shell (gaps let the
+  sky through, the silhouette breaks into leafy bumps), run limbs from the
+  trunk to the lobes so they show in the gaps, and mix sun and shade greens.
+  It is baked into the atlas once, so it costs nothing per frame.
 - **Gameplay objects must not stand in it.** Vehicles parked "on the river
   bank" sat inside riverside woods and were invisible. Place them by querying
   the same cover function the bake uses (`sourceCover(...).forest`) and search
@@ -1473,6 +1490,19 @@ in the same place when you come back.
 
 - **Vehicles on slopes**: pitch and roll each model from four ground samples
   around it, every frame for movers.
+- **Bake AO into ground vehicles too** (Tanks `render/aoBake.ts`): seen from
+  behind or against the sun a tank is lit by the sky alone, and without
+  occlusion its parts merge into one dark slab. Bake hull and turret apart (the
+  turret traverses), once per model kind into a cache (12 rays, 1.2 m for a
+  45 000-vertex tank, at load), and give instanced parts a fixed value — their
+  material reads `ao` too.
+- **Runways and airfield grass up close** (Contrail `airbase.ts`,
+  `terrainMesh.ts`): a terrain made for the view from altitude is flat paint
+  from the cockpit on the ground. Each concrete slab a shade apart (hash per
+  7.5 m slab), speckled aggregate, tar-dark joints, hairline cracks as warped
+  noise isolines in a share of the slabs, oil down the centreline; grass
+  clumps and dry tufts faded in by pixel footprint (`fwidth`), mown stripes
+  round the airfield.
 - **Ground vehicles as machines** (Ridgeline `render/targetView.ts`, §6j):
   tracks with a link groove every 15 cm in the material, road wheels, sprocket,
   idler and return rollers, skirts with rubber edges, stowage bins, smoke
