@@ -151,7 +151,19 @@ export class TerrainRenderer {
     const track = float(1).sub(smoothstep(2, 4, edgeY)).mul(step(hash(row.mul(2.9).add(dId)), 0.25));
     // Crop rows: faint stripes along each strip.
     const rows = abs(fract(r.x.div(6).add(id.mul(3))).sub(0.5)).mul(0.08).add(0.96);
-    let farm: Node<'vec3'> = mix(field.mul(rows), lin(0x34472a), max(hedge.mul(0.8), furrow.mul(0.3)));
+    // Low over the fields (a strafing run, an approach) the blocks read as flat paint. Tramlines — the pair
+    // of tractor wheelings every 24 m along a strip — patchy growth, and drill rows close in, each faded
+    // by its pixel footprint so none of it shimmers from altitude.
+    const fieldFoot = fwidth(r.x).add(fwidth(r.y));
+    const tramD = abs(fract(r.x.div(24).add(id.mul(7))).sub(0.5)).mul(24);
+    const wheeling = float(1).sub(smoothstep(0.15, fieldFoot.add(0.3), abs(tramD.sub(0.9)))).mul(float(1).sub(smoothstep(0.6, 2.5, fieldFoot)));
+    const growth = mx_noise_float(P.xz.div(18).add(id.mul(13))).mul(0.07).add(mx_noise_float(P.xz.div(4.5)).mul(0.04).mul(float(1).sub(smoothstep(0.4, 1.5, fieldFoot))));
+    const drill = abs(fract(r.x.div(0.75)).sub(0.5)).mul(0.1).mul(float(1).sub(smoothstep(0.08, 0.3, fieldFoot)));
+    const crops = field.mul(growth.add(1)).mul(drill.add(0.97));
+    // (No wheelings on bare ploughed strips: they are soil already.)
+    const ploughedK = smoothstep(0.38, 0.42, id).mul(smoothstep(0.55, 0.6, id)).mul(float(1).sub(smoothstep(0.8, 0.85, id)));
+    const tilled = mix(crops, lin(0x6b5a47).mul(0.9), wheeling.mul(0.45).mul(float(1).sub(ploughedK)));
+    let farm: Node<'vec3'> = mix(tilled.mul(rows), lin(0x34472a), max(hedge.mul(0.8), furrow.mul(0.3)));
     farm = mix(farm, lin(0x9b9488), track.mul(0.7));
     // Villages: a few hundred metres of roofs, gardens and lanes where a coarse noise peaks.
     const villageN = mx_noise_float(P.xz.div(2600).add(vec2(31, 7)));
