@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { bakeAmbientOcclusion } from '../render/aoBake';
 import { box, convexHull2, cyl, latheX, mergeParts, prismX, prismY, sphereCap } from '../render/geom';
 import { makeTrackTexture } from '../render/textures';
 import { makeVehicleUniforms, vehicleMaterial, type VehicleUniforms } from '../render/vehicleMaterial';
@@ -619,7 +620,25 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
     exhaust, headlights, headlightMat,
   };
   updateWheels(model, 0, 0);
+  // Sky occlusion and crevice grime (render/aoBake.ts): hull and turret baked apart, so the turret can
+  // traverse without carrying its shadow over the deck. Once per style; later tanks reuse the arrays.
+  let ao = aoCache.get(style);
+  if (!ao) {
+    ao = { hull: [], turret: [] };
+    aoCache.set(style, ao);
+  }
+  hull.remove(turret);
+  bakeAmbientOcclusion(hull, ao.hull);
+  hull.add(turret);
+  bakeAmbientOcclusion(turret, ao.turret);
   return model;
+}
+
+const aoCache = new Map<TankStyle, { hull: Float32Array[]; turret: Float32Array[] }>();
+
+/** Bakes both styles' occlusion ahead of play, so the first enemy wave does not stall on it. */
+export function prebakeTankOcclusion(): void {
+  for (const style of ['west', 'east'] as const) if (!aoCache.has(style)) buildTank(style, 0);
 }
 
 const _m = new THREE.Matrix4();

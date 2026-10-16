@@ -21,6 +21,7 @@ import { Effects, PKind } from './effects';
 import { Infantry, type Soldier } from './infantry';
 import { type ImpactEvent, Projectiles } from './projectiles';
 import { type HitInfo, Tank } from './tank';
+import { prebakeTankOcclusion } from './tankModel';
 import { hyp2 } from '../core/mathx';
 
 export type GameState = 'menu' | 'playing' | 'paused' | 'dead' | 'intermission';
@@ -130,6 +131,7 @@ export class Game {
     this.scene.add(world.group);
     installAtmosphere(this.scene);
     this.lighting = new Lighting(pipeline.renderer, this.scene, initialDetail);
+    prebakeTankOcclusion();
     this.effects = new Effects(this.quality.maxParticles);
     this.rain = new Rain(this.quality.id === 'low' ? 'low' : 'high');
     this.scene.add(this.rain.mesh);
