@@ -1,4 +1,4 @@
-import { abs, attribute, cameraPosition, clamp, cos, dot, float, floor, fract, hash, int, ivec2, length, max, min, mix, mx_noise_float, normalize, positionWorld, sin, smoothstep, step, texture, textureLoad, transformNormalToView, vec2, vec3 } from 'three/tsl';
+import { abs, attribute, cameraPosition, clamp, cos, dot, float, floor, fract, fwidth, hash, int, ivec2, length, max, min, mix, mx_noise_float, normalize, positionWorld, sin, smoothstep, step, texture, textureLoad, transformNormalToView, vec2, vec3 } from 'three/tsl';
 import { Box3, BufferAttribute, Color, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, type PerspectiveCamera, type Texture, Vector3 } from 'three/webgpu';
 import { TERRAIN, type TerrainData } from '../sim/terrain.ts';
 import type { TerrainTextures } from './terrainTextures.ts';
@@ -190,6 +190,20 @@ export class TerrainRenderer {
     const snowHere = snow.mul(smoothstep(0.55, 0.78, nrm.y));
     albedo = mix(albedo, lin(0xe8edf2), snowHere);
     albedo = albedo.mul(float(0.85).add(macro.mul(0.3))).mul(float(0.9).add(fine.mul(0.2)));
+    // Close to the ground (taxiing, take-off, a low pass) the satellite colours alone read as flat paint:
+    // grass clumps and dry tufts at metre and decimetre scale, faded out by pixel footprint (below a pixel
+    // from altitude, they would only shimmer). Round the airbase the grass is mown in stripes along the
+    // runway, as airfields are, which also shows from the air.
+    const land = float(1).sub(rockMask).mul(float(1).sub(snowHere));
+    const footprint = fwidth(P.x).add(fwidth(P.z));
+    const close = float(1).sub(smoothstep(0.2, 1.5, footprint)).mul(land);
+    const clump = mx_noise_float(P.xz.div(1.6)).mul(0.6).add(mx_noise_float(P.xz.div(0.42)).mul(0.4));
+    const tuft = smoothstep(0.35, 0.7, mx_noise_float(P.xz.div(0.9).add(vec2(4.1, 2.7))));
+    const airfield = float(1).sub(smoothstep(700, 760, abs(P.x.sub(200)))).mul(float(1).sub(smoothstep(1700, 1780, abs(P.z)))).mul(land);
+    const mown = mix(lin(0x56663a), lin(0x64733f), step(0.5, fract(P.x.div(9)))).mul(float(0.9).add(fine.mul(0.15)));
+    albedo = mix(albedo, mown, airfield.mul(0.85));
+    albedo = albedo.mul(float(1).add(clump.mul(0.16).mul(close)));
+    albedo = mix(albedo, albedo.mul(vec3(1.25, 1.15, 0.85)), tuft.mul(0.22).mul(close));
     const waterColour = mix(lin(0x0d2a36), lin(0x1f3e44), cov.a.oneMinus().mul(2).clamp(0, 1));
     m.colorNode = mix(albedo, waterColour, water);
     m.roughnessNode = mix(mix(float(0.92), float(0.62), snowHere), float(0.07), water);

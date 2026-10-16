@@ -1,4 +1,4 @@
-import { abs, float, fract, fwidth, max, mix, mx_noise_float, positionLocal, smoothstep, step, texture, vec2, vec3 } from 'three/tsl';
+import { abs, dot, float, floor, fract, fwidth, max, mix, mx_noise_float, positionLocal, sin, smoothstep, step, texture, vec2, vec3 } from 'three/tsl';
 import { BoxGeometry, CanvasTexture, Color, CylinderGeometry, Group, LinearFilter, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, PlaneGeometry, SRGBColorSpace } from 'three/webgpu';
 import { TERRAIN } from '../sim/terrain.ts';
 
@@ -76,17 +76,38 @@ function runwayMaterial(): MeshStandardNodeMaterial {
   const atlasUv = mix(northUv, southUv, nearSouth);
   const digits = texture(tex, atlasUv).r.mul(inBox);
   const paint = max(max(max(edge, keys), max(centre, tdz)), max(aim, digits));
-  // Concrete slabs every 7.5 m, a little macro staining.
+  // Concrete slabs every 7.5 m with tar-sealed joints, and a little macro staining. Up close (sitting on
+  // it, taxiing) one flat beige read as a plane, not concrete: each slab is poured a shade apart, the
+  // aggregate speckles, a share of the slabs carry hairline cracks that stop at their joints, and the
+  // centreline is spotted with oil. The fine detail fades by pixel footprint, so it never shimmers.
+  const xy = vec2(u, v);
   const joint = max(aa(abs(fract(u.div(7.5)).sub(0.5)).mul(7.5).sub(3.7)), aa(abs(fract(v.div(7.5)).sub(0.5)).mul(7.5).sub(3.7)));
   const stain = mx_noise_float(vec2(u.div(18), v.div(60))).mul(0.06).add(1);
-  let colour: Node<'vec3'> = lin(0xa09d96).mul(stain).mul(float(1).sub(joint.mul(0.25)));
+  const slab = floor(xy.div(7.5));
+  const slabHash = fract(sin(dot(slab, vec2(12.9898, 78.233))).mul(43758.5453));
+  const slabTone = slabHash.mul(0.12).add(0.93);
+  const footprint = fwidth(u);
+  const near = float(1).sub(smoothstep(0.04, 0.25, footprint));
+  const aggregate = mx_noise_float(xy.mul(9)).mul(0.05).add(mx_noise_float(xy.mul(31)).mul(0.035)).mul(near);
+  const warp = vec2(mx_noise_float(xy.mul(0.4)), mx_noise_float(xy.mul(0.4).add(7.3)));
+  const isoline = mx_noise_float(xy.mul(0.22).add(warp.mul(0.6)));
+  const lineW = max(fwidth(isoline), 0.004);
+  const crack = float(1)
+    .sub(smoothstep(lineW.mul(0.5), lineW.mul(1.5), abs(isoline)))
+    .mul(step(fract(slabHash.mul(7.31)), 0.3))
+    .mul(float(1).sub(smoothstep(0.02, 0.08, footprint)));
+  const oil = smoothstep(0.5, 0.78, mx_noise_float(xy.mul(vec2(0.9, 0.22)).add(3.1))).mul(float(1).sub(smoothstep(1.2, 3, au))).mul(0.5);
+  let colour: Node<'vec3'> = lin(0xa09d96).mul(stain).mul(slabTone).mul(aggregate.add(1));
+  colour = mix(colour, lin(0x2e2c2a), max(joint.mul(0.55), crack.mul(0.5)));
+  colour = mix(colour, lin(0x4a4640), oil);
   // Rubber deposits where the wheels touch down: dark streaks along the runway, 250–900 m in.
   const rubberBand = smoothstep(200, 300, fromThreshold).mul(float(1).sub(smoothstep(800, 950, fromThreshold)));
   const streaks = smoothstep(0.1, 0.6, mx_noise_float(vec2(u.div(1.6), v.div(40)))).mul(float(1).sub(smoothstep(4, 10, au)));
   colour = mix(colour, lin(0x2c2c2e), rubberBand.mul(streaks).mul(0.85));
   colour = mix(colour, lin(0xd6d6d0), paint.mul(float(1).sub(rubberBand.mul(streaks).mul(0.6))));
   m.colorNode = colour;
-  m.roughnessNode = mix(float(0.85), float(0.6), paint);
+  // Paint, polished rubber and oil are smoother than the broomed concrete.
+  m.roughnessNode = mix(mix(mix(float(0.85), float(0.62), rubberBand.mul(streaks)), float(0.5), oil), float(0.6), paint);
   return m;
 }
 
