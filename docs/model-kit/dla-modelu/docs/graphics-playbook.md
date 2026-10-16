@@ -1502,7 +1502,10 @@ in the same place when you come back.
   occlusion its parts merge into one dark slab. Bake hull and turret apart (the
   turret traverses), once per model kind into a cache (12 rays, 1.2 m for a
   45 000-vertex tank, at load), and give instanced parts a fixed value — their
-  material reads `ao` too.
+  material reads `ao` too. Per-vertex AO only shows where there are vertices:
+  on a hull of big plates it darkens the small parts and little else.
+  Splitting triangles to 0.35 m first tripled the vertices and cost 0.4 s per
+  tank spawned mid-fight — only worth it with geometry shared per model kind.
 - **Runways and airfield grass up close** (Contrail `airbase.ts`,
   `terrainMesh.ts`): a terrain made for the view from altitude is flat paint
   from the cockpit on the ground. Each concrete slab a shade apart (hash per
