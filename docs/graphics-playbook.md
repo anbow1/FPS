@@ -585,8 +585,10 @@ for each:
 - **A conifer floor is a mat, not earth** (FL `patterns.ts` `needleLitter`):
   needles cover nearly all of it in layers drawn top-down (fresh rust ones,
   sparse, over browns over dark rotted ones; stop at the first layer that
-  covers a texel), moss cushions in patches with fresh needles lying on them,
-  twigs and egg-shaped cones with a scale lattice. Clods with a few needles
+  covers a texel), twigs and egg-shaped cones with a scale lattice. Nothing
+  a metre across in the tile: moss patches repeated with the 2.5 m tile and
+  read as a lattice of green blots from ten metres on — anything that large
+  belongs in a world-space mask, not the tile. Clods with a few needles
   read as bare tan dirt from standing height. Preview a sampler by dumping it
   to PPM in a throwaway vitest before building.
 

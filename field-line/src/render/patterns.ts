@@ -300,9 +300,9 @@ function mixRgb(a: Rgb, b: Rgb, k: number): Rgb {
 /**
  * Conifer forest floor (2.5 m tile): a mat of fallen needles that hides the humus almost everywhere — dark,
  * half-rotted ones at the bottom, browns over them, a sparse scatter of fresh orange-brown ones on top —
- * cushions of moss in patches with needles lying on them, twigs, and the odd cone with its scales. The
- * old floor (clods with a few needles) read as bare tan earth from standing height: what a pine wood's
- * floor looks like is its cover, its darkness and its mix of rust and moss green.
+ * twigs, and the odd cone with its scales. The old floor (clods with a few needles) read as bare tan earth
+ * from standing height. No moss in the tile: patches a metre across repeat with the 2.5 m tile and showed
+ * as a lattice of green blots from ten metres on.
  */
 export function needleLitter(): TexelSampler {
   const humus = hex(0x2e2418);
@@ -312,9 +312,6 @@ export function needleLitter(): TexelSampler {
     { cells: 44, per: 2, seed: 302, colours: [hex(0x6e4e34), hex(0x7a5a3c), hex(0x6a5e4e), hex(0x5e4630)], height: 0.55, ao: 0.85 },
     { cells: 56, per: 3, seed: 303, colours: [hex(0x4a3826), hex(0x3e3024), hex(0x524434)], height: 0.35, ao: 0.7 },
   ];
-  const moss = hex(0x5a6a2c);
-  const mossDark = hex(0x3c4a1e);
-  const mossTip = hex(0x74803a);
   const twigC = hex(0x5e5246);
   const coneC = hex(0x6a4a2c);
   const coneTip = hex(0x8a6a44);
@@ -384,25 +381,13 @@ export function needleLitter(): TexelSampler {
         }
       }
     }
-    // Fresh needles lie on everything, the moss included.
+    // Fresh needles on top.
     const top = needleLayers[0] as (typeof needleLayers)[number];
     const [topHit, topR] = fibreAt(u, v, top.cells, top.per, 0.03, 0.0011, top.seed);
     if (topHit >= 0) {
       put(t, top.colours[Math.floor(topR * top.colours.length)] as Rgb, 0.8 + topHit * 0.25);
       t.height = top.height + 0.5 + topHit * 0.15;
       t.ao = top.ao;
-      return;
-    }
-    // Moss cushions: a lumpy mound of tiny shoots, darker in its hollows, in patches over a third of the floor.
-    const patch = tileFbm(u * 3, v * 3, 3, 4, 341);
-    const cover = Math.min(1, Math.max(0, (patch - 0.56) / 0.07));
-    if (cover > 0 && hash2(Math.floor(u * 512), Math.floor(v * 512), 342) < cover) {
-      const lump = tileFbm(u * 40, v * 40, 40, 3, 343);
-      const shoot = tileNoise(u * 420, v * 420, 420, 344);
-      put(t, mixRgb(mixRgb(mossDark, moss, lump), mossTip, Math.max(0, shoot - 0.55) * 1.6), 0.8 + shoot * 0.3);
-      t.height = 0.9 + lump * 0.35 + shoot * 0.1;
-      t.ao = 0.7 + lump * 0.3;
-      t.rough = 0.88;
       return;
     }
     for (let L = 1; L < needleLayers.length; L++) {
