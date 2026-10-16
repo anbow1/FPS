@@ -441,7 +441,7 @@ async function main(): Promise<void> {
         touch?.setLit('laser', arm.laser);
         touch?.setLit('wpn', false, arm.selected === 'gun' ? 'GUN' : arm.selected === 'rockets' ? `RKT${arm.ripple}` : 'MSL');
         EMISSIVE_EXPOSURE.value = lighting.exposure;
-        targetView.update(force, groundAt);
+        targetView.update(force, groundAt, stage.camera.position, lighting.sunDir);
         combatView.update(arm, force, clockS, stage.camera.position);
         if (sound) {
           const s = sound as RotorSound;

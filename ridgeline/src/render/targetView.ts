@@ -1,10 +1,11 @@
 import { float, mix, mx_noise_float, normalLocal, positionLocal, smoothstep, vec2, vec3 } from 'three/tsl';
-import { BoxGeometry, type BufferGeometry, Color, CylinderGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Node, type Scene } from 'three/webgpu';
+import { BoxGeometry, type BufferGeometry, Color, CylinderGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Node, type Scene, type Vector3 } from 'three/webgpu';
 import type { TargetKind } from '../config.ts';
 import type { GroundForce, GroundTarget } from '../sim/targets.ts';
 import { box } from './airframe.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
-import { opticsMaterial, rbox, wheel } from './heliDetail.ts';
+import { setVehicleContacts, type VehicleContact } from './contactShadow.ts';
+import { rbox, wheel } from './heliDetail.ts';
 import { plain } from './jetMaterials.ts';
 
 // The ground force's vehicles: an invented main battle tank, a wheeled armoured
@@ -22,6 +23,9 @@ import { plain } from './jetMaterials.ts';
 // sides, and the baked AO puts grime in every corner. One template per kind
 // and paint is built and baked once; each vehicle is a clone of it (shared
 // geometry, so no bake and no hitch when a column appears).
+
+/** Ground footprint half length and half width (m), for the contact shadows. */
+const FOOTPRINT: Record<TargetKind, [number, number]> = { tank: [3.9, 2.0], apc: [3.5, 1.55], truck: [3.8, 1.3] };
 
 interface VehicleView {
   root: Group;
@@ -72,18 +76,21 @@ export class TargetView {
   private readonly steel = plain('fittings', 0x2c2d2a, 0.6, 0.4);
   private readonly track = trackMaterial();
   private readonly canvas = fieldPaint('truck cover', 0x5d5a3c, 0.95);
-  private readonly glass = opticsMaterial();
+  // Plain dark glass: the sensors' coated optics (gold clearcoat) turned cab windows into white mirrors.
+  private readonly glass = plain('vehicle glass', 0x0f1315, 0.12);
   private readonly lamp = plain('lamp glass', 0x9a978a, 0.15);
   private readonly charred = plain('charred', 0x1a1816, 0.95);
   private readonly root = new Group();
   private readonly templates = new Map<string, Group>();
+  private readonly contacts: VehicleContact[] = [];
 
   constructor(scene: Scene) {
     scene.add(this.root);
   }
 
-  update(force: GroundForce, groundAt: (x: number, z: number) => number): void {
+  update(force: GroundForce, groundAt: (x: number, z: number) => number, camera: Vector3, sunDir: Vector3): void {
     const seen = new Set<number>();
+    this.contacts.length = 0;
     for (const t of force.targets) {
       seen.add(t.id);
       let v = this.views.get(t.id);
@@ -93,6 +100,8 @@ export class TargetView {
         this.views.set(t.id, v);
       }
       this.place(v, t, groundAt);
+      const [halfAlongM, halfAcrossM] = FOOTPRINT[t.kind];
+      this.contacts.push({ x: t.position.x, z: t.position.z, headingRad: t.headingRad, halfAlongM, halfAcrossM });
       if (!t.alive && !v.dead) {
         v.dead = true;
         for (const p of v.parts) p.material = this.charred;
@@ -108,6 +117,7 @@ export class TargetView {
       this.root.remove(v.root);
       this.views.delete(id);
     }
+    setVehicleContacts(this.contacts, camera, sunDir);
   }
 
   private place(v: VehicleView, t: GroundTarget, groundAt: (x: number, z: number) => number): void {
