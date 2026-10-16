@@ -1,4 +1,4 @@
-import { abs, bumpMap, cameraPosition, cameraViewMatrix, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, screenCoordinate, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, bumpMap, cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, screenCoordinate, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
@@ -7,6 +7,7 @@ import { roomHash, roomInteriorNode } from './roomInteriors.ts';
 import { shopfront } from './shopfront.ts';
 import { cityRoad } from './cityRoad.ts';
 import { facadeWear } from './facadeWear.ts';
+import { windowReveal } from './facadeReveal.ts';
 import * as P from './patterns.ts';
 import * as PL from './plantPatterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
@@ -218,23 +219,33 @@ export class MaterialLibrary {
       const mat = wettable(ts, `facade-${look}`);
       // The ground storey is shopfronts (shopfront.ts), drawn over the window pattern.
       const sf = shopfront();
+      // Upper windows are set back in the wall (facadeReveal.ts): frame and glass are sampled where the view
+      // ray meets them, and the reveal shows the wall's own texture. Gradients from the plain tile UV, so
+      // the jump at the opening's edge does not throw the mip level.
+      const rv = windowReveal();
+      const gx = dFdx(uv());
+      const gy = dFdy(uv());
+      const orm = texture(ts.ormMap, rv.uv).grad(gx, gy);
+      const revealOrm = texture(ts.ormMap, rv.wallUv).grad(gx, gy);
+      const texel = mix(texture(ts.map, rv.uv).grad(gx, gy).rgb.mul(rv.shade), texture(ts.map, rv.wallUv).grad(gx, gy).rgb.mul(0.78), rv.reveal);
       // Clear glass (the texture's glossiest texels) shows the room behind it, so it barely scatters itself.
-      const pane = mix(float(1).sub(smoothstep(0.08, 0.25, texture(ts.ormMap).g)), sf.glass, sf.cover);
-      const base = mix(texture(ts.map).rgb, sf.albedo, sf.cover).mul(mix(float(1), float(0.56), wetness));
+      const pane = mix(float(1).sub(smoothstep(0.08, 0.25, orm.g)).mul(float(1).sub(rv.reveal)), sf.glass, sf.cover);
+      const base = mix(texel, sf.albedo, sf.cover).mul(mix(float(1), float(0.56), wetness));
       // Weather and people on the wall (facadeWear.ts); the glass stays clean and dark.
       const wear = facadeWear(base, pane);
       const albedo = mix(wear.colour, base.mul(0.2), pane);
       mat.colorNode = albedo;
       // Glass, frame and fascia are flat: the wall's relief must not show through them.
       const relief = mix(float(1), float(0.35), wetness);
-      const surface = mix(normalMap(texture(ts.normalMap).xyz, vec2(relief, relief)) as unknown as Node<'vec3'>, normalViewGeometry, sf.cover);
+      const wallNormal = mix(normalMap(texture(ts.normalMap, rv.uv).grad(gx, gy).xyz, vec2(relief, relief)) as unknown as Node<'vec3'>, rv.revealNormal, rv.reveal);
+      const surface = mix(wallNormal, normalViewGeometry, sf.cover);
       // No two panes in a real façade lie in one plane: each is set a fraction of a degree off, so each
       // reflects its own piece of sky and street instead of the wall of windows mirroring one grey.
       const ph = roomHash();
       const paneTilt = vec3(fract(ph.mul(3.1)).sub(0.5), fract(ph.mul(7.7)).sub(0.5).mul(0.6), fract(ph.mul(5.3)).sub(0.5)).mul(0.07);
       const tilted = normalize(normalViewGeometry.add(cameraViewMatrix.mul(vec4(paneTilt, 0)).xyz));
       mat.normalNode = mix(surface, tilted, pane);
-      const rough = mix(texture(ts.ormMap).g, sf.roughness, sf.cover);
+      const rough = mix(mix(orm.g, revealOrm.g, rv.reveal), sf.roughness, sf.cover);
       mat.roughnessNode = mix(mix(rough, float(0.35), wetness), float(0.85), wear.paper);
       mat.clearcoatNode = wetness.mul(float(1).sub(wear.paper.mul(0.6)));
       const rooms = roomInteriorNode(pane);

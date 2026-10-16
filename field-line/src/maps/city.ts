@@ -202,7 +202,7 @@ function parkingLot(b: MapBuilder, cx: number, cz: number): void {
   for (let row = -2; row <= 2; row++) {
     for (let i = -6; i <= 6; i++) {
       if ((i * 5 + row * 3 + 40) % 7 === 0) continue; // empty bays
-      b.prop('car', cx + i * 2.6, cz + row * 12, row % 2 === 0 ? 0 : Math.PI, { baseY: kerb, colourIndex: (i + row + 20) % 6 });
+      b.prop('car', cx + i * 2.6, cz + row * 12, row % 2 === 0 ? 0 : Math.PI, { baseY: kerb, colourIndex: (((i + 40) * 7919 + (row + 40) * 104729) >>> 0) % 251 });
     }
   }
   b.prop('container', cx - 26, cz - 30, 0.1, { baseY: kerb });
@@ -231,11 +231,13 @@ function streetDressing(b: MapBuilder): void {
       k++;
       if (ROAD_CENTRES.some((cc) => Math.abs(a - cc) < roadH + 6)) continue; // junctions stay clear
       const hash = (k * 2654435761) >>> 0;
-      // Parked along the kerb (1.1 m from it), both sides, road along Z then along X.
-      if (hash % 5 < 2) b.prop('car', c - roadH + 1.1, a, 0, { colourIndex: hash % 6 });
-      if (hash % 7 < 2) b.prop('car', c + roadH - 1.1, a + 2, Math.PI, { colourIndex: (hash >> 3) % 6 });
-      if ((hash >> 5) % 5 < 2) b.prop('car', a, c - roadH + 1.1, Math.PI / 2, { colourIndex: (hash >> 7) % 6 });
-      if ((hash >> 9) % 7 < 2) b.prop('car', a + 2, c + roadH - 1.1, -Math.PI / 2, { colourIndex: (hash >> 11) % 6 });
+      // Parked along the kerb (1.1 m from it), both sides, road along Z then along X. The colours take
+      // unsigned shifts: the hash passes 2³¹, and a signed shift made half the indices negative (every
+      // such car fell back to maroon). The placement tests keep their signed shifts, to keep the layout.
+      if (hash % 5 < 2) b.prop('car', c - roadH + 1.1, a, 0, { colourIndex: (hash >>> 13) % 251 });
+      if (hash % 7 < 2) b.prop('car', c + roadH - 1.1, a + 2, Math.PI, { colourIndex: (hash >>> 17) % 251 });
+      if ((hash >> 5) % 5 < 2) b.prop('car', a, c - roadH + 1.1, Math.PI / 2, { colourIndex: (hash >>> 21) % 251 });
+      if ((hash >> 9) % 7 < 2) b.prop('car', a + 2, c + roadH - 1.1, -Math.PI / 2, { colourIndex: (hash >>> 24) % 251 });
       if (k % 5 === 0) {
         b.prop('lampPost', c - roadH - 0.8, a, Math.PI / 2, { baseY: kerb });
         b.prop('lampPost', a, c + roadH + 0.8, 0, { baseY: kerb });
@@ -253,7 +255,7 @@ function streetDressing(b: MapBuilder): void {
         }
       }
       // Wrecks and barriers mid-road: cover in the open.
-      if (hash % 37 === 3) b.prop('carWreck', c + 1.5, a, 0.4 + (hash % 10) * 0.2, { colourIndex: hash % 6 });
+      if (hash % 37 === 3) b.prop('carWreck', c + 1.5, a, 0.4 + (hash % 10) * 0.2, { colourIndex: hash % 251 });
       if (hash % 41 === 5) b.prop('barrier', a, c, Math.PI / 2 + 0.2);
     }
   }

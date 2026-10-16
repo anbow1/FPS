@@ -4,6 +4,7 @@ import { cameraPosition, dot, exp, float, fog, max, mix, positionWorld, pow, uni
 import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, PMREMGenerator, RenderTarget, Scene, SphereGeometry, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '../config.ts';
 import { lightColour, preExposureFor } from './colour.ts';
+import { revealSun } from './facadeReveal.ts';
 
 // Sun, sky, environment and height fog for one lighting preset from
 // lighting-reference.png. Every intensity is authored in physical units (lux)
@@ -134,6 +135,8 @@ export class Lighting {
     const u = this.sky;
     u.turbidity.value = p.turbidity;
     const cloudy = p.id === 'overcast' || p.id === 'night';
+    // Window reveals' sun shadows (facadeReveal.ts): as deep as the sun's share of the light.
+    revealSun.value.set(this.sunDir.x, this.sunDir.y, this.sunDir.z, cloudy ? 0 : p.sunIlluminanceLux / (p.sunIlluminanceLux + p.skyIlluminanceLux));
     u.rayleigh.value = p.id === 'golden' ? 2.2 : cloudy ? 0.8 : 1.4;
     u.mieCoefficient.value = cloudy ? 0.02 : 0.005;
     u.mieDirectionalG.value = 0.8;

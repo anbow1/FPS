@@ -33,9 +33,18 @@ import { buildCar, type CarGeometry, type CarPart, type CarVariant } from './car
 // (scale sheet: light 4x4 4.60 m, a hatchback 4.2 m; ISO container 6.06 m).
 // Colliders for the same props are added by the map builder (maps/builder.ts).
 
-// Car paint palette: sheet car paint #6E2A24 plus common factory colours, all
-// inside the non-metal luminance range.
-const CAR_COLOURS = [0x6e2a24, 0x2e3a4a, 0x8f8b85, 0x3c3c3e, 0xb4b0a8, 0x4b5340];
+// Car paint palette, weighted like a real car park (repeats are the weights):
+// mostly white, black, greys and silver, then blues and reds, the odd olive or
+// beige; sheet car paint #6E2A24 among them. All inside the non-metal
+// luminance range (silver here is its diffuse look, not a metal).
+const CAR_COLOURS = [
+  0xd8d8d3, 0xd8d8d3, 0xcdcac2, 0x1d1e20, 0x1d1e20, 0x26272a, 0x3c3c3e, 0x3c3c3e, 0x6b6d70, 0x6b6d70, 0xa8a9a7, 0xa8a9a7, 0x8f8b85, 0x2e3a4a, 0x34507a, 0x6e2a24,
+  0x8e1f1c, 0x4b5340, 0x9c8f78,
+];
+/** Palette slot for a map's colour index (any non-negative integer). */
+function carColour(index: number | undefined): number {
+  return CAR_COLOURS[Math.abs(Math.trunc(index ?? 0)) % CAR_COLOURS.length] ?? 0x6e2a24;
+}
 
 interface Part {
   geometry: BufferGeometry;
@@ -134,7 +143,7 @@ class CarLod {
       const slot = isNear ? nNear++ : nFar++;
       _q.setFromAxisAngle(_up, p.yawRad);
       _m.compose(_pos.set(p.pos.x, p.pos.y, p.pos.z), _q, _scale.setScalar(p.scale));
-      _colour.setHex(CAR_COLOURS[(p.colourIndex ?? 0) % CAR_COLOURS.length] ?? 0x6e2a24);
+      _colour.setHex(carColour(p.colourIndex));
       for (const mesh of isNear ? this.near : this.far) {
         mesh.setMatrixAt(slot, _m);
         if (mesh.userData.tinted) mesh.setColorAt(slot, _colour);
@@ -350,7 +359,7 @@ export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): Pro
         q.setFromAxisAngle(up, p.yawRad);
         m.compose(new Vector3(p.pos.x, p.pos.y, p.pos.z), q, new Vector3(p.scale, p.scale, p.scale));
         mesh.setMatrixAt(i, m);
-        if (part.tinted) mesh.setColorAt(i, colour.setHex(CAR_COLOURS[(p.colourIndex ?? 0) % CAR_COLOURS.length] ?? 0x6e2a24));
+        if (part.tinted) mesh.setColorAt(i, colour.setHex(carColour(p.colourIndex)));
       });
       mesh.computeBoundingSphere();
       group.add(mesh);
