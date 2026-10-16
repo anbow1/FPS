@@ -283,7 +283,7 @@ function splatMaterial(lakeFx: LakeFx | null): MeshStandardNodeMaterial {
   // environment probe count too). At 19 textures the terrain failed to draw on WebGPU.
   const layers = makeTextureArray([
     makeTextureSet(512, P.grass(), 1.2),
-    makeTextureSet(512, P.soil(0x6b5a47, 0.85), 2), // the forest floor: earth under fallen needles
+    makeTextureSet(512, P.needleLitter(), 2), // the forest floor: a mat of fallen needles, moss, twigs, cones
     makeTextureSet(512, P.rock(), 4),
     makeTextureSet(512, P.soil(0x5a4a3a), 3), // compacted, darker dirt on the track
   ]);

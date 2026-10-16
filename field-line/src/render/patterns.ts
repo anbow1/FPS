@@ -293,6 +293,133 @@ export function soil(colour = 0x6b5a47, litter = 0): TexelSampler {
   };
 }
 
+function mixRgb(a: Rgb, b: Rgb, k: number): Rgb {
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+}
+
+/**
+ * Conifer forest floor (2.5 m tile): a mat of fallen needles that hides the humus almost everywhere — dark,
+ * half-rotted ones at the bottom, browns over them, a sparse scatter of fresh orange-brown ones on top —
+ * cushions of moss in patches with needles lying on them, twigs, and the odd cone with its scales. The
+ * old floor (clods with a few needles) read as bare tan earth from standing height: what a pine wood's
+ * floor looks like is its cover, its darkness and its mix of rust and moss green.
+ */
+export function needleLitter(): TexelSampler {
+  const humus = hex(0x2e2418);
+  const needleLayers: { cells: number; per: number; seed: number; colours: Rgb[]; height: number; ao: number }[] = [
+    // Top first: the loop stops at the first layer a texel is covered by.
+    { cells: 30, per: 1, seed: 301, colours: [hex(0x9c6a3a), hex(0x8e5e34), hex(0xa4744a)], height: 0.75, ao: 1 },
+    { cells: 44, per: 2, seed: 302, colours: [hex(0x6e4e34), hex(0x7a5a3c), hex(0x6a5e4e), hex(0x5e4630)], height: 0.55, ao: 0.85 },
+    { cells: 56, per: 3, seed: 303, colours: [hex(0x4a3826), hex(0x3e3024), hex(0x524434)], height: 0.35, ao: 0.7 },
+  ];
+  const moss = hex(0x5a6a2c);
+  const mossDark = hex(0x3c4a1e);
+  const mossTip = hex(0x74803a);
+  const twigC = hex(0x5e5246);
+  const coneC = hex(0x6a4a2c);
+  const coneTip = hex(0x8a6a44);
+  return (u, v, t) => {
+    const grain = tileNoise(u * 260, v * 260, 260, 311);
+    t.rough = 0.92;
+    // Cones: one in about five 36 cm cells, 7–10 cm long, the scales a lattice of rounded diamonds.
+    {
+      const g = 7;
+      const cx = Math.floor(u * g);
+      const cy = Math.floor(v * g);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const ix = (((cx + dx) % g) + g) % g;
+          const iy = (((cy + dy) % g) + g) % g;
+          if (hash2(ix, iy, 321) > 0.2) continue;
+          const px = (cx + dx + 0.2 + hash2(ix, iy, 322) * 0.6) / g;
+          const py = (cy + dy + 0.2 + hash2(ix, iy, 323) * 0.6) / g;
+          const a = hash2(ix, iy, 324) * Math.PI * 2;
+          const len = (0.035 + hash2(ix, iy, 325) * 0.012) / 2.5;
+          const ox = u - px;
+          const oy = v - py;
+          const along = (ox * Math.cos(a) + oy * Math.sin(a)) / len;
+          const across = (-ox * Math.sin(a) + oy * Math.cos(a)) / (len * 0.48);
+          if (Math.abs(along) >= 1) continue;
+          // Egg-shaped: fuller at the base (along −1) than at the tip.
+          const r = along * along + across * across * (1 + along * 0.35);
+          if (r >= 1) continue;
+          const sa = along * 6 + across * 2.2;
+          const sb = along * 6 - across * 2.2;
+          const scale = Math.min(Math.abs((sa % 1) + 1) % 1, Math.abs((sb % 1) + 1) % 1);
+          const lip = scale < 0.18 ? 0.55 : 1;
+          put(t, mixRgb(coneC, coneTip, Math.max(0, 0.5 - scale) * 1.4), (0.7 + (1 - r) * 0.4) * lip);
+          t.height = 1.5 + (1 - r) * 0.5 - (lip < 1 ? 0.15 : 0);
+          t.ao = 0.75 + (1 - r) * 0.25;
+          t.rough = 0.85;
+          return;
+        }
+      }
+    }
+    // Twigs: dead grey-brown sticks, 15–30 cm, a little bent.
+    {
+      const g = 10;
+      const cx = Math.floor(u * g);
+      const cy = Math.floor(v * g);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const ix = (((cx + dx) % g) + g) % g;
+          const iy = (((cy + dy) % g) + g) % g;
+          if (hash2(ix, iy, 331) > 0.16) continue;
+          const px = (cx + dx + hash2(ix, iy, 332)) / g;
+          const py = (cy + dy + hash2(ix, iy, 333)) / g;
+          const a = hash2(ix, iy, 334) * Math.PI;
+          const ox = u - px;
+          const oy = v - py;
+          const lx = (ox * Math.cos(a) + oy * Math.sin(a)) * g;
+          const ly = (-ox * Math.sin(a) + oy * Math.cos(a)) * g - (lx * lx - 0.6) * (hash2(ix, iy, 335) - 0.5) * 0.1;
+          const w = 0.012 + hash2(ix, iy, 336) * 0.01;
+          if (Math.abs(lx) < 0.6 + hash2(ix, iy, 337) * 0.6 && Math.abs(ly) < w) {
+            const round = 1 - (ly / w) ** 2;
+            put(t, twigC, (0.55 + round * 0.4) * (0.85 + grain * 0.3));
+            t.height = 1.2 + round * 0.15;
+            t.ao = 1;
+            t.rough = 0.85;
+            return;
+          }
+        }
+      }
+    }
+    // Fresh needles lie on everything, the moss included.
+    const top = needleLayers[0] as (typeof needleLayers)[number];
+    const [topHit, topR] = fibreAt(u, v, top.cells, top.per, 0.03, 0.0011, top.seed);
+    if (topHit >= 0) {
+      put(t, top.colours[Math.floor(topR * top.colours.length)] as Rgb, 0.8 + topHit * 0.25);
+      t.height = top.height + 0.5 + topHit * 0.15;
+      t.ao = top.ao;
+      return;
+    }
+    // Moss cushions: a lumpy mound of tiny shoots, darker in its hollows, in patches over a third of the floor.
+    const patch = tileFbm(u * 3, v * 3, 3, 4, 341);
+    const cover = Math.min(1, Math.max(0, (patch - 0.56) / 0.07));
+    if (cover > 0 && hash2(Math.floor(u * 512), Math.floor(v * 512), 342) < cover) {
+      const lump = tileFbm(u * 40, v * 40, 40, 3, 343);
+      const shoot = tileNoise(u * 420, v * 420, 420, 344);
+      put(t, mixRgb(mixRgb(mossDark, moss, lump), mossTip, Math.max(0, shoot - 0.55) * 1.6), 0.8 + shoot * 0.3);
+      t.height = 0.9 + lump * 0.35 + shoot * 0.1;
+      t.ao = 0.7 + lump * 0.3;
+      t.rough = 0.88;
+      return;
+    }
+    for (let L = 1; L < needleLayers.length; L++) {
+      const layer = needleLayers[L] as (typeof needleLayers)[number];
+      const [hit, r] = fibreAt(u, v, layer.cells, layer.per, 0.028, 0.0011, layer.seed);
+      if (hit < 0) continue;
+      put(t, layer.colours[Math.floor(r * layer.colours.length)] as Rgb, 0.78 + hit * 0.25);
+      t.height = layer.height + hit * 0.15;
+      t.ao = layer.ao;
+      return;
+    }
+    put(t, humus, 0.8 + grain * 0.3);
+    t.height = 0.1;
+    t.ao = 0.5;
+  };
+}
+
 export function rock(colour = 0x7a7672): TexelSampler {
   const c = hex(colour);
   return (u, v, t) => {
