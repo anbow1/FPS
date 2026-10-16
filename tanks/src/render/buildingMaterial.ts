@@ -38,7 +38,8 @@ function facade(kind: SurfaceKind, lp: V3, nL: V3, seed: F, above: F): { col: V3
     const mortar = float(1).sub(smoothstep(0.05, fw.mul(8).add(0.14), edge));
     const brick0 = vec3(0.26, 0.085, 0.05).mul(bh(id.add(seed)).mul(0.6).add(0.7)).mul(n2.mul(0.3).add(0.85));
     const brick = mix(brick0, vec3(0.12, 0.06, 0.045), step(0.93, bh(id.mul(1.7).add(seed)))); // over-fired bricks
-    const aa = smoothstep(0.012, 0.04, fw);
+    // Courses repeat every 75 mm: past ~a third of that per pixel they alias into stripes (Nyquist).
+    const aa = smoothstep(0.008, 0.028, fw);
     col = mix(mix(brick, vec3(0.34, 0.32, 0.29), mortar), vec3(0.25, 0.1, 0.065).mul(n1.mul(0.3).add(0.85)), aa);
     rough = mix(0.8, 0.92, mortar);
     h = mix(float(1).sub(mortar.mul(0.8)).add(n2.mul(0.1)), float(0.5), aa);
@@ -57,7 +58,9 @@ function facade(kind: SurfaceKind, lp: V3, nL: V3, seed: F, above: F): { col: V3
     const row = floor(t0.y);
     const t = vec2(t0.x.add(mod(row, 2).mul(0.15)), t0.y);
     const f = fract(t);
-    const aa = smoothstep(0.04, 0.12, fw);
+    // Faded out well before Nyquist (rows 25 cm, waves 30 cm): later, the bump turned the rows into a
+    // field of bright dots across every roof in the middle distance.
+    const aa = smoothstep(0.02, 0.07, fw);
     const wave = mix(sin(f.x.mul(6.2832)).mul(0.5).add(0.5), float(0.5), aa);
     const lap = mix(smoothstep(0, 0.25, f.y), float(0.6), aa);
     const c0 = vec3(0.3, 0.1, 0.06).mul(bh(floor(t).add(seed)).mul(0.5).add(0.75)).mul(lap.mul(0.3).add(0.7));

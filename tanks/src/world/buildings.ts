@@ -111,22 +111,34 @@ export function buildBuildings(hf: Heightfield, seed: number): { group: THREE.Gr
       add('metal', cyl(0.07, 0.07, w + over * 2, 8, 'x', 0, top - 0.5, sz * (d / 2 + over + 0.07)));
     }
     if (!barn) {
-      // framed windows with sills and lintels on both long sides
+      // A framed window (sill, lintel on brick, mullion) set into the wall facing `s` along `axis`, at
+      // `along` on that wall, `wy` its centre, `ww` × `wh` its glass.
+      const windowAt = (axis: 'x' | 'z', s: number, along: number, wy: number, ww: number, wh: number): void => {
+        const at = (u: number, out: number, sx: number, sy: number, so: number, y: number, k: Kind): void => {
+          if (axis === 'z') add(k, box(sx, sy, so, u, y, s * (d / 2) + out));
+          else add(k, box(so, sy, sx, s * (w / 2) + out, y, u));
+        };
+        at(along, -s * 0.06, ww, wh, 0.04, wy, 'glass');
+        at(along, 0, ww + 0.12, 0.07, 0.12, wy + wh / 2 + 0.02, 'frame');
+        at(along, 0, ww + 0.12, 0.07, 0.12, wy - wh / 2 - 0.02, 'frame');
+        at(along - ww / 2 - 0.04, 0, 0.07, wh + 0.08, 0.12, wy, 'frame');
+        at(along + ww / 2 + 0.04, 0, 0.07, wh + 0.08, 0.12, wy, 'frame');
+        at(along, 0, 0.05, wh, 0.08, wy, 'frame'); // mullion
+        at(along, s * 0.08, ww + 0.28, 0.07, 0.24, wy - wh / 2 - 0.09, 'concrete');
+        if (wall === 'brick') at(along, s * 0.02, ww + 0.28, 0.14, 0.1, wy + wh / 2 + 0.11, 'concrete');
+      };
+      // Windows on both long sides, a second row on the taller houses; one in each gable end and a small
+      // one in each gable under the ridge (a blank end wall read as a shed, and it is what a tank
+      // driving past sees most).
       const nWin = Math.max(2, Math.floor(w / 2.8));
+      const rows = h > 5.1 ? [base + 1.55, base + 3.85] : [base + 1.55];
       for (let i = 0; i < nWin; i++) {
         const wx = -w / 2 + (i + 0.5) * (w / nWin);
-        const wy = base + 1.55;
-        for (const s of [-1, 1]) {
-          const z0 = s * (d / 2);
-          add('glass', box(0.92, 1.22, 0.04, wx, wy, z0 - s * 0.06));
-          add('frame', box(1.04, 0.07, 0.12, wx, wy + 0.63, z0));
-          add('frame', box(1.04, 0.07, 0.12, wx, wy - 0.63, z0));
-          add('frame', box(0.07, 1.3, 0.12, wx - 0.5, wy, z0));
-          add('frame', box(0.07, 1.3, 0.12, wx + 0.5, wy, z0));
-          add('frame', box(0.05, 1.2, 0.08, wx, wy, z0)); // mullion
-          add('concrete', box(1.2, 0.07, 0.24, wx, wy - 0.7, z0 + s * 0.08));
-          if (wall === 'brick') add('concrete', box(1.2, 0.14, 0.1, wx, wy + 0.72, z0 + s * 0.02));
-        }
+        for (const wy of rows) for (const s of [-1, 1]) windowAt('z', s, wx, wy, 0.92, 1.22);
+      }
+      for (const s of [-1, 1]) {
+        windowAt('x', s, d * 0.18 * s, base + 1.55, 0.92, 1.22);
+        windowAt('x', s, 0, top + ridge * 0.38, 0.5, 0.62);
       }
       // door with frame and step
       const dx = w / 2 - 1.3;
