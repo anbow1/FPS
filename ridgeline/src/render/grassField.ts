@@ -136,6 +136,12 @@ export interface GrassOptions {
    * from a camera several metres up (Tanks) it turns a meadow into dark dashes.
    */
   rootShade?: number;
+  /**
+   * Lean multiplier (default 1). Seen from several metres up (a tank's commander), upright blades
+   * project as parallel vertical strokes and a meadow reads as corduroy; leaning them further, each its
+   * own way, breaks the strokes into a mottled sward.
+   */
+  leanScale?: number;
   /** Blade heights per kind (m, before heightScale): meadow, beach, sedge. */
   kindHeightsM?: [[number, number], [number, number], [number, number]];
   /** Share of a blade's colour taken from the ground colour a GrassSurfaceNode gives (default 0.7). */
@@ -248,7 +254,7 @@ export class GrassField {
     const kindH0 = select(isMeadow, mix(hM[0], hM[1], r2).mul(shade.mul(0.5).add(1)), select(isBeach, mix(hB[0], hB[1], r2), mix(hS[0], hS[1], r2)));
     const kindH = kindH0.mul(opts.heightScale ?? 1).mul(smoothstep(-0.75, 0.6, clump).mul(0.5).add(0.6));
     const kindW = select(isMeadow, float(0.012), select(isBeach, float(0.008), float(0.03))).mul(opts.widthScale ?? 1);
-    const kindLean = select(isMeadow, mix(0.12, 0.35, r3), select(isBeach, mix(0.05, 0.15, r3), mix(0.45, 0.7, r3)));
+    const kindLean = select(isMeadow, mix(0.12, 0.35, r3), select(isBeach, mix(0.05, 0.15, r3), mix(0.45, 0.7, r3))).mul(opts.leanScale ?? 1);
     // distance thinning: the share of this tile's blades kept here; ranks near the cut shrink
     const dist = length(rootXZ.sub(cameraPosition.xz));
     const [s0, s1] = [RING_SPLIT[0] * R, RING_SPLIT[1] * R];

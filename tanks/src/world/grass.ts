@@ -66,6 +66,8 @@ export class Grass {
         // seen from a tank's height: fewer, longer, broader blades read as grass, not as a fine carpet
         widthScale: 3.2,
         heightScale: 1.3,
+        // leaning every which way: upright, they drew the meadow as vertical hatching from the turret
+        leanScale: 1.9,
         // from a tank's height dark roots read as dashes on the ground: keep them almost as bright as the tips
         rootShade: 0.85,
         // the sheet colours are the terrain's base; its textured grass layer is ~1.7× brighter, and
@@ -124,6 +126,7 @@ function bakeDensity(hf: Heightfield, noise: NoiseSet): { data: Uint8Array; orig
       const macro2 = sampleWrap(noise.g, NOISE_SIZE, x / 380 + 0.3, z / 380 + 0.3);
       const mid = sampleWrap(noise.g, NOISE_SIZE, x / 64, z / 64);
       const dry = smooth(0.4, 0.66, macro * 0.7 + macro2 * 0.3 + (mid - 0.5) * 0.3);
+      // grass thins before the patch's soil shows (terrain.ts: 0.78–0.93), a fringe of sparse blades
       const soil = smooth(0.74, 0.86, mid + dry * 0.06);
       const y = hf.heightAt(x, z);
       hf.normalAt(x, z, tn);

@@ -142,7 +142,8 @@ function soil(seed: number): Layer {
   const base = tileableFbm(S, 16, 5, seed);
   const clod = tileableFbm(S, 32, 3, seed + 1);
   const w = worley(24, seed + 2);
-  const soilC = col(0x6b5a47);
+  // grey-brown, not rust: dry topsoil in sun (the redder #6B5A47 read as stains on the meadow)
+  const soilC = col(0x6a5f50);
   const stone = col(0x8a857c);
   for (let i = 0; i < S * S; i++) {
     const k = 0.72 + 0.5 * base[i]! + 0.15 * (clod[i]! - 0.5);
