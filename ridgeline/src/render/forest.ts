@@ -14,6 +14,7 @@ import {
   MeshStandardNodeMaterial,
   type Node,
   OrthographicCamera,
+  Quaternion,
   RenderTarget,
   Scene,
   type Texture,
@@ -22,6 +23,7 @@ import {
   Vector3,
   type WebGPURenderer,
 } from 'three/webgpu';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TERRAIN } from '../sim/terrain.ts';
 import { terrainHeightNode } from './terrainMesh.ts';
 import type { TerrainTextures } from './terrainTextures.ts';
@@ -140,39 +142,75 @@ function spruce(seed: number): Group {
   return g;
 }
 
-/** Pine: a grey-brown trunk under a broad, irregular crown of flat clumps. ~20 m. */
+/**
+ * A lobe of foliage as many small leaf clusters, most of them on its outer shell, instead of one smooth
+ * solid: the silhouette breaks into leafy bumps and the sky shows through between them. (Each lobe as a
+ * single ruffled icosahedron read as a green cloud from a hovering helicopter.)
+ */
+function foliageLobe(c: Vector3, radius: number, squashY: number, clusters: number, clusterM: number, r: () => number): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+  for (let i = 0; i < clusters; i++) {
+    const u = r() * 2 - 1;
+    const th = r() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    const d = radius * (0.45 + 0.55 * Math.sqrt(r()));
+    const k = clusterM * (0.6 + r() * 0.7);
+    const leaf = new IcosahedronGeometry(k, 0).scale(1, 0.7, 1).rotateY(r() * Math.PI).rotateX((r() - 0.5) * 0.8);
+    parts.push(leaf.translate(c.x + s * Math.cos(th) * d, c.y + u * d * squashY, c.z + s * Math.sin(th) * d));
+  }
+  const g = mergeGeometries(parts, false);
+  if (!g) throw new Error('foliage lobe merge failed');
+  return g;
+}
+
+/** A limb from the trunk out to a lobe: seen in the gaps of the crown. */
+function limb(from: Vector3, to: Vector3, radius: number, hex: number): Mesh {
+  const dir = to.clone().sub(from);
+  const len = dir.length();
+  const g = new CylinderGeometry(radius * 0.45, radius, len, 5, 1, true).translate(0, len / 2, 0);
+  g.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize())).translate(from.x, from.y, from.z);
+  const c = new Color(hex);
+  g.setAttribute('color', new BufferAttribute(new Float32Array(g.getAttribute('position').count * 3).map((_, i) => [c.r, c.g, c.b][i % 3]!), 3));
+  return new Mesh(g, material());
+}
+
+/** Pine: a grey-brown trunk under a broad, irregular crown of flat clumps of needle tufts. ~20 m. */
 function pine(seed: number): Group {
   const r = rnd(seed);
   const g = new Group();
   g.add(trunk(16, 0.22, 0x3f342b));
+  const centre = new Vector3();
   for (let k = 0; k < 13; k++) {
     const a = r() * Math.PI * 2;
     const d = r() * 3.2;
-    const blob = new IcosahedronGeometry(1.5 + r() * 1.2, 1);
-    blob.scale(1.35, 0.55, 1.35).translate(Math.cos(a) * d, 10.5 + r() * 8, Math.sin(a) * d);
-    ruffle(blob, 0.6, r);
-    crownNormals(blob, 14);
-    paint(blob, 0x2a4123, 14, r);
-    g.add(new Mesh(blob, material()));
+    const y = 10.5 + r() * 8;
+    centre.set(Math.cos(a) * d * 1.1, y, Math.sin(a) * d * 1.1);
+    const clump = foliageLobe(centre, 1.9 + r() * 1.3, 0.42, 34, 0.5, r);
+    crownNormals(clump, 14);
+    paint(clump, 0x2a4123, 14, r);
+    g.add(new Mesh(clump, material()));
+    g.add(limb(new Vector3(0, y - 1.2, 0), centre, 0.11, 0x3f342b));
   }
   return g;
 }
 
-/** Broadleaf: a short trunk and a rounded crown of many lobes. ~17 m. */
+/** Broadleaf: a short trunk forking into limbs under a rounded crown of many leafy lobes. ~17 m. */
 function broadleaf(seed: number): Group {
   const r = rnd(seed);
   const g = new Group();
   g.add(trunk(9, 0.45, 0x4a4036));
+  const centre = new Vector3();
   for (let k = 0; k < 14; k++) {
     const a = r() * Math.PI * 2;
     const el = r() * 1.2 - 0.2;
     const d = 2.2 + r() * 2.2;
-    const blob = new IcosahedronGeometry(2.1 + r() * 1.3, 1);
-    blob.translate(Math.cos(a) * Math.cos(el) * d, 11 + Math.sin(el) * d * 0.9, Math.sin(a) * Math.cos(el) * d);
-    ruffle(blob, 0.55, r);
-    crownNormals(blob, 11);
-    paint(blob, 0x3a5527, 11, r, 0.55);
-    g.add(new Mesh(blob, material()));
+    centre.set(Math.cos(a) * Math.cos(el) * d, 11 + Math.sin(el) * d * 0.9, Math.sin(a) * Math.cos(el) * d);
+    const lobe = foliageLobe(centre, 2.2 + r() * 1.3, 0.85, 46, 0.6, r);
+    crownNormals(lobe, 11);
+    // Two greens across the crown: sun leaves and shade leaves are not one colour.
+    paint(lobe, k % 3 === 0 ? 0x41602b : 0x3a5527, 11, r, 0.55);
+    g.add(new Mesh(lobe, material()));
+    g.add(limb(new Vector3(0, 8.4, 0), centre, 0.2, 0x4a4036));
   }
   return g;
 }
