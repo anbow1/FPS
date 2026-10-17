@@ -691,7 +691,9 @@ night the weapon light *is* the picture — a hot spot, a soft spill, hard
 shadows from the muzzle, the beam hanging in the dust.
 
 - **Physical units.** A ~1000 lm tactical light puts ~22 000 cd in its hot spot
-  (`SpotLight` intensity × pre-exposure, cone 0.36 rad, penumbra 0.78). At noon
+  (`SpotLight` intensity × pre-exposure, cone 0.36 rad, penumbra 0.78); FL uses a
+  ~700 lm class, 15 000 cd, so a wall a metre away is not burnt white before
+  the eye adapts. At noon
   it barely shows; at night it carries the frame; nothing to tune per preset.
 - **Never add, remove or re-shadow a light at run time**: every material's
   lighting changes and recompiles (seconds of hitch). Create it before the

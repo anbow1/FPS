@@ -5,9 +5,10 @@ import { lightColour } from './colour.ts';
 // The light on the weapon, after the bodycam shooter "Block 17" (an AI-made
 // browser game): in a dark building the weapon light is the scene — a hot
 // spot with a soft spill, hard shadows thrown from the muzzle, and the beam
-// itself hanging in the dust. A tactical light of ~1000 lm puts some 22 000 cd
-// in its hot spot; in physical units it needs no tuning per time of day: at
-// noon it barely shows, at night or indoors it carries the picture.
+// itself hanging in the dust. A tactical light of ~700 lm puts some 15 000 cd
+// in its hot spot (a 1000 lm one, 22 000 cd, burnt a wall a metre away to white
+// before the eye could adapt); in physical units it needs no tuning per time of
+// day: at noon it barely shows, at night or indoors it carries the picture.
 //
 // The light is always in the scene (intensity 0 when off): adding or removing
 // a light, or toggling its shadow, changes every material's lighting and
@@ -19,7 +20,7 @@ import { lightColour } from './colour.ts';
 // proxy, the view ray clipped by a copy of the scene depth, in-scattered light
 // summed along it with a two-lobe Henyey–Greenstein phase.
 
-const PEAK_CD = 22000;
+const PEAK_CD = 15000;
 const COLOUR_K = 5600;
 /** three's cone: full intensity inside (1 − penumbra) of the angle, a soft edge out to it. */
 const CONE_RAD = 0.36;
