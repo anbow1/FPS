@@ -307,7 +307,10 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   // Unbroken canopy on the hills: clumped dark greens with sunlit crowns.
   const crowns = texture(noise, p.xz.div(14)).g.mul(0.6).add(texture(noise, p.xz.div(5)).b.mul(0.4));
   const canopyColour = mix(vec3(0.018, 0.04, 0.012), vec3(0.07, 0.13, 0.03), crowns).mul(float(0.8).add(macro.mul(0.4)));
-  albedo = mix(albedo, canopyColour, extra.z);
+  // Only from afar: this paint stands for tree tops, and up close, where the real trees stand on the hill,
+  // it turned the jungle floor under them green (the litter's leaves tinted as crowns).
+  const canopyFar = smoothstep(45, 110, length(p.sub(cameraPosition)));
+  albedo = mix(albedo, canopyColour, extra.z.mul(canopyFar));
   // Algae tint and darkening on the lagoon floor.
   const under = float(1).sub(smoothstep(-1.5, 0.0, p.y));
   albedo = albedo.mul(mix(vec3(1), vec3(0.8, 0.9, 0.84), under));
