@@ -689,6 +689,32 @@ toward the eye along the view ray, so integrate exactly that:
   pixel and frame; TRAA averages it. Off = scale the proxy to nothing (no
   fragments, no recompile).
 
+## 6l. A light on the weapon, and a bodycam lens (FL `render/weaponLight.ts`, `render/bodycam.ts`)
+
+After the bodycam shooter "Block 17" (an AI-made browser game): indoors and at
+night the weapon light *is* the picture — a hot spot, a soft spill, hard
+shadows from the muzzle, the beam hanging in the dust.
+
+- **Physical units.** A ~1000 lm tactical light puts ~22 000 cd in its hot spot
+  (`SpotLight` intensity × pre-exposure, cone 0.36 rad, penumbra 0.78). At noon
+  it barely shows; at night it carries the frame; nothing to tune per preset.
+- **Never add, remove or re-shadow a light at run time**: every material's
+  lighting changes and recompiles (seconds of hitch). Create it before the
+  shader pre-compile, toggle only its intensity; off, shrink its shadow
+  camera's far plane to a few centimetres so its shadow pass draws nothing.
+- **The beam near the eye.** The lagoon headlight integrator (§6i) for one round
+  lamp; but the lamp is half a metre in front of the camera, and as a point
+  source there I/r² whites out the middle of the view. Start the march ~0.7 m
+  out, fade the beam in over its first 1.5 m (it is centimetres wide at the
+  reflector), floor r² at ~0.36, and weight the back lobe low: from behind the
+  lamp the eye sees forward scatter. Keep the spill at a few per cent of the
+  hot spot, or it hangs as a glowing bank.
+- **Bodycam lens** (a setting, not the default): render wider (88° vertical),
+  then resample with a barrel term (`q · 0.8 · (1 + 0.34 r²)`, aspect-corrected),
+  lateral colour growing with r², black outside the frame and an oval
+  housing shroud, sensor grain multiplicative plus a floor scaled by
+  1 / exposure (read noise is fixed on the sensor), a flatter colour.
+
 ## 6h. Animals and enemies (lagoon `render/creatures.ts`, `render/guerrillas.ts`)
 
 - **The same rigid-segment rig as the soldiers** (§6c), one InstancedMesh per
@@ -1350,6 +1376,8 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Camouflage or coat patterns slide over a moving instanced figure; countershading follows world height | in an instanced mesh `positionLocal` is the position *after* the instance matrix | key segment-space patterns to `positionGeometry` (§6h) |
 | Paired limbs or wheels instanced with a mirrored matrix render inside out | instanced draws set the front face per mesh, not per instance | build both sides from symmetric geometry; never negate an axis per instance |
 | Shaded faces turned toward the camera (a vehicle's rear, trunks, walls) render near black on High only | three r186's GTAO under a reversed depth buffer marks them fully occluded (seen in its AO target: black on every camera-facing plane, white on the ground); depth-derived normals and a flipped depth both make it worse; the pipeline multiplied the whole colour by it | compare High with a no-AO preset at one view before trusting AO; Tanks runs without GTAO until it is fixed upstream |
+| Film grain or dither draws as vertical stripes | TSL `hash()` takes a float; given a pixel coordinate it hashes x alone | a 2-D hash: `fract(sin(dot(p, vec2(12.9898, 78.233))) · 43758.5453)` |
+| The ground under real trees is painted as tree tops | a far-canopy colour (for hills beyond the modelled trees) applied by height and distance from shore only | fade it in with distance from the eye (lagoon: 45–110 m) |
 | Most parked cars the same colour (the palette's fallback) | `hash >> n` on a hash above 2³¹ is negative in JS; `negative % len` stays negative and the array lookup is `undefined` | shift hashes with `>>>`; clamp indices with `Math.abs` |
 | A baked model's shared materials get darker each time another model is baked | the AO bake multiplies a material's `colorNode` by grime per bake | mark materials once (`WeakSet`) |
 | Road paint, bullet holes, tracks and scorch marks never show | the renderer uses a reversed depth buffer (near = 1), and three.js passes `polygonOffset` to the GPU unflipped: a negative bias pushes the decal *behind* its surface | with `reversedDepthBuffer: true`, use positive `polygonOffsetFactor` / `Units` |
