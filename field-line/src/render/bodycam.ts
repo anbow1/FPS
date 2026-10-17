@@ -1,4 +1,4 @@
-import { convertToTexture, dot, float, fract, hash, length, max, min, saturation, screenCoordinate, screenSize, smoothstep, step, time, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { convertToTexture, dot, float, fract, length, max, min, saturation, screenCoordinate, screenSize, sin, smoothstep, step, time, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Node, UniformNode } from 'three/webgpu';
 
 // A body-worn camera's picture, after the bodycam shooter "Block 17" (an
@@ -40,8 +40,10 @@ export function bodycamLens(input: Node<'vec4'>, exposureInv: UniformNode<'float
   // Past the edge of the rendered frame (the distorted corners) the image circle has nothing: black.
   const inFrame = step(0, min(centre.x, centre.y)).mul(step(max(centre.x, centre.y), 1));
   const shroud = smoothstep(1.06, 0.8, length(q.div(SHROUD)));
-  // Sensor noise, a new pattern every frame.
-  const n = hash(screenCoordinate.xy.add(fract(time.mul(7.13)).mul(vec2(431, 197)))).sub(0.5);
+  // Sensor noise, a new pattern every frame. A 2-D hash: TSL's `hash` takes a float, and fed a pixel
+  // coordinate it varied along x alone, which drew the grain as vertical stripes.
+  const px = screenCoordinate.xy.add(fract(time.mul(7.13)).mul(vec2(431, 197)));
+  const n = fract(sin(dot(px, vec2(12.9898, 78.233))).mul(43758.5453)).sub(0.5);
   const grainy = col.mul(n.mul(0.16).add(1)).add(n.mul(0.004).mul(exposureInv));
   // A small sensor's colour: a little flatter than the eye's.
   const graded = saturation(max(grainy, vec3(0)), 0.86);

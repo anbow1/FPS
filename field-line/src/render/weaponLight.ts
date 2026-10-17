@@ -145,7 +145,8 @@ export class WeaponLight {
         const along = max(dot(v, axis), 1e-3);
         // Off-axis angle (as a tangent): a tight hot spot and a wide, faint spill, as a reflector throws.
         const off = length(v.sub(axis.mul(along))).div(along);
-        const shape = exp(off.div(0.075).mul(off.div(0.075)).negate()).add(smoothstep(0.42, 0.16, off).mul(0.1)).mul(smoothstep(0.3, 1.5, along));
+        // (The spill carries a few per cent of the hot spot's intensity: more, and it hung as a glowing bank.)
+        const shape = exp(off.div(0.075).mul(off.div(0.075)).negate()).add(smoothstep(0.42, 0.16, off).mul(0.035)).mul(smoothstep(0.3, 1.5, along));
         const cosT = dot(v.div(r2.sqrt()), rd.negate());
         // Mostly forward (the eye is behind the lamp and sees the beam from the side or from behind).
         const phase = phaseHG(cosT, 0.75).mul(0.9).add(phaseHG(cosT, -0.3).mul(0.1));
