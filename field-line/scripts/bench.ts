@@ -23,6 +23,7 @@ function idle(): GameIntent {
     medKitPressed: false,
     ammoPackPressed: false,
     rangeFinderPressed: false,
+    weaponLightPressed: false,
   };
 }
 

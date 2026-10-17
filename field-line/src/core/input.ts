@@ -26,6 +26,7 @@ export type Action =
   | 'medKit'
   | 'ammoPack'
   | 'interact'
+  | 'weaponLight'
   | 'pause';
 
 // Mouse0 / Mouse2 are the left / right buttons; WheelUp / WheelDown are edges only.
@@ -54,6 +55,7 @@ export const DEFAULT_BINDINGS: Record<Action, readonly string[]> = {
   medKit: ['KeyH'],
   ammoPack: ['KeyJ'],
   interact: ['KeyF'],
+  weaponLight: ['KeyL'],
   pause: ['Escape', 'KeyP'],
 };
 

@@ -104,6 +104,7 @@ class App {
           { code: 'Digit2', label: 'SNIPE', col: 1, row: 3.2, mode: 'tap' },
           { code: 'Digit3', label: 'PISTOL', col: 2, row: 3.2, mode: 'tap' },
           { code: 'KeyV', label: 'ZOOM', col: 3, row: 3.2, mode: 'tap' },
+          { code: 'KeyL', label: 'LIGHT', col: 4, row: 3.2, mode: 'tap' },
         ],
       });
     }
@@ -138,8 +139,8 @@ class App {
     if (this.view && (this.state === 'paused' || this.state === 'playing')) await this.view.applySettings(this.viewSettings(s));
   }
 
-  private viewSettings(s: Settings): { quality: Settings['quality']; renderScale: number; toneMap: Settings['toneMap']; preset: LightingPresetId; wet: boolean; shake: number } {
-    return { quality: s.quality, renderScale: s.renderScale, toneMap: s.toneMap, preset: s.preset, wet: s.wet, shake: s.shake };
+  private viewSettings(s: Settings): { quality: Settings['quality']; renderScale: number; toneMap: Settings['toneMap']; lens: Settings['lens']; preset: LightingPresetId; wet: boolean; shake: number } {
+    return { quality: s.quality, renderScale: s.renderScale, toneMap: s.toneMap, lens: s.lens, preset: s.preset, wet: s.wet, shake: s.shake };
   }
 
   async start(s: Settings): Promise<void> {
@@ -398,6 +399,7 @@ if (params.has('autostart')) {
   s.preset = pick<LightingPresetId>('light', s.preset);
   s.quality = params.get('q') === 'low' ? 'low' : 'high';
   s.wet = params.has('wet');
+  s.lens = params.get('lens') === 'bodycam' ? 'bodycam' : 'standard';
   s.showStats = !params.has('nostats');
   app.debug.intent = () => {};
   void app.start(s).then(async () => {

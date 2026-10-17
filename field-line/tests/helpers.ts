@@ -14,6 +14,7 @@ export function idleIntent(): GameIntent {
     medKitPressed: false,
     ammoPackPressed: false,
     rangeFinderPressed: false,
+    weaponLightPressed: false,
   };
 }
 

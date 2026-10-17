@@ -32,6 +32,8 @@ export class Player {
   staminaSeconds: number = PLAYER.staminaMaxSeconds;
   sliding = false;
   alive = true;
+  /** The light on the weapon (toggled with its key; the render layer draws it). */
+  weaponLight = false;
 
   // Two-layer health.
   bufferHp: number = HEALTH.bufferMax;

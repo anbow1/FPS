@@ -2,7 +2,7 @@ import type { LightingPresetId } from '../config.ts';
 import type { ModeId } from '../game/modes.ts';
 import type { MapId } from '../maps/types.ts';
 import { isTouchDevice } from '../core/input.ts';
-import type { Quality, ToneMap } from '../render/stage.ts';
+import type { Lens, Quality, ToneMap } from '../render/stage.ts';
 
 // Player settings. Stored per viewer in localStorage as a convenience only:
 // if storage is blocked the game runs on defaults.
@@ -17,6 +17,8 @@ export interface Settings {
   /** Frame governor: drops sun shafts, then resolution, to hold 60 fps (render/perf.ts). */
   adaptive: boolean;
   toneMap: ToneMap;
+  /** Standard view or a body-worn camera's lens (render/bodycam.ts). */
+  lens: Lens;
   minimalHud: boolean;
   sensitivity: number;
   shake: number;
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   renderScale: 1,
   adaptive: true,
   toneMap: 'aces',
+  lens: 'standard',
   minimalHud: false,
   sensitivity: 1,
   shake: 1,

@@ -57,6 +57,7 @@ export class Controls {
       medKitPressed: i.pressed('medKit'),
       ammoPackPressed: i.pressed('ammoPack'),
       rangeFinderPressed: i.pressed('rangeFinder'),
+      weaponLightPressed: i.pressed('weaponLight'),
     };
     this.pendingYawRad = 0;
     this.pendingPitchRad = 0;

@@ -32,6 +32,7 @@ const ACTION_LABELS: Partial<Record<Action, string>> = {
   grenade: 'Grenade (hold to cook)',
   grenadeCycle: 'Next grenade',
   rangeFinder: 'Range finder',
+  weaponLight: 'Weapon light',
   zoom: 'Scope zoom',
   suppressor: 'Suppressor',
   medKit: 'Med kit',
@@ -159,6 +160,7 @@ export class Menu {
       <div class="row"><label>Render scale</label><div class="seg"><button data-set="renderScale:0.75">0.75</button><button data-set="renderScale:1">1.0</button><button data-set="renderScale:1.25">1.25</button><button data-set="renderScale:1.5">1.5</button></div></div>
       <div class="row"><label>Adaptive resolution</label><div class="seg"><button data-set="adaptive:true">On</button><button data-set="adaptive:false">Off</button></div></div>
       <div class="row"><label>Tone mapping</label><div class="seg"><button data-set="toneMap:aces">ACES</button><button data-set="toneMap:agx">AgX</button></div></div>
+      <div class="row"><label>Camera</label><div class="seg"><button data-set="lens:standard">Standard</button><button data-set="lens:bodycam">Bodycam</button></div></div>
       <div class="row"><label>Rain (city)</label><div class="seg"><button data-set="wet:true">On</button><button data-set="wet:false">Off</button></div></div>
       <div class="row"><label>HUD</label><div class="seg"><button data-set="minimalHud:false">Full</button><button data-set="minimalHud:true">Minimal</button></div></div>
       <div class="row"><label>Stats overlay</label><div class="seg"><button data-set="showStats:true">On</button><button data-set="showStats:false">Off</button></div></div>

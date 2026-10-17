@@ -37,6 +37,8 @@ export interface GameIntent {
   medKitPressed: boolean;
   ammoPackPressed: boolean;
   rangeFinderPressed: boolean;
+  /** The light on the weapon, on or off. */
+  weaponLightPressed: boolean;
 }
 
 const RANGE_FINDER_MAX_M = 1500;
@@ -196,6 +198,7 @@ export class Game {
       this.broadcastPlayerShot();
     }
     if (intent.rangeFinderPressed) this.measureRange();
+    if (intent.weaponLightPressed && p.alive) p.weaponLight = !p.weaponLight;
 
     // 4. Grenades in hand
     this.updateGrenadeHand(intent, dt);

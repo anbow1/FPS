@@ -32,6 +32,7 @@ import { buildWetStreet, puddleAmount, rainRate, wetTime } from './wetStreet.ts'
 import { Rain } from './rain.ts';
 import { roomDaylight } from './roomInteriors.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
+import { WeaponLight } from './weaponLight.ts';
 
 // The render system: reads game state, writes transforms (rules §10 — logic
 // never touches THREE). Owns the stage, lighting, exposure and every visual
@@ -54,6 +55,7 @@ export class GameView {
   private viewModel!: ViewModel;
   private effects!: Effects;
   private worldFx!: WorldFx;
+  private weaponLight!: WeaponLight;
   private foliage!: Foliage;
   private caustics: Caustics | null = null;
   private lakeFx: LakeFx | null = null;
@@ -155,6 +157,8 @@ export class GameView {
     this.viewModel.setEnvironment(stage.scene.environment, 1);
     this.effects = new Effects(stage.scene);
     this.worldFx = new WorldFx(stage.scene, map);
+    // Before the shader pre-compile: a light added later would recompile every material (weaponLight.ts).
+    this.weaponLight = new WeaponLight(stage.scene, this.settings.quality);
     this.syncPreExposure();
     await progress('Compiling shaders', 0.75);
     // Pre-compile every material the first frames will need (rules §9): no stall on the first shot.
@@ -290,6 +294,9 @@ export class GameView {
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
+    // The weapon light's beam shows in the haze, in rain, and in the dust of a closed room.
+    const scatter = this.lighting.preset.fogDensityPerM + 0.0012 + wetness.value * rainRate.value * 0.02 + (inside ? 0.004 : 0);
+    this.weaponLight.update(cam, p.weaponLight && p.alive, this.lighting.preExposure, scatter, game.timeSeconds);
     wetTime.value = game.timeSeconds;
     this.cityLights?.update(cam, this.lighting.preExposure);
     this.props?.update(cam.position);

@@ -7,6 +7,7 @@ import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 import { screenReflectionOn } from './screenReflection.ts';
+import { bodycamLens } from './bodycam.ts';
 import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 
@@ -24,12 +25,18 @@ import { FrameGovernor, PassTimer } from './perf.ts';
 
 export type Quality = 'high' | 'low';
 export type ToneMap = 'aces' | 'agx';
+/** The camera's lens: the standard view, or a body-worn camera's (bodycam.ts). */
+export type Lens = 'standard' | 'bodycam';
 
 export interface StageSettings {
   quality: Quality;
   renderScale: number; // 1.0 default; 1.25–1.5 supersamples on High
   toneMap: ToneMap;
+  lens: Lens;
 }
+
+/** Vertical field of view the bodycam lens renders at: its barrel magnifies the middle by 1 / 0.8. */
+const BODYCAM_FOV_DEG = 88;
 
 const SHAFT_SAMPLES = { high: 40, low: 0 } as const; // low: no shafts (a full-screen 40-tap loop)
 
@@ -76,6 +83,8 @@ export class Stage {
   governor: FrameGovernor<GovernorStep>;
   /** Loop count of the shafts pass: a uniform, so the governor turns them off without a recompile. */
   private readonly shaftCount = uniform(0, 'int');
+  /** One over the output exposure (the bodycam's grain floor). */
+  private readonly exposureInv = uniform(1);
   private dynamicScale = 1;
   private pipeline: RenderPipeline | null = null;
   private sceneTexture: Texture | null = null;
@@ -149,6 +158,7 @@ export class Stage {
     }
     // ACES by default (rules §2.1); AgX kept as the A/B for fire and sky.
     this.renderer.toneMapping = s.toneMap === 'agx' ? AgXToneMapping : ACESFilmicToneMapping;
+    this.camera.fov = s.lens === 'bodycam' ? BODYCAM_FOV_DEG : CAMERA.verticalFovDeg;
     this.buildPipeline();
     this.applyStep(this.governor.step);
     this.resize();
@@ -191,7 +201,8 @@ export class Stage {
     const r = length(uv().sub(vec2(0.5)).mul(vec2(1.25, 1)));
     const graded = vec4(saturation(lit.add(glare), 1.05).mul(float(1).sub(pow(r, 2.6).mul(0.35))), 1);
     const pipeline = new RenderPipeline(this.renderer);
-    pipeline.outputNode = sharpen(graded, high ? 0.3 : 0.25);
+    const sharp = sharpen(graded, high ? 0.3 : 0.25);
+    pipeline.outputNode = this.settings.lens === 'bodycam' ? bodycamLens(sharp, this.exposureInv) : sharp;
     this.pipeline?.dispose();
     this.pipeline = pipeline;
   }
@@ -223,6 +234,7 @@ export class Stage {
   /** Exposure multiplier from the adapted eye; applied in the output transform, once. */
   setExposure(multiplier: number): void {
     this.renderer.toneMappingExposure = multiplier;
+    this.exposureInv.value = 1 / Math.max(multiplier, 1e-6);
   }
 
   render(): void {
