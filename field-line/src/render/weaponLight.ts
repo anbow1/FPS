@@ -129,8 +129,10 @@ export class WeaponLight {
       const sceneViewZ = perspectiveDepthToViewZ(sceneDepth.sample(screenUV).x, cameraNear, cameraFar);
       const fragViewZ = cameraViewMatrix.mul(vec4(positionWorld, 1)).z;
       const tEnd = tFrag.mul(min(sceneViewZ.div(min(fragViewZ, -1e-3)), 1));
-      // The lamp is next to the eye, so the path through the beam starts at the camera.
-      const tStart = float(0.05);
+      // The lamp is half a metre in front of the eye. Within the first ~0.7 m its beam is only a few
+      // centimetres across and sends almost nothing back toward the eye; as a point source there, I / r²
+      // blew the middle of the picture out to white. Start past it.
+      const tStart = float(0.7);
       const span = max(tEnd.sub(tStart), 0);
       const ign = fract(float(52.9829189).mul(fract(dot(screenCoordinate.xy.add(time.mul(60 * 5.588238)), vec2(0.06711056, 0.00583715)))));
       let sum: Node<'float'> = float(0);
@@ -139,13 +141,14 @@ export class WeaponLight {
         const t = tStart.add(span.mul(u.mul(u)));
         const dt = span.mul(u.mul(2 / SAMPLES));
         const v = ro.add(rd.mul(t)).sub(lamp);
-        const r2 = max(dot(v, v), 0.04);
+        const r2 = max(dot(v, v), 0.36);
         const along = max(dot(v, axis), 1e-3);
         // Off-axis angle (as a tangent): a tight hot spot and a wide, faint spill, as a reflector throws.
         const off = length(v.sub(axis.mul(along))).div(along);
-        const shape = exp(off.div(0.075).mul(off.div(0.075)).negate()).add(smoothstep(0.42, 0.16, off).mul(0.1)).mul(smoothstep(0.0, 0.3, along));
+        const shape = exp(off.div(0.075).mul(off.div(0.075)).negate()).add(smoothstep(0.42, 0.16, off).mul(0.1)).mul(smoothstep(0.3, 1.5, along));
         const cosT = dot(v.div(r2.sqrt()), rd.negate());
-        const phase = phaseHG(cosT, 0.75).mul(0.8).add(phaseHG(cosT, -0.3).mul(0.2));
+        // Mostly forward (the eye is behind the lamp and sees the beam from the side or from behind).
+        const phase = phaseHG(cosT, 0.75).mul(0.9).add(phaseHG(cosT, -0.3).mul(0.1));
         sum = sum.add(shape.mul(phase).div(r2).mul(scatter).mul(exp(scatter.mul(t).negate())).mul(dt));
       }
       const c = lightColour(COLOUR_K);
