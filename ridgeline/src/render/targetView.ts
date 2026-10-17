@@ -256,7 +256,7 @@ export class TargetView {
       for (const side of [-1, 1]) {
         for (let k = 0; k < 4; k++) root.add(wheel(side * 1.35, 0.55, -2.2 + k * 1.45, 0.55, 0.42, this.rubber, this.steel, side as 1 | -1));
         for (let k = 0; k < 3; k++) add(at(new BoxGeometry(0.04, 0.12, 0.18), side * 1.41, 1.85, -1.5 + k * 1.3), this.glass, root, false);
-        add(at(new CylinderGeometry(0.07, 0.07, 0.06, 10).rotateX(Math.PI / 2), side * 1.0, 1.7, -3.66), this.lamp, root, false);
+        add(at(new CylinderGeometry(0.07, 0.07, 0.06, 10).rotateX(Math.PI / 2), side * 1.0, 1.7, -3.08), this.lamp, root, false);
       }
       for (const [x, z] of [
         [-0.6, 1.4],
