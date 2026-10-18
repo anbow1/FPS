@@ -38,13 +38,13 @@ const FINGERS = [
   { x: 0.029, len: [0.035, 0.021, 0.019], r: 0.0078, splay: 0.14 },
 ];
 
-let materials: { skin: MeshSSSNodeMaterial; glove: MeshPhysicalNodeMaterial; tattooSkin: MeshSSSNodeMaterial; sleeve: MeshPhysicalNodeMaterial; watch: MeshStandardNodeMaterial } | null = null;
+let materials: { skin: MeshSSSNodeMaterial; tipSkin: MeshSSSNodeMaterial; nail: MeshStandardNodeMaterial; glove: MeshPhysicalNodeMaterial; tattooSkin: MeshSSSNodeMaterial; sleeve: MeshPhysicalNodeMaterial; watch: MeshStandardNodeMaterial } | null = null;
 
 function armMaterials() {
   if (materials) return materials;
   const skinColour = 0xb4825f; // sheet: tanned skin, rough 0.5, scattering warm-red
-  const makeSkin = (map: CanvasTexture | null): MeshSSSNodeMaterial => {
-    const m = new MeshSSSNodeMaterial({ name: map ? 'forearm skin' : 'hand skin', color: skinColour, roughness: 0.52, metalness: 0 });
+  const makeSkin = (map: CanvasTexture | null, colour = skinColour, name = map ? 'forearm skin' : 'hand skin'): MeshSSSNodeMaterial => {
+    const m = new MeshSSSNodeMaterial({ name, color: colour, roughness: 0.52, metalness: 0 });
     if (map) {
       m.map = map;
       m.colorNode = texture(map).rgb;
@@ -59,6 +59,10 @@ function armMaterials() {
   };
   materials = {
     skin: makeSkin(null),
+    // Fingertips are pinker than the back of the hand: thinner skin over more blood.
+    tipSkin: makeSkin(null, 0xb87a60, 'fingertip skin'),
+    // Nails: a little paler and glossier than the skin, the pink beneath showing through.
+    nail: new MeshStandardNodeMaterial({ name: 'nail', color: 0xc99a86, roughness: 0.32, metalness: 0 }),
     tattooSkin: makeSkin(tattooTexture()),
     glove: new MeshPhysicalNodeMaterial({ name: 'glove', color: 0x3a2a20, roughness: 0.62, metalness: 0, sheen: 0.4, sheenRoughness: 0.6, sheenColor: 0x5a4030 }),
     sleeve: new MeshPhysicalNodeMaterial({ name: 'sleeve', color: 0x5f6048, roughness: 0.92, metalness: 0, sheen: 0.5, sheenRoughness: 0.8, sheenColor: 0x5f6048 }),
@@ -135,7 +139,8 @@ export class Hand {
         joint.position.set(s === 0 ? f.x : 0, s === 0 ? 0.002 : 0, s === 0 ? -0.094 + Math.abs(f.x) * 0.25 : -(f.len[s - 1] as number));
         const r = f.r * (1 - s * 0.1);
         const seg = new CapsuleGeometry(r, Math.max(0.001, len - r), 3, 8).rotateX(Math.PI / 2).translate(0, 0, -len / 2);
-        joint.add(this.mesh(seg, s === 0 ? M.glove : M.skin));
+        joint.add(this.mesh(seg, s === 0 ? M.glove : s === 2 ? M.tipSkin : M.skin));
+        if (s === 2) joint.add(this.mesh(nailGeometry(r, len), M.nail));
         parent.add(joint);
         chain.push(joint);
         parent = joint;
@@ -152,14 +157,15 @@ export class Hand {
         joint.rotation.set(0, 0.75, 0.5);
       } else joint.position.set(0, 0, -(thumbLen[s - 1] as number));
       const r = 0.0115 - s * 0.0012;
-      joint.add(this.mesh(new CapsuleGeometry(r, len - r, 3, 8).rotateX(Math.PI / 2).translate(0, 0, -len / 2), s === 0 ? M.glove : M.skin));
+      joint.add(this.mesh(new CapsuleGeometry(r, len - r, 3, 8).rotateX(Math.PI / 2).translate(0, 0, -len / 2), s === 0 ? M.glove : s === 2 ? M.tipSkin : M.skin));
+      if (s === 2) joint.add(this.mesh(nailGeometry(r, len), M.nail));
       parent.add(joint);
       this.thumbJoints.push(joint);
       parent = joint;
     });
   }
 
-  private mesh(g: CapsuleGeometry | ReturnType<typeof merge>, m: Material): Mesh {
+  private mesh(g: CapsuleGeometry | SphereGeometry | ReturnType<typeof merge>, m: Material): Mesh {
     const out = new Mesh(g, m);
     out.castShadow = false; // the player's own hands cast no shadow into the world view
     out.receiveShadow = true;
@@ -181,6 +187,14 @@ export class Hand {
     t1.rotation.x = -t * 0.6;
     t2.rotation.x = -t * 0.75;
   }
+}
+
+/**
+ * A nail on the back of a distal segment (radius `r`, length `len`, along −Z, the back of the finger +Y):
+ * a thin shell over the last two thirds, set into the skin so only its plate and free edge show.
+ */
+function nailGeometry(r: number, len: number): SphereGeometry {
+  return new SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(r * 0.78, r * 0.4, len * 0.32).translate(0, r * 0.62, -len * 0.58);
 }
 
 /** Pose interpolation, component-wise. */

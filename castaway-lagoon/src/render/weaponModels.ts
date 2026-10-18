@@ -119,6 +119,10 @@ export function buildRifle(): RifleModel {
       new BoxGeometry(0.004, 0.035, 0.09).translate(0.021, -0.07, 0.085), // selector lever
       tube([new Vector3(0, recBot, 0.09), new Vector3(0, recBot - 0.03, 0.08), new Vector3(0, recBot - 0.034, 0.03), new Vector3(0, recBot, 0.015)], [0.003, 0.003, 0.003, 0.003], 5, 0.2), // trigger guard
       new BoxGeometry(0.005, 0.02, 0.006).translate(0, recBot - 0.01, 0.055), // trigger
+      // Rivet heads where the stamped receiver is riveted to the trunnions and the centre support.
+      ...[-0.052, -0.04, -0.028, 0.04, 0.188, 0.2].flatMap((z, i) =>
+        [-1, 1].map((sx) => new CylinderGeometry(0.0026, 0.0026, 0.002, 8).rotateZ(Math.PI / 2).translate(sx * 0.0185, recBot + (i % 2 ? 0.016 : 0.03), z)),
+      ),
     ],
     'ak receiver',
   );
@@ -153,10 +157,13 @@ export function buildRifle(): RifleModel {
   let a = 0.12;
   for (let i = 0; i < n; i++) {
     const len = 0.028;
-    const g = new BoxGeometry(0.027, len + 0.002, 0.07 - i * 0.0015);
-    g.rotateX(-a);
-    g.translate(0, y - len / 2, z);
-    segs.push(g);
+    const depth = 0.07 - i * 0.0015;
+    // The body, and the stiffening ribs pressed into each side of a steel magazine.
+    for (const part of [new BoxGeometry(0.027, len + 0.002, depth), new BoxGeometry(0.03, len + 0.002, 0.008).translate(0, 0, -depth * 0.18), new BoxGeometry(0.029, len + 0.002, 0.006).translate(0, 0, depth * 0.3)]) {
+      part.rotateX(-a);
+      part.translate(0, y - len / 2, z);
+      segs.push(part);
+    }
     y -= Math.cos(a) * len;
     z -= Math.sin(a) * len;
     a += 0.07;
