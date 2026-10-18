@@ -773,6 +773,53 @@ through, in the order it paid:
 Check each with a close-up screenshot from where the player stands, not from
 a flattering distance: details that do not survive 2 m do not count.
 
+## 6o. Scanned textures (lagoon `render/photoTextures.ts`, FL `render/photoTextures.ts`)
+
+Noise does not make bark's plates, sand's grains, a brick's chipped arris or a
+dirt track's stones. A photograph does. Free, CC0, measured scans:
+**Poly Haven** (`api.polyhaven.com/files/<id>` lists the files; downloads from
+`dl.polyhaven.org`, give a `User-Agent` or get 403) and **ambientCG**. Credit
+them anyway in `assets/photo/LICENSE.md`.
+
+- **Prepare offline** to 512 px (ground, walls) or 1024 (bark colour): colour,
+  normal or height, and Poly Haven's `arm` map, which is already our ORM layout
+  (AO, roughness, metalness). Record the scan's real size (`dimensions_mm`).
+- **Decode, do not just load** where the set must look like a generated one:
+  `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData`, rows
+  flipped (an image's first row is v = 1; a normal map read upside down
+  inverts its green). The lagoon packs the pixels into `DataTexture`s
+  (`textureSetFromPixels`), so the ground's array textures take them
+  unchanged; FL reads them through a `TexelSampler` (`photoSampler()`), so
+  `makeTextureSet` derives the normals from the scan's height like any
+  pattern.
+- **Load before the first material** asks for one, in the view's `create()`
+  before anything is constructed: a constructor that builds a boat or a jeep
+  builds its materials too ("requested before loadPhotoTextures() finished").
+- **Real size, whole repeats**: one tile = the scan's metres (`PHOTO_SIZE_M`),
+  and where a tile is fixed (a façade bay × storey) a whole number of photos
+  per tile, so it still tiles. **Match the colour** where the scan's albedo is
+  not the look's (`photoSampler(id, u, v, 0x8f8b85)` scales its mean to the
+  palette, keeping its detail).
+- **Boards**: cut single planks from the photograph and give each a quarter of
+  the texture, turned to run along U (normal `(nx, ny) → (−ny, −nx)`), then
+  pick a quarter per board in the UVs: every board its own stock.
+- **Budget**: a 512 px set is ~4 MB of GPU memory (three RGBA maps with mips); the four FL sets add
+  ~0.8 MB of JPEG to the APK. Array textures keep the ground shader inside
+  16 bindings.
+
+## 6p. A red dot that behaves like one (FL pistol, lagoon AK; `render/optics.ts`)
+
+A reflex sight is collimated: the dot sits at infinity, so it stays on the
+target while the eye moves behind the window, and it is only visible through
+the glass. Draw the window as a transparent plane whose shader lights the dot
+where the **view ray is parallel to the sight's axis** (angle between
+`positionViewDirection` and the axis < radius), not a dot glued to the glass.
+Update the axis every frame from the optic's world quaternion (after the
+viewmodel's matrices); size the dot by angle (~2 MOA) with a floor of one
+pixel's angle (`fov / height`), or it vanishes at phone resolution. Aiming puts
+the eye on that axis (`sightY`, the dot's height over the bore), so
+ADS looks through the window, not over the irons.
+
 ## 6l. A light on the weapon, and a bodycam lens (FL `render/weaponLight.ts`, `render/bodycam.ts`)
 
 After the bodycam shooter "Block 17" (an AI-made browser game): indoors and at
@@ -854,6 +901,18 @@ shadows from the muzzle, the beam hanging in the dust.
     broken — stripes from noise zero-crossings look like scribbles. Cream as a
     per-vertex `white` (belly, throat, under the paws), not a white ellipsoid
     stuck on.
+- **No two men alike** (round 3: "the uniforms blend into everything"). One
+  camouflage on every soldier, matched to the ground, makes a squad a single
+  smear. Give each instance its own kit through a per-instance attribute
+  (`InstancedBufferAttribute`, read in TSL with `attribute('kit')`, filled per
+  segment so every part of one man agrees): a camo scheme (woodland,
+  multicam, urban, desert, ranger green), a plain colour for plate carrier and
+  helmet cover, and a dash of high-contrast kit (FL: a red recognition band
+  round the upper arm). Guerrillas: tiger-stripe or a plain shirt, their own
+  trousers, skin, hat or bandana. Tanks infantry: one uniform colour per man
+  (`camo` vertex weight = 1 only on the uniform, so boots and kit keep theirs).
+  Pick the palettes so their *luminance* differs, not just their hue: at
+  50 m and in shade only value separates a man from the bushes behind him.
 
 ---
 

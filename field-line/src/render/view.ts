@@ -1,3 +1,4 @@
+import { loadPhotoTextures } from './photoTextures.ts';
 import { Object3D, Vector3 } from 'three/webgpu';
 import { LAKE_WAVES, type LightingPresetId, WORLD_WIND } from '../config.ts';
 import { damp } from '../core/vec.ts';
@@ -98,6 +99,9 @@ export class GameView {
     await progress('Starting renderer', 0.05);
     await stage.init();
     stage.camera.layers.enable(VIEWMODEL_LAYER);
+    // The photographed sets are decoded before any material asks for one (photoTextures.ts).
+    await progress('Loading textures', 0.1);
+    await loadPhotoTextures();
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';
     CITY.lamps = map.id === 'city';

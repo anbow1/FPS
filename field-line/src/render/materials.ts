@@ -11,6 +11,7 @@ import { windowReveal } from './facadeReveal.ts';
 import * as P from './patterns.ts';
 import * as PL from './plantPatterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
+import { PHOTO_SIZE_M, photoSampler } from './photoTextures.ts';
 
 // One material per surface, values from pbr-material-reference.png. Standard
 // material by default; physical only where clearcoat is needed (wet asphalt,
@@ -351,19 +352,24 @@ export class MaterialLibrary {
     return m;
   }
 
-  /** `facade`: for a façade tile (one bay × one storey) rather than a metre, so bricks keep their real size. */
+  /**
+   * `facade`: for a façade tile (one bay × one storey, about 3.2 × 3.1 m) rather than
+   * the look's own tile, so bricks keep their real size. Brick and concrete are
+   * photographs (photoTextures.ts): a whole number of them per tile, so it still tiles.
+   */
   private wallSampler(look: BoxLook, facade = false): TexelSampler {
-    const cols = facade ? 13 : 4;
-    const rows = facade ? 38 : 12;
     switch (look) {
       case 'brick':
-        return P.brick(0x8a4b3a, 0x8f8b85, cols, rows);
+        // Mixed reds in a pale lime mortar; one photograph is 2 m.
+        return facade ? photoSampler('brick_wall_02', 2, 2) : photoSampler('brick_wall_02');
       case 'brickDark':
-        return P.brick(0x6a3f33, 0x7a7672, cols, rows);
+        // Dark engineering brick in grey mortar; one photograph is 1 m.
+        return facade ? photoSampler('red_brick_03', 3, 3) : photoSampler('red_brick_03');
       case 'plaster':
         return P.plaster(0xb3aa9a);
       default:
-        return P.concrete(0x8f8b85, 0.88);
+        // The scan is a dark floor slab: its scuffs and stains, brought to the city's pale cast concrete.
+        return photoSampler('concrete_floor_worn_001', 1, 1, 0x8f8b85);
     }
   }
 
@@ -372,10 +378,13 @@ export class MaterialLibrary {
       case 'brick':
       case 'brickDark':
       case 'plaster':
-        return { material: standard(set(`wall-${look}`, 512, () => this.wallSampler(look), look === 'plaster' ? 1 : 4), look), tileM: look === 'plaster' ? 3 : 1 };
+        return {
+          material: standard(set(`wall-${look}`, 512, () => this.wallSampler(look), look === 'plaster' ? 1 : 3), look),
+          tileM: look === 'plaster' ? 3 : look === 'brick' ? PHOTO_SIZE_M.brick_wall_02 : PHOTO_SIZE_M.red_brick_03,
+        };
       case 'concrete':
       case 'kerb':
-        return { material: standard(set('concrete', 512, () => P.concrete(0x8f8b85, 0.88), 2), look), tileM: 3 };
+        return { material: standard(set('concrete', 512, () => photoSampler('concrete_floor_worn_001', 1, 1, 0x8f8b85), 2), look), tileM: PHOTO_SIZE_M.concrete_floor_worn_001 };
       case 'pavement':
       {
         const ts = set('pavement', 512, () => P.pavement(0x8f8b85), 3);

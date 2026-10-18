@@ -13,6 +13,7 @@ import { swash } from './shoreWaves.ts';
 import { W } from './waterUniforms.ts';
 import * as P from './patterns.ts';
 import { makeTextureArray, makeTextureSet } from './textures.ts';
+import { PHOTO_SIZE_M, photoSampler } from './photoTextures.ts';
 
 // Terrain mesh and its splat material. Layers blend by per-vertex weights
 // (grass, soil, rock, track), sharpened by each layer's own height so soil
@@ -21,7 +22,7 @@ import { makeTextureArray, makeTextureSet } from './textures.ts';
 // breaks the tiling grid, and a detail layer fades in within ~10 m so the ground
 // stays sharp at prone eye height (0.45 m).
 
-const LAYER_TILE_M = { grass: 3, soil: 2.5, rock: 4, track: 2 } as const;
+const LAYER_TILE_M = { grass: 3, soil: 2.5, rock: 4, track: PHOTO_SIZE_M.forest_ground_04 } as const;
 const DETAIL_TILE_M = 0.35;
 const DETAIL_FADE_M = 10;
 const MACRO_TILE_M = 220;
@@ -285,7 +286,7 @@ function splatMaterial(lakeFx: LakeFx | null): MeshStandardNodeMaterial {
     makeTextureSet(512, P.grass(), 1.2),
     makeTextureSet(512, P.needleLitter(), 2), // the forest floor: a mat of fallen needles, moss, twigs, cones
     makeTextureSet(512, P.rock(), 4),
-    makeTextureSet(512, P.soil(0x5a4a3a), 3), // compacted, darker dirt on the track
+    makeTextureSet(512, photoSampler('forest_ground_04'), 3), // the track: a photographed path of packed dirt, grit and stones
   ]);
   const GRASS = 0;
   const SOIL = 1;
