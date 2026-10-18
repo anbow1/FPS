@@ -23,6 +23,8 @@ class GeometryBuffer {
   readonly uvs: number[] = [];
   /** Per vertex (bay, storey) in metres on façade meshes, for the rooms behind the windows; empty elsewhere. */
   readonly tiles: number[] = [];
+  /** Per vertex on façade meshes: the building's seed 0…1 (its own paint, frames, shutters; materials.ts). */
+  readonly seeds: number[] = [];
   readonly indices: number[] = [];
   readonly groups: { start: number; count: number; materialIndex: number }[] = [];
 
@@ -32,6 +34,7 @@ class GeometryBuffer {
     g.setAttribute('normal', new BufferAttribute(new Float32Array(this.normals), 3));
     g.setAttribute('uv', new BufferAttribute(new Float32Array(this.uvs), 2));
     if (this.tiles.length > 0) g.setAttribute('tileSize', new BufferAttribute(new Float32Array(this.tiles), 2));
+    if (this.seeds.length > 0) g.setAttribute('facadeSeed', new BufferAttribute(new Float32Array(this.seeds), 1));
     g.setIndex(this.positions.length / 3 > 65535 ? new BufferAttribute(new Uint32Array(this.indices), 1) : new BufferAttribute(new Uint16Array(this.indices), 1));
     for (const gr of this.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
     g.computeBoundingSphere();
@@ -92,7 +95,11 @@ function appendBox(buf: GeometryBuffer, box: MapBox, rule: UvRule, capRule: UvRu
       const pz = box.center.z + n[2] * dn + right[2] * dr * a + up[2] * du * b;
       buf.positions.push(px, py, pz);
       buf.normals.push(n[0], n[1], n[2]);
-      if (tileSize) buf.tiles.push(tileU, rule.tileV);
+      if (tileSize) {
+        buf.tiles.push(tileU, rule.tileV);
+        // A well-spread 0…1 per building from its seed (the golden-ratio fraction).
+        buf.seeds.push((((box.facade?.seed ?? 0) * 0.6180339887) % 1 + 1) % 1);
+      }
       if (fitted) buf.uvs.push((px * right[0] + pz * right[2] - leftU) / tileU + offsetU, (py - r.baseY) / r.tileV);
       else if (side) buf.uvs.push((px * right[0] + pz * right[2]) / r.tileU, (py - r.baseY) / r.tileV);
       else buf.uvs.push((px * right[0] + pz * right[2]) / r.tileU, (px * up[0] + pz * up[2]) / r.tileV);

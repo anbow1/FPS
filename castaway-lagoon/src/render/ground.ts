@@ -239,7 +239,9 @@ function treeShade(bin: TreeBin, x: number, z: number): number {
 function canopyAt(x: number, z: number, y: number, ny: number): number {
   const r = Math.hypot(x - LAGOON_CENTRE.x, z - LAGOON_CENTRE.z);
   const inland = shoreDistance(x, z) - beachWidth(x, z);
-  const hills = smooth(5, 18, inland) * smooth(3, 10, y);
+  // Down to the back of the beach: in the island shooter we compared against the green comes right down
+  // to the sand, and a band of bare litter at the foot of the hills read as a brown scar from the bay.
+  const hills = smooth(1, 8, inland) * smooth(1, 4, y);
   const far = smooth(180, 300, r) * smooth(3, 10, y);
   const bare = smooth(260, 380, y) + (1 - smooth(0.35, 0.55, ny));
   return Math.max(0, Math.min(1, Math.max(hills, far) - bare));

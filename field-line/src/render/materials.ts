@@ -1,4 +1,4 @@
-import { abs, bumpMap, cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, screenCoordinate, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, attribute, bumpMap, cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, max, select, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, screenCoordinate, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
@@ -20,6 +20,90 @@ import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.t
 export interface LookMaterial {
   material: Material;
   tileM: number;
+}
+
+type V3 = Node<'vec3'>;
+
+/** The palette entry for a 0…1 seed: the list split into equal bands. */
+function pick(seed: Node<'float'>, colours: readonly (readonly [number, number, number])[]): V3 {
+  let out: V3 = vec3(...(colours[0] as [number, number, number]));
+  colours.forEach((c, i) => {
+    if (i > 0) out = select(seed.greaterThanEqual(i / colours.length), vec3(c[0], c[1], c[2]), out);
+  });
+  return out;
+}
+
+/** Wall tints per look (multipliers on the texture: plaster takes the strongest colour). */
+const WALL_TINTS: Record<string, readonly (readonly [number, number, number])[]> = {
+  plaster: [
+    [1.06, 1.0, 0.86],
+    [1.18, 0.96, 0.68],
+    [1.14, 0.9, 0.8],
+    [0.9, 1.02, 0.88],
+    [0.9, 0.97, 1.06],
+    [1.18, 1.17, 1.12],
+    [1.2, 0.82, 0.66],
+  ],
+  brick: [
+    [1, 1, 1],
+    [0.82, 0.78, 0.76],
+    [1.14, 1.02, 0.8],
+    [1.05, 0.85, 0.8],
+  ],
+  brickDark: [
+    [1, 1, 1],
+    [0.85, 0.85, 0.88],
+    [1.1, 0.95, 0.85],
+  ],
+  concrete: [
+    [1, 1, 1],
+    [1.06, 1.03, 0.95],
+    [0.9, 0.92, 0.95],
+    [1.1, 1.0, 0.9],
+  ],
+};
+const FRAME_COLOURS = [
+  [0.045, 0.045, 0.048],
+  [0.72, 0.71, 0.67],
+  [0.2, 0.1, 0.05],
+  [0.06, 0.15, 0.08],
+  [0.12, 0.16, 0.2],
+  [0.72, 0.71, 0.67],
+] as const;
+const SHUTTER_COLOURS = [
+  [0.07, 0.2, 0.1],
+  [0.1, 0.18, 0.3],
+  [0.22, 0.12, 0.06],
+  [0.25, 0.07, 0.05],
+  [0.35, 0.36, 0.34],
+] as const;
+
+/**
+ * A street of one look still has one colour, one kind of window frame and no shutters; a real one never
+ * does (the browser city we compared against changes at every frontage). Per building (`facadeSeed`):
+ * a wall tint from the look's palette, a frame colour, and on two in five plaster or brick fronts a pair
+ * of louvred shutters beside each upper window. `p` is the façade texture's tile UV (window at
+ * patterns.ts `facade`'s 0.28–0.72 × 0.3–0.8); `reveal` 1 where the recess shows the wall.
+ */
+function buildingVariety(texel: V3, p: Node<'vec2'>, reveal: Node<'float'>, look: BoxLook): V3 {
+  const seed = attribute('facadeSeed', 'float');
+  const f = fract(p);
+  const upper = step(0.5, floor(p.y));
+  const inWin = step(0.28, f.x).mul(step(f.x, 0.72)).mul(step(0.3, f.y)).mul(step(f.y, 0.8));
+  const onFrame = max(max(step(f.x, 0.3), step(0.7, f.x)), max(max(step(f.y, 0.32), step(0.78, f.y)), step(abs(f.x.sub(0.5)), 0.008)));
+  const frame = inWin.mul(onFrame).mul(float(1).sub(reveal)).mul(upper);
+  const wallMask = max(float(1).sub(inWin), reveal);
+  const tints = WALL_TINTS[look] ?? WALL_TINTS.concrete ?? [[1, 1, 1]];
+  let out: V3 = texel.mul(mix(vec3(1), pick(seed, tints), wallMask));
+  out = mix(out, pick(fract(seed.mul(3.7)), FRAME_COLOURS).mul(texel.g.div(0.045).clamp(0.6, 1.4)), frame.mul(0.9));
+  if (look === 'plaster' || look === 'brick') {
+    const has = step(0.6, fract(seed.mul(7.3)));
+    const side = max(step(0.14, f.x).mul(step(f.x, 0.265)), step(0.735, f.x).mul(step(f.x, 0.86)));
+    const shutter = side.mul(step(0.3, f.y)).mul(step(f.y, 0.8)).mul(upper).mul(has).mul(float(1).sub(reveal));
+    const slat = mix(float(0.62), float(1), step(0.3, fract(f.y.mul(36))));
+    out = mix(out, pick(fract(seed.mul(5.1)), SHUTTER_COLOURS).mul(slat), shutter);
+  }
+  return out;
 }
 
 /** Wetness 0..1 for streets after rain: darker base, lower roughness, clearcoat (PBR sheet). */
@@ -227,7 +311,8 @@ export class MaterialLibrary {
       const gy = dFdy(uv());
       const orm = texture(ts.ormMap, rv.uv).grad(gx, gy);
       const revealOrm = texture(ts.ormMap, rv.wallUv).grad(gx, gy);
-      const texel = mix(texture(ts.map, rv.uv).grad(gx, gy).rgb.mul(rv.shade), texture(ts.map, rv.wallUv).grad(gx, gy).rgb.mul(0.78), rv.reveal);
+      const plain = mix(texture(ts.map, rv.uv).grad(gx, gy).rgb.mul(rv.shade), texture(ts.map, rv.wallUv).grad(gx, gy).rgb.mul(0.78), rv.reveal);
+      const texel = buildingVariety(plain, rv.uv, rv.reveal, look);
       // Clear glass (the texture's glossiest texels) shows the room behind it, so it barely scatters itself.
       const pane = mix(float(1).sub(smoothstep(0.08, 0.25, orm.g)).mul(float(1).sub(rv.reveal)), sf.glass, sf.cover);
       const base = mix(texel, sf.albedo, sf.cover).mul(mix(float(1), float(0.56), wetness));
