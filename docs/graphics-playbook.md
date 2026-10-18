@@ -944,6 +944,91 @@ the kit, and procedural gaits as robots. Two changes, both phone-friendly:
   gunner's sight at hundreds of metres, where a gait reads the same either way:
   not worth a second rig there.
 
+## 6t. Hands from a real body (lagoon `render/handMesh.ts`, `render/arms.ts`; FL `render/handMesh.ts`)
+
+The first-person hands are on screen every frame, closer than anything else,
+and capsule fingers on a ball palm read as a doll's hand however they are
+posed. A real hand comes cheaply from MakeHuman: its base mesh, default
+skeleton (three phalanges a finger, metacarpals, a thumb) and skin weights
+are CC0 (`makehumancommunity/makehuman`, `data/3dobjs/base.obj`,
+`data/rigs/default.mhskel`, `default_weights.mhw`; the mesh is in decimetres).
+
+- **Bake offline**: joint positions are the centroids of the `joints` vertex
+  lists; select the forearm and hand by the weights of their bones; move them
+  into the viewmodel's hand frame (wrist at the origin, fingers along the
+  knuckles' direction, the palm on the side the rest pose's fingers curl
+  toward); stretch the forearm to the game's length; one Catmull–Clark step
+  (a hand is seen at 20 cm); four weights per vertex; region masks from the
+  weights (bare skin in a fingerless glove = the middle and distal phalanges;
+  nails = the outer half of a distal phalanx's back; forearm); a tattoo UV
+  round the forearm. Quantise (normals i8, weights and masks u8): ~300 kB.
+- **Pose with rest rotations at identity**: every bone unrotated in the hand
+  frame, so a finger curls about `normalize(boneDir × palmDown)` and the
+  thumb opposes about its metacarpal's axis. Check the signs in a quick
+  stand-alone page before the game (fist, grip, open hand). The left hand is
+  the right mirrored at load (x negated, winding turned); its fixed-axis turns
+  (spread, opposition) change sign, the computed axes come out right.
+- **One skin, two parents**: three's skinning only needs each bone's world
+  matrix, so the forearm bone can live under the forearm group (oriented to
+  the elbow, rolled with the back of the hand) and the hand bones under the
+  wrist target, with bind inverses passed explicitly. The wrist then bends
+  as one skin.
+- **Skin and gloves in one material**: the masks pick tan skin (not orange —
+  an even, saturated tan reads as a dummy), its mottling, the forearm's hair
+  and veins in the tattoo texture, nails paler and glossier, leather with a
+  darker cut edge. Noise for pores and grain uses the rest position
+  (`positionGeometry`), not the skinned one, or it swims as the fingers move.
+- **A hand that never lets go** (FL's gloves): pose it once and skin it on
+  the CPU into plain geometry.
+
+## 6u. Guns cut from their outlines, worn on their edges (lagoon/FL `render/gunkit.ts`)
+
+- **Outlines, not boxes**: each part from its real side profile (stock,
+  grip, receiver, magazine, levers) or cross-section along the barrel
+  (handguards), corners filleted (`filleted`), extruded with a 2–3 step bevel
+  whose offset keeps the outline the outer edge.
+- **Smooth bevels, hard faces**: `toCreasedNormals(g, 36°)` after the
+  extrusion — the bevel becomes a rounded edge that carries a line of light,
+  the faces stay flat.
+- **`edge` per vertex** from the extrusion: 0 on caps and sides, 1 at 45° on
+  the bevel. The finish wears through there, broken up by noise: phosphate to
+  grey steel (metalness up, roughness down), anodising to aluminium, varnish
+  to pale wood, polymer scuffed paler. Flat, unworn colours were what read
+  as "simplified" at arm's length.
+- Every mesh using these materials needs the attribute (fill zeros), or the
+  node falls back with a warning per draw.
+
+## 6v. Cumulus as a lit layer (FL `render/cloudLayer.ts`)
+
+SkyMesh's clouds (noise lit by its own density) are soft smears. Without a
+volume march, a layer can still look like cumulus:
+
+- **Shape**: equalised low-frequency field over the coverage, carved by
+  inverted Worley cells (the lobes) and frayed by fine noise only where thin.
+- **Relief**: the result as a dome's thickness; its slope (two extra samples)
+  gives each lobe a surface the sun lights. Overhead the base faces down;
+  toward the horizon the sides face the eye.
+- **Light**: three thickness samples along the sun's bearing for the
+  self-shadow; Henyey–Greenstein on thin rims; a little multiple-scattering
+  glow; sky above, ground bounce on bases; all in scene units from the preset.
+- **No shimmer, no stalls**: fetches inside branches need explicit mip levels
+  (WGSL), taken from the footprint (`fwidth` outside the branch); finer maps
+  start a few levels coarser. Turn the layer off while the raw dome is
+  measured for calibration.
+- Ridgeline's volumetric clouds had the same flatness for another reason: the
+  light march sampled only the coarse shape, so every billow was lit alike.
+  The first light steps now take the detail erosion: lobes shade each other.
+
+## 6w. Decals that belong to their surface (lagoon `render/footprints.ts`)
+
+A decal is seen where its colour differs from the ground and where its alpha
+ends. Footprints sat in rectangles: their rim ran past the quad and was cut by
+its edges, and their flat sand colour stood out on the photographed beach.
+Size the quad for the whole effect plus a margin, fade alpha to zero inside
+its edges whatever the shape does, and shade the decal with the ground's own
+inputs (the same photograph and macro variation at the same world UVs, the same
+wetness) so only the change — the dent — shows.
+
 ## 6h. Animals and enemies (lagoon `render/creatures.ts`, `render/guerrillas.ts`)
 
 - **The same rigid-segment rig as the soldiers** (§6c), one InstancedMesh per
