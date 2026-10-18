@@ -27,18 +27,21 @@ import { buildRifle } from './weaponModels.ts';
 import { BoneTexture, skinnedPosition } from './skinning.ts';
 import { boneIndex, clipDuration, clipSpeed, MocapPose, mocapReady } from './mocap.ts';
 
-// Enemy infantry: an articulated figure of rigid segments (pelvis, torso,
-// head, upper arms, forearms, hands, thighs, shins, boots and the rifle),
-// each one InstancedMesh shared by every soldier, posed per frame:
+// Enemy infantry: a body of segments (pelvis, torso, head, upper arms,
+// forearms, hands, thighs, shins, boots) skinned as one mesh shared by every
+// soldier (skinning.ts: the skin near a joint takes both bones), and the
+// rifle, posed per frame:
 //
-//   - the stance sets the hips and the line of the spine (standing, kneeling
-//     on one knee, prone on the elbows) to match the hitbox layout the bullets
-//     test against (game/actor.ts), so what you see is what you can hit;
+//   - walking, running and moving crouched as motion-captured (mocap.ts): the
+//     hips, spine and legs from the capture, the cycle advanced by ground
+//     speed so the feet do not slide; still, a stance with the feet apart;
+//   - kneeling still and prone built by hand, the hips and the line of the
+//     spine matching the hitbox layout the bullets test against
+//     (game/actor.ts), the legs reaching planted feet by two-bone IK;
 //   - the rifle sits in the right shoulder pocket along the aim (lowered on
 //     patrol), and both arms reach its grips by two-bone IK, elbows out;
-//   - the legs reach planted feet by two-bone IK: a stride with ground speed,
-//     knees forward, the swinging foot lifted;
-//   - the dead fall forward about their feet and lie prone. No gore.
+//   - the dead fall as captured, turning away from the shot as they go, the
+//     rifle leaving the hand as they hit the ground. No gore.
 //
 // Kit: plate carrier with magazine pouches and a radio, assault pack, battle
 // belt, high-cut helmet with ear defenders and a night-vision mount, knee and
@@ -169,6 +172,8 @@ export class ActorView {
       const moving = s.alive && s.stance !== 'prone';
       if (moving) this.walkPhase[i] = ((this.walkPhase[i] as number) + s.speedMs * frameSeconds * (s.stance === 'crouch' ? 4.2 : 3.2)) % (Math.PI * 2);
       _actor.makeRotationY(s.yawRad).setPosition(_feet);
+      // Where the round went, in the man's own frame: the dead turn away from it as they fall.
+      _deathLocal.set(s.deathDir.x, 0, s.deathDir.z).applyAxisAngle(_yAxis, -s.yawRad);
       if (moving) this.gait[i] = advanceGait(this.gait[i] as number, s, frameSeconds);
       this.pose(s, i, this.walkPhase[i] as number, this.gait[i] as number);
     }
@@ -326,6 +331,12 @@ export class ActorView {
   private poseCaptured(s: Soldier, i: number, cap: MocapPose): void {
     const D = (name: string): Quaternion => cap.delta[boneIndex(name)] as Quaternion;
     _fall.identity();
+    if (!s.alive) {
+      // The capture falls back. Turned toward where the round went (at most a quarter turn), over the
+      // first moments, as a hit spins a man: shot from the side he twists and goes down sideways.
+      const a = Math.max(-1.6, Math.min(1.6, Math.atan2(_deathLocal.x, _deathLocal.z)));
+      _fall.makeRotationY(a * smooth(0, 0.45, s.deathSeconds));
+    }
     // The legs first, at the captured hip height, to find how far the planted foot sits off the ground.
     const legs = (hip: Vector3): number => {
       let low = Infinity;
@@ -1160,6 +1171,8 @@ const _fall = new Matrix4();
 const _rot = new Matrix4();
 const _m = new Matrix4();
 const _feet = new Vector3();
+const _deathLocal = new Vector3();
+const _yAxis = new Vector3(0, 1, 0);
 const _hip = new Vector3();
 const _up = new Vector3();
 const _right = new Vector3();
