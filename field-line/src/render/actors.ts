@@ -13,6 +13,7 @@ import {
   LatheGeometry,
   Matrix4,
   Mesh,
+  Quaternion,
   MeshPhysicalNodeMaterial,
   type Node,
   Shape,
@@ -23,6 +24,8 @@ import {
 import type { Soldier } from '../game/soldier.ts';
 import { merge } from './meshkit.ts';
 import { buildRifle } from './weaponModels.ts';
+import { BoneTexture, skinnedPosition } from './skinning.ts';
+import { boneIndex, clipDuration, clipSpeed, MocapPose, mocapReady } from './mocap.ts';
 
 // Enemy infantry: an articulated figure of rigid segments (pelvis, torso,
 // head, upper arms, forearms, hands, thighs, shins, boots and the rifle),
@@ -75,36 +78,73 @@ const TAPE: Kind = 4;
 type Segment = 'pelvis' | 'torso' | 'head' | 'upperArm' | 'forearm' | 'hand' | 'thigh' | 'shin' | 'boot' | 'rifle';
 const PAIRED: Record<Segment, boolean> = { pelvis: false, torso: false, head: false, upperArm: true, forearm: true, hand: true, thigh: true, shin: true, boot: true, rifle: false };
 
+/** The body's bones, one per segment and side, parents first: a man is one skinned mesh (skinning.ts). */
+const BONES: readonly { seg: Exclude<Segment, 'rifle'>; side: 0 | 1; parent: number }[] = [
+  { seg: 'pelvis', side: 0, parent: -1 },
+  { seg: 'torso', side: 0, parent: 0 },
+  { seg: 'head', side: 0, parent: 1 },
+  { seg: 'upperArm', side: 0, parent: 1 },
+  { seg: 'forearm', side: 0, parent: 3 },
+  { seg: 'hand', side: 0, parent: 4 },
+  { seg: 'upperArm', side: 1, parent: 1 },
+  { seg: 'forearm', side: 1, parent: 6 },
+  { seg: 'hand', side: 1, parent: 7 },
+  { seg: 'thigh', side: 0, parent: 0 },
+  { seg: 'shin', side: 0, parent: 9 },
+  { seg: 'boot', side: 0, parent: 10 },
+  { seg: 'thigh', side: 1, parent: 0 },
+  { seg: 'shin', side: 1, parent: 12 },
+  { seg: 'boot', side: 1, parent: 13 },
+];
+const boneOf = (seg: Segment, side: 0 | 1): number => BONES.findIndex((b) => b.seg === seg && (PAIRED[seg] ? b.side === side : true));
+
 export class ActorView {
   readonly group = new Group();
-  private readonly meshes = new Map<Segment, InstancedMesh>();
+  private readonly body: InstancedMesh;
+  private readonly rifle: InstancedMesh;
+  private readonly bones = new BoneTexture(BONES.length, MAX_SOLDIERS);
+  /** Inverse bind matrix per bone: the segment's frame in the bind pose (bindFrames). */
+  private readonly unbind: Matrix4[];
   private readonly prevFeet: Vector3[] = [];
   private readonly currFeet: Vector3[] = [];
   private readonly walkPhase: number[] = [];
+  /** Where each man is in his captured gait cycle, 0…1 (mocap.ts); 0 and ½ are the feet planted apart. */
+  private readonly gait: number[] = [];
+  private mocapA: MocapPose | null = null;
+  private mocapB: MocapPose | null = null;
 
   constructor() {
     this.group.name = 'actors';
-    const material = soldierMaterial();
     const geos = segmentGeometries();
-    for (const seg of Object.keys(PAIRED) as Segment[]) {
-      const per = PAIRED[seg] ? 2 : 1;
-      // Each man's kit (soldierMaterial): his camouflage, the colour of his carrier and pouches, how faded.
-      const kit = new Float32Array(MAX_SOLDIERS * per * 4);
-      for (let i = 0; i < MAX_SOLDIERS * per; i++) kit.set(kitFor(Math.floor(i / per)), i * 4);
-      geos[seg].setAttribute('kit', new InstancedBufferAttribute(kit, 4));
-      const mesh = new InstancedMesh(geos[seg], material, MAX_SOLDIERS * per);
-      mesh.name = `soldier-${seg}`;
+    const bind = bindFrames();
+    this.unbind = bind.map((m) => m.clone().invert());
+    // Each man's kit (soldierMaterial): his camouflage, the colour of his carrier and pouches, how faded.
+    const kit = (per: number): InstancedBufferAttribute => {
+      const a = new Float32Array(MAX_SOLDIERS * per * 4);
+      for (let i = 0; i < MAX_SOLDIERS * per; i++) a.set(kitFor(Math.floor(i / per)), i * 4);
+      return new InstancedBufferAttribute(a, 4);
+    };
+    const bodyGeo = skinnedBody(geos, bind);
+    bodyGeo.setAttribute('kit', kit(1));
+    const skinned = soldierMaterial();
+    skinned.positionNode = skinnedPosition(this.bones);
+    this.body = new InstancedMesh(bodyGeo, skinned, MAX_SOLDIERS);
+    // The rifle stays rigid: one more instanced mesh, placed from the same pose.
+    geos.rifle.setAttribute('kit', kit(1));
+    this.rifle = new InstancedMesh(geos.rifle, soldierMaterial(), MAX_SOLDIERS);
+    for (const [mesh, name] of [[this.body, 'soldier-body'], [this.rifle, 'soldier-rifle']] as const) {
+      mesh.name = name;
       mesh.count = 0;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      mesh.frustumCulled = false; // instances move every frame; bounds would go stale
-      this.meshes.set(seg, mesh);
+      mesh.frustumCulled = false; // the men move every frame; bounds would go stale
       this.group.add(mesh);
     }
     for (let i = 0; i < MAX_SOLDIERS; i++) {
       this.prevFeet.push(new Vector3());
       this.currFeet.push(new Vector3());
       this.walkPhase.push(0);
+      this.gait.push(0);
     }
   }
 
@@ -119,7 +159,8 @@ export class ActorView {
 
   update(soldiers: readonly Soldier[], alpha: number, frameSeconds: number): void {
     const n = Math.min(soldiers.length, MAX_SOLDIERS);
-    for (const [seg, mesh] of this.meshes) mesh.count = n * (PAIRED[seg] ? 2 : 1);
+    this.body.count = n;
+    this.rifle.count = n;
     for (let i = 0; i < n; i++) {
       const s = soldiers[i] as Soldier;
       const prev = this.prevFeet[i] as Vector3;
@@ -128,14 +169,41 @@ export class ActorView {
       const moving = s.alive && s.stance !== 'prone';
       if (moving) this.walkPhase[i] = ((this.walkPhase[i] as number) + s.speedMs * frameSeconds * (s.stance === 'crouch' ? 4.2 : 3.2)) % (Math.PI * 2);
       _actor.makeRotationY(s.yawRad).setPosition(_feet);
-      this.pose(s, i, this.walkPhase[i] as number);
+      if (moving) this.gait[i] = advanceGait(this.gait[i] as number, s, frameSeconds);
+      this.pose(s, i, this.walkPhase[i] as number, this.gait[i] as number);
     }
-    for (const mesh of this.meshes.values()) mesh.instanceMatrix.needsUpdate = true;
+    this.rifle.instanceMatrix.needsUpdate = true;
+    this.bones.commit();
   }
 
   // ---------------------------------------------------------------- posing (actor frame: −Z forward, +X right)
 
-  private pose(s: Soldier, i: number, phase: number): void {
+  /**
+   * The captured gait (mocap.ts) for the hips, spine, head and legs: standing (walking and running blended
+   * by speed, held with the feet apart when still) and moving crouched. Null where the pose stays built by
+   * hand: kneeling still, prone, and before the clips have loaded.
+   */
+  private captured(s: Soldier, gait: number): MocapPose | null {
+    if (!mocapReady()) return null;
+    if (!this.mocapA || !this.mocapB) {
+      this.mocapA = new MocapPose();
+      this.mocapB = new MocapPose();
+    }
+    if (!s.alive) return this.mocapA.sample('fall', s.deathSeconds).solve();
+    if (s.stance === 'prone' || (s.stance === 'crouch' && s.speedMs < 0.3)) return null;
+    if (s.stance === 'crouch') return this.mocapA.sample('crouch', gait * clipDuration('crouch')).solve();
+    this.mocapA.sample('walk', gait * clipDuration('walk'));
+    const run = smooth(1.9, 2.9, s.speedMs);
+    if (run > 0) this.mocapA.blend(this.mocapB.sample('run', gait * clipDuration('run')), run);
+    return this.mocapA.solve();
+  }
+
+  private pose(s: Soldier, i: number, phase: number, gait: number): void {
+    const cap = this.captured(s, gait);
+    if (cap) {
+      this.poseCaptured(s, i, cap);
+      return;
+    }
     const stance = s.alive ? s.stance : 'stand';
     const stride = s.alive && stance !== 'prone' ? Math.min(1, s.speedMs / 3) * (stance === 'crouch' ? 0.2 : 0.34) : 0;
     // Standing still the feet take a stance — apart, the left forward, the knees soft — fading into the
@@ -155,13 +223,6 @@ export class ActorView {
     }
     _right.set(1, 0, 0);
     _front.crossVectors(_up, _right).normalize();
-    // Aim: the head and the rifle follow it; on patrol the rifle hangs at low ready.
-    const pitch = s.alive ? s.pitchRad : 0;
-    _aim.set(0, Math.sin(pitch), -Math.cos(pitch));
-    const lowReady = s.alive && s.state === 'patrol';
-    if (lowReady) _rifleDir.set(0.25, -0.62, -0.75).normalize();
-    else _rifleDir.copy(_aim);
-
     // Fall: the whole pose tips forward about the feet over ~0.7 s, gathering speed, and lies prone.
     _fall.identity();
     if (!s.alive) {
@@ -170,38 +231,8 @@ export class ActorView {
       _fall.makeTranslation(0, 0.1 * t, 0).multiply(_rot.makeRotationX(-a));
     }
 
-    // Torso and pelvis. Holding a rifle the torso is bladed: turned ~35° to bring the left shoulder
-    // forward, so the support hand reaches the handguard (less at low ready, none prone).
     this.place('pelvis', i, 0, _hip, _up, _front);
-    const blade = stance === 'prone' ? 0 : lowReady ? 0.25 : 0.6;
-    _tRight.copy(_right).applyAxisAngle(_up, blade);
-    _tFront.crossVectors(_up, _tRight).normalize();
-    this.place('torso', i, 0, _hip, _up, _tFront);
-    _neck.copy(_hip).addScaledVector(_up, SPINE_M);
-    _headUp.set(0, 1, 0).addScaledVector(_aim, -_aim.y).normalize();
-    _head.copy(_neck).addScaledVector(_up, 0.1).addScaledVector(_headUp, 0.04);
-    this.place('head', i, 0, _head, _headUp, _aim);
-
-    // Rifle: butt in the right shoulder pocket, along the aim.
-    _shoulderR.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_tRight, SHOULDER_HALF);
-    _shoulderL.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_tRight, -SHOULDER_HALF);
-    _rifleUp.set(0, 1, 0).addScaledVector(_rifleDir, -_rifleDir.y).normalize();
-    // Rifle frame: −Z = rifleDir. Butt plate at local (0, −0.107, +0.44).
-    _butt.copy(_shoulderR).addScaledVector(_tFront, 0.04).addScaledVector(_tRight, -0.06);
-    if (lowReady) _butt.addScaledVector(_up, -0.12).addScaledVector(_front, -0.06);
-    _rifleO.copy(_butt).addScaledVector(_rifleUp, 0.107).addScaledVector(_rifleDir, 0.44);
-    this.place('rifle', i, 0, _rifleO, _rifleUp, _rifleDir);
-    // Grips in the rifle frame: pistol grip (0, −0.18, +0.18); the support hand under the handguard
-    // (0, −0.12, −0.15), or at the magazine well when prone on the elbows.
-    _gripR.copy(_rifleO).addScaledVector(_rifleUp, -0.17).addScaledVector(_rifleDir, -0.18);
-    _gripL.copy(_rifleO).addScaledVector(_rifleUp, -0.12).addScaledVector(_rifleDir, stance === 'prone' ? 0.02 : 0.15);
-    // Arms: elbows out and down.
-    _pole.copy(_tRight).multiplyScalar(0.8).addScaledVector(_up, -1).addScaledVector(_tFront, -0.3);
-    this.limb('upperArm', 'forearm', i, 1, _shoulderR, _gripR, L_UPPER_ARM, L_FOREARM, _pole);
-    this.placeHand(i, 1, _gripR, _rifleDir);
-    _pole.copy(_tRight).multiplyScalar(-0.9).addScaledVector(_up, -1);
-    this.limb('upperArm', 'forearm', i, 0, _shoulderL, _gripL, L_UPPER_ARM, L_FOREARM, _pole);
-    this.placeHand(i, 0, _gripL, _rifleDir);
+    this.armsAndRifle(s, i, stance);
 
     // Legs.
     for (const side of [0, 1] as const) {
@@ -239,6 +270,125 @@ export class ActorView {
     }
   }
 
+  /**
+   * Torso, head, rifle and arms on the hips and spine already set (`_hip`, `_up`, `_right`, `_front`): the
+   * head and rifle on the aim (low ready on patrol), the torso bladed behind the rifle, the hands reaching
+   * its grips by two-bone IK.
+   */
+  private armsAndRifle(s: Soldier, i: number, stance: Soldier['stance']): void {
+    // Aim: the head and the rifle follow it; on patrol the rifle hangs at low ready.
+    const pitch = s.alive ? s.pitchRad : 0;
+    _aim.set(0, Math.sin(pitch), -Math.cos(pitch));
+    const lowReady = s.alive && s.state === 'patrol';
+    if (lowReady) _rifleDir.set(0.25, -0.62, -0.75).normalize();
+    else _rifleDir.copy(_aim);
+
+    // Holding a rifle the torso is bladed: turned ~35° to bring the left shoulder forward, so the support
+    // hand reaches the handguard (less at low ready, none prone).
+    const blade = stance === 'prone' ? 0 : lowReady ? 0.25 : 0.6;
+    _tRight.copy(_right).applyAxisAngle(_up, blade);
+    _tFront.crossVectors(_up, _tRight).normalize();
+    this.place('torso', i, 0, _hip, _up, _tFront);
+    _neck.copy(_hip).addScaledVector(_up, SPINE_M);
+    _headUp.set(0, 1, 0).addScaledVector(_aim, -_aim.y).normalize();
+    _head.copy(_neck).addScaledVector(_up, 0.1).addScaledVector(_headUp, 0.04);
+    this.place('head', i, 0, _head, _headUp, _aim);
+
+    // Rifle: butt in the right shoulder pocket, along the aim.
+    _shoulderR.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_tRight, SHOULDER_HALF);
+    _shoulderL.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_tRight, -SHOULDER_HALF);
+    _rifleUp.set(0, 1, 0).addScaledVector(_rifleDir, -_rifleDir.y).normalize();
+    // Rifle frame: −Z = rifleDir. Butt plate at local (0, −0.107, +0.44).
+    _butt.copy(_shoulderR).addScaledVector(_tFront, 0.04).addScaledVector(_tRight, -0.06);
+    if (lowReady) _butt.addScaledVector(_up, -0.12).addScaledVector(_front, -0.06);
+    _rifleO.copy(_butt).addScaledVector(_rifleUp, 0.107).addScaledVector(_rifleDir, 0.44);
+    this.place('rifle', i, 0, _rifleO, _rifleUp, _rifleDir);
+    // Grips in the rifle frame: pistol grip (0, −0.18, +0.18); the support hand under the handguard
+    // (0, −0.12, −0.15), or at the magazine well when prone on the elbows.
+    _gripR.copy(_rifleO).addScaledVector(_rifleUp, -0.17).addScaledVector(_rifleDir, -0.18);
+    _gripL.copy(_rifleO).addScaledVector(_rifleUp, -0.12).addScaledVector(_rifleDir, stance === 'prone' ? 0.02 : 0.15);
+    // Arms: elbows out and down.
+    _pole.copy(_tRight).multiplyScalar(0.8).addScaledVector(_up, -1).addScaledVector(_tFront, -0.3);
+    this.limb('upperArm', 'forearm', i, 1, _shoulderR, _gripR, L_UPPER_ARM, L_FOREARM, _pole);
+    this.placeHand(i, 1, _gripR, _rifleDir);
+    _pole.copy(_tRight).multiplyScalar(-0.9).addScaledVector(_up, -1);
+    this.limb('upperArm', 'forearm', i, 0, _shoulderL, _gripL, L_UPPER_ARM, L_FOREARM, _pole);
+    this.placeHand(i, 0, _gripL, _rifleDir);
+
+  }
+
+  /**
+   * A pose from the capture: the hips, spine and legs as captured (each body part turned from the bind
+   * pose by its bone's rotation from the T-pose, on this body's own lengths, the planted foot on the
+   * ground), the head and the rifle on the aim and the arms reaching the rifle by IK as before. The dead
+   * fall as captured, arms too, the rifle still in the right hand.
+   */
+  private poseCaptured(s: Soldier, i: number, cap: MocapPose): void {
+    const D = (name: string): Quaternion => cap.delta[boneIndex(name)] as Quaternion;
+    _fall.identity();
+    // The legs first, at the captured hip height, to find how far the planted foot sits off the ground.
+    const legs = (hip: Vector3): number => {
+      let low = Infinity;
+      for (const side of [0, 1] as const) {
+        const L = side === 0 ? 'Left' : 'Right';
+        hipJointOf(hip, D('Hips'), side, _hipJoint);
+        _dir.set(0, -1, 0).applyQuaternion(D(`${L}UpLeg`));
+        _mid.copy(_hipJoint).addScaledVector(_dir, L_THIGH);
+        _dir.set(0, -1, 0).applyQuaternion(D(`${L}Leg`));
+        _end.copy(_mid).addScaledVector(_dir, L_SHIN);
+        low = Math.min(low, _end.y);
+      }
+      return low;
+    };
+    _hip.copy(cap.hips);
+    if (s.alive) _hip.y += ANKLE_Y - legs(_hip);
+    else _hip.y += 0.04; // the capture's floor sits 4 cm under its toes' origin
+    for (const side of [0, 1] as const) {
+      const L = side === 0 ? 'Left' : 'Right';
+      hipJointOf(_hip, D('Hips'), side, _hipJoint);
+      _dir.set(0, -1, 0).applyQuaternion(D(`${L}UpLeg`));
+      _mid.copy(_hipJoint).addScaledVector(_dir, L_THIGH);
+      this.place('thigh', i, side, _hipJoint, _tmpUp.copy(_dir).negate(), _front.set(0, 0, -1).applyQuaternion(D(`${L}UpLeg`)));
+      _dir.set(0, -1, 0).applyQuaternion(D(`${L}Leg`));
+      _end.copy(_mid).addScaledVector(_dir, L_SHIN);
+      this.place('shin', i, side, _mid, _tmpUp.copy(_dir).negate(), _front.set(0, 0, -1).applyQuaternion(D(`${L}Leg`)));
+      this.place('boot', i, side, _end, _bootUp.set(0, 1, 0).applyQuaternion(D(`${L}Foot`)), _bootFront.set(0, 0, -1).applyQuaternion(D(`${L}Foot`)));
+    }
+    this.place('pelvis', i, 0, _hip, _up.set(0, 1, 0).applyQuaternion(D('Hips')), _front.set(0, 0, -1).applyQuaternion(D('Hips')));
+    // Torso from the chest's rotation.
+    _up.set(0, 1, 0).applyQuaternion(D('Spine1'));
+    _right.set(1, 0, 0).applyQuaternion(D('Spine1'));
+    if (!s.alive) {
+      _front.crossVectors(_up, _right).normalize();
+      this.place('torso', i, 0, _hip, _up, _front);
+      _neck.copy(_hip).addScaledVector(_up, SPINE_M + 0.1);
+      _headUp.set(0, 1, 0).applyQuaternion(D('Head'));
+      this.place('head', i, 0, _head.copy(_neck).addScaledVector(_headUp, 0.04), _headUp, _aim.set(0, 0, -1).applyQuaternion(D('Head')));
+      // Arms as captured: the T-pose arm points out to its side, so its segment's +Y points back in.
+      for (const side of [0, 1] as const) {
+        const L = side === 0 ? 'Left' : 'Right';
+        const sx = side === 1 ? 1 : -1;
+        const shoulder = side === 1 ? _shoulderR : _shoulderL;
+        shoulder.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_right, sx * SHOULDER_HALF);
+        let at = shoulder;
+        for (const [seg, bone, len] of [['upperArm', 'Arm', L_UPPER_ARM], ['forearm', 'ForeArm', L_FOREARM], ['hand', 'Hand', 0]] as const) {
+          _tmpUp.set(-sx, 0, 0).applyQuaternion(D(`${L}${bone}`));
+          this.place(seg, i, side, at, _tmpUp, _bootFront.set(0, 0, -1).applyQuaternion(D(`${L}${bone}`)));
+          at = (seg === 'upperArm' ? _mid : _end).copy(at).addScaledVector(_tmpUp, -len);
+        }
+        if (side === 1) _gripR.copy(_end);
+      }
+      // The rifle stays in the right hand, along the forearm.
+      _rifleDir.set(1, 0, 0).applyQuaternion(D('RightForeArm'));
+      _rifleUp.set(0, 1, 0).applyQuaternion(D('RightHand'));
+      _rifleO.copy(_gripR).addScaledVector(_rifleUp, 0.17).addScaledVector(_rifleDir, 0.18);
+      this.place('rifle', i, 0, _rifleO, _rifleUp, _rifleDir);
+      return;
+    }
+    _front.crossVectors(_up, _right).normalize();
+    this.armsAndRifle(s, i, s.stance);
+  }
+
   /** Two segments from `root` toward `target`, bent toward `pole`. Leaves the reached end in `_end`. */
   private limb(upper: Segment, lower: Segment, i: number, side: 0 | 1, root: Vector3, target: Vector3, l1: number, l2: number, pole: Vector3): void {
     solveTwoBone(root, target, l1, l2, pole, _mid, _end);
@@ -258,18 +408,15 @@ export class ActorView {
 
   /** One segment instance: origin, its local +Y and the direction its local −Z (front) should face. */
   private place(seg: Segment, i: number, side: 0 | 1, origin: Vector3, up: Vector3, front: Vector3): void {
-    const mesh = this.meshes.get(seg);
-    if (!mesh) return;
-    _y.copy(up).normalize();
-    _z.copy(front).addScaledVector(_y, -front.dot(_y));
-    if (_z.lengthSq() < 1e-8) _z.set(0, 0, -1).addScaledVector(_y, _y.z);
-    _z.normalize().negate();
-    _x.crossVectors(_y, _z);
-    // No mirroring for the left side: a mirrored instance matrix flips the winding, and instanced
-    // draws cull per mesh, not per instance. Paired segments are built symmetric instead.
-    _m.makeBasis(_x, _y, _z).setPosition(origin);
+    frame(_m, origin, up, front);
     _m.premultiply(_fall).premultiply(_actor);
-    mesh.setMatrixAt(PAIRED[seg] ? i * 2 + side : i, _m);
+    if (seg === 'rifle') {
+      this.rifle.setMatrixAt(i, _m);
+      return;
+    }
+    // The segment's frame is its bone: world × inverse bind takes the bind-pose skin to here.
+    const b = boneOf(seg, side);
+    this.bones.set(i, b, _m.multiply(this.unbind[b] as Matrix4));
   }
 }
 
@@ -290,6 +437,181 @@ export function solveTwoBone(root: Vector3, target: Vector3, l1: number, l2: num
   v.normalize();
   mid.copy(root).addScaledVector(u, l1 * cosA).addScaledVector(v, l1 * sinA);
   end.copy(root).addScaledVector(u, dist);
+}
+
+/** The hip joint of `side` on the pelvis at `hip` turned by `pelvis` (the actor's frame). */
+function hipJointOf(hip: Vector3, pelvis: Quaternion, side: 0 | 1, out: Vector3): Vector3 {
+  return out.set(side === 1 ? 0.1 : -0.1, -0.02, 0).applyQuaternion(pelvis).add(hip);
+}
+
+/**
+ * The next point in a man's captured gait cycle (0…1): on at his ground speed over the cycle's stride
+ * (walk and run strides blended as their poses are), so the feet do not slide. Stopping, he walks on to
+ * the next moment both feet are planted apart (0 or ½) and holds it — a stance, not a frozen mid-stride.
+ */
+function advanceGait(g: number, s: Soldier, dt: number): number {
+  if (!mocapReady()) return g;
+  const v = s.speedMs;
+  if (s.stance === 'crouch') return v < 0.3 ? g : (g + (dt * v) / (clipSpeed('crouch') * clipDuration('crouch'))) % 1;
+  if (v > 0.25) {
+    const run = smooth(1.9, 2.9, v);
+    const stride = (1 - run) * clipSpeed('walk') * clipDuration('walk') + run * clipSpeed('run') * clipDuration('run');
+    return (g + (dt * v) / stride) % 1;
+  }
+  const into = g % 0.5;
+  if (into < 1e-3) return g;
+  const target = g - into + 0.5;
+  const next = g + dt * 0.8;
+  return next >= target ? target % 1 : next;
+}
+
+/**
+ * A segment's frame: origin, its local +Y along `up` and its local −Z toward `front`. No mirroring for the
+ * left side: paired segments are built symmetric, and a mirrored frame would flip the skin's winding.
+ */
+function frame(out: Matrix4, origin: Vector3, up: Vector3, front: Vector3): Matrix4 {
+  _y.copy(up).normalize();
+  _z.copy(front).addScaledVector(_y, -front.dot(_y));
+  if (_z.lengthSq() < 1e-8) _z.set(0, 0, -1).addScaledVector(_y, _y.z);
+  _z.normalize().negate();
+  _x.crossVectors(_y, _z);
+  return out.makeBasis(_x, _y, _z).setPosition(origin);
+}
+
+/**
+ * The bind pose, in which the skin is weighted and from which every bone moves: standing straight, the legs
+ * under the hips, the arms hanging a little out from the sides (an A-pose), each segment in the frame the
+ * posing gives it. Straight limbs make the blend at a bent joint fold the way a sleeve does.
+ */
+function bindFrames(): Matrix4[] {
+  const hip = new Vector3(0, 0.93, 0);
+  const fwd = new Vector3(0, 0, -1);
+  const up = new Vector3(0, 1, 0);
+  return BONES.map(({ seg, side }) => {
+    const sx = side === 1 ? 1 : -1;
+    const m = new Matrix4();
+    const armDir = new Vector3(sx * 0.17, -1, 0).normalize();
+    const shoulder = new Vector3(sx * SHOULDER_HALF, hip.y + SPINE_M - 0.06, 0);
+    const hipJoint = new Vector3(sx * 0.1, hip.y - 0.02, 0);
+    const down = new Vector3(0, -1, 0);
+    switch (seg) {
+      case 'pelvis':
+      case 'torso':
+        return frame(m, hip, up, fwd);
+      case 'head':
+        return frame(m, new Vector3(0, hip.y + SPINE_M + 0.14, 0), up, fwd);
+      case 'upperArm':
+        return frame(m, shoulder, armDir.clone().negate(), fwd);
+      case 'forearm':
+        return frame(m, shoulder.clone().addScaledVector(armDir, L_UPPER_ARM), armDir.clone().negate(), fwd);
+      case 'hand':
+        return frame(m, shoulder.clone().addScaledVector(armDir, L_UPPER_ARM + L_FOREARM), armDir.clone().negate(), fwd);
+      case 'thigh':
+        return frame(m, hipJoint, up, fwd);
+      case 'shin':
+        return frame(m, hipJoint.clone().addScaledVector(down, L_THIGH), up, fwd);
+      case 'boot':
+        return frame(m, hipJoint.clone().addScaledVector(down, L_THIGH + L_SHIN), up, fwd);
+    }
+  });
+}
+
+const smooth = (a: number, b: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * How much of a vertex of `bone` (at `p` in its segment's frame) goes with its neighbours: half at the
+ * joint, fading over a few centimetres either side, so the skin round a knee, an elbow, a wrist, the hips,
+ * the neck and the shoulders bends with both bones instead of two capsules sliding through each other.
+ */
+function shares(bone: number, p: Vector3): [number, number][] {
+  const { seg, side } = BONES[bone] as (typeof BONES)[number];
+  const y = p.y;
+  const parent = (BONES[bone] as (typeof BONES)[number]).parent;
+  const child = BONES.findIndex((b) => b.parent === bone && PAIRED[b.seg] === PAIRED[seg]);
+  switch (seg) {
+    case 'pelvis':
+      return [[boneOf('torso', 0), 0.5 * smooth(0, 0.12, y)]];
+    case 'torso': {
+      const out: [number, number][] = [
+        [parent, 0.5 * (1 - smooth(0.02, 0.15, y))],
+        [boneOf('head', 0), 0.5 * smooth(SPINE_M - 0.05, SPINE_M + 0.05, y)],
+      ];
+      // The shoulder caps go with the arms.
+      for (const s of [0, 1] as const) {
+        const d = Math.hypot(p.x - (s === 1 ? SHOULDER_HALF : -SHOULDER_HALF), y - (SPINE_M - 0.06), p.z);
+        out.push([boneOf('upperArm', s), 0.45 * (1 - smooth(0.04, 0.11, d))]);
+      }
+      return out;
+    }
+    case 'head':
+      return [[parent, 0.5 * (1 - smooth(-0.15, -0.06, y))]];
+    case 'upperArm':
+      return [
+        [parent, 0.5 * smooth(-0.1, 0, y)],
+        [child, 0.5 * smooth(-L_UPPER_ARM + 0.07, -L_UPPER_ARM, y)],
+      ];
+    case 'forearm':
+      return [
+        [parent, 0.5 * smooth(-0.07, 0, y)],
+        [child, 0.5 * smooth(-L_FOREARM + 0.04, -L_FOREARM, y)],
+      ];
+    case 'hand':
+      return [[parent, 0.5 * smooth(-0.04, 0, y)]];
+    case 'thigh':
+      return [
+        [parent, 0.5 * smooth(-0.12, 0, y)],
+        [child, 0.5 * smooth(-L_THIGH + 0.08, -L_THIGH, y)],
+      ];
+    case 'shin':
+      return [
+        [parent, 0.5 * smooth(-0.08, 0, y)],
+        [child, 0.5 * smooth(-L_SHIN + 0.06, -L_SHIN, y)],
+      ];
+    case 'boot':
+      // The boot's shaft above the ankle laces round the shin.
+      return [[parent, 0.6 * smooth(0.02, 0.12, y)]];
+  }
+  void side;
+}
+
+/** Every segment in the bind pose as one skin: up to four bones and weights per vertex (skinning.ts). */
+function skinnedBody(geos: Record<Segment, BufferGeometry>, bind: readonly Matrix4[]): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+  const idx: number[][] = [];
+  const wgt: number[][] = [];
+  const v = new Vector3();
+  BONES.forEach(({ seg }, bone) => {
+    const g = (geos[seg] as BufferGeometry).clone();
+    const pos = g.getAttribute('position');
+    const bi = new Float32Array(pos.count * 4);
+    const bw = new Float32Array(pos.count * 4);
+    for (let i = 0; i < pos.count; i++) {
+      v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const others = shares(bone, v)
+        .filter(([b, w]) => b >= 0 && w > 1e-4)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+      const rest = Math.max(0, 1 - others.reduce((a, [, w]) => a + w, 0));
+      const list: [number, number][] = [[bone, rest], ...others];
+      while (list.length < 4) list.push([bone, 0]);
+      const sum = list.reduce((a, [, w]) => a + w, 0) || 1;
+      list.forEach(([b, w], k) => {
+        bi[i * 4 + k] = b;
+        bw[i * 4 + k] = w / sum;
+      });
+    }
+    g.applyMatrix4(bind[bone] as Matrix4);
+    parts.push(g);
+    idx.push(Array.from(bi));
+    wgt.push(Array.from(bw));
+  });
+  const out = joined(parts, 'soldier body');
+  out.setAttribute('skinIdx', new BufferAttribute(new Float32Array(idx.flat()), 4));
+  out.setAttribute('skinWgt', new BufferAttribute(new Float32Array(wgt.flat()), 4));
+  return out;
 }
 
 // ------------------------------------------------------------------ material
