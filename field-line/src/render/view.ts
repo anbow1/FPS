@@ -1,5 +1,6 @@
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadScanModels } from './scanModels.ts';
+import { loadHandMesh } from './handMesh.ts';
 import { loadMocap } from './mocap.ts';
 import { type HdriSetting, loadHdri } from './hdri.ts';
 import { Object3D, Vector3 } from 'three/webgpu';
@@ -104,7 +105,7 @@ export class GameView {
     stage.camera.layers.enable(VIEWMODEL_LAYER);
     // The photographed sets are decoded before any material asks for one (photoTextures.ts).
     await progress('Loading textures', 0.1);
-    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap()]);
+    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh()]);
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';
     CITY.lamps = map.id === 'city';

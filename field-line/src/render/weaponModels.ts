@@ -1,8 +1,9 @@
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { attribute, bumpMap, float, mix, mx_noise_float, positionGeometry, vec3 } from 'three/tsl';
 import {
   BoxGeometry,
+  BufferAttribute,
   type BufferGeometry,
-  CapsuleGeometry,
   CylinderGeometry,
   DoubleSide,
   ExtrudeGeometry,
@@ -18,7 +19,10 @@ import {
   SphereGeometry,
   TorusGeometry,
   Vector2,
+  Vector3,
 } from 'three/webgpu';
+import { finish, polymerMaterial, steelMaterial } from './gunkit.ts';
+import { handData, posedHandGeometry } from './handMesh.ts';
 
 // First-person weapon and hand models in metres, facing −Z, with the sight
 // axis on the local origin's Y = 0 line so aiming down sights just moves the
@@ -36,11 +40,12 @@ import {
 // steel only where it shows, brass on the grenade spoon.
 
 export const VM_MATERIALS = {
-  // Double-sided: optic and scope tubes are open cylinders you look straight through.
-  parkerised: new MeshStandardNodeMaterial({ name: 'parkerised', color: 0x3c3c3e, roughness: 0.62, metalness: 0, side: DoubleSide }),
+  // Double-sided: optic and scope tubes are open cylinders you look straight through. Both finishes wear
+  // through on the bevels (gunkit.ts): phosphate to grey steel, hard anodising to bright aluminium.
+  parkerised: steelMaterial('parkerised', [0.045, 0.045, 0.048], 0.9, 0.62, DoubleSide),
   // Hard-anodised aluminium (receivers, handguard): a touch lighter and smoother than phosphate.
-  anodised: new MeshStandardNodeMaterial({ name: 'anodised', color: 0x343538, roughness: 0.48, metalness: 0, side: DoubleSide }),
-  polymer: new MeshStandardNodeMaterial({ name: 'polymer', color: 0x2b2b2d, roughness: 0.75, metalness: 0 }),
+  anodised: steelMaterial('anodised', [0.038, 0.039, 0.043], 0.7, 0.48, DoubleSide),
+  polymer: polymerMaterial('polymer', [0.024, 0.024, 0.026]),
   rubber: new MeshStandardNodeMaterial({ name: 'rubber', color: 0x1f1f21, roughness: 0.92, metalness: 0 }),
   cavity: new MeshStandardNodeMaterial({ name: 'cavity', color: 0x0c0c0d, roughness: 0.9, metalness: 0 }),
   steel: new MeshStandardNodeMaterial({ name: 'steel', color: 0xc6c6c8, roughness: 0.35, metalness: 1 }),
@@ -55,10 +60,15 @@ export const VM_MATERIALS = {
 
 // ------------------------------------------------------------------ geometry helpers
 
+/** Parts merged for one material, each non-indexed with position, normal, uv and `edge` (0 where it has none). */
 function merged(parts: BufferGeometry[]): BufferGeometry {
   const clean = parts.map((g) => {
     const n = g.index ? g.toNonIndexed() : g;
-    for (const key of Object.keys(n.attributes)) if (key !== 'position' && key !== 'normal' && key !== 'uv') n.deleteAttribute(key);
+    const count = n.getAttribute('position').count;
+    if (!n.getAttribute('uv')) n.setAttribute('uv', new BufferAttribute(new Float32Array(count * 2), 2));
+    if (!n.getAttribute('edge')) n.setAttribute('edge', new BufferAttribute(new Float32Array(count), 1));
+    for (const key of Object.keys(n.attributes)) if (!['position', 'normal', 'uv', 'edge'].includes(key)) n.deleteAttribute(key);
+    n.clearGroups();
     return n;
   });
   const g = mergeGeometries(clean, false);
@@ -67,6 +77,8 @@ function merged(parts: BufferGeometry[]): BufferGeometry {
 }
 
 function mesh(g: BufferGeometry, m: Material, name: string): Mesh {
+  // The worn finishes read `edge` (gunkit.ts); a part built without bevels has none.
+  if (!g.getAttribute('edge')) g.setAttribute('edge', new BufferAttribute(new Float32Array(g.getAttribute('position').count), 1));
   const out = new Mesh(g, m);
   out.name = name;
   out.castShadow = false; // the player's own weapon casts no shadow into the world view
@@ -85,7 +97,9 @@ function profile(points: readonly [number, number][], widthM: number, bevelM = 0
   const shape = new Shape(points.map(([z, y]) => new Vector2(z, y)));
   for (const h of holes) shape.holes.push(new Path(h.map(([z, y]) => new Vector2(z, y))));
   const depth = Math.max(1e-4, widthM - 2 * bevelM);
-  const g = new ExtrudeGeometry(shape, { depth, bevelEnabled: bevelM > 0, bevelThickness: bevelM, bevelSize: bevelM, bevelSegments: 1, curveSegments: 4 });
+  // Two bevel steps with smooth normals across them: a rounded edge that carries a line of light, and the
+  // `edge` attribute where the finish wears through (gunkit.ts).
+  const g = finish(new ExtrudeGeometry(shape, { depth, bevelEnabled: bevelM > 0, bevelThickness: bevelM, bevelSize: bevelM, bevelSegments: 2, curveSegments: 6 }));
   g.translate(0, 0, -depth / 2);
   // Shape x → gun z, extrusion → gun x.
   g.rotateY(-Math.PI / 2);
@@ -576,38 +590,72 @@ export function buildPistol(): PistolModel {
 
 // ------------------------------------------------------------------ hands and kit
 
+/** The palm's middle in the hand mesh's frame (wrist at the origin): this builder's origin. */
+const PALM_IN_WRIST = new Vector3(0, -0.01, -0.048);
+const GLOVE_THICKNESS_M = 0.0016;
+let gloveMaterial: MeshPhysicalNodeMaterial | null = null;
+
 /**
- * A gloved hand closed round a grip, and its sleeve. Palm at the origin, fingers forward (−Z) and curled
- * down (−Y) round an axis along X, the thumb on the `side` (+1 right hand, −1 left), the forearm back (+Z).
+ * Tactical gloves: synthetic fabric over the back and fingers, leather on the palm and in a pad over the
+ * knuckles (the `leather` attribute), the fabric's weave and the leather's grain in a fine bump.
+ */
+function gloveSkin(): MeshPhysicalNodeMaterial {
+  if (gloveMaterial) return gloveMaterial;
+  const m = new MeshPhysicalNodeMaterial({ name: 'glove', metalness: 0, sheenRoughness: 0.7 });
+  const leather = attribute('leather', 'float');
+  const n = mx_noise_float(positionGeometry.mul(60)).mul(0.08).add(1);
+  const fabric = vec3(0.046, 0.04, 0.031).mul(n);
+  const hide = vec3(0.026, 0.021, 0.017).mul(n);
+  m.colorNode = mix(fabric, hide, leather);
+  m.roughnessNode = mix(float(0.88), float(0.58), leather);
+  m.sheenNode = mix(fabric.mul(1.6), hide.mul(0.8), leather);
+  m.normalNode = bumpMap(mx_noise_float(positionGeometry.mul(mix(float(2600), float(900), leather))).mul(0.00008));
+  gloveMaterial = m;
+  return m;
+}
+
+/**
+ * A gloved hand closed round a grip, and its sleeve: the real hand (handMesh.ts — MakeHuman's), posed
+ * round a grip ~35 mm across and gloved. Palm at the origin, fingers forward (−Z) curled down (−Y), the
+ * forearm back (+Z); `side` +1 the right hand, −1 the left.
  */
 export function buildHand(side: 1 | -1 = 1): Group {
   const g = new Group();
   const P = VM_MATERIALS;
-  const palm = merged([new BoxGeometry(0.078, 0.03, 0.09).translate(0, 0, 0), new SphereGeometry(0.04, 12, 8).scale(1, 0.4, 1.1).translate(0, 0.004, 0.005)]);
-  const fingers: BufferGeometry[] = [];
-  const lengths = [0.04, 0.045, 0.043, 0.035];
-  lengths.forEach((len, i) => {
-    const x = -0.028 + i * 0.0187;
-    // Three phalanges curling down by ~70° each: the hand closes on something ~35 mm across.
-    let py = 0;
-    let pz = -0.045;
-    let ang = 0.25;
-    for (const [k, frac] of [0.42, 0.33, 0.25].entries()) {
-      const segLen = len * frac * 1.6;
-      const r = 0.0095 - k * 0.0009;
-      const seg = new CapsuleGeometry(r, segLen, 3, 8).rotateX(Math.PI / 2 - ang).translate(x, py - Math.sin(ang) * segLen * 0.5, pz - Math.cos(ang) * segLen * 0.5);
-      fingers.push(seg);
-      py -= Math.sin(ang) * segLen;
-      pz -= Math.cos(ang) * segLen;
-      ang += 1.15;
+  const rest = handData(side).geometry;
+  const pose = side === 1 ? { curl: [0.5, 0.86, 0.9, 0.92] as [number, number, number, number], thumb: 0.8, spread: 0.05 } : { curl: [0.62, 0.68, 0.72, 0.76] as [number, number, number, number], thumb: 0.6, spread: 0.1 };
+  const hand = posedHandGeometry(side, pose);
+  const pos = hand.getAttribute('position');
+  const nrm = hand.getAttribute('normal');
+  const rPos = rest.getAttribute('position');
+  const rNrm = rest.getAttribute('normal');
+  const idx = hand.getAttribute('skinIndex');
+  const wgt = hand.getAttribute('skinWeight');
+  const leather = new Float32Array(pos.count);
+  for (let v = 0; v < pos.count; v++) {
+    // Leather over the palm (facing down in the rest pose, off the fingers), and a pad over the knuckles.
+    let fingers = 0;
+    for (let k = 0; k < 4; k++) if (idx.getComponent(v, k) >= 6) fingers += wgt.getComponent(v, k);
+    const ny = rNrm.getY(v);
+    const z = rPos.getZ(v);
+    const palm = Math.min(1, Math.max(0, (-ny - 0.35) / 0.3)) * (1 - fingers) * (z < 0.02 ? 1 : 0);
+    const knuckles = Math.min(1, Math.max(0, (ny - 0.5) / 0.3)) * Math.min(1, Math.max(0, 1 - Math.abs(z + 0.088) / 0.018));
+    leather[v] = Math.max(palm, knuckles);
+    // The glove stands off the skin.
+    pos.setXYZ(v, pos.getX(v) + nrm.getX(v) * GLOVE_THICKNESS_M - PALM_IN_WRIST.x, pos.getY(v) + nrm.getY(v) * GLOVE_THICKNESS_M - PALM_IN_WRIST.y, pos.getZ(v) + nrm.getZ(v) * GLOVE_THICKNESS_M - PALM_IN_WRIST.z);
+  }
+  hand.setAttribute('leather', new BufferAttribute(leather, 1));
+  // Only the hand and the wrist: the forearm goes on under the cuff and sleeve.
+  const index = hand.getIndex();
+  if (index) {
+    const kept: number[] = [];
+    for (let t = 0; t < index.count; t += 3) {
+      const a = index.getX(t);
+      if (pos.getZ(a) < 0.11) kept.push(a, index.getX(t + 1), index.getX(t + 2));
     }
-  });
-  // Thumb: from the heel of the palm, along the grip on the near side.
-  fingers.push(new CapsuleGeometry(0.011, 0.04, 3, 8).rotateX(Math.PI / 2).rotateY(side * 0.5).translate(side * 0.042, -0.012, -0.03));
-  fingers.push(new CapsuleGeometry(0.0095, 0.03, 3, 8).rotateX(Math.PI / 2 - 0.5).rotateY(side * 0.2).translate(side * 0.05, -0.022, -0.065));
-  g.add(mesh(merged([palm, ...fingers]), P.glove, 'glove'));
-  // Leather palm and knuckle pad.
-  g.add(mesh(merged([box(0.07, 0.006, 0.07, 0, -0.016, 0), box(0.07, 0.012, 0.028, 0, 0.017, -0.035)]), P.gloveLeather, 'glove pads'));
+    hand.setIndex(kept);
+  }
+  g.add(mesh(hand, gloveSkin(), 'glove'));
   // Cuff and sleeve: a wrinkled tube widening up the forearm.
   const cuff = lathe(
     [
