@@ -157,6 +157,7 @@ export function facadeTrim(boxes: readonly MapBox[], tiles: TrimTiles, playHalfM
     // Buildings that close the map: only the face toward the play area gets the small detail.
     const edge = Math.max(Math.abs(b.center.x), Math.abs(b.center.z)) > playHalfM;
     const wallTile = tiles.wallM(b.look);
+    const style = windowStyle(b, storeys);
     const walls = parapets.get(b.look) ?? [];
     parapets.set(b.look, walls);
     roofClutter(b, top, walls, plant, wallTile);
@@ -195,7 +196,14 @@ export function facadeTrim(boxes: readonly MapBox[], tiles: TrimTiles, playHalfM
         for (let k = 1; k < storeys; k++) {
           const y = k * storey;
           details.push(frameBox(f, u, y + 0.28 * storey, 0.04, paneW + 0.14, 0.07, 0.12, tiles.stoneM));
-          details.push(frameBox(f, u, y + 0.825 * storey, 0.025, paneW + 0.1, 0.1, 0.07, tiles.stoneM));
+          if (style.hoods) details.push(frameBox(f, u, y + 0.825 * storey, 0.025, paneW + 0.1, 0.1, 0.07, tiles.stoneM));
+          if (style.balconies !== 'none' && hash(fac.seed + 3, faceIndex * 31 + k, j) < style.balconyShare) {
+            balcony(f, u, y, paneW + 0.7, style.balconies, stone, plant, tiles.stoneM);
+          } else if (hash(fac.seed + 5, faceIndex * 31 + k, j) < style.acShare) {
+            // A window air conditioner hung under the sill, off to one side.
+            const side = hash(fac.seed + 6, k, j) < 0.5 ? -1 : 1;
+            plant.push(frameBox(f, u + side * paneW * 0.22, y + 0.28 * storey - 0.36, 0.17, 0.72, 0.48, 0.34, 1));
+          }
         }
         // Awnings over a share of the shops (not on the map's closing wall).
         if (!edge && hash(fac.seed, faceIndex, j) < 0.42) awnings.push(awning(f, u, storey, bay, hash(fac.seed + 7, faceIndex, j)));
@@ -209,6 +217,55 @@ export function facadeTrim(boxes: readonly MapBox[], tiles: TrimTiles, playHalfM
     if (g) walls.set(look, g);
   }
   return { stone: join(stone), details: join(details), plinth: join(plinth), parapets: walls, awnings: join(awnings), roofPlant: join(plant) };
+}
+
+interface WindowStyle {
+  /** Stone hoods over the upper windows (the older, dressed façades). */
+  hoods: boolean;
+  /** Balconies: concrete-walled slabs, iron railings, or none. */
+  balconies: 'none' | 'solid' | 'iron';
+  /** Share of the upper windows with a balcony, and of the rest with an air conditioner hung below. */
+  balconyShare: number;
+  acShare: number;
+}
+
+/**
+ * How one building dresses its windows, from its seed, so neighbours differ in relief as well as in paint
+ * (materials.ts `buildingVariety`): one street of identical sills and hoods is the tell of a generated city.
+ * Older brick and plaster fronts keep their hoods and get iron balconies; concrete blocks go plain, with
+ * walled balconies; window air conditioners on the rest, more on the plainer ones.
+ */
+function windowStyle(b: MapBox, storeys: number): WindowStyle {
+  const seed = b.facade?.seed ?? 0;
+  const r = hash(seed, 91, 3);
+  const old = b.look === 'brick' || b.look === 'brickDark' || b.look === 'plaster' || b.look === 'stone';
+  const hoods = old ? r > 0.2 : r > 0.75;
+  const hasBalconies = storeys >= 3 && hash(seed, 92, 5) < 0.3;
+  const balconies = !hasBalconies ? 'none' : old && hash(seed, 93, 7) < 0.7 ? 'iron' : 'solid';
+  // Shares held down for phones: the city has ~8000 windows, and every balcony is a handful of boxes.
+  return { hoods, balconies, balconyShare: hasBalconies ? 0.2 + hash(seed, 94, 9) * 0.25 : 0, acShare: hoods ? 0.025 : 0.06 };
+}
+
+/**
+ * A balcony at storey floor `y` in front of the window at `u`: a slab that throws its shadow down the
+ * wall, and either a concrete parapet on three sides or an iron railing (top rail and bars).
+ */
+function balcony(f: Frame, u: number, y: number, width: number, kind: 'solid' | 'iron', stone: BufferGeometry[], plant: BufferGeometry[], tileM: number): void {
+  const depth = 0.95;
+  stone.push(frameBox(f, u, y - 0.08, depth / 2, width, 0.16, depth, tileM));
+  if (kind === 'solid') {
+    stone.push(frameBox(f, u, y + 0.5, depth - 0.05, width, 0.84, 0.1, tileM));
+    for (const s of [-1, 1]) stone.push(frameBox(f, u + s * (width / 2 - 0.05), y + 0.5, (depth - 0.1) / 2, 0.1, 0.84, depth - 0.1, tileM));
+    return;
+  }
+  const rail = 0.04;
+  plant.push(frameBox(f, u, y + 1.0, depth - 0.03, width, rail, rail, 1));
+  for (const s of [-1, 1]) plant.push(frameBox(f, u + s * (width / 2 - 0.02), y + 1.0, depth / 2, rail, rail, depth, 1));
+  // Posts at the corners and every ~0.55 m, a bottom rail: read as a railing from the street at a fraction of
+  // the boxes of real balusters.
+  plant.push(frameBox(f, u, y + 0.1, depth - 0.03, width, rail * 0.75, rail * 0.75, 1));
+  const posts = Math.max(2, Math.round(width / 0.55));
+  for (let i = 0; i <= posts; i++) plant.push(frameBox(f, u - width / 2 + 0.02 + (i * (width - 0.04)) / posts, y + 0.5, depth - 0.03, 0.025, 1.0, 0.025, 1));
 }
 
 /**
