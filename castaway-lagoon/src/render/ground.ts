@@ -178,7 +178,11 @@ function splatAt(x: number, z: number, y: number, ny: number, isNear: boolean): 
   const d = shoreDistance(x, z);
   const bw = beachWidth(x, z);
   const n = fbm2(x * 0.08, z * 0.08, 3, 51);
-  const steep = 1 - smooth(0.62, 0.8, ny);
+  // Inland, a tropical slope is grown over up to ~60°: only true cliffs (and the beach's steep banks)
+  // show bare rock. With bare rock from 37° on, the bay's hillsides read as brown scree between the trees.
+  const inlandM = Math.max(0, d - bw);
+  const grown = smooth(1, 5, inlandM);
+  const steep = 1 - smooth(0.62 - 0.2 * grown, 0.8 - 0.2 * grown, ny);
   const cliff = cliffiness(x, z);
   const far = Math.hypot(x - LAGOON_CENTRE.x, z - LAGOON_CENTRE.z) > 260;
   // Sand lives near sea level: islets and the volcano rise out of it.
@@ -237,7 +241,7 @@ function canopyAt(x: number, z: number, y: number, ny: number): number {
   const inland = shoreDistance(x, z) - beachWidth(x, z);
   const hills = smooth(5, 18, inland) * smooth(3, 10, y);
   const far = smooth(180, 300, r) * smooth(3, 10, y);
-  const bare = smooth(260, 380, y) + (1 - smooth(0.55, 0.75, ny));
+  const bare = smooth(260, 380, y) + (1 - smooth(0.35, 0.55, ny));
   return Math.max(0, Math.min(1, Math.max(hills, far) - bare));
 }
 
@@ -307,9 +311,10 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   // Unbroken canopy on the hills: clumped dark greens with sunlit crowns.
   const crowns = texture(noise, p.xz.div(14)).g.mul(0.6).add(texture(noise, p.xz.div(5)).b.mul(0.4));
   const canopyColour = mix(vec3(0.018, 0.04, 0.012), vec3(0.07, 0.13, 0.03), crowns).mul(float(0.8).add(macro.mul(0.4)));
-  // Only from afar: this paint stands for tree tops, and up close, where the real trees stand on the hill,
-  // it turned the jungle floor under them green (the litter's leaves tinted as crowns).
-  const canopyFar = smoothstep(45, 110, length(p.sub(cameraPosition)));
+  // Only from afar: this paint stands for tree tops and dense understory, and up close, where the real
+  // trees stand on the hill, it turned the jungle floor under them green (the litter's leaves tinted as
+  // crowns). Past ~45 m the floor between trunks is hidden by shrubs in a real jungle: green, not litter.
+  const canopyFar = smoothstep(18, 45, length(p.sub(cameraPosition)));
   albedo = mix(albedo, canopyColour, extra.z.mul(canopyFar));
   // Algae tint and darkening on the lagoon floor.
   const under = float(1).sub(smoothstep(-1.5, 0.0, p.y));

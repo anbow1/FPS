@@ -1,10 +1,11 @@
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
-import { cameraPosition, exp, float, fog, positionWorld } from 'three/tsl';
+import { cameraPosition, exp, float, fog, positionWorld, smoothstep, texture } from 'three/tsl';
 import { DirectionalLight, PerspectiveCamera, PMREMGenerator, type RenderTarget, Scene, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { lightColour, type LinearRgb, preExposureFor } from './colour.ts';
-import { GRAPHICS } from '../config.ts';
+import { GRAPHICS, WATER_LEVEL_M } from '../config.ts';
 import type { Environment } from '../game/environment.ts';
 import { buildSkyDome, hazeColour } from './sky.ts';
+import { noiseMap } from './textures.ts';
 import { U } from './uniforms.ts';
 
 // Turns the logic's physical daylight (lux, kelvin) into lights, sky uniforms,
@@ -53,7 +54,9 @@ export class LagoonLighting {
     const probeDome = buildSkyDome(false);
     probeDome.scale.setScalar(50);
     this.probeScene.add(probeDome);
-    scene.fogNode = fog(hazeColour(positionWorld.sub(cameraPosition).normalize()), heightFogFactor());
+    const haze = heightFogFactor();
+    const mistK = mistLayerFactor();
+    scene.fogNode = fog(hazeColour(positionWorld.sub(cameraPosition).normalize()), float(1).sub(float(1).sub(haze).mul(float(1).sub(mistK))));
   }
 
   /** Once per frame, before rendering. */
@@ -124,10 +127,13 @@ export class LagoonLighting {
     U.wetness.value = env.wetness;
     U.wind.value.set(wind.x, wind.z);
 
-    // Haze: humid tropical air, a low morning mist, and rain curtains.
+    // Haze: humid tropical air, a low morning mist, and rain curtains. The morning mist is mostly a thin
+    // layer lying on the water (and in the hollows), wisps drifting with the wind, with the hills clear
+    // above it — not the whole air thickened, which only greyed the view.
     const mist = smooth(6.3, 7.2, env.hour) * (1 - smooth(8.3, 10, env.hour));
-    U.fogDensity.value = w.fogDensityPerM * (1 + mist * 5);
-    U.fogFalloff.value = 0.012 + mist * 0.05;
+    U.fogDensity.value = w.fogDensityPerM * (1 + mist * 2);
+    U.fogFalloff.value = 0.012 + mist * 0.02;
+    U.waterMist.value = Math.max(mist, env.wetness * 0.45 * (1 - w.rainRate));
 
     this.updateProbe(env, dtSeconds);
     this.sky.position.copy(camera.position);
@@ -202,6 +208,31 @@ function heightFogFactor() {
   const flat = dy.abs().lessThan(0.01);
   const integral = flat.select(e0, e0.sub(e1).div(falloff.mul(dy)));
   return float(1).sub(exp(density.mul(d).mul(integral).negate()));
+}
+
+/** Density at the water (1/m) and scale height (m) of the mist layer, at full strength. */
+const MIST_DENSITY = 0.035;
+const MIST_HEIGHT_M = 2.2;
+
+/**
+ * The mist on the water: a second exponential layer, a couple of metres thick, integrated along the view
+ * ray like the haze, its density broken into drifting patches by noise at the far end of the ray (where
+ * most of a long ray's mist is). After the river valley in "Sakura River" (a three.js scene): mist lying
+ * on the water is what makes a dawn read as cool and damp.
+ */
+function mistLayerFactor() {
+  const f = 1 / MIST_HEIGHT_M;
+  const d = positionWorld.sub(cameraPosition).length();
+  const h0 = cameraPosition.y.sub(WATER_LEVEL_M).max(0);
+  const h1 = positionWorld.y.sub(WATER_LEVEL_M).max(0);
+  const dy = h1.sub(h0);
+  const e0 = exp(h0.mul(-f));
+  const e1 = exp(h1.mul(-f));
+  const integral = dy.abs().lessThan(0.01).select(e0, e0.sub(e1).div(dy.mul(f)));
+  const drift = U.wind.mul(U.time.mul(0.012));
+  const n = texture(noiseMap(), positionWorld.xz.div(60).sub(drift)).r.mul(0.6).add(texture(noiseMap(), positionWorld.xz.div(17).sub(drift.mul(1.7))).g.mul(0.4));
+  const patches = smoothstep(0.25, 0.75, n).mul(0.85).add(0.15);
+  return float(1).sub(exp(U.waterMist.mul(MIST_DENSITY).mul(patches).mul(d).mul(integral).negate()));
 }
 
 function smooth(e0: number, e1: number, x: number): number {

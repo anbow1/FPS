@@ -33,6 +33,7 @@ import { Rain } from './rain.ts';
 import { roomDaylight } from './roomInteriors.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 import { WeaponLight } from './weaponLight.ts';
+import { buildSkyline } from './skyline.ts';
 
 // The render system: reads game state, writes transforms (rules §10 — logic
 // never touches THREE). Owns the stage, lighting, exposure and every visual
@@ -132,6 +133,8 @@ export class GameView {
     if (furniture) stage.scene.add(furniture);
     // The city in the rain: standing water, rings and reflections on the street, and the rain itself.
     if (map.id === 'city') {
+      // The city beyond the map: a skyline of towers to the horizon (skyline.ts).
+      stage.scene.add(buildSkyline());
       stage.scene.add(buildWetStreet(map, this.settings.quality));
       this.rain = new Rain(map, this.settings.quality);
       const w = WORLD_WIND.city;

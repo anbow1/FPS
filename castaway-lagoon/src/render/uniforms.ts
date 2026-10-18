@@ -38,6 +38,8 @@ export const U = {
   gust: uniform(0), // 0..1 slow gust envelope
   fogDensity: uniform(0.001),
   fogFalloff: uniform(0.012),
+  /** 0…1: the thin mist lying on the water at dawn and after rain (lighting.ts `mistLayerFactor`). */
+  waterMist: uniform(0),
   preExposure: uniform(1),
   waveScale: uniform(1),
   /** 1 while the camera is below the water surface (stage post pass, water underside). */
