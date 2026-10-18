@@ -1,8 +1,8 @@
-import { attribute, float, mix, mx_noise_float, positionLocal, positionWorld, sin, smoothstep, texture, vec3 } from 'three/tsl';
+import { attribute, float, mix, mx_noise_float, normalMap, positionLocal, positionWorld, sin, smoothstep, texture, vec3 } from 'three/tsl';
 import { DoubleSide, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { tileFbm, tileFbmXY, tileNoise, tileNoiseXY } from '../core/noise.ts';
 import { makeTextureSet, type Texel, type TexelSampler, type TextureSet } from './textureSet.ts';
-import * as F from './foliagePatterns.ts';
+import { type PhotoSet, photoSet } from './photoTextures.ts';
 import { hash2, hex } from './patterns.ts';
 import { U } from './uniforms.ts';
 
@@ -215,8 +215,8 @@ function standard(ts: TextureSet, name: string, wetDarken = 0.6): MeshStandardNo
  * high-tide line (sea level y = 0 plus the swash), and a crust of barnacles and dried salt rings them
  * where the waves break.
  */
-function pileMaterial(ts: TextureSet): MeshStandardNodeMaterial {
-  const m = standard(ts, 'dock pile');
+function pileMaterial(P: PhotoSet): MeshStandardNodeMaterial {
+  const m = photoStandard(P, 'dock pile');
   const y = positionWorld.y;
   // A ragged line: the swash reaches higher in places.
   const line = float(0.32).add(mx_noise_float(positionWorld.mul(vec3(3, 0, 3))).mul(0.08));
@@ -224,12 +224,21 @@ function pileMaterial(ts: TextureSet): MeshStandardNodeMaterial {
   const algae = smoothstep(0.05, -0.2, y);
   const spots = smoothstep(0.35, 0.55, mx_noise_float(positionWorld.mul(vec3(55, 70, 55))));
   const crust = smoothstep(line.add(0.02), line.sub(0.08), y).mul(smoothstep(-0.35, -0.05, y)).mul(spots);
-  const bark = texture(ts.map).rgb;
+  const bark = texture(P.map).rgb;
   let c = mix(bark, bark.mul(vec3(0.32, 0.36, 0.3)), wet);
   c = mix(c, vec3(0.04, 0.06, 0.035), algae.mul(0.7));
   c = mix(c, vec3(0.55, 0.53, 0.48), crust);
   m.colorNode = c.mul(mix(float(1), float(0.6), U.wetness));
-  m.roughnessNode = mix(mix(texture(ts.ormMap).g, float(0.35), wet.mul(float(1).sub(crust))), float(0.3), U.wetness);
+  m.roughnessNode = mix(mix(texture(P.roughnessMap).r, float(0.35), wet.mul(float(1).sub(crust))), float(0.3), U.wetness);
+  return m;
+}
+
+/** A scanned surface (photoTextures.ts) with the same wetting as `standard`. */
+function photoStandard(P: PhotoSet, name: string, wetDarken = 0.6): MeshStandardNodeMaterial {
+  const m = new MeshStandardNodeMaterial({ name, metalness: 0 });
+  m.colorNode = texture(P.map).rgb.mul(mix(float(1), float(wetDarken), U.wetness.mul(outdoor())));
+  m.normalNode = normalMap(texture(P.normalMap));
+  m.roughnessNode = mix(texture(P.roughnessMap).r, float(0.3), U.wetness.mul(outdoor()));
   return m;
 }
 
@@ -270,8 +279,8 @@ export function propMaterials(): PropMaterials {
     planks: standard(tset('board', 256, () => boardWood(0x6f5d48), 3), 'planks'),
     weatheredPlanks: standard(tset('weatheredBoard', 256, () => boardWood(0x6a5a48, 1), 3.5), 'weathered planks'),
     darkWood: standard(tset('darkBoard', 256, () => boardWood(0x4e3c2c), 3), 'dark wood'),
-    logBark: standard(tset('logBark', 256, F.jungleBark, 4), 'log bark'),
-    piles: pileMaterial(tset('logBark', 256, F.jungleBark, 4)),
+    logBark: photoStandard(photoSet('bark006'), 'log bark'),
+    piles: pileMaterial(photoSet('bark006')),
     rustyIron: new MeshStandardNodeMaterial({ name: 'rusty iron', color: 0x3d281c, roughness: 0.85, metalness: 0 }),
     bamboo: standard(tset('bamboo', 256, bamboo, 2), 'bamboo', 0.7),
     tarp: fabricMaterial(tset('canvas', 512, () => canvas(0x5d5e44), 1.5), 'tarp', 0x5d5e44, true),

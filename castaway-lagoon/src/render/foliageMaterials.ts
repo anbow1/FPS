@@ -1,5 +1,6 @@
-import { attribute, cos, float, length, mix, positionLocal, sin, texture, vec3 } from 'three/tsl';
+import { attribute, cos, float, length, mix, normalMap, positionLocal, sin, texture, uv, vec2, vec3 } from 'three/tsl';
 import { BufferAttribute, type BufferGeometry, DoubleSide, MeshSSSNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
+import { photoSet } from './photoTextures.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textureSet.ts';
 import * as F from './foliagePatterns.ts';
 import { U } from './uniforms.ts';
@@ -120,12 +121,30 @@ export function leafMaterial(kind: LeafKind, translucent = true, dead = false): 
 export type BarkKind = 'palm' | 'jungle';
 
 export function barkMaterial(kind: BarkKind): MeshStandardNodeMaterial {
-  const ts = kind === 'palm' ? textureSet('palmBark', 256, F.palmBark, 4, false) : textureSet('jungleBark', 256, F.jungleBark, 4, false);
+  if (kind === 'jungle') return jungleBarkMaterial();
+  const ts = textureSet('palmBark', 256, F.palmBark, 4, false);
   const m = new MeshStandardNodeMaterial({ name: `bark-${kind}`, map: ts.map, normalMap: ts.normalMap });
   m.colorNode = texture(ts.map).rgb.mul(mix(float(1), float(0.6), U.wetness));
   m.roughnessNode = mix(texture(ts.ormMap).g, float(0.35), U.wetness);
   m.metalnessNode = float(0);
   m.aoNode = texture(ts.ormMap).r;
+  m.positionNode = windPosition();
+  return m;
+}
+
+/**
+ * The jungle's broadleaf trunks in a scanned bark (photoTextures.ts): smooth pale bark mottled with lichen,
+ * as rainforest trees have. Twice round the trunk (u runs once round it; trunks are ~1.5–2.5 m round), once
+ * per 1.2 m up it (meshkit `tube`).
+ */
+function jungleBarkMaterial(): MeshStandardNodeMaterial {
+  const P = photoSet('bark007');
+  const st = uv().mul(vec2(2, 1));
+  const m = new MeshStandardNodeMaterial({ name: 'bark-jungle' });
+  m.colorNode = texture(P.map, st).rgb.mul(mix(float(1), float(0.6), U.wetness));
+  m.normalNode = normalMap(texture(P.normalMap, st));
+  m.roughnessNode = mix(texture(P.roughnessMap, st).r, float(0.35), U.wetness);
+  m.metalnessNode = float(0);
   m.positionNode = windPosition();
   return m;
 }

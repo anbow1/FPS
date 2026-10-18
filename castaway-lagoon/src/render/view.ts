@@ -38,6 +38,7 @@ import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 import { CreatureView } from './creatures.ts';
 import { GuerrillaView } from './guerrillas.ts';
 import { buildCamp, type CampView } from './camp.ts';
+import { loadPhotoTextures } from './photoTextures.ts';
 
 // The render system: reads game state once per display frame and writes
 // transforms and uniforms (rules §10 — logic never touches THREE). Owns the
@@ -117,6 +118,9 @@ export class LagoonView {
     const { stage } = this;
     await progress('Starting renderer', 0.04);
     await stage.init();
+    // Scanned textures first: the materials built below read them, and impostors are baked from those.
+    await progress('Loading textures', 0.07);
+    await loadPhotoTextures();
     await progress('Shaping the island', 0.1);
     this.caustics = new Caustics(stage.quality);
     stage.passTimer.name(this.caustics.target, 'water');

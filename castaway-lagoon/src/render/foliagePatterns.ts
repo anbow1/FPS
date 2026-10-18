@@ -1,4 +1,4 @@
-import { tileFbm, tileFbmXY, tileNoise, tileNoiseXY } from '../core/noise.ts';
+import { tileFbm, tileNoise, tileNoiseXY } from '../core/noise.ts';
 import type { Texel, TexelSampler } from './textureSet.ts';
 import { hash2, hex } from './patterns.ts';
 
@@ -232,24 +232,5 @@ export function palmBark(): TexelSampler {
     t.height = groove ? 0.2 : 0.6 + fibre * 0.3 - ring * 0.3;
     t.rough = 0.9;
     t.ao = groove ? 0.55 : 1;
-  };
-}
-
-/** Rainforest bark: smooth, pale grey with lichen blotches and fine vertical cracks. */
-export function jungleBark(): TexelSampler {
-  const c = hex(0x6f685d);
-  const lichen = hex(0x8c9474);
-  const moss = hex(0x415a24);
-  return (u, v, t) => {
-    const n = tileFbmXY(u * 4, v * 2, 4, 2, 4, 51);
-    const crack = Math.abs(((u * 10 + tileFbmXY(u * 2, v * 3, 2, 3, 2, 53) * 3) % 1) - 0.5) < 0.04;
-    const l = tileFbm(u * 6, v * 6, 6, 3, 55);
-    const m = tileFbmXY(u * 3, v * 2, 3, 2, 3, 57);
-    let col = mix(c, lichen, Math.max(0, l - 0.55) * 3);
-    col = mix(col, moss, Math.max(0, m - 0.6) * 3);
-    set(t, col, crack ? 0.6 : 0.85 + n * 0.3);
-    t.height = crack ? 0 : 0.5 + n * 0.5;
-    t.rough = 0.88;
-    t.ao = crack ? 0.6 : 1;
   };
 }
