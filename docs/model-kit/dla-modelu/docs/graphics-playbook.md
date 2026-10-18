@@ -848,6 +848,91 @@ shadows from the muzzle, the beam hanging in the dust.
   housing shroud, sensor grain multiplicative plus a floor scaled by
   1 / exposure (read noise is fixed on the sensor), a flatter colour.
 
+## 6q. Photoscanned models (lagoon and FL `render/scanModels.ts`)
+
+Poly Haven publishes CC0 scanned rocks, stumps, trunks and plants as glTF
+(`api.polyhaven.com/files/<id>` → `gltf` → `1k`, files on `dl.polyhaven.org`).
+They are 12–100 k triangles; a phone wants ~1–2.5 k per instance.
+
+- **Simplify across UV seams.** A scan's UV atlas is hundreds of small islands:
+  every island edge is an attribute seam, and a seam-respecting simplifier
+  stalls (66 k → 54 k). meshoptimizer's `simplifyWithAttributes` with the
+  `Permissive` flag collapses across seams where the UV and normal error stays
+  small (weights ~2 on UV, ~0.3 on normals, error 0.05): 66 k → 1.6 k with the
+  texture still on the right lumps. The scan's normal map carries what the
+  triangles lost. Keep meshes already under the target whole (a fern's
+  leaflets do not survive a cut).
+- **Check the cut against the original** side by side before it goes in (a
+  three.js page loading both, rendered headless): it caught a flipped V.
+- **Normalise for placement**: rocks to a horizontal half-extent of 1 with the
+  base at y = 0 (a placement then scales them in metres and buries a quarter of
+  their height), plants and logs kept in metres. A compact `mesh.bin`
+  (positions, normals, UVs, u16 indices) needs no loader in the game.
+- **Grade a scan to its setting**: an ochre sandstone among pines read as
+  golden lumps; half the saturation at 80 % gain made it granite.
+- **Budget**: 1024 colour and normal, 512 ORM for anything the player walks up
+  to, 512 for stones; ~0.5–0.8 MB of JPEG each. Count instances × triangles:
+  2600 scanned ferns would be millions, so scans go where the player spends
+  time (round the camp) and cards stay on the hills.
+
+## 6r. HDRI environments (FL `render/hdri.ts`)
+
+A photographed environment puts real facades, trees and clouds into car paint
+and windows, and a real ground into the bounce light, where a procedural probe
+had a gradient over a flat grey.
+
+- **Prepare offline**: average the 1k `.hdr` down to 512 × 256 (the probe is
+  blurred anyway; ~0.5 MB each), find the sun (the brightest texel far above
+  the sky's 99th percentile) and **cut the disc out** (clamp to a few times the
+  sky's bright end): the directional light carries the sun, and a second sun
+  in the probe double-lights everything. Record the sun's column and the sky's
+  horizontal irradiance (upper hemisphere, cos-weighted, sun removed).
+- **Turn it** about the vertical so its sun stands under the scene's
+  (three's equirect u = atan2(z, x) / 2π + 0.5); no turn under cloud or at night.
+- **Scale it by one gain** to the preset's calibrated sky illuminance. Not per
+  channel: matching a blue sky's irradiance to a white target turned the grey
+  street orange, and every car's paint and rims with it.
+- **Keep the visible sky procedural** where the sun moves or fog must match it:
+  the HDRI's horizon (another city, another forest) would not be ours.
+- One HDRI per setting and preset (street and woodland × noon, overcast,
+  golden, night); never one with a roof overhead (a covered plaza put a
+  ceiling into every reflection).
+
+## 6s. Bodies that bend, moving as people move (FL `render/skinning.ts`, `render/mocap.ts`)
+
+The rigid-segment soldiers (§6c, §6h) read as dolls at the joints however good
+the kit, and procedural gaits as robots. Two changes, both phone-friendly:
+
+- **Instanced skinning.** Every segment becomes a bone; the body is one mesh in
+  a bind pose (standing, straight limbs, arms in an A), and a vertex near a
+  joint takes both bones, half at the joint fading over a few centimetres
+  either side (knee, elbow, wrist, hips, neck, the shoulder caps going with the
+  arms, a boot's shaft with the shin). Bone matrices (world × inverse bind) sit
+  in a float texture, one row per man, four texels per bone, read in the vertex
+  stage by `instanceIndex` with `textureLoad` (works on the WebGL2 backend
+  too); the material's `positionNode` returns the skinned position and assigns
+  `normalLocal`. The whole squad stays one draw — three's SkinnedMesh would be
+  a draw per man and per shadow cascade. The existing posing code needs only
+  its `place()` to write bone matrices instead of instance matrices.
+- **Motion capture.** The CMU database (free for commercial use; credit it) in
+  the cgspeed BVH conversion, which adds a T-pose as frame 0 of every file.
+  Bake offline (three's BVHLoader in node): retarget every clip onto one
+  skeleton by world rotations relative to the T-pose
+  (`target = source · sourceT⁻¹ · targetT`), resample at 30 fps, store 16-bit
+  quaternions (5–15 kB a clip). Cut gait cycles where the leg and arm poses at
+  the ends match best, strip the forward travel (record it as the clip's
+  speed), cross-fade the seam and start every cycle at the same moment (left
+  foot furthest ahead) so walk and run blend at one phase. Draw stick figures
+  of the baked clips before anything goes in the game.
+- **Apply rotations, not positions**: each body part is turned from the bind
+  pose by its bone's rotation from the T-pose (a half turn about Y between the
+  capture's +Z facing and the game's −Z), on the body's own limb lengths; drop
+  the hips so the planted foot meets the ground. Advance the phase by ground
+  speed over the stride (no foot slide); stopping, walk on to the next moment
+  both feet are planted apart and hold it — a stance, not a frozen mid-step.
+  Arms keep their IK to the rifle and the head its aim; only the dead fall
+  entirely as captured.
+
 ## 6h. Animals and enemies (lagoon `render/creatures.ts`, `render/guerrillas.ts`)
 
 - **The same rigid-segment rig as the soldiers** (§6c), one InstancedMesh per
