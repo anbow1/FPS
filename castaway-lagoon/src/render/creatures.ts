@@ -324,7 +324,7 @@ function tigerGeometry(): Record<string, BufferGeometry> {
     (x: number, y: number, z: number): number =>
       (lineY - 0.04 * Math.sin(z * 22 + x * 3) - y) / 0.05;
   // …rising over the chest to the throat at the front (chest frame: the neck base is at z ≈ −0.5).
-  const throat = (x: number, y: number, z: number): number => Math.max(belly(-0.22)(x, y, z), Math.max(0, (-0.28 - z) / 0.12) * Math.max(0, (0.02 - y) / 0.1));
+  const throat = (x: number, y: number, z: number): number => Math.max(belly(-0.22)(x, y, z), Math.max(0, (-0.28 - z) / 0.12) * Math.max(0, (-0.06 - y) / 0.1) * Math.max(0, 1 - Math.abs(x) / 0.14));
   const chestRings = CHEST.map(([z, rx, ry, yc]) => [z + 0.38, rx, ry, yc - 0.02] as [number, number, number, number]);
   const hipRings = HIPS.map(([z, rx, ry, yc]) => [z - 0.36, rx, ry, yc] as [number, number, number, number]);
   return {
@@ -341,12 +341,16 @@ function tigerGeometry(): Record<string, BufferGeometry> {
     neck: joined([tag(ell(0.16, 0.2, 0.26, 0, 0, -0.1), T.tiger, STRIPE_Z, (_x, y) => (-0.06 - y) / 0.05)], 'tiger neck'),
     head: joined(
       [
-        tag(ell(0.16, 0.145, 0.17, 0, 0, 0), T.tiger, STRIPE_Z),
-        // Cheek ruffs and the white of the muzzle and over the eyes.
-        tag(ell(0.085, 0.085, 0.1, -0.11, -0.04, 0.0), T.tiger, STRIPE_Z, (_x, y) => (0.0 - y) / 0.04),
-        tag(ell(0.085, 0.085, 0.1, 0.11, -0.04, 0.0), T.tiger, STRIPE_Z, (_x, y) => (0.0 - y) / 0.04),
-        tag(ell(0.1, 0.078, 0.12, 0, -0.035, -0.145), T.tigerWhite, PLAIN),
-        tag(ell(0.06, 0.035, 0.03, 0, 0.0, -0.245), T.nose, PLAIN),
+        tag(ell(0.16, 0.14, 0.17, 0, 0, 0), T.tiger, STRIPE_Z),
+        // Cheek ruffs flaring out sideways, white below.
+        tag(ell(0.1, 0.09, 0.1, -0.13, -0.05, 0.0), T.tiger, STRIPE_Z, (_x, y) => (-0.03 - y) / 0.04),
+        tag(ell(0.1, 0.09, 0.1, 0.13, -0.05, 0.0), T.tiger, STRIPE_Z, (_x, y) => (-0.03 - y) / 0.04),
+        // A broad, short muzzle, orange along the bridge of the nose; the white is the whisker pads and the lip
+        // under them — a white ball for a muzzle and a big black nose made a plush toy of it.
+        tag(ell(0.085, 0.07, 0.11, 0, -0.02, -0.14), T.tiger, STRIPE_Z, (_x, y) => (-0.035 - y) / 0.025),
+        tag(ell(0.045, 0.036, 0.045, -0.036, -0.055, -0.205), T.tigerWhite, PLAIN),
+        tag(ell(0.045, 0.036, 0.045, 0.036, -0.055, -0.205), T.tigerWhite, PLAIN),
+        tag(ell(0.034, 0.02, 0.022, 0, -0.012, -0.243), 0xb87068, PLAIN),
         // Eyes ringed in black, with the white patch above each.
         tag(ell(0.028, 0.02, 0.012, -0.065, 0.055, -0.141), T.dark, PLAIN),
         tag(ell(0.028, 0.02, 0.012, 0.065, 0.055, -0.141), T.dark, PLAIN),
