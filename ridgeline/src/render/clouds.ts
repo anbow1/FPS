@@ -1,4 +1,4 @@
-import { Break, cameraPosition, exp, float, Fn, hash, If, Loop, max, min, mix, positionWorld, pow, screenCoordinate, select, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { Break, cameraPosition, exp, float, Fn, hash, If, Loop, max, min, mix, positionWorld, pow, screenCoordinate, select, smoothstep, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import { DataTexture, LinearFilter, Mesh, type Node, NodeMaterial, type Object3D, RedFormat, RepeatWrapping, RGBAFormat, RGFormat, UnsignedByteType, Vector2, Vector3 } from 'three/webgpu';
 import { CLOUD_EXTINCTION_PER_M, CLOUD_FIELD, type CloudData, type CloudLayer, densityAt } from '../sim/cloudField.ts';
 import type { Atmosphere } from './atmosphere.ts';
@@ -41,15 +41,13 @@ export interface CloudQuality {
   lightSteps: number;
   lightStepM: number;
   lightGrowth: number;
-  /** How many of the light march's first steps take the detail erosion (self-shadowing between the lobes). */
-  detailLightSteps: number;
   resolutionScale: number;
 }
 
 export const CLOUD_QUALITY: Record<'high' | 'low', CloudQuality> = {
-  high: { steps: 96, stepFraction: 0.015, lightSteps: 6, lightStepM: 30, lightGrowth: 2, detailLightSteps: 2, resolutionScale: 0.5 },
+  high: { steps: 96, stepFraction: 0.015, lightSteps: 6, lightStepM: 30, lightGrowth: 2, resolutionScale: 0.5 },
   // Low runs at 2× on phones: a quarter-scale buffer keeps its cost near the old third-scale one at 1×.
-  low: { steps: 40, stepFraction: 0.035, lightSteps: 3, lightStepM: 80, lightGrowth: 3.4, detailLightSteps: 1, resolutionScale: 0.25 },
+  low: { steps: 40, stepFraction: 0.035, lightSteps: 3, lightStepM: 80, lightGrowth: 3.4, resolutionScale: 0.25 },
 };
 
 /**
@@ -178,8 +176,11 @@ export class Clouds {
 
   // ---- shader side
 
-  /** Density at a point given as flat-world x, z and true altitude h — cloudField.densityAt, term for term. */
-  private density(x: F, h: F, z: F, detail: boolean): F {
+  /**
+   * Density at a point given as flat-world x, z and true altitude h — cloudField.densityAt, term for term.
+   * `out.erosion` (with the detail): how much of the shape the detail ate there, 0…1 — the folds between lobes.
+   */
+  private density(x: F, h: F, z: F, detail: boolean, out?: { erosion: F }): F {
     const hf = h.sub(this.base).div(this.top.sub(this.base));
     const px = x.add(this.windOffset.x);
     const pz = z.add(this.windOffset.y);
@@ -206,6 +207,7 @@ export class Clouds {
     const k = CLOUD_FIELD.detailFine;
     const det = sampleVolume(this.detail, d).x.mul(0.65).add(sampleVolume(this.detail, d.mul(k).add(vec3(0.37, 0, 0.71))).x.mul(0.35));
     const mod = mix(det, float(1).sub(det), hf.mul(5).clamp(0, 1)).mul(CLOUD_FIELD.detailErosion).mul(smoothing);
+    if (out) out.erosion = mod.div(CLOUD_FIELD.detailErosion);
     return max(base.sub(mod).div(float(1).sub(mod)), 0).mul(CLOUD_FIELD.densityGain).min(1);
   }
 
@@ -294,7 +296,9 @@ export class Clouds {
           const px = cam.x.add(dir.x.mul(t));
           const pz = cam.z.add(dir.z.mul(t));
           const h = cam.y.add(dir.y.mul(t)).add(a.mul(t).mul(t));
-          const dens = this.density(px, h, pz, true).toVar();
+          const eroded = { erosion: float(0) as F };
+          const dens = this.density(px, h, pz, true, eroded).toVar();
+          const fold = eroded.erosion.toVar();
           const firstHit = dens.greaterThan(0.001).and(fine.greaterThan(0.99));
           If(firstHit, () => {
             fine.assign(1 / 3);
@@ -308,16 +312,14 @@ export class Clouds {
             const lx = px.sub(dir.x.mul(dt.mul(0.5).sub(back)));
             const lz = pz.sub(dir.z.mul(dt.mul(0.5).sub(back)));
             const lh = h.sub(dir.y.mul(dt.mul(0.5).sub(back)));
-            // Optical depth towards the sun, geometric steps. The first steps (High: the first two, out to
-            // 90 m) see the detail too, so each lobe shades the one beside it and the side away from the sun
-            // goes grey: shape-only light lit every billow alike, and the clouds read as smooth slabs.
+            // Optical depth towards the sun, shape only, geometric steps.
             const tauSun = float(0).toVar();
             let travelled = 0;
             for (let j = 0; j < q.lightSteps; j++) {
               const stepM = q.lightStepM * q.lightGrowth ** j;
               const along = travelled + stepM * 0.5;
               travelled += stepM;
-              tauSun.addAssign(this.density(lx.add(sun.x.mul(along)), lh.add(sun.y.mul(along)), lz.add(sun.z.mul(along)), j < q.detailLightSteps).mul(stepM));
+              tauSun.addAssign(this.density(lx.add(sun.x.mul(along)), lh.add(sun.y.mul(along)), lz.add(sun.z.mul(along)), false).mul(stepM));
             }
             // Half the view's extinction towards the sun: with the edge gain the cores saturate, and at
             // full extinction the light died in the first tens of metres and every cloud went grey.
@@ -340,7 +342,12 @@ export class Clouds {
             // rims glow (the silver lining) — the effect fades in that direction.
             const powder = float(1).sub(exp(sigmaT.mul(-140)).mul(0.6));
             const powderK = mix(powder, float(1), cosSun.mul(0.5).add(0.5).pow(2));
-            const S = sunColour.mul(ms).mul(powderK).add(ambient).mul(sigmaT);
+            // The folds between lobes, where the detail ate the shape, lie in their neighbours' shadow: the
+            // light march sees only the coarse shape (a detail sample there cost the device on a software
+            // GPU), so without this every billow was lit alike and the clouds read as smooth slabs. Toward
+            // the sun the thin folds glow instead.
+            const folds = float(1).sub(fold.mul(0.55).mul(float(1).sub(smoothstep(0.2, 0.85, cosSun))));
+            const S = sunColour.mul(ms).mul(powderK).mul(folds).add(ambient.mul(folds.mul(0.4).add(0.6))).mul(sigmaT);
             const stepT = exp(sigmaT.mul(dt).negate());
             // Integrate S·T over the step analytically (Hillaire 2016).
             scatter.addAssign(T.mul(S.sub(S.mul(stepT)).div(sigmaT)));
