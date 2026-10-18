@@ -456,9 +456,21 @@ function boarGeometry(): Record<string, BufferGeometry> {
   return {
     body: joined(
       [
-        tag(ell(0.24, 0.3, 0.55, 0, 0, 0), B.boar, BRISTLE),
-        // The high shoulders and the mane of a boar.
-        tag(ell(0.21, 0.24, 0.25, 0, 0.12, -0.25), B.boar, BRISTLE),
+        // A wedge of a body: deep, high shoulders falling away to narrow hips, one loft (bodyLoft).
+        tag(
+          bodyLoft([
+            [-0.56, 0.15, 0.2, 0.06],
+            [-0.42, 0.22, 0.31, 0.07],
+            [-0.2, 0.245, 0.32, 0.04],
+            [0.08, 0.235, 0.28, 0.0],
+            [0.32, 0.21, 0.25, 0.0],
+            [0.48, 0.17, 0.21, 0.02],
+            [0.56, 0.08, 0.1, 0.04],
+          ]),
+          B.boar,
+          BRISTLE,
+        ),
+        // The mane along the spine.
         tag(ell(0.05, 0.08, 0.35, 0, 0.32, -0.15), 0x1e1a16, BRISTLE),
       ],
       'boar body',
@@ -480,8 +492,42 @@ function boarGeometry(): Record<string, BufferGeometry> {
       ],
       'boar head',
     ),
-    upperLeg: joined([tag(limb(0.22, 0.07, 0.045), B.boar, BRISTLE)], 'boar upper leg'),
-    lowerLeg: joined([tag(limb(0.22, 0.035, 0.028), B.boar, BRISTLE)], 'boar lower leg'),
+    upperLeg: joined(
+      [
+        tag(
+          muscleLimb(
+            0.22,
+            [
+              [0, 0.078],
+              [0.4, 0.062],
+              [1, 0.04],
+            ],
+            1.2,
+          ),
+          B.boar,
+          BRISTLE,
+        ),
+      ],
+      'boar upper leg',
+    ),
+    lowerLeg: joined(
+      [
+        tag(
+          muscleLimb(
+            0.22,
+            [
+              [0, 0.038],
+              [0.8, 0.028],
+              [1, 0.03],
+            ],
+            1.1,
+          ),
+          B.boar,
+          BRISTLE,
+        ),
+      ],
+      'boar lower leg',
+    ),
     hoof: joined([tag(ell(0.03, 0.03, 0.04, 0, -0.02, -0.01), 0x1a1612, PLAIN)], 'boar hoof'),
     tail: joined([tag(limb(0.16, 0.018, 0.01), 0x1e1a16, BRISTLE)], 'boar tail'),
   };
