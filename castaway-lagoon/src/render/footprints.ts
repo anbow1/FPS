@@ -1,7 +1,11 @@
-import { abs, attribute, cameraViewMatrix, float, Fn, length, max, min, mix, normalize, positionGeometry, smoothstep, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, attribute, cameraViewMatrix, float, Fn, int, length, max, min, mix, normalize, positionGeometry, positionWorld, smoothstep, texture, vec2, vec3, vec4 } from 'three/tsl';
 import { InstancedBufferAttribute, InstancedMesh, Matrix4, MeshStandardNodeMaterial, type Node, PlaneGeometry, Quaternion, Vector3 } from 'three/webgpu';
 import { WATER_LEVEL_M } from '../config.ts';
 import { heightAt, normalAt, surfaceAt } from '../game/terrain.ts';
+import { PHOTO_SIZE_M } from './photoTextures.ts';
+import { swash } from './shoreWaves.ts';
+import { noiseMap, terrainArray } from './textures.ts';
+import { U } from './uniforms.ts';
 
 // Tracks in the sand, after the beach in "Tidewater" (an AI-made three.js
 // fishing game): a trail of footprints behind the walker is what makes a beach
@@ -12,11 +16,19 @@ import { heightAt, normalAt, surfaceAt } from '../game/terrain.ts';
 // shadow, the far wall catching it. Wet sand keeps crisp prints until the
 // swash washes them out (half a minute); dry sand keeps soft ones for minutes.
 // The animals leave theirs too, which tells the player who walked the beach.
+//
+// The decal is the beach's own sand (the same photograph, macro variation and
+// wetness as ground.ts) with the print pressed into it, and fades to nothing
+// well inside its quad: a flat sand colour, and a rim cut off by the quad's
+// edges, showed every print as a rectangle.
 
 export type PrintKind = 'footL' | 'footR' | 'paw' | 'hoof';
 const KIND_ID: Record<PrintKind, number> = { footL: 0, footR: 1, paw: 2, hoof: 3 };
-/** Quad size per kind (m): across, along. */
-const SIZE: Record<PrintKind, [number, number]> = { footL: [0.13, 0.3], footR: [0.13, 0.3], paw: [0.16, 0.17], hoof: [0.09, 0.1] };
+/**
+ * Quad size per kind (m): across, along — the print's outline plus its pushed-up rim (up to 5 cm on dry
+ * sand) and a margin for the fade at the quad's edge.
+ */
+const SIZE: Record<PrintKind, [number, number]> = { footL: [0.22, 0.38], footR: [0.22, 0.38], paw: [0.26, 0.27], hoof: [0.18, 0.21] };
 
 const MAX_PRINTS = 320;
 const WET_LIFE_S = 30;
@@ -127,13 +139,30 @@ export class Footprints {
     const sn = inst.w;
     const right = vec3(c, 0, sn.negate());
     const fwd = vec3(sn.negate(), 0, c.negate());
-    const nWorld = normalize(vec3(0, 1, 0).add(right.mul(g.x.mul(tilt))).add(fwd.mul(g.y.mul(tilt))));
+    // The sand's own grain under the print's shape: the photograph's normal (tangent +X, bitangent −Z, as the
+    // ground lays it) is (a, b, c) → world (a, c, −b).
+    const sand = terrainArray();
+    const p = positionWorld;
+    const uvS = vec2(p.x, p.z.negate()).div(PHOTO_SIZE_M.dense_sand);
+    const grain = texture(sand.normalMap, uvS).depth(int(0)).xyz.mul(2).sub(1);
+    const nSand = vec3(grain.x, grain.z, grain.y.negate());
+    const nWorld = normalize(nSand.add(right.mul(g.x.mul(tilt))).add(fwd.mul(g.y.mul(tilt))));
     mat.normalNode = normalize(cameraViewMatrix.mul(vec4(nWorld, 0)).xyz);
-    // Disturbed sand is a little darker than the wind-dried crust; wet prints darker still, and glossier.
-    const dry = vec3(0.6, 0.54, 0.42);
-    mat.colorNode = mix(dry.mul(mix(float(0.8), float(1.02), rim)), dry.mul(0.6), wet);
-    mat.roughnessNode = mix(float(0.95), float(0.55), wet);
-    mat.opacityNode = max(inside.mul(0.92), max(wall, rim.mul(0.55))).mul(strength);
+    // The beach's colour where the print lies (ground.ts: the photograph, its macro variation, and the sand
+    // darkening as the swash and the rain wet it), so only the dent shows, not the decal.
+    const macro = texture(noiseMap(), p.xz.div(90)).r;
+    let sandColour: Node<'vec3'> = texture(sand.map, uvS).depth(int(0)).rgb.mul(float(0.82).add(macro.mul(0.36)));
+    const wetNow = max(swash(p.xz, p.y.sub(WATER_LEVEL_M)).wet, U.wetness.mul(0.95)).mul(0.5);
+    const lum = sandColour.dot(vec3(0.2126, 0.7152, 0.0722));
+    sandColour = mix(vec3(lum), sandColour, wetNow.mul(0.6).add(1)).mul(float(1).sub(wetNow));
+    // Disturbed sand is a little darker than the wind-dried crust, its crumbs on the rim a little lighter;
+    // water seeps into a wet print's floor, darker still and glossier.
+    mat.colorNode = sandColour.mul(mix(float(0.86), float(1.04), rim)).mul(mix(float(1), float(0.82), inside.mul(wet)));
+    mat.roughnessNode = mix(float(0.95), float(0.5), max(wetNow.mul(2), inside.mul(wet).mul(0.6)));
+    // Nothing near the quad's edges, whatever the outline does there.
+    const q = positionGeometry.xz.abs();
+    const edge = float(1).sub(smoothstep(0.4, 0.49, max(q.x, q.y)));
+    mat.opacityNode = max(inside.mul(0.92), max(wall, rim.mul(0.55))).mul(strength).mul(edge);
     this.mesh = new InstancedMesh(geo, mat, MAX_PRINTS);
     this.mesh.name = 'footprints';
     this.mesh.count = 0;
