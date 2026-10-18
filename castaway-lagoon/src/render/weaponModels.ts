@@ -1,4 +1,4 @@
-import { BoxGeometry, type BufferGeometry, CylinderGeometry, ExtrudeGeometry, Group, IcosahedronGeometry, type Material, Mesh, MeshStandardNodeMaterial, Shape, TorusGeometry, Vector3 } from 'three/webgpu';
+import { BoxGeometry, type BufferGeometry, CylinderGeometry, ExtrudeGeometry, Group, IcosahedronGeometry, LatheGeometry, type Material, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, Shape, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
 import { tileFbm, tileFbmXY, tileNoiseXY } from '../core/noise.ts';
 import { makeTextureSet } from './textureSet.ts';
 import { merge, rand, tube } from './meshkit.ts';
@@ -57,6 +57,9 @@ export const WEAPON_MATERIALS = {
   cord: new MeshStandardNodeMaterial({ name: 'paracord', color: 0x3f4430, roughness: 0.95, metalness: 0 }),
   stone: new MeshStandardNodeMaterial({ name: 'stone', color: 0x8d877c, roughness: 0.7, metalness: 0 }),
   brass: new MeshStandardNodeMaterial({ name: 'brass', color: 0xe8cf8a, roughness: 0.3, metalness: 1 }),
+  // The red dot and its side mount: black anodised aluminium, and the objective's coated glass.
+  optic: new MeshStandardNodeMaterial({ name: 'optic', color: 0x1b1c1e, roughness: 0.38, metalness: 0 }),
+  glass: new MeshPhysicalNodeMaterial({ name: 'optic glass', color: 0xe6ebeb, roughness: 0.02, transparent: true, opacity: 0.12, ior: 1.52 }),
 } as const;
 
 function mesh(g: BufferGeometry, m: Material, name: string): Mesh {
@@ -95,9 +98,14 @@ export interface RifleModel {
   /** Where the hands hold it, model frame. */
   gripRight: Vector3;
   gripLeft: Vector3;
+  /** The red dot's rear window (the collimated dot's material goes on it), when the rifle carries one. */
+  dotLens: Mesh | null;
+  /** Height of the sight line used to aim over the iron sights' (y = 0): the red dot's axis when fitted. */
+  sightY: number;
 }
 
-export function buildRifle(): RifleModel {
+/** `optic`: a red dot on a side mount over the receiver (the player's rifle; the guerrillas shoot irons). */
+export function buildRifle(options: { optic?: boolean } = {}): RifleModel {
   const W = WEAPON_MATERIALS;
   const root = new Group();
   root.name = 'ak';
@@ -174,10 +182,55 @@ export function buildRifle(): RifleModel {
   const chargingHandle = mesh(merge([new CylinderGeometry(0.004, 0.004, 0.025, 8).rotateZ(Math.PI / 2).translate(0.03, 0, 0), new CylinderGeometry(0.007, 0.007, 0.01, 10).rotateZ(Math.PI / 2).translate(0.045, 0, 0)], 'charging handle'), W.bare, 'charging handle');
   chargingHandle.position.set(0, -0.045, -0.02);
   root.add(chargingHandle);
+  let dotLens: Mesh | null = null;
+  let sightY = 0;
+  if (options.optic) {
+    // A side mount: the rail on the receiver's left wall, a clamp arm rising from it and a bridge over the
+    // dust cover, so the cover still comes off; a 30 mm tube red dot on the bridge, its axis DOT_Y over
+    // the irons. (On an AK the optic cannot sit on the cover itself: it moves.)
+    const DOT_Y = 0.036;
+    const z0 = 0.08;
+    const mount = merge(
+      [
+        new BoxGeometry(0.005, 0.016, 0.11).translate(-0.0205, -0.062, 0.09), // side rail
+        new BoxGeometry(0.008, 0.07, 0.07).translate(-0.027, -0.03, z0), // clamp arm
+        new CylinderGeometry(0.006, 0.006, 0.012, 10).rotateZ(Math.PI / 2).translate(-0.034, -0.055, z0), // clamp knob
+        new BoxGeometry(0.036, 0.008, 0.07).translate(-0.01, 0.007, z0), // bridge over the cover
+        new BoxGeometry(0.022, 0.012, 0.05).translate(0, 0.016, z0), // riser
+        new LatheGeometry(
+          [
+            [0.0205, -0.055],
+            [0.0205, -0.035],
+            [0.018, -0.028],
+            [0.018, 0.04],
+            [0.0195, 0.046],
+            [0.0195, 0.052],
+          ].map(([r, y]) => new Vector2(r as number, y as number)),
+          24,
+        )
+          .rotateX(Math.PI / 2)
+          .translate(0, DOT_Y, z0),
+        new CylinderGeometry(0.0085, 0.0085, 0.016, 14).translate(0, DOT_Y + 0.024, z0 + 0.005), // elevation turret
+        new CylinderGeometry(0.0085, 0.0085, 0.016, 14).rotateZ(Math.PI / 2).translate(0.024, DOT_Y, z0 + 0.005), // windage turret
+      ],
+      'ak red dot',
+    );
+    root.add(mesh(mount, W.optic, 'red dot'));
+    const lensGeo = new CylinderGeometry(0.0165, 0.0165, 0.002, 24).rotateX(Math.PI / 2);
+    const front = new Mesh(lensGeo, W.glass);
+    front.position.set(0, DOT_Y, z0 - 0.05);
+    root.add(front);
+    dotLens = new Mesh(lensGeo, W.glass);
+    dotLens.position.set(0, DOT_Y, z0 + 0.05);
+    root.add(dotLens);
+    sightY = DOT_Y;
+  }
   return {
     root,
     magazine,
     chargingHandle,
+    dotLens,
+    sightY,
     muzzle: new Vector3(0, bore, -0.57),
     port: new Vector3(0.02, -0.04, 0.03),
     eyeZ: 0.33,

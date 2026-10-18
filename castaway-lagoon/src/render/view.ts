@@ -266,6 +266,7 @@ export class LagoonView {
     this.camp?.update(env.daylight.night, this.lighting.preExposure, U.time.value);
     this.viewModel.root.updateMatrixWorld(true);
     this.viewModel.update(game, dt, pendingYawRad, pendingPitchRad);
+    this.viewModel.aimRedDot(this.stage.camera.fov, this.stage.renderer.domElement.height);
     this.updateLocalLights(game, dt);
     this.effects.update(game, dt, this.stage.camera, this.lighting.preExposure);
     this.rain.update(game, dt, this.stage.camera, this.effects);

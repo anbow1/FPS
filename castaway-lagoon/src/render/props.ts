@@ -133,7 +133,7 @@ export class Props {
         break;
       }
       case 'rifle': {
-        const r = buildRifle();
+        const r = buildRifle({ optic: true }); // the rifle the player picks up is the one they will aim
         r.root.rotation.z = Math.PI / 2; // lying on its side on the cot
         r.root.position.y = 0.025;
         g.add(r.root);

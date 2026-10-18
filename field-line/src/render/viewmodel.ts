@@ -39,6 +39,8 @@ export class ViewModel {
   private readonly sniper: SniperModel;
   private readonly pistol: PistolModel;
   readonly redDot = new RedDot();
+  /** The pistol's reflex sight: its own dot, on its own axis. */
+  readonly pistolDot = new RedDot();
   readonly scope: Scope;
   private readonly handL = buildHand(-1);
   private readonly handR = buildHand(1);
@@ -64,6 +66,7 @@ export class ViewModel {
     this.sniper = buildSniper();
     this.pistol = buildPistol();
     this.rifle.dotLens.material = this.redDot.material;
+    this.pistol.dotLens.material = this.pistolDot.material;
     this.scope = new Scope(this.sniper.ocularRadiusM, scopeSidePx);
     this.sniper.ocular.material = this.scope.material;
     this.scope.setMagnification(SCOPE.magnifications[0]);
@@ -107,7 +110,9 @@ export class ViewModel {
     const ads = smoothstep(0, 1, w.adsBlend);
     const eyeZ = this.shown === 'rifle' ? this.rifle.eyeZ : this.shown === 'sniper' ? this.sniper.eyeZ : this.pistol.eyeZ;
     const hip = HIP[this.shown];
-    const pos = this.tmpPos.copy(hip.pos).lerp(_ads.set(0, 0, -eyeZ), ads);
+    // Aimed, the eye sits on the sight line: through the pistol's red dot window, above its irons.
+    const sightY = this.shown === 'pistol' ? this.pistol.sightY : 0;
+    const pos = this.tmpPos.copy(hip.pos).lerp(_ads.set(0, -sightY, -eyeZ), ads);
     const rot = this.tmpRot.set(hip.rot.x * (1 - ads), hip.rot.y * (1 - ads), hip.rot.z * (1 - ads));
     pos.lerp(SPRINT.pos, this.sprintBlend);
     rot.x += SPRINT.rot.x * this.sprintBlend;
@@ -144,6 +149,7 @@ export class ViewModel {
     this.scope.settle.value = this.scopeSettle;
     this.scope.eyeOffset.value.set(-this.lagYaw * 12 + Math.sin(p.headBobPhase) * speed * 0.08, this.lagPitch * 12 - w.visualKickM * 6);
     this.redDot.pixelAngleRad.value = pixelAngleRad;
+    this.pistolDot.pixelAngleRad.value = pixelAngleRad;
   }
 
   /** Parents a marker to the weapon on screen (for the muzzle flash position). */
@@ -156,6 +162,8 @@ export class ViewModel {
   aimRedDot(): void {
     this.rifle.root.getWorldQuaternion(_q);
     this.redDot.axis.value.set(0, 0, -1).applyQuaternion(_q);
+    this.pistol.slide.getWorldQuaternion(_q);
+    this.pistolDot.axis.value.set(0, 0, -1).applyQuaternion(_q);
   }
 
   renderScope(renderer: WebGPURenderer, scene: Scene, eye: Vector3): void {

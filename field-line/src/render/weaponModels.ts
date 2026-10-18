@@ -8,6 +8,7 @@ import {
   ExtrudeGeometry,
   Group,
   LatheGeometry,
+  PlaneGeometry,
   type Material,
   Mesh,
   MeshPhysicalNodeMaterial,
@@ -473,10 +474,17 @@ export interface PistolModel {
   root: Group;
   magazine: Mesh;
   slide: Mesh;
+  /** The red dot's window (its material is the collimated dot, viewmodel.ts). */
+  dotLens: Mesh;
+  /** Height of the dot's optical axis over the iron sight line: aiming puts the eye there. */
+  sightY: number;
   eyeZ: number;
 }
 
-/** 9 mm polymer pistol with iron sights; sight line y = 0. */
+/**
+ * 9 mm polymer pistol with iron sights (sight line y = 0) and a reflex red dot cut into the slide in front
+ * of the rear sight, its window centred `sightY` over the irons: the sights show low in the window.
+ */
 export function buildPistol(): PistolModel {
   const root = new Group();
   root.name = 'pistol';
@@ -498,8 +506,8 @@ export function buildPistol(): PistolModel {
     merged([
       slideBody,
       box(0.004, 0.006, 0.008, 0, -0.003, -0.106), // front sight
-      box(0.007, 0.006, 0.008, -0.0055, -0.003, 0.064), // rear sight, two ears round the notch
-      box(0.007, 0.006, 0.008, 0.0055, -0.003, 0.064),
+      box(0.007, 0.006, 0.008, -0.0055, -0.003, 0.07), // rear sight behind the optic, two ears round the notch
+      box(0.007, 0.006, 0.008, 0.0055, -0.003, 0.07),
       box(0.016, 0.006, 0.036, 0, -0.007, -0.005), // barrel hood showing in the port
     ]),
     P.parkerised,
@@ -509,6 +517,21 @@ export function buildPistol(): PistolModel {
   for (let k = 0; k < 7; k++) for (const s of [-1, 1]) serrations.push(box(0.0015, 0.02, 0.0018, s * 0.0131, -0.02, 0.035 + k * 0.0045));
   serrations.push(rod(0.0055, 0.002, 12).translate(0, -0.019, -0.122)); // muzzle
   slide.add(mesh(merged(serrations), P.cavity, 'slide cavities'));
+  // Reflex sight on the slide (it rides the slide's recoil): a low body housing the emitter and battery
+  // behind, a hooded window in front, the window's centre DOT_Y over the iron sight line.
+  const DOT_Y = 0.011;
+  const rmr = merged([
+    box(0.024, 0.005, 0.046, 0, -0.0035, 0.045), // base plate on the slide
+    box(0.024, 0.009, 0.016, 0, 0.0035, 0.058), // emitter and battery housing
+    box(0.0035, 0.021, 0.024, -0.0105, 0.0095, 0.036), // window frame: sides
+    box(0.0035, 0.021, 0.024, 0.0105, 0.0095, 0.036),
+    box(0.024, 0.004, 0.026, 0, 0.021, 0.036).rotateX(0.08), // hood, sloping to the front
+    box(0.006, 0.004, 0.006, 0.0085, 0.014, 0.058), // brightness buttons
+  ]);
+  slide.add(mesh(rmr, P.anodised, 'red dot'));
+  const dotLens = mesh(new PlaneGeometry(0.0175, 0.0165), new MeshStandardNodeMaterial(), 'red dot window');
+  dotLens.position.set(0, DOT_Y, 0.026);
+  slide.add(dotLens);
   root.add(slide);
   const frame = profile(
     [
@@ -548,7 +571,7 @@ export function buildPistol(): PistolModel {
   magazine.position.set(0, -0.11, 0.045);
   magazine.rotation.x = -0.25;
   root.add(magazine);
-  return { root, magazine, slide, eyeZ: 0.065 + 0.45 };
+  return { root, magazine, slide, dotLens, sightY: DOT_Y, eyeZ: 0.065 + 0.45 };
 }
 
 // ------------------------------------------------------------------ hands and kit

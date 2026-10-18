@@ -6,6 +6,7 @@ import { propMaterials } from './propMaterials.ts';
 import { logGeometry } from './props.ts';
 import type { LagoonGame } from '../game/game.ts';
 import { Arm, copyPose, mixPose, POSES } from './arms.ts';
+import { RedDot } from './optics.ts';
 import { buildKnife, buildRifle, type KnifeModel, type RifleModel, stoneGeometry, WEAPON_MATERIALS } from './weaponModels.ts';
 
 // The first-person rig: two IK arms and whatever the hands hold, in camera
@@ -104,6 +105,8 @@ export class ViewModel {
   readonly right = new Arm(1);
   readonly left = new Arm(-1);
   readonly rifle: RifleModel;
+  /** The rifle's red dot window (optics.ts). */
+  readonly redDot = new RedDot();
   readonly knife: KnifeModel;
   private readonly stone: Mesh;
   /** Firewood, held in the palm like a big stone and lobbed the same way. */
@@ -133,7 +136,8 @@ export class ViewModel {
   constructor() {
     this.root.name = 'viewmodel';
     this.root.scale.setScalar(VM_SCALE);
-    this.rifle = buildRifle();
+    this.rifle = buildRifle({ optic: true });
+    if (this.rifle.dotLens) this.rifle.dotLens.material = this.redDot.material;
     this.knife = buildKnife();
     this.stone = new Mesh(stoneGeometry(11), WEAPON_MATERIALS.stone);
     this.pivot.add(this.rifle.root);
@@ -156,6 +160,17 @@ export class ViewModel {
         o.frustumCulled = false;
       }
     });
+  }
+
+  /**
+   * The dot lies at infinity on the optic's axis: feed that axis (after this frame's pose) and the angle one
+   * screen pixel covers to the window. Call after `update`.
+   */
+  aimRedDot(fovDeg: number, heightPx: number): void {
+    this.rifle.root.updateWorldMatrix(true, false);
+    this.rifle.root.getWorldQuaternion(this.qa);
+    this.redDot.axis.value.set(0, 0, -1).applyQuaternion(this.qa);
+    this.redDot.pixelAngleRad.value = ((fovDeg * Math.PI) / 180) / Math.max(1, heightPx);
   }
 
   /** The rifle's muzzle, for the flash (child of the rifle, so it rides the recoil). */
@@ -214,7 +229,8 @@ export class ViewModel {
     const a = eq.action;
     const t = eq.progress;
     const r = this.rifle;
-    const pos = this.v.copy(RIFLE_HIP.pos).lerp(this.m.set(0, 0, -r.eyeZ), ads);
+    // Aimed, the eye sits on the sight line: the red dot's axis, over the irons.
+    const pos = this.v.copy(RIFLE_HIP.pos).lerp(this.m.set(0, -r.sightY, -r.eyeZ), ads);
     const rot = this.rot.set(RIFLE_HIP.rot.x * (1 - ads), RIFLE_HIP.rot.y * (1 - ads), RIFLE_HIP.rot.z * (1 - ads));
     pos.lerp(RIFLE_SPRINT.pos, this.sprint);
     rot.x += RIFLE_SPRINT.rot.x * this.sprint;
