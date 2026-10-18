@@ -643,7 +643,15 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
     ],
     'forearm',
   );
-  const hand = joined([tag(new SphereGeometry(1, 10, 8).scale(0.042, 0.055, 0.028).translate(0, -0.05, 0), C.glove, HARD), tag(new CapsuleGeometry(0.012, 0.03, 2, 6).translate(0, -0.05, -0.03), C.glove, HARD)], 'hand');
+  const hand = joined(
+    [
+      // Gloved: the palm and knuckles, the curled fingers as one roll across the front, the thumb along the side.
+      tag(new SphereGeometry(1, 12, 8).scale(0.043, 0.052, 0.025).translate(0, -0.046, 0), C.glove, HARD),
+      tag(new CapsuleGeometry(0.016, 0.054, 3, 8).rotateZ(Math.PI / 2).translate(0, -0.09, -0.013), C.glove, HARD),
+      tag(new CapsuleGeometry(0.012, 0.036, 2, 6).rotateZ(0.5).translate(-0.037, -0.05, -0.022), C.glove, HARD),
+    ],
+    'hand',
+  );
   // Trousers: loose, full at the top of the thigh, folds at the crotch and behind the knee. Cargo pockets on
   // both sides: the left thigh is the same mesh as the right one.
   const thighGrime = (y: number): number => Math.max(0, (-y - L_THIGH * 0.7) / (L_THIGH * 0.3)) * 0.45;

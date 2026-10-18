@@ -1,5 +1,5 @@
-import { abs, attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, vec3 } from 'three/tsl';
-import { BufferAttribute, type BufferGeometry, Color, ConeGeometry, CylinderGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, MeshPhysicalNodeMaterial, type Node, SphereGeometry, Vector2 } from 'three/webgpu';
+import { abs, attribute, float, floor, fract, mix, mx_noise_float, positionGeometry, sin, smoothstep, step, vec3 } from 'three/tsl';
+import { BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, MeshPhysicalNodeMaterial, type Node, SphereGeometry, Vector2 } from 'three/webgpu';
 import type { SpeciesId } from '../config.ts';
 import type { Creature } from '../game/fauna.ts';
 import { merge } from './meshkit.ts';
@@ -48,13 +48,24 @@ function creatureMaterial(): MeshPhysicalNodeMaterial {
   // to it would crawl over a moving animal and the countershading would follow world height.
   const p = positionGeometry;
   const is = (k: number): Node<'float'> => step(k - 0.5, kind).mul(step(kind, k + 0.5));
-  // Tiger stripes: narrow dark bands round the body, broken and forked by noise.
-  const n1 = mx_noise_float(p.mul(3.1));
-  const bandZ = abs(mx_noise_float(vec3(p.z.mul(9), p.x.mul(1.2).add(n1.mul(0.9)), p.y.mul(1.4))));
-  const bandY = abs(mx_noise_float(vec3(p.y.mul(11), p.x.mul(1.5).add(n1), p.z.mul(1.5))));
-  const stripeZ = smoothstep(0.1, 0.05, bandZ);
-  const stripeY = smoothstep(0.09, 0.045, bandY);
-  const stripe = mix(stripeZ, stripeY, is(2)).mul(is(1).add(is(2)));
+  // Tiger stripes as a tiger wears them: bands running down from the spine round the body (across the
+  // limbs), ~12 cm apart, each its own width, tapering to points toward the belly, some doubled, some
+  // broken; the phase wanders with noise so no two are parallel. (Zero crossings of noise drew them as
+  // scribbles, and the animal read as a toy.)
+  const along = mix(p.z, p.y, is(2));
+  const phase = along.mul(mix(float(7.5), float(9), is(2))).add(mx_noise_float(p.mul(2.3)).mul(0.9));
+  const id = floor(phase);
+  const f = fract(phase);
+  const rnd = fract(sin(id.mul(12.9898)).mul(43758.5453));
+  const taper = mix(smoothstep(-0.26, 0.12, p.y), float(1), is(2));
+  const width = rnd.mul(0.14).add(0.08).mul(taper);
+  const main = smoothstep(width, width.sub(0.05), abs(f.sub(0.5)).mul(2));
+  // A thin companion on a third of them, and gaps where the noise says so.
+  const twin = smoothstep(width.mul(0.45), width.mul(0.45).sub(0.04), abs(f.sub(0.5).sub(0.2)).mul(2)).mul(step(0.66, rnd));
+  const broken = smoothstep(-0.45, -0.25, mx_noise_float(p.mul(6.1).add(vec3(4.1, 1.3, 7.7))));
+  const stripe = main.max(twin).mul(broken).mul(is(1).add(is(2)));
+  // Cream on the belly, throat, inner legs and under the paws (a `white` per vertex), stripes fainter there.
+  const cream = attribute('white', 'float');
   // Boar bristles: fine dark and pale hairs.
   const hair = mx_noise_float(p.mul(vec3(90, 40, 90)));
   const bristle = mix(float(0.7), float(1.25), smoothstep(-0.3, 0.4, hair)).mul(is(3)).add(float(1).sub(is(3)));
@@ -66,7 +77,8 @@ function creatureMaterial(): MeshPhysicalNodeMaterial {
   // Shark: slate grey above, white below, a soft line between.
   const under = smoothstep(0.03, -0.05, p.y);
   const sharkColour = mix(tint, vec3(0.62, 0.62, 0.6), under);
-  let colour = mix(tint.mul(bristle), vec3(0.015, 0.012, 0.01), stripe.mul(0.92));
+  const coat = mix(tint.mul(bristle), vec3(0.78, 0.74, 0.64), cream);
+  let colour = mix(coat, vec3(0.015, 0.012, 0.01), stripe.mul(mix(float(0.92), float(0.6), cream)));
   colour = mix(colour, crocColour, is(4));
   colour = mix(colour, sharkColour, is(5));
   m.colorNode = colour;
@@ -84,28 +96,103 @@ function linear(hex: number): [number, number, number] {
   return [c.r, c.g, c.b];
 }
 
-function tag(g: BufferGeometry, hex: number, kind: Kind): BufferGeometry {
+/** Tags a part with its colour and kind, and where a tiger's coat turns cream (`white`, by position). */
+function tag(g: BufferGeometry, hex: number, kind: Kind, white?: (x: number, y: number, z: number) => number): BufferGeometry {
   const n = g.index ? g.toNonIndexed() : g;
-  const count = n.getAttribute('position').count;
+  const pos = n.getAttribute('position');
+  const count = pos.count;
   const [r, gr, b] = linear(hex);
   const tint = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) tint.set([r, gr, b], i * 3);
+  const cream = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    tint.set([r, gr, b], i * 3);
+    cream[i] = white ? Math.min(1, Math.max(0, white(pos.getX(i), pos.getY(i), pos.getZ(i)))) : 0;
+  }
   n.setAttribute('tint', new BufferAttribute(tint, 3));
   n.setAttribute('kind', new BufferAttribute(new Float32Array(count).fill(kind), 1));
+  n.setAttribute('white', new BufferAttribute(cream, 1));
   return n;
 }
 
 function joined(parts: BufferGeometry[], name: string): BufferGeometry {
   const tints: number[] = [];
   const kinds: number[] = [];
+  const whites: number[] = [];
   for (const p of parts) {
     tints.push(...(p.getAttribute('tint').array as Float32Array));
     kinds.push(...(p.getAttribute('kind').array as Float32Array));
+    whites.push(...(p.getAttribute('white').array as Float32Array));
   }
   const g = merge(parts, name);
   g.setAttribute('tint', new BufferAttribute(new Float32Array(tints), 3));
   g.setAttribute('kind', new BufferAttribute(new Float32Array(kinds), 1));
+  g.setAttribute('white', new BufferAttribute(new Float32Array(whites), 1));
   return g;
+}
+
+/**
+ * A body lofted along Z through rings of (z, half-width, half-height, centre height), closed at both ends:
+ * one continuous trunk, deep at the chest and tucked up at the waist, where ellipsoids end to end made a
+ * string of lumps.
+ */
+function bodyLoft(rings: readonly [number, number, number, number][], seg = 20): BufferGeometry {
+  const first = rings[0] as [number, number, number, number];
+  const last = rings[rings.length - 1] as [number, number, number, number];
+  const all: [number, number, number, number][] = [[first[0] - 0.02, 0.001, 0.001, first[3]], ...rings, [last[0] + 0.02, 0.001, 0.001, last[3]]];
+  const pos: number[] = [];
+  const uvs: number[] = [];
+  all.forEach(([z, rx, ry, yc], k) => {
+    for (let j = 0; j <= seg; j++) {
+      const th = (j / seg) * Math.PI * 2;
+      pos.push(Math.cos(th) * rx, yc + Math.sin(th) * ry, z);
+      uvs.push(j / seg, k / (all.length - 1));
+    }
+  });
+  const idx: number[] = [];
+  for (let k = 0; k < all.length - 1; k++) {
+    for (let j = 0; j < seg; j++) {
+      const a = k * (seg + 1) + j;
+      const b = a + seg + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * A muscled limb hanging down −Y from the origin: a lathe through `profile` ([fraction of the length,
+ * radius]), its section `depth` times as deep front to back as it is wide, domed at both ends.
+ */
+function muscleLimb(length: number, profile: readonly [number, number][], depth: number): BufferGeometry {
+  const radiusAt = (t: number): number => {
+    for (let k = 1; k < profile.length; k++) {
+      const [t1, r1] = profile[k] as [number, number];
+      const [t0, r0] = profile[k - 1] as [number, number];
+      if (t <= t1) {
+        const u = (t - t0) / Math.max(1e-6, t1 - t0);
+        return r0 + (r1 - r0) * u * u * (3 - 2 * u);
+      }
+    }
+    return (profile[profile.length - 1] as [number, number])[1];
+  };
+  const pts: Vector2[] = [];
+  const r0 = radiusAt(0);
+  const r1 = radiusAt(1);
+  for (let k = 0; k <= 4; k++) {
+    const a = (Math.PI / 2) * (k / 4);
+    pts.push(new Vector2(Math.max(0.0005, Math.sin(a) * r1), -length - Math.cos(a) * r1 * 0.8));
+  }
+  for (let k = 1; k < 14; k++) pts.push(new Vector2(radiusAt(1 - k / 14), -length * (1 - k / 14)));
+  for (let k = 0; k <= 4; k++) {
+    const a = (Math.PI / 2) * (k / 4);
+    pts.push(new Vector2(Math.max(0.0005, Math.cos(a) * r0), Math.sin(a) * r0 * 0.8));
+  }
+  return new LatheGeometry(pts, 14).scale(1, 1, depth);
 }
 
 /** An ellipsoid of semi-axes (x, y, z) centred at (cx, cy, cz). */
@@ -211,29 +298,62 @@ const COLOURS = {
 
 function tigerGeometry(): Record<string, BufferGeometry> {
   const T = COLOURS;
+  // The trunk in the body's frame (z forward −), split at the waist between the chest and hips segments,
+  // which flex against each other at a gallop; each loft's rings run past the split so neither shows a seam.
+  // Chest segment origin: body (0, 0.02, −0.38); hips: body (0, 0, 0.36).
+  const CHEST: [number, number, number, number][] = [
+    [-0.9, 0.13, 0.17, 0.06],
+    [-0.8, 0.2, 0.27, 0.01],
+    [-0.62, 0.245, 0.33, -0.04],
+    [-0.4, 0.25, 0.34, -0.05],
+    [-0.15, 0.235, 0.3, -0.02],
+    [0.05, 0.215, 0.25, 0.03],
+    [0.16, 0.205, 0.23, 0.05],
+  ];
+  const HIPS: [number, number, number, number][] = [
+    [0.02, 0.21, 0.24, 0.04],
+    [0.22, 0.215, 0.25, 0.04],
+    [0.45, 0.235, 0.27, 0.02],
+    [0.66, 0.225, 0.26, 0.02],
+    [0.8, 0.17, 0.2, 0.04],
+    [0.87, 0.08, 0.1, 0.07],
+  ];
+  // Cream below a wavy line low along the belly (`lineY` in the segment's frame).
+  const belly =
+    (lineY: number) =>
+    (x: number, y: number, z: number): number =>
+      (lineY - 0.04 * Math.sin(z * 22 + x * 3) - y) / 0.05;
+  // …rising over the chest to the throat at the front (chest frame: the neck base is at z ≈ −0.5).
+  const throat = (x: number, y: number, z: number): number => Math.max(belly(-0.22)(x, y, z), Math.max(0, (-0.28 - z) / 0.12) * Math.max(0, (0.02 - y) / 0.1));
+  const chestRings = CHEST.map(([z, rx, ry, yc]) => [z + 0.38, rx, ry, yc - 0.02] as [number, number, number, number]);
+  const hipRings = HIPS.map(([z, rx, ry, yc]) => [z - 0.36, rx, ry, yc] as [number, number, number, number]);
   return {
-    // The chest carries the barrel of the belly back to the hips: two ellipsoids end to end pinch at the waist.
     chest: joined(
       [
-        tag(ell(0.25, 0.32, 0.5, 0, 0, 0), T.tiger, STRIPE_Z),
-        tag(ell(0.2, 0.16, 0.42, 0, -0.18, 0.02), T.tigerWhite, STRIPE_Z),
-        tag(ell(0.235, 0.27, 0.44, 0, -0.01, 0.38), T.tiger, STRIPE_Z),
-        tag(ell(0.17, 0.12, 0.36, 0, -0.16, 0.38), T.tigerWhite, STRIPE_Z),
+        tag(bodyLoft(chestRings), T.tiger, STRIPE_Z, throat),
+        // The shoulder blades riding over the top as it walks.
+        tag(ell(0.08, 0.1, 0.17, -0.1, 0.24, -0.3), T.tiger, STRIPE_Z),
+        tag(ell(0.08, 0.1, 0.17, 0.1, 0.24, -0.3), T.tiger, STRIPE_Z),
       ],
       'tiger chest',
     ),
-    hips: joined([tag(ell(0.24, 0.28, 0.46, 0, 0, 0), T.tiger, STRIPE_Z), tag(ell(0.18, 0.13, 0.36, 0, -0.16, -0.02), T.tigerWhite, STRIPE_Z)], 'tiger hips'),
-    neck: joined([tag(ell(0.17, 0.2, 0.26, 0, 0, -0.1), T.tiger, STRIPE_Z), tag(ell(0.14, 0.12, 0.2, 0, -0.1, -0.12), T.tigerWhite, STRIPE_Z)], 'tiger neck'),
+    hips: joined([tag(bodyLoft(hipRings), T.tiger, STRIPE_Z, belly(-0.15)), tag(ell(0.12, 0.17, 0.22, -0.11, 0.0, 0.2), T.tiger, STRIPE_Z), tag(ell(0.12, 0.17, 0.22, 0.11, 0.0, 0.2), T.tiger, STRIPE_Z)], 'tiger hips'),
+    neck: joined([tag(ell(0.16, 0.2, 0.26, 0, 0, -0.1), T.tiger, STRIPE_Z, (_x, y) => (-0.06 - y) / 0.05)], 'tiger neck'),
     head: joined(
       [
-        tag(ell(0.16, 0.15, 0.17, 0, 0, 0), T.tiger, STRIPE_Z),
+        tag(ell(0.16, 0.145, 0.17, 0, 0, 0), T.tiger, STRIPE_Z),
         // Cheek ruffs and the white of the muzzle and over the eyes.
-        tag(ell(0.08, 0.08, 0.1, -0.11, -0.04, 0.0), T.tigerWhite, STRIPE_Z),
-        tag(ell(0.08, 0.08, 0.1, 0.11, -0.04, 0.0), T.tigerWhite, STRIPE_Z),
-        tag(ell(0.095, 0.075, 0.11, 0, -0.04, -0.15), T.tigerWhite, PLAIN),
+        tag(ell(0.085, 0.085, 0.1, -0.11, -0.04, 0.0), T.tiger, STRIPE_Z, (_x, y) => (0.0 - y) / 0.04),
+        tag(ell(0.085, 0.085, 0.1, 0.11, -0.04, 0.0), T.tiger, STRIPE_Z, (_x, y) => (0.0 - y) / 0.04),
+        tag(ell(0.1, 0.078, 0.12, 0, -0.035, -0.145), T.tigerWhite, PLAIN),
         tag(ell(0.06, 0.035, 0.03, 0, 0.0, -0.245), T.nose, PLAIN),
-        tag(ell(0.022, 0.016, 0.012, -0.065, 0.055, -0.145), T.eye, PLAIN),
-        tag(ell(0.022, 0.016, 0.012, 0.065, 0.055, -0.145), T.eye, PLAIN),
+        // Eyes ringed in black, with the white patch above each.
+        tag(ell(0.028, 0.02, 0.012, -0.065, 0.055, -0.141), T.dark, PLAIN),
+        tag(ell(0.028, 0.02, 0.012, 0.065, 0.055, -0.141), T.dark, PLAIN),
+        tag(ell(0.021, 0.015, 0.012, -0.065, 0.056, -0.146), T.eye, PLAIN),
+        tag(ell(0.021, 0.015, 0.012, 0.065, 0.056, -0.146), T.eye, PLAIN),
+        tag(ell(0.03, 0.018, 0.012, -0.06, 0.085, -0.13), T.tigerWhite, PLAIN),
+        tag(ell(0.03, 0.018, 0.012, 0.06, 0.085, -0.13), T.tigerWhite, PLAIN),
         tag(new ConeGeometry(0.045, 0.07, 8).translate(-0.1, 0.15, 0.04), T.tiger, PLAIN),
         tag(new ConeGeometry(0.045, 0.07, 8).translate(0.1, 0.15, 0.04), T.tiger, PLAIN),
         tag(ell(0.03, 0.03, 0.01, -0.1, 0.14, 0.025), T.dark, PLAIN),
@@ -246,11 +366,85 @@ function tigerGeometry(): Record<string, BufferGeometry> {
     ),
     // Lower jaw, hinged at its back end (origin), along −Z.
     jaw: joined([tag(ell(0.07, 0.035, 0.12, 0, -0.02, -0.11), T.tigerWhite, PLAIN), tag(ell(0.05, 0.02, 0.09, 0, 0.012, -0.12), 0x7a2a2a, PLAIN)], 'tiger jaw'),
-    upperFore: joined([tag(limb(0.34, 0.13, 0.09), T.tiger, STRIPE_Y)], 'tiger upper fore'),
-    lowerFore: joined([tag(limb(0.36, 0.085, 0.068), T.tiger, STRIPE_Y)], 'tiger lower fore'),
-    upperHind: joined([tag(limb(0.38, 0.155, 0.095), T.tiger, STRIPE_Y)], 'tiger upper hind'),
-    lowerHind: joined([tag(limb(0.4, 0.08, 0.06), T.tiger, STRIPE_Y)], 'tiger lower hind'),
-    paw: joined([tag(ell(0.07, 0.04, 0.09, 0, -0.02, -0.03), T.tigerWhite, STRIPE_Y), tag(ell(0.05, 0.012, 0.02, 0, -0.035, -0.11), T.claw, PLAIN)], 'tiger paw'),
+    // Legs: heavy forearms and thighs, deeper front to back than wide, narrowing to the wrists and hocks.
+    upperFore: joined(
+      [
+        tag(
+          muscleLimb(
+            0.34,
+            [
+              [0, 0.125],
+              [0.35, 0.115],
+              [1, 0.085],
+            ],
+            1.15,
+          ),
+          T.tiger,
+          STRIPE_Y,
+        ),
+      ],
+      'tiger upper fore',
+    ),
+    lowerFore: joined(
+      [
+        tag(
+          muscleLimb(
+            0.36,
+            [
+              [0, 0.085],
+              [0.3, 0.078],
+              [0.85, 0.058],
+              [1, 0.062],
+            ],
+            1.1,
+          ),
+          T.tiger,
+          STRIPE_Y,
+          (_x, _y, z) => (z - 0.01) / 0.04,
+        ),
+      ],
+      'tiger lower fore',
+    ),
+    upperHind: joined(
+      [
+        tag(
+          muscleLimb(
+            0.38,
+            [
+              [0, 0.15],
+              [0.35, 0.135],
+              [1, 0.082],
+            ],
+            1.25,
+          ),
+          T.tiger,
+          STRIPE_Y,
+        ),
+      ],
+      'tiger upper hind',
+    ),
+    lowerHind: joined(
+      [
+        tag(
+          muscleLimb(
+            0.4,
+            [
+              [0, 0.082],
+              [0.3, 0.068],
+              [0.85, 0.05],
+              [1, 0.056],
+            ],
+            1.3,
+          ),
+          T.tiger,
+          STRIPE_Y,
+          (_x, _y, z) => (z - 0.01) / 0.04,
+        ),
+      ],
+      'tiger lower hind',
+    ),
+    // Big round paws, orange over cream pads, the claws sheathed.
+    paw: joined([tag(ell(0.075, 0.045, 0.1, 0, -0.02, -0.03), T.tiger, STRIPE_Y, (_x, y) => (-0.03 - y) / 0.02), tag(ell(0.05, 0.012, 0.02, 0, -0.035, -0.115), T.claw, PLAIN)], 'tiger paw'),
     // Tail segments hang along −Y from the origin; the last one ends in a black tip.
     tail: joined([tag(limb(0.25, 0.045, 0.04), T.tiger, STRIPE_Y)], 'tiger tail'),
     tailTip: joined([tag(limb(0.22, 0.04, 0.03), T.dark, PLAIN)], 'tiger tail tip'),
