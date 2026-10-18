@@ -127,9 +127,13 @@ export class ActorView {
   private pose(s: Soldier, i: number, phase: number): void {
     const stance = s.alive ? s.stance : 'stand';
     const stride = s.alive && stance !== 'prone' ? Math.min(1, s.speedMs / 3) * (stance === 'crouch' ? 0.2 : 0.34) : 0;
+    // Standing still the feet take a stance — apart, the left forward, the knees soft — fading into the
+    // stride as he moves: both feet together and the legs locked read as a mannequin.
+    const still = s.alive && stance === 'stand' ? 1 - Math.min(1, s.speedMs / 0.6) : 0;
+    const stagger = still * (s.state === 'patrol' ? 0.5 : 1);
     // Hips and spine for the stance (hitbox layout: chest 1.30 / 0.82 / 0.18 m, head 1.62 / 1.10 / 0.30 m).
     if (stance === 'stand') {
-      _hip.set(0, 0.93 - stride * 0.06 * Math.abs(Math.sin(phase)), 0);
+      _hip.set(0, 0.93 - stride * 0.06 * Math.abs(Math.sin(phase)) - still * 0.035, 0);
       _up.set(0, 1, -0.09 - stride * 0.25).normalize();
     } else if (stance === 'crouch') {
       _hip.set(0, 0.5, 0.03);
@@ -214,9 +218,10 @@ export class ActorView {
         // Stride: the feet swing opposite each other; the forward-swinging foot lifts.
         const swing = Math.sin(phase + (side === 0 ? 0 : Math.PI));
         const lift = Math.max(0, Math.cos(phase + (side === 0 ? 0 : Math.PI))) * stride * 0.4;
-        _foot.set(sx * 0.11, ANKLE_Y + lift, -swing * stride);
+        _foot.set(sx * (0.11 + 0.05 * still), ANKLE_Y + lift, -swing * stride + (side === 0 ? -0.2 : 0.15) * stagger);
         _pole.set(0, 0.1, -1);
-        _bootFront.set(0, lift * 0.8, -1).normalize();
+        // The rear foot turned out, as it is in a shooting stance.
+        _bootFront.set(side === 1 ? 0.55 * stagger : -0.1 * stagger, lift * 0.8, -1).normalize();
       }
       this.limb('thigh', 'shin', i, side, _hipJoint, _foot, L_THIGH, L_SHIN, _pole);
       this.place('boot', i, side, _end, _bootUp, _bootFront);
