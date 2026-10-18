@@ -354,22 +354,24 @@ export class MaterialLibrary {
 
   /**
    * `facade`: for a façade tile (one bay × one storey, about 3.2 × 3.1 m) rather than
-   * the look's own tile, so bricks keep their real size. Brick and concrete are
-   * photographs (photoTextures.ts): a whole number of them per tile, so it still tiles.
+   * the look's own tile, so bricks keep their real size. Brick is photographed
+   * (photoTextures.ts): a whole number of photographs per tile, so it still tiles.
    */
   private wallSampler(look: BoxLook, facade = false): TexelSampler {
     switch (look) {
       case 'brick':
-        // Mixed reds in a pale lime mortar; one photograph is 2 m.
-        return facade ? photoSampler('brick_wall_02', 2, 2) : photoSampler('brick_wall_02');
+        // Mixed reds in a pale lime mortar; one photograph is 2 m. Its pale bricks read as beige render from
+        // across a street, so its mean is brought to a warm red brick's.
+        return facade ? photoSampler('brick_wall_02', 2, 2, 0x9c6b56) : photoSampler('brick_wall_02', 1, 1, 0x9c6b56);
       case 'brickDark':
         // Dark engineering brick in grey mortar; one photograph is 1 m.
         return facade ? photoSampler('red_brick_03', 3, 3) : photoSampler('red_brick_03');
       case 'plaster':
         return P.plaster(0xb3aa9a);
       default:
-        // The scan is a dark floor slab: its scuffs and stains, brought to the city's pale cast concrete.
-        return photoSampler('concrete_floor_worn_001', 1, 1, 0x8f8b85);
+        // Procedural, not the concrete scan: its scuffs are too fine to show from the street, and a whole
+        // façade in it read flat and new; the pattern's broad stains read as weather.
+        return P.concrete(0x8f8b85, 0.88);
     }
   }
 
