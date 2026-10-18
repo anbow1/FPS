@@ -1,4 +1,4 @@
-import { attribute, cameraPosition, cos, float, fwidth, int, length, max, mix, normalMap, normalWorld, positionWorld, sin, smoothstep, texture, vec2, vec3 } from 'three/tsl';
+import { attribute, cameraPosition, cos, float, fwidth, int, length, max, mix, normalMap, normalWorld, positionWorld, sin, smoothstep, texture, vec2, vec3, vec4 } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, type DataArrayTexture, Group, Mesh, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { fbm2 } from '../core/noise.ts';
 import { WATER_LEVEL_M } from '../config.ts';
@@ -280,7 +280,10 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   const extra = attribute('extra', 'vec3');
   const ormS = at(layers.ormMap, uvS, LAYER.sand);
   const ormG = at(layers.ormMap, uvG, LAYER.grass);
-  const ormL = at(layers.ormMap, uvL, LAYER.litter);
+  // The litter scan's AO (mean 0.68) is deep for a floor that also takes the canopy's occlusion (×0.55):
+  // together they left the jungle floor black beside lit trunks. Keep half of its contrast.
+  const ormLRaw = at(layers.ormMap, uvL, LAYER.litter);
+  const ormL = vec4(ormLRaw.r.mul(0.5).add(0.5), ormLRaw.g, ormLRaw.b, ormLRaw.a);
   const ormR = at(layers.ormMap, uvR, LAYER.rock);
   // Height-blended splat: sand fills the gaps between leaves, rock pokes through turf.
   const aS = w.x.add(ormS.a.mul(0.45));

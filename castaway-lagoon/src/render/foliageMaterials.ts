@@ -141,9 +141,11 @@ function jungleBarkMaterial(): MeshStandardNodeMaterial {
   const P = photoSet('bark007');
   const st = uv().mul(vec2(2, 1));
   const m = new MeshStandardNodeMaterial({ name: 'bark-jungle' });
-  m.colorNode = texture(P.map, st).rgb.mul(mix(float(1), float(0.6), U.wetness));
+  // The scan is pale (mean sRGB 0.64, a birch's); a rainforest trunk is ~0.45, and in the noon sun the
+  // whole stand read as white posts. Its roughness map (mean 0.53) is a polished bark's; lift it to dry bark's.
+  m.colorNode = texture(P.map, st).rgb.mul(mix(float(0.45), float(0.27), U.wetness));
   m.normalNode = normalMap(texture(P.normalMap, st));
-  m.roughnessNode = mix(texture(P.roughnessMap, st).r, float(0.35), U.wetness);
+  m.roughnessNode = mix(texture(P.roughnessMap, st).r.mul(0.45).add(0.55), float(0.35), U.wetness);
   m.metalnessNode = float(0);
   m.positionNode = windPosition();
   return m;
