@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { PLAY_HALF, RIFLE_556, RPG_ROCKET, WATER_LEVEL } from '../config';
 import { Rng } from '../core/rng';
+import { attribute } from 'three/tsl';
+import { bootGeometry, handGeometry, headGeometry, helmetGeometry, launcherGeometry, limb as clothLimb, rifleGeometry, torsoGeometry, warheadGeometry } from '../render/infantryModel';
 import { addThermalConst } from '../render/nodes';
 import type { World } from '../world/world';
 import type { Audio } from './audio';
@@ -85,13 +87,6 @@ export class Soldier implements SoftTarget {
   }
 }
 
-/** Unit-length limb geometry along +Y, so a matrix can stretch it between two joints. */
-function limb(r0: number, r1: number): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(r1, r0, 1, 7, 1);
-  g.translate(0, 0.5, 0);
-  return g;
-}
-
 /**
  * Enemy infantry: AT ambush squads (RPG gunner + riflemen) dug in along the approach.
  * Rendering is one instanced mesh per body part (thighs, shins, torso, head, helmet, arms,
@@ -109,7 +104,9 @@ export class Infantry {
   private readonly cap = 48;
 
   constructor() {
-    const uniform = new THREE.MeshStandardNodeMaterial({ color: 0x5a5e48, roughness: 0.9 });
+    // Clothes, kit and boots: per-vertex colour, darkened in the cloth's creases (render/infantryModel.ts).
+    const uniform = new THREE.MeshStandardNodeMaterial({ roughness: 0.9 });
+    uniform.colorNode = attribute('color', 'vec3').mul(attribute('shade', 'float'));
     const helmet = new THREE.MeshStandardNodeMaterial({ color: 0x5c5b3e, roughness: 0.7 });
     const skin = new THREE.MeshStandardNodeMaterial({ color: 0x9c7a62, roughness: 0.75 });
     const gun = new THREE.MeshStandardNodeMaterial({ color: 0x3c3c3e, roughness: 0.62 });
@@ -120,27 +117,92 @@ export class Infantry {
     addThermalConst(helmet, 0.9);
     addThermalConst(gun, 0.3);
     addThermalConst(tube, 0.3);
-    const torso = new THREE.BoxGeometry(0.38, 0.56, 0.24);
-    torso.translate(0, 0.28, 0);
-    const head = new THREE.SphereGeometry(0.105, 10, 8);
-    const helm = new THREE.SphereGeometry(0.135, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    const rifle = new THREE.BoxGeometry(0.05, 0.08, 0.95);
-    rifle.translate(0, 0, 0.35);
-    const rpg = new THREE.CylinderGeometry(0.042, 0.042, 1.0, 10);
-    rpg.rotateX(Math.PI / 2);
-    const warhead = new THREE.ConeGeometry(0.075, 0.28, 10);
-    warhead.rotateX(Math.PI / 2);
-    warhead.translate(0, 0, 0.62);
     const defs: [string, THREE.BufferGeometry, THREE.Material, number][] = [
-      ['thigh', limb(0.085, 0.075), uniform, 2],
-      ['shin', limb(0.07, 0.06), uniform, 2],
-      ['arm', limb(0.06, 0.05), uniform, 2],
-      ['torso', torso, uniform, 1],
-      ['head', head, skin, 1],
-      ['helmet', helm, helmet, 1],
-      ['rifle', rifle, gun, 1],
-      ['rpg', rpg, tube, 1],
-      ['warhead', warhead, gun, 1],
+      // Trousers loose and full at the thigh, bunched behind the knee and over the boot; sleeves at the elbow.
+      [
+        'thigh',
+        clothLimb(
+          0.45,
+          [
+            [0, 0.094],
+            [0.15, 0.09],
+            [0.6, 0.077],
+            [1, 0.064],
+          ],
+          0.94,
+          [
+            [0.1, 0.07, 0.005],
+            [0.92, 0.07, 0.007],
+          ],
+          3,
+        ),
+        uniform,
+        2,
+      ],
+      [
+        'shin',
+        clothLimb(
+          0.47,
+          [
+            [0, 0.066],
+            [0.3, 0.067],
+            [0.75, 0.059],
+            [0.9, 0.062],
+            [1, 0.057],
+          ],
+          0.95,
+          [
+            [0.06, 0.07, 0.005],
+            [0.86, 0.08, 0.008],
+          ],
+          4,
+        ),
+        uniform,
+        2,
+      ],
+      [
+        'upperArm',
+        clothLimb(
+          L_UPPER_ARM,
+          [
+            [0, 0.064],
+            [0.25, 0.06],
+            [1, 0.048],
+          ],
+          0.92,
+          [
+            [0.12, 0.08, 0.004],
+            [0.92, 0.07, 0.006],
+          ],
+          1,
+        ),
+        uniform,
+        2,
+      ],
+      [
+        'forearm',
+        clothLimb(
+          L_FOREARM,
+          [
+            [0, 0.051],
+            [0.3, 0.05],
+            [1, 0.04],
+          ],
+          0.85,
+          [[0.08, 0.08, 0.005]],
+          2,
+        ),
+        uniform,
+        2,
+      ],
+      ['hand', handGeometry(), uniform, 2],
+      ['boot', bootGeometry(), uniform, 2],
+      ['torso', torsoGeometry(), uniform, 1],
+      ['head', headGeometry(), skin, 1],
+      ['helmet', helmetGeometry(), helmet, 1],
+      ['rifle', rifleGeometry(), gun, 1],
+      ['rpg', launcherGeometry(), tube, 1],
+      ['warhead', warheadGeometry(), gun, 1],
     ];
     for (const [name, g, m, per] of defs) {
       const im = new THREE.InstancedMesh(g, m, this.cap * per);
@@ -406,6 +468,7 @@ export class Infantry {
     for (const [h, k, f] of legs) {
       this.put('thigh', this.seg(root, h, k));
       this.put('shin', this.seg(root, k, f));
+      this.put('boot', _t2.multiplyMatrices(root, _m2.makeTranslation(f.x, f.y, f.z)));
     }
     const lean = running ? 0.35 : s.state === 'aim' ? 0.08 : 0.12;
     _m.makeRotationX(lean).setPosition(0, hip, 0);
@@ -422,7 +485,15 @@ export class Infantry {
     for (const side of [-1, 1]) {
       const sh = new THREE.Vector3(side * 0.21, shoulderY, Math.sin(lean) * 0.5);
       const hand = gunPos.clone().add(new THREE.Vector3(side * 0.05, -0.05, side > 0 ? 0.05 : 0.35));
-      this.put('arm', this.seg(root, sh, hand));
+      // Elbows out and down, by two-bone IK: a straight stick from shoulder to grip read as a mannequin.
+      const elbow = elbowFor(sh, hand, _pole.set(side * 0.8, -1, -0.25));
+      this.put('upperArm', this.seg(root, sh, elbow));
+      this.put('forearm', this.seg(root, elbow, hand));
+      // The hand hangs from the wrist along the forearm.
+      _d.subVectors(elbow, hand).normalize();
+      _q.setFromUnitVectors(_up, _d);
+      _m3.compose(hand, _q, _one);
+      this.put('hand', _out.multiplyMatrices(root, _m3));
     }
     _m2.makeRotationX(rpgUp ? 0 : running ? 0.9 : s.state === 'aim' ? 0 : 0.5).setPosition(gunPos);
     const w = _t2.multiplyMatrices(root, _m2);
@@ -440,6 +511,26 @@ export class Infantry {
     _m3.compose(a, _q, _sc);
     return _out.multiplyMatrices(root, _m3);
   }
+}
+
+const L_UPPER_ARM = 0.29;
+const L_FOREARM = 0.27;
+
+/** The elbow between `shoulder` and `hand` for the arm's two bones, bent toward `pole`; straight when out of reach. */
+function elbowFor(shoulder: THREE.Vector3, hand: THREE.Vector3, pole: THREE.Vector3): THREE.Vector3 {
+  const u = _ikU.subVectors(hand, shoulder);
+  const raw = u.length();
+  if (raw < 1e-6) u.set(0, -1, 0);
+  else u.multiplyScalar(1 / raw);
+  const l1 = L_UPPER_ARM;
+  const l2 = L_FOREARM;
+  const dist = Math.min(l1 + l2 - 1e-4, Math.max(Math.abs(l1 - l2) + 1e-4, raw));
+  const cosA = (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  const v = _ikV.copy(pole).addScaledVector(u, -pole.dot(u));
+  if (v.lengthSq() < 1e-8) v.set(u.y, -u.x, 0);
+  v.normalize();
+  return new THREE.Vector3().copy(shoulder).addScaledVector(u, l1 * cosA).addScaledVector(v, l1 * sinA);
 }
 
 function turnTo(a: number, b: number, rate: number): number {
@@ -462,3 +553,7 @@ const _d = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _sc = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _one = new THREE.Vector3(1, 1, 1);
+const _pole = new THREE.Vector3();
+const _ikU = new THREE.Vector3();
+const _ikV = new THREE.Vector3();
