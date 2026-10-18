@@ -97,6 +97,11 @@ export interface ShoreSurface {
   crest: Node<'float'>;
   s: Node<'float'>;
   breaking: Node<'float'>;
+  /**
+   * How much whitewater the breaking makes: a breaker a few centimetres high spills with a glassy lip and
+   * a few bubbles, not a white roller (a calm lagoon's shore was ringed by a solid white band).
+   */
+  whitewater: Node<'float'>;
   dir: Node<'vec2'>;
 }
 
@@ -138,6 +143,7 @@ export function shoreSurface(xz: Node<'vec2'>, depth: Node<'float'>): ShoreSurfa
     crest: cos(g).mul(smoothstep(0.02, 0.12, A)),
     s: ph.s,
     breaking: b.mul(env),
+    whitewater: b.mul(env).mul(smoothstep(0.025, 0.1, A)),
     dir: ph.dir,
   };
 }
@@ -167,7 +173,7 @@ export function surfFoam(xz: Node<'vec2'>, s: Node<'float'>, breaking: Node<'flo
   // The roller rides the crest and its front face (u slightly < 0).
   const roller = smoothstep(0.16, 0.0, abs(u.add(0.04))).mul(breaking);
   const trail = breaking.mul(exp(age.div(-SHORE.foamLifeS)));
-  const amount = max(roller, trail.mul(0.6));
+  const amount = max(roller, trail.mul(0.45));
   // The foam drifts shoreward with the bore, and every wave leaves its own pattern.
   const drift = xz.sub(dir.mul(age.mul(0.35)));
   return laceCover(drift, amount, lastWave);

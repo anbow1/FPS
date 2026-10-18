@@ -146,6 +146,7 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' |
   // The continuous wave count (not its wrapped phase) is what interpolates cleanly across a triangle.
   const vShoreS = varying(shore.s, 'vShoreS');
   const vBreak = varying(shore.breaking.mul(shoreK), 'vBreak');
+  const vWhite = varying(shore.whitewater.mul(shoreK), 'vWhite');
   const vShoreDir = varying(shore.dir, 'vShoreDir');
 
   // ── Fragment.
@@ -226,8 +227,9 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' |
   // Foam: whitewater and the lace it leaves behind breaking waves (shoreWaves.ts), a thin lacy
   // edge where the water meets the sand, wind whitecaps on the chop in a storm, and splashes.
   const foamTex = texture(cf, p.xz.div(2.2).add(flow.mul(0.01))).g;
-  const surf = surfFoam(p.xz, vShoreS, vBreak, vShoreDir);
-  const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.01, 0.06, depth)).mul(0.3), float(0));
+  const surf = surfFoam(p.xz, vShoreS, vWhite, vShoreDir);
+  // A thin broken line where the water meets the sand, not a band.
+  const edgeLace = laceCover(p.xz, float(1).sub(smoothstep(0.01, 0.05, depth)).mul(0.2), float(0));
   const crestFoam = smoothstep(0.8, 1.6, vCrest).mul(smoothstep(1.3, 2.4, U.waveScale));
   // The boat's wake and old splashes (wakeFoam.ts): foam that lasts, torn into lace as it thins.
   // Its own lace offset and a finer scale, so a trail never repeats the surf's pattern.
