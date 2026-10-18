@@ -719,7 +719,59 @@ that we lacked, and the fix:
   taller toward one quarter, in a curtain-wall shader (tinted pane per bay ×
   storey, each tilted a fraction of a degree so the wall reflects many skies,
   mullions, spandrels) or stone with punched windows, lit windows at night, no
-  shadows; the scene haze sets them back (FL `render/skyline.ts`).
+  shadows; the scene haze sets them back (FL `render/skyline.ts`). Lit
+  windows at a kilometre are a room's light, a few cd/m² pre-exposed: at
+  60 the towers turned to white blocks at night. Average the window grid by
+  its pixel footprint (`fwidth` of the cell coordinate) or lit windows under
+  a pixel flicker as static.
+
+## 6n. Detail density: what the reference's close-ups had (round 3, second pass)
+
+The island shooter's close-ups (jeep, skiff, deck, table, jetty, bushes) are
+not better *shaped* than ours; they are *fuller*. Every object carries the
+evidence of use and the small parts a real one has. The checklist we worked
+through, in the order it paid:
+
+1. **Wear on every machine** (lagoon `render/wear.ts`, one function for all
+   painted vehicles, in the model's own frame so nothing slides as it moves):
+   rust blooming from the lowest edges, paint chipped to primer and a few
+   flakes of bright metal, rain-run streaks down the sides. Options set what
+   blooms low: rust on steel, grey-green scum on an aluminium hull.
+2. **Contact shadow inside the model**: the per-vertex AO bake (§12.5) on the
+   jeep and the skiff, once at load (~0.4 s for 100 k vertices). A material is
+   wired only if *every* mesh using it is baked: give a vehicle its own
+   instance of a shared prop surface (`vehicleMaterial()` in
+   `propMaterials.ts`) instead of the camp's.
+3. **Boards are not boxes.** Ease the arrises (a rounded box with one bevel
+   segment, ~7 mm): a hard box edge catches no light, and a deck or tabletop
+   reads as one slab. Then nail heads where boards cross what holds them,
+   each board a few millimetres proud or shy and turned a few hundredths of a
+   radian, every fifth board a different stock. Bleach a jetty's boards
+   almost grey with dark checks in the grain.
+4. **The tide's mark.** Piles standing in the sea are wet, black-green up to
+   a ragged high-water line and ringed with barnacles and dried salt where
+   the waves break (`pileMaterial()`, by world height). That band says "jetty"
+   more than any wood texture.
+5. **How it is held together.** Rope lashings where beams sit on posts and
+   where stringers meet piles, rope rails sagging from pile to pile, battens
+   and stretchers under a table and a shelf of boards between its legs.
+6. **What a used vehicle carries.** A skiff: rolled gunwale rail, spray rail
+   on the chine, ribs and floorboards, a fuel tank piped to the outboard, oars,
+   a coil of line. A jeep: a crate strapped down, a kit bag, a second can,
+   canvas seats. Each is a few rounded boxes and tubes.
+7. **Leaves each their own.** A cluster texture whose leaves share one shape
+   and one ladder of bright veins reads as clip art up close. Give each leaf a
+   curved midrib, one half wider than the other, a waved margin, faint
+   *sunken* veins sweeping toward the tip, mottling, and an age: a few
+   yellowing, browned at the margin and tip, holed by insects (lagoon
+   `broadleafCluster()`).
+8. **No two buildings alike.** One façade texture over a whole city is the
+   tell. A per-building seed attribute picks the wall tint, the frame colour
+   and louvred shutters on a share of the upper storeys (FL `materials.ts`
+   `buildingVariety()`, `worldMesh.ts` `facadeSeed`).
+
+Check each with a close-up screenshot from where the player stands, not from
+a flattering distance: details that do not survive 2 m do not count.
 
 ## 6l. A light on the weapon, and a bodycam lens (FL `render/weaponLight.ts`, `render/bodycam.ts`)
 

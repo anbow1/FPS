@@ -1,4 +1,4 @@
-import { attribute, float, mix, positionLocal, sin, texture, vec3 } from 'three/tsl';
+import { attribute, float, mix, mx_noise_float, positionLocal, positionWorld, sin, smoothstep, texture, vec3 } from 'three/tsl';
 import { DoubleSide, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { tileFbm, tileNoise } from '../core/noise.ts';
 import { makeTextureSet, type Texel, type TexelSampler, type TextureSet } from './textureSet.ts';
@@ -29,7 +29,6 @@ function put(t: Texel, c: Rgb, k: number): void {
   t.b = c[2] * k;
 }
 
-/** One sun-greyed board, grain along U. */
 /**
  * Sawn boards. `weathered` 0…1: how far the sun and salt have bleached them silver-grey, with the grain
  * opened into dark checks (a dock's boards in the island shooter we compared against are all but grey).
@@ -157,6 +156,10 @@ export interface PropMaterials {
   weatheredPlanks: MeshStandardNodeMaterial;
   darkWood: MeshStandardNodeMaterial;
   logBark: MeshStandardNodeMaterial;
+  /** The dock's piles: bark above the tide, black-green and wet below it, barnacles at the line. */
+  piles: MeshStandardNodeMaterial;
+  /** Nail heads and other iron left out in salt air. */
+  rustyIron: MeshStandardNodeMaterial;
   bamboo: MeshStandardNodeMaterial;
   tarp: MeshPhysicalNodeMaterial;
   cotCanvas: MeshPhysicalNodeMaterial;
@@ -183,6 +186,30 @@ function standard(ts: TextureSet, name: string, wetDarken = 0.6): MeshStandardNo
   return m;
 }
 
+/**
+ * Piles standing in the sea, after the jetty in an island shooter we compared against: what reads as a
+ * real jetty is the tide's mark on its legs, not the wood — the water darkens and greens them up to the
+ * high-tide line (sea level y = 0 plus the swash), and a crust of barnacles and dried salt rings them
+ * where the waves break.
+ */
+function pileMaterial(ts: TextureSet): MeshStandardNodeMaterial {
+  const m = standard(ts, 'dock pile');
+  const y = positionWorld.y;
+  // A ragged line: the swash reaches higher in places.
+  const line = float(0.32).add(mx_noise_float(positionWorld.mul(vec3(3, 0, 3))).mul(0.08));
+  const wet = smoothstep(line, line.sub(0.12), y);
+  const algae = smoothstep(0.05, -0.2, y);
+  const spots = smoothstep(0.35, 0.55, mx_noise_float(positionWorld.mul(vec3(55, 70, 55))));
+  const crust = smoothstep(line.add(0.02), line.sub(0.08), y).mul(smoothstep(-0.35, -0.05, y)).mul(spots);
+  const bark = texture(ts.map).rgb;
+  let c = mix(bark, bark.mul(vec3(0.32, 0.36, 0.3)), wet);
+  c = mix(c, vec3(0.04, 0.06, 0.035), algae.mul(0.7));
+  c = mix(c, vec3(0.55, 0.53, 0.48), crust);
+  m.colorNode = c.mul(mix(float(1), float(0.6), U.wetness));
+  m.roughnessNode = mix(mix(texture(ts.ormMap).g, float(0.35), wet.mul(float(1).sub(crust))), float(0.3), U.wetness);
+  return m;
+}
+
 /** Rain wets what the tarp does not cover: geometry marks sheltered parts with `dry` = 1. */
 function outdoor() {
   return float(1).sub(attribute('dry', 'float'));
@@ -203,6 +230,16 @@ function fabricMaterial(ts: TextureSet, name: string, sheenColour: number, flutt
   return m;
 }
 
+/**
+ * A prop surface on a material of its own, for a vehicle (the skiff's boards, the jeep's seats and load):
+ * a vehicle's AO bake wires its materials to an `ao` attribute (aoBake.ts), which the camp's meshes on the
+ * shared materials do not carry. Its meshes need `dry` (outpost.ts markDry) like every prop surface.
+ */
+export function vehicleMaterial(kind: 'boards' | 'canvas', name: string): MeshStandardNodeMaterial {
+  if (kind === 'boards') return standard(tset('weatheredBoard', 256, () => boardWood(0x6a5a48, 1), 3.5), name);
+  return fabricMaterial(tset('cotCanvas', 256, () => canvas(0x6a6a50), 1.5), name, 0x6a6a50, false);
+}
+
 export function propMaterials(): PropMaterials {
   if (cached) return cached;
   const glass = new MeshPhysicalNodeMaterial({ name: 'lantern glass', color: 0xf2eee0, roughness: 0.08, metalness: 0, transmission: 0, transparent: true, opacity: 0.35, ior: 1.5 });
@@ -211,6 +248,8 @@ export function propMaterials(): PropMaterials {
     weatheredPlanks: standard(tset('weatheredBoard', 256, () => boardWood(0x6a5a48, 1), 3.5), 'weathered planks'),
     darkWood: standard(tset('darkBoard', 256, () => boardWood(0x4e3c2c), 3), 'dark wood'),
     logBark: standard(tset('logBark', 256, F.jungleBark, 4), 'log bark'),
+    piles: pileMaterial(tset('logBark', 256, F.jungleBark, 4)),
+    rustyIron: new MeshStandardNodeMaterial({ name: 'rusty iron', color: 0x3d281c, roughness: 0.85, metalness: 0 }),
     bamboo: standard(tset('bamboo', 256, bamboo, 2), 'bamboo', 0.7),
     tarp: fabricMaterial(tset('canvas', 512, () => canvas(0x5d5e44), 1.5), 'tarp', 0x5d5e44, true),
     cotCanvas: fabricMaterial(tset('cotCanvas', 256, () => canvas(0x6a6a50), 1.5), 'cot canvas', 0x6a6a50, false),

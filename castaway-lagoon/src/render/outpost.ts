@@ -1,3 +1,4 @@
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { vec3 } from 'three/tsl';
 import { BoxGeometry, type BufferGeometry, BufferAttribute, CylinderGeometry, Group, type Material, Mesh, MeshBasicNodeMaterial, PlaneGeometry, PointLight, SphereGeometry, TorusGeometry, Vector3 } from 'three/webgpu';
 import { CAN_LOG, DOCK, FURNITURE, OUTPOST } from '../game/outpost.ts';
@@ -53,11 +54,19 @@ export function buildOutpost(): OutpostView {
     put(b, M.logBark, tube(pts, radii, 7, 0.8, true));
   };
   const board = (b: Bucket, m: Material, x: number, y: number, z: number, sx: number, sy: number, sz: number, seed: number, yaw = 0): void => {
-    const g = new BoxGeometry(sx, sy, sz);
+    const g = plankGeometry(sx, sy, sz);
     scaleUv(g, Math.max(sx, sz) / 1.6, rand(seed, 1));
     g.rotateY(yaw);
     g.translate(x, y, z);
     put(b, m, g);
+  };
+  /** Two nail heads across a board at (x, z) on its top face `y`, along the board's width (`yaw` as the board). */
+  const nails = (b: Bucket, x: number, y: number, z: number, acrossM: number, yaw: number, seed: number): void => {
+    for (const s of [-1, 1]) {
+      const ox = (rand(seed, s + 7) - 0.5) * 0.02;
+      const oz = s * acrossM * 0.28;
+      put(b, M.rustyIron, nailHead().translate(x + ox * Math.cos(yaw) + oz * Math.sin(yaw), y, z - ox * Math.sin(yaw) + oz * Math.cos(yaw)));
+    }
   };
 
   // ── Deck: log joists on stilts, planks across.
@@ -69,7 +78,12 @@ export function buildOutpost(): OutpostView {
   }
   const plankW = 0.19;
   for (let i = 0, z = -hz + plankW / 2; z < hz; i++, z += plankW + 0.012) {
-    board(dry, i % 5 === 3 ? M.darkWood : M.planks, (rand(i, 3) - 0.5) * 0.06, -0.02 + (rand(i, 4) - 0.5) * 0.008, z, hx * 2 + 0.1, 0.04, plankW, i, (rand(i, 5) - 0.5) * 0.012);
+    const x0 = (rand(i, 3) - 0.5) * 0.06;
+    const y0 = -0.02 + (rand(i, 4) - 0.5) * 0.008;
+    const yaw = (rand(i, 5) - 0.5) * 0.012;
+    board(dry, i % 5 === 3 ? M.darkWood : M.planks, x0, y0, z, hx * 2 + 0.1, 0.04, plankW, i, yaw);
+    // Nailed down over the stilts and the middle.
+    for (const x of [-hx + 0.2, 0, hx - 0.2]) nails(dry, x, y0 + 0.02, z - (x - x0) * yaw, plankW, yaw, i * 3 + Math.round(x * 10));
   }
 
   // ── Frame: corner posts, beams, bamboo rafters.
@@ -80,6 +94,14 @@ export function buildOutpost(): OutpostView {
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) log(wet, new Vector3(sx * px, GROUND_Y - 0.4, sz * pz), new Vector3(sx * px, sz < 0 ? fh : bh, sz * pz), OUTPOST.postRadiusM, sx * 3 + sz);
     log(dry, new Vector3(sx * px, fh - 0.08, -pz - 0.05), new Vector3(sx * px, bh - 0.08, pz + 0.05), 0.055, sx * 11); // side beams
+    // Rope lashings where the beams sit on the posts: there are no nails in a frame like this.
+    for (const sz of [-1, 1]) {
+      const top = sz < 0 ? fh : bh;
+      for (let k = 0; k < 4; k++) {
+        const g = new TorusGeometry(OUTPOST.postRadiusM + 0.02, 0.011, 5, 14).rotateX(Math.PI / 2 + (k % 2 ? 0.25 : -0.25)).translate(sx * px, top - 0.2 + k * 0.024, sz * pz);
+        put(dry, M.rope, g);
+      }
+    }
   }
   log(dry, new Vector3(-px - 0.25, fh - 0.1, -pz), new Vector3(px + 0.25, fh - 0.1, -pz), 0.07, 21);
   log(dry, new Vector3(-px - 0.25, bh - 0.1, pz), new Vector3(px + 0.25, bh - 0.1, pz), 0.065, 22);
@@ -116,11 +138,38 @@ export function buildOutpost(): OutpostView {
 
   // ── Table, stool, cot.
   const t = FURNITURE.table;
-  for (let k = 0; k < 5; k++) board(dry, M.planks, t.x, t.heightM - 0.025, t.z - t.sz / 2 + (k + 0.5) * (t.sz / 5), t.sx, 0.045, t.sz / 5 - 0.008, 40 + k, t.yawRad);
+  // In the table's own frame (x along its length, z across), turned to the world by its yaw.
+  const onTable = (ox: number, oz: number): [number, number] => [t.x + ox * Math.cos(t.yawRad) + oz * Math.sin(t.yawRad), t.z - ox * Math.sin(t.yawRad) + oz * Math.cos(t.yawRad)];
+  const topW = t.sz / 5 - 0.008;
+  for (let k = 0; k < 5; k++) {
+    const oz = -t.sz / 2 + (k + 0.5) * (t.sz / 5);
+    // Hand-made: each board a few millimetres proud or shy of the next.
+    const y = t.heightM - 0.025 + (rand(40 + k, 6) - 0.5) * 0.004;
+    const [bx, bz] = onTable((rand(40 + k, 7) - 0.5) * 0.03, oz);
+    board(dry, M.planks, bx, y, bz, t.sx, 0.045, topW, 40 + k, t.yawRad + (rand(40 + k, 8) - 0.5) * 0.01);
+    // Nailed to the battens under each end.
+    for (const e of [-1, 1]) {
+      const [nx, nz] = onTable(e * (t.sx / 2 - 0.09), oz);
+      nails(dry, nx, y + 0.0225, nz, topW, t.yawRad, 90 + k * 2 + e);
+    }
+  }
+  // Battens across under the ends, and a stretcher low between each end's legs, as a bush table is braced.
+  for (const e of [-1, 1]) {
+    const [bx, bz] = onTable(e * (t.sx / 2 - 0.09), 0);
+    board(dry, M.darkWood, bx, t.heightM - 0.075, bz, 0.07, 0.05, t.sz - 0.06, 46 + e, t.yawRad);
+    const [sx0, sz0] = onTable(e * (t.sx / 2 - 0.08), -(t.sz / 2 - 0.08));
+    const [sx1, sz1] = onTable(e * (t.sx / 2 - 0.08), t.sz / 2 - 0.08);
+    log(dry, new Vector3(sx0, 0.22, sz0), new Vector3(sx1, 0.24, sz1), 0.022, 56 + e);
+  }
+  // A shelf of three boards resting on the end stretchers, for whatever needs to be off the floor.
+  for (let k = 0; k < 3; k++) {
+    const oz = (k - 1) * 0.17;
+    const [sx, sz] = onTable((rand(60 + k, 1) - 0.5) * 0.02, oz);
+    board(dry, k === 1 ? M.darkWood : M.planks, sx, 0.262, sz, t.sx - 0.1, 0.03, 0.155, 60 + k, t.yawRad + (rand(60 + k, 2) - 0.5) * 0.02);
+  }
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      const lx = t.x + sx * (t.sx / 2 - 0.08) * Math.cos(t.yawRad) + sz * (t.sz / 2 - 0.08) * Math.sin(t.yawRad);
-      const lz = t.z - sx * (t.sx / 2 - 0.08) * Math.sin(t.yawRad) + sz * (t.sz / 2 - 0.08) * Math.cos(t.yawRad);
+      const [lx, lz] = onTable(sx * (t.sx / 2 - 0.08), sz * (t.sz / 2 - 0.08));
       log(dry, new Vector3(lx, 0, lz), new Vector3(lx, t.heightM - 0.05, lz), 0.035, 50 + sx * 2 + sz);
     }
   }
@@ -251,6 +300,20 @@ export function markDry(g: BufferGeometry, value: number): void {
   g.setAttribute('dry', new BufferAttribute(new Float32Array(n).fill(value), 1));
 }
 
+/**
+ * A sawn board with its arrises eased: a rounded box with one bevel segment. A hard-edged box catches no
+ * light along its edges, and in close-up the deck and the table read as flat slabs; the soft edge picks
+ * up a highlight the way a worn board does.
+ */
+function plankGeometry(sx: number, sy: number, sz: number): BufferGeometry {
+  return new RoundedBoxGeometry(sx, sy, sz, 1, Math.min(0.007, sy * 0.3));
+}
+
+/** A cut nail's head, centred on the board's top face: half driven in, a millimetre and a half proud. */
+function nailHead(): BufferGeometry {
+  return new CylinderGeometry(0.0055, 0.006, 0.003, 6);
+}
+
 /** Box UVs stretched to the board's length so the grain is not smeared; offset per board. */
 function scaleUv(g: BufferGeometry, uScale: number, offset: number): void {
   const uv = g.getAttribute('uv');
@@ -354,18 +417,49 @@ function buildDock(): Group {
   group.name = 'dock';
   const planks: BufferGeometry[] = [];
   const logs: BufferGeometry[] = [];
+  const piles: BufferGeometry[] = [];
   const rope: BufferGeometry[] = [];
+  const iron: BufferGeometry[] = [];
+  const stringerX = DOCK.halfWidthM - 0.15;
   for (let i = 0, d = 0.1; d < DOCK.lengthM; i++, d += 0.2) {
-    const g = new BoxGeometry(DOCK.halfWidthM * 2 + (rand(i, 1) - 0.5) * 0.1, 0.045, 0.185);
+    const w = DOCK.halfWidthM * 2 + (rand(i, 1) - 0.5) * 0.1;
+    // Each board cups and twists a little as it dries: turned a few hundredths of a radian about its length.
+    const g = plankGeometry(w, 0.045, 0.185).rotateX((rand(i, 5) - 0.5) * 0.03);
     scaleUv(g, 1.2, rand(i, 2));
-    g.translate((rand(i, 3) - 0.5) * 0.05, DOCK.deckY - 0.022 + (rand(i, 4) - 0.5) * 0.01, -d);
+    const x = (rand(i, 3) - 0.5) * 0.05;
+    const y = DOCK.deckY - 0.022 + (rand(i, 4) - 0.5) * 0.01;
+    g.translate(x, y, -d);
     planks.push(g);
+    // Two nails into each stringer.
+    for (const s of [-1, 1]) for (const k of [-1, 1]) iron.push(nailHead().translate(s * stringerX + (rand(i, s + 9) - 0.5) * 0.02, y + 0.0225, -d + k * 0.05));
   }
+  const pileTops: Vector3[][] = [[], []];
   for (const s of [-1, 1]) {
-    logs.push(tube([new Vector3(s * (DOCK.halfWidthM - 0.15), DOCK.deckY - 0.12, 0.3), new Vector3(s * (DOCK.halfWidthM - 0.15), DOCK.deckY - 0.12, -DOCK.lengthM)], [0.08, 0.08], 7, 0.8, true));
+    logs.push(tube([new Vector3(s * stringerX, DOCK.deckY - 0.12, 0.3), new Vector3(s * stringerX, DOCK.deckY - 0.12, -DOCK.lengthM)], [0.08, 0.08], 7, 0.8, true));
     for (let d = 1.2; d < DOCK.lengthM; d += DOCK.pileSpacingM) {
       const top = new Vector3(s * (DOCK.halfWidthM + 0.05), DOCK.deckY + 0.35, -d);
-      logs.push(tube([top.clone().setY(-4), top], [0.12, 0.11], 8, 0.8, true));
+      piles.push(tube([top.clone().setY(-4), top], [0.12, 0.11], 8, 0.8, true));
+      pileTops[s < 0 ? 0 : 1]?.push(top);
+      // A lashing round the pile where the stringer is tied to it, and the rail rope's turns at the top.
+      for (const [y, turns] of [
+        [DOCK.deckY - 0.12, 3],
+        [DOCK.deckY + 0.26, 2],
+      ] as const) {
+        for (let k = 0; k < turns; k++) rope.push(new TorusGeometry(0.125, 0.012, 5, 16).rotateX(Math.PI / 2).rotateZ((k - 1) * 0.12).translate(top.x, y + k * 0.026, top.z));
+      }
+    }
+  }
+  // Rope rails from pile to pile, sagging between them.
+  for (const tops of pileTops) {
+    for (let k = 0; k + 1 < tops.length; k++) {
+      const a = tops[k] as Vector3;
+      const b = tops[k + 1] as Vector3;
+      const pts: Vector3[] = [];
+      for (let j = 0; j <= 8; j++) {
+        const u = j / 8;
+        pts.push(a.clone().lerp(b, u).add(new Vector3(0, -0.09 - 4 * u * (1 - u) * 0.14, 0)));
+      }
+      rope.push(tube(pts, pts.map(() => 0.011), 5, 0.5));
     }
   }
   const end = -DOCK.lengthM + 0.3;
@@ -373,7 +467,9 @@ function buildDock(): Group {
   for (const [parts, mat] of [
     [planks, M.weatheredPlanks],
     [logs, M.logBark],
+    [piles, M.piles],
     [rope, M.rope],
+    [iron, M.rustyIron],
   ] as const) {
     const g = merge(parts, 'dock');
     markDry(g, 0);

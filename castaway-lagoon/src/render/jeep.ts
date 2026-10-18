@@ -4,6 +4,7 @@ import { float, fract, mix, positionLocal, sin, smoothstep, dot, uniform, vec3 }
 import {
   BoxGeometry,
   type BufferGeometry,
+  CapsuleGeometry,
   CylinderGeometry,
   ExtrudeGeometry,
   Group,
@@ -26,6 +27,8 @@ import type { Jeep } from '../game/jeep.ts';
 import { HeadlightBeams } from './lightBeams.ts';
 import { tube } from './meshkit.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
+import { markDry } from './outpost.ts';
+import { vehicleMaterial } from './propMaterials.ts';
 import { paintWear } from './wear.ts';
 
 // The old jeep as drawn, in the logic's frame (game/jeep.ts): forward −Z,
@@ -224,7 +227,9 @@ export class JeepView {
     paint.metalnessNode = worn.metalness.mul(float(1).sub(dust));
     const dark = new MeshStandardNodeMaterial({ name: 'jeep chassis', color: 0x1f2120, roughness: 0.8, metalness: 0 });
     const tyre = new MeshStandardNodeMaterial({ name: 'jeep tyre', color: 0x1c1c1c, roughness: 0.93 });
-    const seatMat = new MeshStandardNodeMaterial({ name: 'jeep seat', color: 0x3b3326, roughness: 0.95 });
+    // Olive canvas over the seat springs, and the load's boards and canvas, each the jeep's own (baked below).
+    const seatMat = vehicleMaterial('canvas', 'jeep seat');
+    const crateMat = vehicleMaterial('boards', 'jeep crate');
     const chrome = new MeshStandardNodeMaterial({ name: 'jeep metal', color: 0xb0b0a8, roughness: 0.3, metalness: 1 });
     const glass = new MeshStandardNodeMaterial({ name: 'jeep screen', color: 0x0e1214, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.22 });
     const red = new MeshStandardNodeMaterial({ name: 'jeep tail lamp', color: 0x7a1410, roughness: 0.3 });
@@ -324,7 +329,17 @@ export class JeepView {
     }
     seats.push(rbox(W - 0.34, 0.1, 0.42, 0.04, 0, 0.42, 1.2));
     seats.push(rbox(W - 0.34, 0.36, 0.08, 0.04, 0, 0.66, 1.48, -0.12));
-    add(this.group, join(seats), seatMat);
+    // The load on the rear bench: a kit bag lying beside the crate.
+    seats.push(new CapsuleGeometry(0.14, 0.42, 4, 12).rotateZ(Math.PI / 2).scale(1, 0.82, 1).rotateY(0.12).translate(0.3, 0.585, 1.2));
+    // An open jeep's seats are out in the rain.
+    const seatGeo = join(seats);
+    markDry(seatGeo, 0);
+    add(this.group, seatGeo, seatMat);
+    // A crate strapped down on the bench's other side.
+    const crate = join([rbox(0.5, 0.3, 0.36, 0.012, 0, 0.15, 0), rbox(0.04, 0.3, 0.38, 0.008, -0.245, 0.15, 0), rbox(0.04, 0.3, 0.38, 0.008, 0.245, 0.15, 0)]);
+    crate.rotateY(-0.08).translate(-0.3, 0.47, 1.18);
+    markDry(crate, 0);
+    add(this.group, crate, crateMat);
 
     // ---- the windscreen panes, lamp glasses, tail lamps
     for (const s of [-1, 1]) add(this.group, new BoxGeometry((W - 0.26) / 2 - 0.03, 0.4, 0.006).translate(s * ((W - 0.26) / 4 + 0.008), 0.74, -0.42), glass, false);
@@ -347,7 +362,15 @@ export class JeepView {
     for (const a of [0.9, -0.9]) can.push(rbox(0.4, 0.022, 0.012, 0.005, 0, 0, 0).rotateZ(a).translate(-0.42, 0.27, 1.755));
     can.push(rbox(0.16, 0.05, 0.03, 0.01, -0.42, 0.53, 1.67));
     add(this.group, join([spareR, ...can]), paint);
+    // A second can upright in the well behind the front seats.
+    const can2: BufferGeometry[] = [rbox(0.34, 0.46, 0.16, 0.03, 0, 0.25, 0), rbox(0.16, 0.05, 0.03, 0.01, 0, 0.51, 0)];
+    for (const a of [0.9, -0.9]) can2.push(rbox(0.4, 0.022, 0.012, 0.005, 0, 0, 0).rotateZ(a).translate(0, 0.25, -0.085));
+    add(this.group, join(can2).rotateY(0.2).translate(0.05, 0.02, 0.72), paint);
     const shovel: BufferGeometry[] = [cyl(0.017, 0.017, 0.85, 8, 'z', -(xs + 0.03), 0.3, 0.75)];
+    // The ratchet strap over the crate on the bench, its buckle on the near side.
+    for (const part of [rbox(0.04, 0.006, 0.38, 0.002, 0, 0.303, 0), rbox(0.04, 0.3, 0.006, 0.002, 0, 0.15, 0.19), rbox(0.04, 0.3, 0.006, 0.002, 0, 0.15, -0.19), rbox(0.05, 0.04, 0.02, 0.005, 0, 0.18, 0.198)]) {
+      shovel.push(part.rotateY(-0.08).translate(-0.3, 0.47, 1.18));
+    }
     shovel.push(rbox(0.012, 0.2, 0.24, 0.02, -(xs + 0.03), 0.3, 1.27));
     add(this.group, join(shovel), dark);
 

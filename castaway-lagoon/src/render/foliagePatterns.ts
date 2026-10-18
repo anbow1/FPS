@@ -70,36 +70,69 @@ export function palmFrond(): TexelSampler {
   };
 }
 
-/** A cluster of glossy broad leaves on one card, stems meeting low in the middle. */
+/**
+ * A cluster of glossy broad leaves on one card, stems meeting low in the middle. Each leaf its own: a
+ * midrib that curves, one half a little wider than the other, a wavy margin, pinnate veins that sweep
+ * toward the tip, mottling across the blade, and its age — a few leaves yellowing, browned at the
+ * margin and tip and holed by insects. Veins are faint and sunk into the blade, as on a real leaf's upper
+ * side: drawn as bright ridges, every leaf repeated the same ladder and the bushes read as cut-outs.
+ */
 export function broadleafCluster(seed: number, base: number, alt: number): TexelSampler {
-  const leaves: { cx: number; cy: number; a: number; len: number; w: number; shade: number }[] = [];
+  const leaves: { cx: number; cy: number; a: number; len: number; w: number; shade: number; bend: number; skew: number; veins: number; age: number }[] = [];
   for (let i = 0; i < 11; i++) {
     const a = -1.2 + (i / 10) * 2.4 + (hash2(i, 1, seed) - 0.5) * 0.35;
     const len = 0.28 + hash2(i, 2, seed) * 0.16;
     const r = 0.1 + hash2(i, 3, seed) * 0.12;
-    leaves.push({ cx: 0.5 + Math.sin(a) * (r + len * 0.5), cy: 0.12 + Math.cos(a) * (r + len * 0.5), a, len, w: len * (0.34 + hash2(i, 4, seed) * 0.1), shade: hash2(i, 5, seed) });
+    leaves.push({
+      cx: 0.5 + Math.sin(a) * (r + len * 0.5),
+      cy: 0.12 + Math.cos(a) * (r + len * 0.5),
+      a,
+      len,
+      w: len * (0.3 + hash2(i, 4, seed) * 0.14),
+      shade: hash2(i, 5, seed),
+      bend: (hash2(i, 6, seed) - 0.5) * 0.6,
+      skew: (hash2(i, 9, seed) - 0.5) * 0.24,
+      veins: 6 + Math.floor(hash2(i, 7, seed) * 4),
+      age: hash2(i, 8, seed),
+    });
   }
   const c0 = hex(base);
   const c1 = hex(alt);
+  const yellow = hex(0x9c9a40);
+  const brown = hex(0x6a5232);
   return (u, v, t) => {
     for (let i = leaves.length - 1; i >= 0; i--) {
       const L = leaves[i] as (typeof leaves)[number];
       const ox = u - L.cx;
       const oy = v - L.cy;
       const along = (ox * Math.sin(L.a) + oy * Math.cos(L.a)) / (L.len * 0.5); // −1 base … 1 tip
-      const across = (ox * Math.cos(L.a) - oy * Math.sin(L.a)) / (L.w * 0.5);
       if (along < -1 || along > 1) continue;
-      // Ovate outline with an acuminate tip.
       const s = (along + 1) / 2;
-      const half = Math.sin(Math.PI * s ** 0.8) * (1 - Math.max(0, s - 0.85) * 3);
+      // The midrib bows to one side, more toward the tip.
+      const across = (ox * Math.cos(L.a) - oy * Math.sin(L.a)) / (L.w * 0.5) - L.bend * s * s;
+      // Ovate outline with an acuminate tip, one half wider, the margin gently waved.
+      const half = Math.sin(Math.PI * s ** 0.8) * (1 - Math.max(0, s - 0.85) * 3) * (across < 0 ? 1 - L.skew : 1 + L.skew) * (1 + 0.035 * Math.sin(s * 38 + i * 1.7));
       if (Math.abs(across) > half) continue;
-      const vein = Math.abs(across) < 0.05 ? 1 : Math.abs(((along * 4 + Math.abs(across) * 2) % 1) - 0.5) < 0.04 ? 0.5 : 0;
-      const c = mix(c0, c1, L.shade * 0.7 + s * 0.2);
-      set(t, mix(c, [c[0] * 1.3 + 0.03, c[1] * 1.25 + 0.03, c[2] * 1.1], vein * 0.6), 0.9 + (1 - Math.abs(across)) * 0.15);
+      // Old leaves are holed by insects: the leaf behind shows through.
+      if (L.age > 0.66 && tileNoise(u * 110, v * 110, 110, 71 + seed) > 0.93 - (L.age - 0.66) * 0.12) continue;
+      const ax = Math.abs(across) / Math.max(1e-3, half); // 0 midrib … 1 margin
+      const midrib = Math.abs(across) < 0.035 + (1 - s) * 0.03 ? 1 : 0;
+      // Pinnate veins leave the midrib and sweep forward toward the margin.
+      const phase = s * L.veins - ax * 0.75;
+      const vein = midrib ? 0 : Math.max(0, 1 - Math.abs((((phase % 1) + 1) % 1) - 0.5) / (0.045 * (1 - ax * 0.6)));
+      const mottle = tileFbm(u * 14, v * 14, 14, 3, 61 + seed);
+      let c = mix(c0, c1, L.shade * 0.7 + s * 0.15);
+      c = mix(c, yellow, Math.max(0, L.age - 0.78) * 2.2 * (0.6 + mottle));
+      // Margin and tip browned on the older leaves.
+      const burn = Math.min(1, (Math.max(0, ax - 0.88) * 6 + Math.max(0, s - 0.92) * 8) * L.age);
+      c = mix(c, brown, burn);
+      c = mix(c, [c[0] * 1.2 + 0.03, c[1] * 1.2 + 0.035, c[2] * 1.05 + 0.01], midrib * 0.6 + vein * 0.3);
+      // The blade bulges between the veins and curls away from the light at its margin.
+      set(t, c, (0.84 + mottle * 0.26) * (0.94 + (1 - ax) * 0.1));
       t.alpha = 1;
-      t.height = (1 - Math.abs(across)) * 0.6 + vein * 0.2;
-      t.rough = 0.42;
-      t.ao = 0.7 + 0.3 * s;
+      t.height = 0.45 + (1 - ax * ax) * 0.35 - vein * 0.12 - midrib * 0.1;
+      t.rough = 0.4 + mottle * 0.12 + burn * 0.3;
+      t.ao = (0.72 + 0.28 * s) * (1 - vein * 0.08);
       return;
     }
     clear(t);
