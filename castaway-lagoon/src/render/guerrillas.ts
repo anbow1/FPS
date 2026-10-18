@@ -1,4 +1,4 @@
-import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, vec3 } from 'three/tsl';
+import { attribute, float, floor, mix, mx_noise_float, positionGeometry, positionLocal, smoothstep, step, vec3 } from 'three/tsl';
 import { BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedBufferAttribute, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, type Node, Shape, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
 import type { Guerrilla } from '../game/guerrillas.ts';
 import { merge } from './meshkit.ts';
@@ -287,8 +287,9 @@ const BANDANAS: Rgb[] = [
 ];
 
 /**
- * One man's clothes, from his slot: [shirt 0 = tiger stripe or 1…4 a plain one, trousers 0…3, skin tone
- * 0…1, headgear 0…3]. Irregulars wear what they have: a band in one uniform read as a platoon of clones.
+ * One man's clothes, by his id: [shirt 0 = tiger stripe or 1…4 a plain one, trousers 0…3, skin tone
+ * 0…1, headgear = what × 4 + colour 0…3, what 0 a boonie hat, 1 a headband, 2 bare-headed, 3 both].
+ * Irregulars wear what they have: a band in one uniform read as a platoon of clones.
  */
 function kitFor(i: number): [number, number, number, number] {
   const h = (k: number): number => {
@@ -296,7 +297,8 @@ function kitFor(i: number): [number, number, number, number] {
     x ^= x >>> 15;
     return ((x >>> 0) % 10000) / 10000;
   };
-  return [h(1) < 0.4 ? 0 : 1 + Math.floor(h(2) * SHIRTS.length), Math.floor(h(3) * TROUSER_COLOURS.length), h(4), Math.floor(h(5) * HATS.length)];
+  const what = h(6) < 0.35 ? 0 : h(6) < 0.65 ? 1 : h(6) < 0.85 ? 2 : 3;
+  return [h(1) < 0.4 ? 0 : 1 + Math.floor(h(2) * SHIRTS.length), Math.floor(h(3) * TROUSER_COLOURS.length), h(4), what * 4 + Math.floor(h(5) * HATS.length)];
 }
 
 /** The entry of `list` at index `i` (a float node holding a whole number), by a chain of steps. */
@@ -327,8 +329,10 @@ function kitMaterial(): MeshPhysicalNodeMaterial {
   let base: Node<'vec3'> = tint;
   base = mix(base, shirt, is(STRIPE));
   base = mix(base, pickRgb(kit.y, TROUSER_COLOURS).mul(mottle), is(TROUSERS));
-  base = mix(base, pickRgb(kit.w, HATS).mul(mottle), is(HAT));
-  base = mix(base, pickRgb(kit.w, BANDANAS), is(BANDANA));
+  const gear = floor(kit.w.div(4));
+  const gearColour = kit.w.sub(gear.mul(4));
+  base = mix(base, pickRgb(gearColour, HATS).mul(mottle), is(HAT));
+  base = mix(base, pickRgb(gearColour, BANDANAS), is(BANDANA));
   base = mix(base, skin, is(SKIN));
   // Mud and dust where they collect, in blotches: dried light dust over darker wet mud.
   const grime = attribute('grime', 'float');
@@ -336,6 +340,11 @@ function kitMaterial(): MeshPhysicalNodeMaterial {
   const mud = mix(vec3(0.08, 0.06, 0.04), vec3(0.24, 0.2, 0.15), smoothstep(0.1, 0.6, mx_noise_float(positionGeometry.mul(9))));
   const colour = mix(base, mud, blot.mul(grime)).mul(attribute('shade', 'float'));
   m.colorNode = colour;
+  // Headgear a man does not wear collapses to a point (after instancing, so a zero-area triangle).
+  const hat = step(gear, 0.5).add(step(2.5, gear));
+  const band = step(0.5, gear).mul(step(gear, 1.5)).add(step(2.5, gear));
+  const hidden = is(HAT).mul(float(1).sub(hat)).add(is(BANDANA).mul(float(1).sub(band)));
+  m.positionNode = positionLocal.mul(float(1).sub(hidden));
   m.roughnessNode = mix(float(0.55), float(0.9), cloth.max(blot.mul(grime)));
   m.sheenNode = colour.mul(cloth.mul(0.35));
   return m;
@@ -629,10 +638,12 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
   const head = joined(
     [
       tag(faceShade(headGeometry()), C.skin, SKIN),
-      tag(new SphereGeometry(0.102, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.45).scale(0.84, 1.0, 0.98).translate(0, 0.01, 0.01), C.hair, PLAIN),
-      // Bandana knotted at the back, and a boonie hat's brim and crown over it.
-      tag(new CylinderGeometry(0.087, 0.09, 0.05, 14, 1, true).scale(1, 1, 1.12).translate(0, 0.045, 0.005), C.bandana, BANDANA),
-      tag(box(0.05, 0.04, 0.05, 0, 0.04, 0.1), C.bandana, BANDANA),
+      // Hair: the cap tilted back so the hairline is high on the forehead and low at the nape.
+      tag(new SphereGeometry(0.102, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.45).rotateX(0.35).scale(0.84, 1.0, 0.98).translate(0, 0.01, 0.01), C.hair, PLAIN),
+      // A headband across the forehead above the brows, knotted at the back, and a boonie hat's brim and
+      // crown; each man wears his own (kitFor), the rest collapse in the vertex stage (kitMaterial).
+      tag(new CylinderGeometry(0.058, 0.076, 0.035, 16, 1, true).scale(1, 1, 1.18).translate(0, 0.0625, 0.002), C.bandana, BANDANA),
+      tag(box(0.04, 0.03, 0.03, 0, 0.06, 0.085), C.bandana, BANDANA),
       tag(new CylinderGeometry(0.095, 0.1, 0.07, 16).translate(0, 0.09, 0.005), C.hat, HAT),
       tag(new TorusGeometry(0.115, 0.022, 4, 20).rotateX(Math.PI / 2).scale(1, 1, 1.1).translate(0, 0.062, 0.005), C.hat, HAT),
       // Ears; eyes in the sockets; brows.
