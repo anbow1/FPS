@@ -231,11 +231,11 @@ export function propMaterials(): PropMaterials {
   if (cached) return cached;
   const glass = new MeshPhysicalNodeMaterial({ name: 'lantern glass', color: 0xf2eee0, roughness: 0.08, metalness: 0, transmission: 0, transparent: true, opacity: 0.35, ior: 1.5 });
   cached = {
-    // Scanned boards (photoTextures.ts), four planks to a texture, one per board. The scans are temperate
-    // boards (mean sRGB 0.38 and 0.28): under the shelter's roof the deck went near black, so they are
-    // bleached toward the grey a tropical sun leaves (~0.47 and ~0.36).
+    // Scanned boards (photoTextures.ts), four planks to a texture, one per board. The deck's scan is a
+    // temperate board (mean sRGB 0.38): under the shelter's roof it went near black, so it is bleached
+    // toward the grey a tropical sun leaves (~0.47). The jetty's grey scan reads right in full sun as it is.
     planks: standard(photoTextureSet('old_planks_02'), 'planks', 0.6, 1.6),
-    weatheredPlanks: standard(photoTextureSet('wood_planks_grey'), 'weathered planks', 0.6, 1.8),
+    weatheredPlanks: standard(photoTextureSet('wood_planks_grey'), 'weathered planks'),
     darkWood: standard(photoTextureSet('weathered_planks'), 'dark wood'),
     logBark: photoStandard(photoSet('bark006'), 'log bark'),
     piles: pileMaterial(photoSet('bark006')),
