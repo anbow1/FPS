@@ -148,6 +148,7 @@ export class GameView {
     stage.scene.add(this.foliage.group, this.undergrowth.group, this.actors.group);
     await progress('Lighting', 0.6);
     this.lighting = new Lighting(stage.renderer, stage.scene, this.settings.quality);
+    this.lighting.setLake(map.lake ?? null);
     await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y);
     this.exposure = new AutoExposure(stage.renderer, this.lighting.preset.ev100);
     if (map.id === 'city') this.cityLights = new CityLights(map, stage.scene, this.settings.quality);
@@ -297,6 +298,7 @@ export class GameView {
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
+    this.lighting.mistTime.value = game.timeSeconds;
     // The weapon light's beam shows in the haze, in rain, and in the dust of a closed room.
     const scatter = this.lighting.preset.fogDensityPerM + 0.0012 + wetness.value * rainRate.value * 0.02 + (inside ? 0.004 : 0);
     this.weaponLight.update(cam, p.weaponLight && p.alive, this.lighting.preExposure, scatter, game.timeSeconds);

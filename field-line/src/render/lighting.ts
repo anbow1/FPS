@@ -1,7 +1,7 @@
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
-import { cameraPosition, dot, exp, float, fog, max, mix, positionWorld, pow, uniform, vec3, vec4 } from 'three/tsl';
-import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, PMREMGenerator, RenderTarget, Scene, SphereGeometry, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
+import { cameraPosition, clamp, dot, exp, float, fog, max, mix, mx_noise_float, positionWorld, pow, smoothstep, uniform, vec3, vec4 } from 'three/tsl';
+import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, PMREMGenerator, RenderTarget, Scene, SphereGeometry, type Texture, Vector3, Vector4, type WebGPURenderer } from 'three/webgpu';
 import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '../config.ts';
 import { lightColour, preExposureFor } from './colour.ts';
 import { revealSun } from './facadeReveal.ts';
@@ -40,6 +40,13 @@ export class Lighting {
   private readonly groundRadiance = uniform(new Vector3());
   private readonly fogFalloff = uniform(0.005);
   private readonly fogBaseY = uniform(0);
+  /** The lake's mist (lakeMistNode): centre and semi-axes (xz), still level, and amount 0…1 for the preset. */
+  private readonly mistLake = uniform(new Vector4(0, 0, 1, 1));
+  private readonly mistLevel = uniform(-1e4);
+  private readonly mistAmount = uniform(0);
+  private hasLake = false;
+  /** Seconds, for the mist's drift (the view sets it each frame). */
+  readonly mistTime = uniform(0);
   preset: LightingPreset = LIGHTING.noon;
   preExposure = preExposureFor(LIGHTING.noon.ev100);
   private readonly sunDir = new Vector3();
@@ -88,7 +95,9 @@ export class Lighting {
     groundMat.colorNode = vec4(this.groundRadiance, 1);
     this.skyScene.add(new Mesh(new SphereGeometry(50, 32, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), groundMat));
 
-    scene.fogNode = fog(this.fogColourNode(), this.fogFactorNode());
+    const haze = this.fogFactorNode();
+    const mist = this.lakeMistNode();
+    scene.fogNode = fog(this.fogColourNode(), float(1).sub(float(1).sub(haze).mul(float(1).sub(mist))));
   }
 
   /** Aerial perspective colour: the horizon sky, brightened toward the sun (Mie forward scatter). */
@@ -96,6 +105,46 @@ export class Lighting {
     const viewDir = positionWorld.sub(cameraPosition).normalize();
     const toward = max(viewDir.dot(this.sunDirection), 0);
     return this.fogColour.add(this.sunGlowColour.mul(pow(toward, 8)));
+  }
+
+  /** The map's lake, for its mist (none: no mist). */
+  setLake(lake: { cx: number; cz: number; rx: number; rz: number; levelM: number } | null): void {
+    this.hasLake = lake !== null;
+    if (lake) {
+      this.mistLake.value.set(lake.cx, lake.cz, lake.rx, lake.rz);
+      this.mistLevel.value = lake.levelM;
+    }
+  }
+
+  /**
+   * Mist lying on the lake, after the river valley in "Sakura River" (a three.js scene): a layer some
+   * 2 m thick integrated along the view ray like the haze, confined to the lake and its banks by the
+   * point of the ray nearest the lake's centre (a ray that crosses the water picks it up even when it
+   * ends on the far shore's trees), broken into slowly drifting patches.
+   */
+  private lakeMistNode() {
+    const MIST_DENSITY = 0.03;
+    const f = 1 / 2.0;
+    const o = cameraPosition;
+    const ray = positionWorld.sub(o);
+    const d = ray.length();
+    const h0 = o.y.sub(this.mistLevel).max(0);
+    const h1 = positionWorld.y.sub(this.mistLevel).max(0);
+    const dy = h1.sub(h0);
+    const e0 = exp(h0.mul(-f));
+    const e1 = exp(h1.mul(-f));
+    const integral = dy.abs().lessThan(0.01).select(e0, e0.sub(e1).div(dy.mul(f)));
+    // The ray's point nearest the lake centre, in the lake's normalised (elliptical) frame.
+    const c = this.mistLake.xy;
+    const radii = this.mistLake.zw;
+    const oN = o.xz.sub(c).div(radii);
+    const rN = ray.xz.div(radii);
+    const t = clamp(oN.negate().dot(rN).div(max(rN.dot(rN), 1e-6)), 0, 1);
+    const near = oN.add(rN.mul(t));
+    const over = smoothstep(1.6, 0.9, near.length());
+    const at = c.add(near.mul(radii));
+    const patches = smoothstep(-0.35, 0.45, mx_noise_float(vec3(at.div(22), this.mistTime.mul(0.015)))).mul(0.8).add(0.2);
+    return float(1).sub(exp(this.mistAmount.mul(MIST_DENSITY).mul(over).mul(patches).mul(d).mul(integral).negate()));
   }
 
   /**
@@ -157,6 +206,9 @@ export class Lighting {
     this.fogDensity.value = p.fogDensityPerM;
     this.fogFalloff.value = p.fogHeightFalloffPerM;
     this.fogBaseY.value = groundY;
+    // Mist lies on still water toward evening, under a grey sky and at night, not under a noon sun.
+    const mistByPreset: Record<LightingPresetId, number> = { noon: 0, golden: 0.75, overcast: 0.55, night: 0.45 };
+    this.mistAmount.value = this.hasLake ? mistByPreset[id] : 0;
 
     // Ground bounce: a mean ground albedo (turf, soil, concrete ≈ 0.2 on the PBR sheet) lit by sun and sky.
     const groundE = (p.sunIlluminanceLux * Math.max(0, Math.sin(p.sunElevationRad)) + p.skyIlluminanceLux) * this.preExposure;
