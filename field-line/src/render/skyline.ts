@@ -1,4 +1,4 @@
-import { abs, attribute, cameraViewMatrix, dot, float, floor, fract, max, mix, normalize, normalWorldGeometry, positionWorld, sin, smoothstep, step, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, attribute, cameraViewMatrix, dot, float, floor, fract, fwidth, max, mix, normalize, normalWorldGeometry, positionWorld, sin, smoothstep, step, vec2, vec3, vec4 } from 'three/tsl';
 import { BoxGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshStandardNodeMaterial, type Node, Quaternion, Vector3 } from 'three/webgpu';
 import { Rng } from '../core/rng.ts';
 import { cityNight, lightPreExposure } from './cityLights.ts';
@@ -75,7 +75,11 @@ export function buildSkyline(): InstancedMesh {
   const glassPane = float(1).sub(max(mullion, spandrel)).clamp(0, 1);
   // Stone: a punched window, 55 % of the bay, 55 % of the storey.
   const stoneWin = smoothstep(0.24, 0.22, abs(f.x.sub(0.5))).mul(smoothstep(0.3, 0.28, abs(f.y.sub(0.55))));
-  const pane = mix(stoneWin, glassPane, isGlass).mul(side);
+  // Past a few pixels per window the grid is averaged (its pane share), or it shimmers and, lit, turns to
+  // static: `blur` is 0 while a cell spans ≥ 3 px and 1 once it is under one.
+  const blur = smoothstep(0.33, 1.0, max(fwidth(cellUV.x), fwidth(cellUV.y)));
+  const paneShare = mix(float(0.3), float(0.62), isGlass);
+  const pane = mix(mix(stoneWin, glassPane, isGlass), paneShare, blur).mul(side);
   const glassTint = mix(vec3(0.03, 0.05, 0.06), vec3(0.05, 0.06, 0.05), tint);
   const frame = mix(vec3(0.35, 0.37, 0.38), vec3(0.18, 0.19, 0.2), tint);
   const stone = mix(vec3(0.42, 0.38, 0.32), vec3(0.3, 0.27, 0.25), tint).mul(paneHash.mul(0.04).add(0.98));
@@ -87,10 +91,13 @@ export function buildSkyline(): InstancedMesh {
   // Each pane set a fraction of a degree off, so a curtain wall reflects many skies, not one grey sheet.
   const tilt = vec3(hash2(cell.add(faceKey), 2).sub(0.5), hash2(cell.add(faceKey), 3).sub(0.5).mul(0.5), hash2(cell.add(faceKey), 4).sub(0.5)).mul(0.08).mul(pane);
   mat.normalNode = normalize(cameraViewMatrix.mul(vec4(n0.add(tilt), 0)).xyz);
-  // Night: a share of the windows lit, warm or cool office light (~60 cd/m², pre-exposed).
-  const lit = step(paneHash, mix(float(0.32), float(0.45), isGlass)).mul(pane);
-  const warm = mix(vec3(1, 0.78, 0.52), vec3(0.85, 0.92, 1), step(0.6, hash2(cell.add(faceKey), 5)));
-  mat.emissiveNode = warm.mul(lit).mul(cityNight).mul(lightPreExposure).mul(60);
+  // Night: a share of the windows lit, warm or cool office light seen through the glass (~8 cd/m²
+  // pre-exposed, like the near façades' rooms: brighter blew the towers out to white blocks), averaged
+  // with the grid once a window is under a pixel.
+  const share = mix(float(0.32), float(0.45), isGlass);
+  const lit = mix(step(paneHash, share), share, blur).mul(pane);
+  const warm = mix(vec3(1, 0.78, 0.52), vec3(0.85, 0.92, 1), mix(step(0.6, hash2(cell.add(faceKey), 5)), float(0.4), blur));
+  mat.emissiveNode = warm.mul(lit).mul(cityNight).mul(lightPreExposure).mul(8);
 
   const mesh = new InstancedMesh(geo, mat, towers.length);
   mesh.name = 'skyline';
