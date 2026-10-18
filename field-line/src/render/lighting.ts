@@ -5,6 +5,7 @@ import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, Per
 import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '../config.ts';
 import { lightColour, preExposureFor } from './colour.ts';
 import { revealSun } from './facadeReveal.ts';
+import { environmentTexture, equirectU, type Hdri } from './hdri.ts';
 
 // Sun, sky, environment and height fog for one lighting preset from
 // lighting-reference.png. Every intensity is authored in physical units (lux)
@@ -168,7 +169,8 @@ export class Lighting {
     return float(1).sub(exp(depth.negate()));
   }
 
-  async apply(id: LightingPresetId, groundY: number): Promise<void> {
+  /** `hdri`: a photographed environment for the ambient light and reflections (hdri.ts); null keeps the probe. */
+  async apply(id: LightingPresetId, groundY: number, hdri: Hdri | null = null): Promise<void> {
     const p = LIGHTING[id];
     this.preset = p;
     this.preExposure = preExposureFor(p.ev100);
@@ -228,7 +230,17 @@ export class Lighting {
     // the visible dome keeps Preetham's hues and only takes the brightness scale.
     this.skyGain.value.set((skyK.r * e) / Math.max(1e-9, raw.r), (skyK.g * e) / Math.max(1e-9, raw.g), (skyK.b * e) / Math.max(1e-9, raw.b));
     this.envTexture?.dispose();
-    const rt = await this.pmrem.fromSceneAsync(this.skyScene, 0, 0.1, 100);
+    let rt;
+    if (hdri) {
+      // The photographed environment, brought to the same sky irradiance and colour the probe would cast
+      // (its ground half carries the bounce the probe's flat dome stood for), its sun under the scene's.
+      const gain: [number, number, number] = [(skyK.r * e) / hdri.skyIrradiance[0], (skyK.g * e) / hdri.skyIrradiance[1], (skyK.b * e) / hdri.skyIrradiance[2]];
+      const equirect = environmentTexture(hdri, gain, cloudy ? null : equirectU(this.sunDir.x, this.sunDir.z));
+      rt = this.pmrem.fromEquirectangular(equirect);
+      equirect.dispose();
+    } else {
+      rt = await this.pmrem.fromSceneAsync(this.skyScene, 0, 0.1, 100);
+    }
     this.envTexture = rt.texture;
     this.scene.environment = rt.texture;
     this.scene.environmentIntensity = 1;

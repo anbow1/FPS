@@ -1,5 +1,6 @@
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadScanModels } from './scanModels.ts';
+import { type HdriSetting, loadHdri } from './hdri.ts';
 import { Object3D, Vector3 } from 'three/webgpu';
 import { LAKE_WAVES, type LightingPresetId, WORLD_WIND } from '../config.ts';
 import { damp } from '../core/vec.ts';
@@ -154,7 +155,7 @@ export class GameView {
     await progress('Lighting', 0.6);
     this.lighting = new Lighting(stage.renderer, stage.scene, this.settings.quality);
     this.lighting.setLake(map.lake ?? null);
-    await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y);
+    await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y, await loadHdri(hdriSetting(map.id), this.settings.preset));
     this.exposure = new AutoExposure(stage.renderer, this.lighting.preset.ev100);
     if (map.id === 'city') this.cityLights = new CityLights(map, stage.scene, this.settings.quality);
     const w = WORLD_WIND[map.id];
@@ -207,7 +208,7 @@ export class GameView {
     this.settings = { ...s };
     this.stage.applySettings(s);
     if (presetChanged) {
-      await this.lighting.apply(s.preset, this.map.playerSpawn.pos.y);
+      await this.lighting.apply(s.preset, this.map.playerSpawn.pos.y, await loadHdri(hdriSetting(this.map.id), s.preset));
       this.exposure.reset(this.lighting.preset.ev100);
       this.viewModel.setEnvironment(this.stage.scene.environment, this.interiorK);
       this.syncPreExposure();
@@ -436,4 +437,9 @@ async function precompile(job: Promise<unknown>): Promise<void> {
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+/** The city's streets in the urban scans, the forest and the range in the woodland ones. */
+function hdriSetting(mapId: string): HdriSetting {
+  return mapId === 'city' ? 'urban' : 'nature';
 }
