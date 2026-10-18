@@ -1,26 +1,22 @@
-import { CanvasTexture, CapsuleGeometry, CylinderGeometry, Group, type Material, Mesh, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, Object3D, Quaternion, RepeatWrapping, SphereGeometry, SRGBColorSpace, Vector3 } from 'three/webgpu';
-import { float, texture, vec3 } from 'three/tsl';
-import { merge, tube } from './meshkit.ts';
+import { attribute, bumpMap, float, mix, mx_noise_float, positionGeometry, smoothstep, texture, uv, vec3 } from 'three/tsl';
+import { Bone, CanvasTexture, CylinderGeometry, Group, Matrix4, Mesh, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, Quaternion, RepeatWrapping, Skeleton, SkinnedMesh, SRGBColorSpace, Vector3 } from 'three/webgpu';
+import { type HandData, handData, type HandPose, poseRotations } from './handMesh.ts';
 
-// First-person arms: articulated hands (three-segment fingers and a thumb,
-// fingerless leather gloves) on tattooed forearms and rolled sleeves. Each
-// arm hangs from a fixed shoulder and reaches its hand target through a
-// two-bone IK with an outward-and-down elbow pole, so the hands are always
-// attached to something — they never float. Metres, camera space (x right,
-// y up, −z forward). Hand frame: wrist at the origin, fingers along −Z,
-// palm facing −Y, thumb toward −X (right hand; the left is mirrored).
+// First-person arms: a real forearm and hand (handMesh.ts — MakeHuman's
+// body, its knuckles, tendons and nails) in fingerless leather gloves, a
+// tattooed forearm and a rolled sleeve. Each arm hangs from a fixed shoulder
+// and reaches its hand target through a two-bone IK with an outward-and-down
+// elbow pole, so the hands are always attached to something — they never
+// float. The forearm and the hand are one skin on two bones, so the wrist
+// bends as a wrist, and the forearm turns with the hand as a radius does.
+// Metres, camera space (x right, y up, −z forward). Hand frame: wrist at the
+// origin, fingers along −Z, palm facing −Y, thumb toward −X (right hand; the
+// left is its mirror image).
+
+export type { HandPose } from './handMesh.ts';
 
 const UPPER_ARM_M = 0.3;
 const FOREARM_M = 0.27;
-
-export interface HandPose {
-  /** Finger curl 0 (flat) … 1 (fist), index → pinky. */
-  curl: [number, number, number, number];
-  /** Thumb: 0 alongside the palm, 1 wrapped across it. */
-  thumb: number;
-  /** Finger spread 0..1. */
-  spread: number;
-}
 
 export const POSES = {
   relaxed: { curl: [0.5, 0.58, 0.64, 0.7], thumb: 0.35, spread: 0.1 },
@@ -31,59 +27,100 @@ export const POSES = {
   pinch: { curl: [0.62, 0.7, 0.8, 0.85], thumb: 0.9, spread: 0.1 },
 } as const satisfies Record<string, HandPose>;
 
-const FINGERS = [
-  { x: -0.028, len: [0.044, 0.026, 0.021], r: 0.0092, splay: -0.08 },
-  { x: -0.009, len: [0.049, 0.03, 0.023], r: 0.0095, splay: 0 },
-  { x: 0.011, len: [0.046, 0.028, 0.022], r: 0.009, splay: 0.06 },
-  { x: 0.029, len: [0.035, 0.021, 0.019], r: 0.0078, splay: 0.14 },
-];
+/** Tanned skin (sRGB): brown, not orange. */
+const SKIN_HEX = 0x9c7560;
 
-let materials: { skin: MeshSSSNodeMaterial; tipSkin: MeshSSSNodeMaterial; nail: MeshStandardNodeMaterial; glove: MeshPhysicalNodeMaterial; tattooSkin: MeshSSSNodeMaterial; sleeve: MeshPhysicalNodeMaterial; watch: MeshStandardNodeMaterial } | null = null;
+/** How far the glove's leather stands off the skin (m). */
+const GLOVE_THICKNESS_M = 0.0013;
 
+let materials: { arm: MeshSSSNodeMaterial; sleeve: MeshPhysicalNodeMaterial; watch: MeshStandardNodeMaterial } | null = null;
+
+function linear(hex: number): [number, number, number] {
+  const s = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255].map((c) => c / 255);
+  return s.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)) as [number, number, number];
+}
+
+/**
+ * The arm's one material, by the bake's regions: tanned skin with its blood glowing through thin edges
+ * (SSS), the forearm's tattoo, nails a little paler and glossier, and the glove's dark leather over the
+ * palm, the back of the hand and the first finger joints, a cut edge darker where the fingers come out.
+ */
 function armMaterials() {
   if (materials) return materials;
-  const skinColour = 0xb4825f; // sheet: tanned skin, rough 0.5, scattering warm-red
-  const makeSkin = (map: CanvasTexture | null, colour = skinColour, name = map ? 'forearm skin' : 'hand skin'): MeshSSSNodeMaterial => {
-    const m = new MeshSSSNodeMaterial({ name, color: colour, roughness: 0.52, metalness: 0 });
-    if (map) {
-      m.map = map;
-      m.colorNode = texture(map).rgb;
-    }
-    // Thin skin glows red at the edges against the light (fingers, ears): SSS through the shadowed light.
-    m.thicknessColorNode = vec3(0.8, 0.25, 0.12);
-    m.thicknessDistortionNode = float(0.2);
-    m.thicknessPowerNode = float(3);
-    m.thicknessScaleNode = float(2.5);
-    m.thicknessAttenuationNode = float(0.8);
-    return m;
-  };
+  const region = attribute('region', 'vec4');
+  const bare = smoothstep(0.35, 0.65, region.x);
+  const forearm = smoothstep(0.3, 0.7, region.z);
+  const glove = float(1).sub(bare).mul(float(1).sub(forearm));
+  const nail = smoothstep(0.2, 0.6, region.y);
+  // Sun-tanned skin, mottled (sun spots, the redder skin over knuckles and tendons), the tattooed forearm
+  // from its own texture with its hairs and veins. An even, saturated tan read as a shop dummy's arm.
+  const mottle = mx_noise_float(positionGeometry.mul(90)).mul(0.06).add(mx_noise_float(positionGeometry.mul(23).add(3.1)).mul(0.08));
+  const skin = vec3(...linear(SKIN_HEX)).mul(mottle.add(1));
+  const handSkin = mix(skin, vec3(...linear(0x9f6e5a)), bare.mul(0.5));
+  const skinColour = mix(handSkin, texture(tattooTexture(), uv()).rgb.mul(mottle.add(1)), forearm);
+  const withNail = mix(skinColour, vec3(...linear(0xd2a693)), nail);
+  // The glove's cut edges, round each finger and at the wrist: the leather's raw edge, darker.
+  const fingerEdge = float(1).sub(smoothstep(0.0, 0.12, region.x.sub(0.5).abs())).mul(float(1).sub(forearm));
+  const wristEdge = float(1).sub(smoothstep(0.0, 0.1, region.z.sub(0.5).abs()));
+  const leather = vec3(...linear(0x3a2a20)).mul(float(1).sub(fingerEdge.add(wristEdge).min(1).mul(0.45)));
+  const m = new MeshSSSNodeMaterial({ name: 'arm', roughness: 0.52, metalness: 0 });
+  m.colorNode = mix(withNail, leather, glove);
+  // Pores and fine creases in the skin, the leather's grain in the glove: a bump from noise in the mesh's
+  // rest pose (so it moves with the skin), so the light does not slide over a moulded surface.
+  const pores = mx_noise_float(positionGeometry.mul(1400)).mul(mix(float(0.00012), float(0.00007), glove));
+  m.normalNode = bumpMap(pores);
+  m.roughnessNode = mix(mix(float(0.52), float(0.3), nail), float(0.62), glove);
+  m.sheenNode = vec3(...linear(0x5a4030)).mul(glove.mul(0.4));
+  m.sheenRoughnessNode = float(0.6);
+  // Thin skin glows red at the edges against the light (fingers, knuckles); the glove's leather does not.
+  m.thicknessColorNode = mix(vec3(0.8, 0.25, 0.12), vec3(0), glove);
+  m.thicknessDistortionNode = float(0.2);
+  m.thicknessPowerNode = float(3);
+  m.thicknessScaleNode = float(2.5);
+  m.thicknessAttenuationNode = float(0.8);
   materials = {
-    skin: makeSkin(null),
-    // Fingertips are pinker than the back of the hand: thinner skin over more blood.
-    tipSkin: makeSkin(null, 0xb87a60, 'fingertip skin'),
-    // Nails: a little paler and glossier than the skin, the pink beneath showing through.
-    nail: new MeshStandardNodeMaterial({ name: 'nail', color: 0xc99a86, roughness: 0.32, metalness: 0 }),
-    tattooSkin: makeSkin(tattooTexture()),
-    glove: new MeshPhysicalNodeMaterial({ name: 'glove', color: 0x3a2a20, roughness: 0.62, metalness: 0, sheen: 0.4, sheenRoughness: 0.6, sheenColor: 0x5a4030 }),
+    arm: m,
     sleeve: new MeshPhysicalNodeMaterial({ name: 'sleeve', color: 0x5f6048, roughness: 0.92, metalness: 0, sheen: 0.5, sheenRoughness: 0.8, sheenColor: 0x5f6048 }),
     watch: new MeshStandardNodeMaterial({ name: 'watch', color: 0x1f1f1f, roughness: 0.4, metalness: 0 }),
   };
   return materials;
 }
 
-/** Tribal band tattoo on skin, u around the forearm, v along it. */
+/** Tribal band tattoo on skin, u around the forearm (0.5 its back), v along it from the wrist. */
 function tattooTexture(): CanvasTexture {
   const el = document.createElement('canvas');
   el.width = 256;
   el.height = 256;
   const c = el.getContext('2d');
   if (!c) throw new Error('2d canvas unavailable for the tattoo texture');
-  c.fillStyle = '#b4825f';
+  c.fillStyle = `#${SKIN_HEX.toString(16).padStart(6, '0')}`;
   c.fillRect(0, 0, 256, 256);
   // Freckles and tone variation.
   for (let i = 0; i < 400; i++) {
-    c.fillStyle = `rgba(120,70,45,${Math.random() * 0.12})`;
+    c.fillStyle = `rgba(110,70,50,${Math.random() * 0.12})`;
     c.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  // Veins on the inside of the wrist and up the forearm (u ≈ 0 is its inside), faint blue-green under the tan.
+  c.strokeStyle = 'rgba(70,80,95,0.16)';
+  c.lineWidth = 2.5;
+  for (const x0 of [10, 238, 30]) {
+    c.beginPath();
+    c.moveTo(x0, 0);
+    for (let y = 0; y <= 256; y += 32) c.lineTo(x0 + Math.sin(y * 0.05 + x0) * 10, y);
+    c.stroke();
+  }
+  // Hair: short dark strokes lying along the arm toward the elbow, thicker over its back (u ≈ 0.5).
+  for (let i = 0; i < 2600; i++) {
+    const x = Math.random() * 256;
+    const onBack = Math.exp(-(((x - 128) / 70) ** 2));
+    if (Math.random() > 0.25 + onBack * 0.75) continue;
+    const y = 20 + Math.random() * 236;
+    c.strokeStyle = `rgba(40,28,20,${0.18 + Math.random() * 0.25})`;
+    c.lineWidth = 0.6;
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(x + (Math.random() - 0.5) * 2, y + 3 + Math.random() * 3);
+    c.stroke();
   }
   c.strokeStyle = 'rgba(28,32,36,0.88)';
   c.fillStyle = 'rgba(28,32,36,0.88)';
@@ -113,88 +150,35 @@ function tattooTexture(): CanvasTexture {
   return t;
 }
 
-/** One articulated hand. */
+/** The hand's bones under its wrist frame (`root`), posed by finger curl. */
 export class Hand {
   readonly root = new Group();
-  private readonly joints: Object3D[][] = [];
-  private readonly thumbJoints: Object3D[] = [];
+  /** Bones from the wrist on, in the bake's order after the forearm. */
+  readonly bones: Bone[];
+  private readonly rotations: Quaternion[];
 
-  constructor() {
-    const M = armMaterials();
-    // Palm: a flattened rounded block, gloved, with knuckle ridge and thenar pad.
-    const palm = merge(
-      [
-        new CapsuleGeometry(0.04, 0.03, 4, 10).rotateZ(Math.PI / 2).scale(1, 0.36, 1.2).translate(0, 0, -0.058),
-        new SphereGeometry(0.03, 10, 8).scale(1.1, 0.7, 1.3).translate(-0.022, -0.006, -0.03),
-        new SphereGeometry(0.028, 10, 8).scale(1.2, 0.6, 1).translate(0.01, 0, -0.012),
-      ],
-      'palm',
-    );
-    this.root.add(this.mesh(palm, M.glove));
-    FINGERS.forEach((f, i) => {
-      let parent: Object3D = this.root;
-      const chain: Object3D[] = [];
-      f.len.forEach((len, s) => {
-        const joint = new Object3D();
-        joint.position.set(s === 0 ? f.x : 0, s === 0 ? 0.002 : 0, s === 0 ? -0.094 + Math.abs(f.x) * 0.25 : -(f.len[s - 1] as number));
-        const r = f.r * (1 - s * 0.1);
-        const seg = new CapsuleGeometry(r, Math.max(0.001, len - r), 3, 8).rotateX(Math.PI / 2).translate(0, 0, -len / 2);
-        joint.add(this.mesh(seg, s === 0 ? M.glove : s === 2 ? M.tipSkin : M.skin));
-        if (s === 2) joint.add(this.mesh(nailGeometry(r, len), M.nail));
-        parent.add(joint);
-        chain.push(joint);
-        parent = joint;
-      });
-      this.joints[i] = chain;
+  constructor(
+    private readonly side: 1 | -1,
+    private readonly data: HandData,
+  ) {
+    const all: Bone[] = data.bones.map(() => new Bone());
+    data.bones.forEach((b, i) => {
+      if (i === 0) return; // the forearm's bone lives in the forearm (Arm)
+      const bone = all[i] as Bone;
+      bone.name = b.name;
+      const parent = b.parent > 0 ? (data.bones[b.parent] as (typeof data.bones)[number]) : null;
+      bone.position.copy(b.head);
+      if (parent) bone.position.sub(parent.head);
+      (b.parent > 0 ? (all[b.parent] as Bone) : this.root).add(bone);
     });
-    // Thumb from the heel of the palm, angled forward and toward −X.
-    let parent: Object3D = this.root;
-    const thumbLen = [0.04, 0.032, 0.027];
-    thumbLen.forEach((len, s) => {
-      const joint = new Object3D();
-      if (s === 0) {
-        joint.position.set(-0.032, -0.008, -0.03);
-        joint.rotation.set(0, 0.75, 0.5);
-      } else joint.position.set(0, 0, -(thumbLen[s - 1] as number));
-      const r = 0.0115 - s * 0.0012;
-      joint.add(this.mesh(new CapsuleGeometry(r, len - r, 3, 8).rotateX(Math.PI / 2).translate(0, 0, -len / 2), s === 0 ? M.glove : s === 2 ? M.tipSkin : M.skin));
-      if (s === 2) joint.add(this.mesh(nailGeometry(r, len), M.nail));
-      parent.add(joint);
-      this.thumbJoints.push(joint);
-      parent = joint;
-    });
-  }
-
-  private mesh(g: CapsuleGeometry | SphereGeometry | ReturnType<typeof merge>, m: Material): Mesh {
-    const out = new Mesh(g, m);
-    out.castShadow = false; // the player's own hands cast no shadow into the world view
-    out.receiveShadow = true;
-    return out;
+    this.bones = all.slice(1);
+    this.rotations = data.bones.map(() => new Quaternion());
   }
 
   setPose(p: HandPose): void {
-    this.joints.forEach((chain, i) => {
-      const c = p.curl[i] as number;
-      const f = FINGERS[i] as (typeof FINGERS)[number];
-      chain.forEach((j, s) => {
-        j.rotation.x = -c * (s === 0 ? 1.45 : s === 1 ? 1.65 : 1.1);
-        if (s === 0) j.rotation.y = -(f.splay * (0.4 + p.spread));
-      });
-    });
-    const t = p.thumb;
-    const [t0, t1, t2] = this.thumbJoints as [Object3D, Object3D, Object3D];
-    t0.rotation.set(-0.25 - t * 0.55, 0.75 - t * 0.55, 0.5 + t * 0.4);
-    t1.rotation.x = -t * 0.6;
-    t2.rotation.x = -t * 0.75;
+    poseRotations(this.data, p, this.side, this.rotations);
+    this.bones.forEach((b, i) => b.quaternion.copy(this.rotations[i + 1] as Quaternion));
   }
-}
-
-/**
- * A nail on the back of a distal segment (radius `r`, length `len`, along −Z, the back of the finger +Y):
- * a thin shell over the last two thirds, set into the skin so only its plate and free edge show.
- */
-function nailGeometry(r: number, len: number): SphereGeometry {
-  return new SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(r * 0.78, r * 0.4, len * 0.32).translate(0, r * 0.62, -len * 0.58);
 }
 
 /** Pose interpolation, component-wise. */
@@ -209,10 +193,36 @@ export function copyPose(p: HandPose): HandPose {
   return { curl: [...p.curl], thumb: p.thumb, spread: p.spread };
 }
 
+/** The forearm's cross-section `alongM` from the wrist, in its own frame (x, y): centre and half-extents. */
+function forearmSection(data: HandData, alongM: number): { cx: number; cy: number; rx: number; ry: number } {
+  const pos = data.geometry.getAttribute('position');
+  const fy = data.forearmUp;
+  const fz = data.forearmAxis;
+  const fx = new Vector3().crossVectors(fy, fz);
+  const p = new Vector3();
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    p.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+    if (Math.abs(p.dot(fz) - alongM) > 0.006) continue;
+    const x = p.dot(fx);
+    const y = p.dot(fy);
+    x0 = Math.min(x0, x);
+    x1 = Math.max(x1, x);
+    y0 = Math.min(y0, y);
+    y1 = Math.max(y1, y);
+  }
+  if (!Number.isFinite(x0)) return { cx: 0, cy: 0, rx: 0.028, ry: 0.024 };
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, rx: (x1 - x0) / 2, ry: (y1 - y0) / 2 };
+}
+
 /** Shoulder → elbow → wrist → hand, solved each frame. */
 export class Arm {
   readonly root = new Group();
-  readonly hand = new Hand();
+  readonly hand: Hand;
+  /** At the wrist: +Z toward the elbow, +Y the back of the hand (the forearm bone's frame). */
   private readonly forearm = new Group();
   private readonly upper = new Group();
   private readonly elbow = new Vector3();
@@ -223,34 +233,49 @@ export class Arm {
 
   constructor(readonly side: 1 | -1) {
     const M = armMaterials();
+    const data = handData(side);
+    this.hand = new Hand(side, data);
     this.shoulder = new Vector3(0.19 * side, -0.33, 0.1);
     this.pole.set(0.55 * side, -0.75, 0.15);
-    if (side === -1) this.hand.root.scale.x = -1;
-    // Forearm: tapered, slightly flattened, wrist at z = 0 running to the elbow at +z.
-    const pts: Vector3[] = [];
-    const radii: number[] = [];
-    for (let i = 0; i <= 8; i++) {
-      const t = i / 8;
-      pts.push(new Vector3(0, 0.002 * Math.sin(t * Math.PI), t * FOREARM_M));
-      radii.push(0.025 + 0.02 * Math.sin(Math.min(1, t * 1.25) * Math.PI * 0.5) - (t > 0.9 ? (t - 0.9) * 0.08 : 0));
+
+    // One skin over the forearm's bone and the hand's: bind inverses from the rest pose in the hand frame
+    // (the forearm's own frame there; every hand bone unrotated at its joint).
+    const foreBone = new Bone();
+    foreBone.name = 'forearm';
+    this.forearm.add(foreBone);
+    const fy = data.forearmUp;
+    const fz = data.forearmAxis;
+    const fx = new Vector3().crossVectors(fy, fz);
+    const inverses = data.bones.map((b, i) => (i === 0 ? new Matrix4().makeBasis(fx, fy, fz) : new Matrix4().makeTranslation(b.head)).invert());
+    const geometry = data.geometry.clone();
+    // The glove's leather stands a little off the skin it covers.
+    const pos = geometry.getAttribute('position');
+    const nrm = geometry.getAttribute('normal');
+    const reg = geometry.getAttribute('region');
+    for (let i = 0; i < pos.count; i++) {
+      const g = (1 - Math.min(1, Math.max(0, (reg.getX(i) - 0.35) / 0.3))) * (1 - Math.min(1, Math.max(0, (reg.getZ(i) - 0.3) / 0.4)));
+      pos.setXYZ(i, pos.getX(i) + nrm.getX(i) * GLOVE_THICKNESS_M * g, pos.getY(i) + nrm.getY(i) * GLOVE_THICKNESS_M * g, pos.getZ(i) + nrm.getZ(i) * GLOVE_THICKNESS_M * g);
     }
-    const fore = tube(pts, radii, 14, FOREARM_M);
-    fore.scale(1.12, 0.88, 1);
-    const foreMesh = new Mesh(fore, M.tattooSkin);
-    foreMesh.receiveShadow = true;
-    this.forearm.add(foreMesh);
+    const skin = new SkinnedMesh(geometry, M.arm);
+    skin.bind(new Skeleton([foreBone, ...this.hand.bones], inverses), new Matrix4());
+    skin.frustumCulled = false; // bounds come from the rest pose, not the posed arm
+    skin.castShadow = false; // the player's own arms cast no shadow into the world view
+    skin.receiveShadow = true;
+
     if (side === -1) {
-      // A cheap field watch on the left wrist.
-      const strap = new Mesh(new CylinderGeometry(0.03, 0.03, 0.02, 16, 1, true).rotateX(Math.PI / 2).scale(1.12, 0.9, 1).translate(0, 0, 0.035), M.watch);
-      const face = new Mesh(new CylinderGeometry(0.017, 0.017, 0.008, 16).translate(0, 0.028, 0.035), M.watch);
+      // A cheap field watch on the left wrist, round the forearm's own section there.
+      const s = forearmSection(data, 0.045);
+      const strap = new Mesh(new CylinderGeometry(1, 1, 0.02, 20, 1, true).rotateX(Math.PI / 2).scale(s.rx + 0.003, s.ry + 0.003, 1).translate(s.cx, s.cy, 0.045), M.watch);
+      const face = new Mesh(new CylinderGeometry(0.017, 0.017, 0.008, 16).translate(s.cx, s.cy + s.ry + 0.005, 0.045), M.watch);
       this.forearm.add(strap, face);
     }
-    // Rolled sleeve at the elbow and the upper arm in the shirt.
-    const cuff = new Mesh(new CylinderGeometry(0.056, 0.052, 0.07, 14).rotateX(Math.PI / 2).translate(0, 0, FOREARM_M - 0.01), M.sleeve);
+    // Rolled sleeve at the elbow, over the end of the forearm's skin, and the upper arm in the shirt.
+    const elbowEnd = forearmSection(data, 0.235);
+    const cuff = new Mesh(new CylinderGeometry(1, 1, 0.07, 16).rotateX(Math.PI / 2).scale(elbowEnd.rx + 0.012, elbowEnd.ry + 0.012, 1).translate(elbowEnd.cx, elbowEnd.cy, FOREARM_M - 0.01), M.sleeve);
     this.forearm.add(cuff);
     const up = new Mesh(new CylinderGeometry(0.06, 0.052, UPPER_ARM_M, 14).rotateX(Math.PI / 2).translate(0, 0, UPPER_ARM_M / 2), M.sleeve);
     this.upper.add(up);
-    this.root.add(this.forearm, this.upper, this.hand.root);
+    this.root.add(skin, this.forearm, this.upper, this.hand.root);
   }
 
   /** Put the hand's wrist at `wrist` with orientation `q`, and bend the arm to meet it. */
@@ -266,8 +291,15 @@ export class Arm {
     const a = Math.acos(Math.max(-1, Math.min(1, cosA)));
     const bend = this.tmp2.copy(this.pole).addScaledVector(dir, -this.pole.dot(dir)).normalize();
     this.elbow.copy(s).addScaledVector(dir, Math.cos(a) * UPPER_ARM_M).addScaledVector(bend, Math.sin(a) * UPPER_ARM_M);
+    // The forearm toward the elbow, rolled with the hand: the back of the forearm follows the back of the hand.
+    _z.subVectors(this.elbow, wrist).normalize();
+    _y.set(0, 1, 0).applyQuaternion(q);
+    _y.addScaledVector(_z, -_y.dot(_z));
+    if (_y.lengthSq() < 1e-6) _y.set(0, 1, 0).addScaledVector(_z, -_z.y);
+    _y.normalize();
+    _x.crossVectors(_y, _z);
     this.forearm.position.copy(wrist);
-    this.forearm.lookAt(this.localToParent(this.elbow));
+    this.forearm.quaternion.setFromRotationMatrix(_basis.makeBasis(_x, _y, _z));
     this.upper.position.copy(this.elbow);
     this.upper.lookAt(this.localToParent(s));
   }
@@ -280,3 +312,7 @@ export class Arm {
 }
 
 const _w = new Vector3();
+const _x = new Vector3();
+const _y = new Vector3();
+const _z = new Vector3();
+const _basis = new Matrix4();
