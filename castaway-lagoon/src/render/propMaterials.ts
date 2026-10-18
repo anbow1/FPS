@@ -2,7 +2,7 @@ import { attribute, float, mix, mx_noise_float, normalMap, positionLocal, positi
 import { DoubleSide, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { tileFbm, tileFbmXY, tileNoise, tileNoiseXY } from '../core/noise.ts';
 import { makeTextureSet, type Texel, type TexelSampler, type TextureSet } from './textureSet.ts';
-import { type PhotoSet, photoSet } from './photoTextures.ts';
+import { type PhotoSet, photoSet, photoTextureSet } from './photoTextures.ts';
 import { hash2, hex } from './patterns.ts';
 import { U } from './uniforms.ts';
 
@@ -27,52 +27,6 @@ function put(t: Texel, c: Rgb, k: number): void {
   t.r = c[0] * k;
   t.g = c[1] * k;
   t.b = c[2] * k;
-}
-
-/**
- * Sawn boards, grain along U. `weathered` 0…1: how far the sun and salt have bleached them silver-grey, the
- * soft earlywood worn back between the hard latewood lines (a dock's boards in the island shooter we
- * compared against are all but grey). Growth rings run along the board, wandering, a long check or two
- * splits it along the grain, and now and then a knot. Every noise tiles with its own period per axis: one
- * period for both repeated the pattern across the board six times over (rows of identical ovals).
- */
-function boardWood(colour: number, weathered = 0.6): TexelSampler {
-  const c = hex(colour);
-  const grey = hex(0x8a8073);
-  const knots = [0, 1, 2].map((k) => ({ u: hash2(k, 1, 317), v: hash2(k, 2, 317), r: 0.012 + hash2(k, 3, 317) * 0.012, on: hash2(k, 4, 317) < 0.5 }));
-  return (u, v, t) => {
-    // Rings: bands across the board, their phase pushed about along it (the figure of a flat-sawn board).
-    // ~6 rings across a board (a board samples a quarter of the tile across).
-    const wander = tileFbmXY(u * 2, v * 3, 2, 3, 3, 301) * 4;
-    let ringPhase = v * 26 + wander;
-    // A knot bends the rings round itself.
-    let knot = 0;
-    for (const K of knots) {
-      if (!K.on) continue;
-      const du = Math.min(Math.abs(u - K.u), 1 - Math.abs(u - K.u)) / 6;
-      const dv = Math.min(Math.abs(v - K.v), 1 - Math.abs(v - K.v));
-      const d = Math.hypot(du, dv);
-      knot = Math.max(knot, Math.max(0, 1 - d / K.r));
-      ringPhase += Math.exp(-((d / (K.r * 3)) ** 2)) * 2.5;
-    }
-    const ring = ringPhase - Math.floor(ringPhase);
-    const late = Math.max(0, 1 - Math.abs(ring - 0.15) / 0.09); // the hard latewood line
-    const fibre = tileNoiseXY(u * 6, v * 160, 6, 160, 303);
-    const tone = tileFbmXY(u * 1, v * 2, 1, 2, 3, 305);
-    // Checks: a few long splits along the grain.
-    const split = Math.abs(tileFbmXY(u * 1, v * 14, 1, 14, 2, 307) - 0.5) < 0.0045 + weathered * 0.0025;
-    // Greying comes on late: a part-weathered board is still brown, a dock's is silver.
-    const weather = Math.min(1, weathered * weathered * (0.6 + tone * 0.6));
-    const col: Rgb = [c[0] + (grey[0] - c[0]) * weather, c[1] + (grey[1] - c[1]) * weather, c[2] + (grey[2] - c[2]) * weather];
-    // Weathered wood shows its latewood as dark lines in a pale, eroded earlywood.
-    let k = 0.86 + tone * 0.2 + fibre * 0.08 - late * (0.12 + weathered * 0.12);
-    k *= 1 - knot * 0.55;
-    if (split) k *= 0.45;
-    put(t, col, k);
-    t.height = split ? 0.05 : 0.5 + late * 0.25 * (0.5 + weathered) + fibre * 0.1 - knot * 0.1;
-    t.rough = 0.78 + fibre * 0.1 + weathered * 0.06;
-    t.ao = split ? 0.55 : 1;
-  };
 }
 
 /** Army canvas: faded olive, water stains, a darker seam line. */
@@ -268,7 +222,7 @@ function fabricMaterial(ts: TextureSet, name: string, sheenColour: number, flutt
  * shared materials do not carry. Its meshes need `dry` (outpost.ts markDry) like every prop surface.
  */
 export function vehicleMaterial(kind: 'boards' | 'canvas', name: string): MeshStandardNodeMaterial {
-  if (kind === 'boards') return standard(tset('weatheredBoard', 256, () => boardWood(0x6a5a48, 1), 3.5), name);
+  if (kind === 'boards') return standard(photoTextureSet('wood_planks_grey'), name);
   return fabricMaterial(tset('cotCanvas', 256, () => canvas(0x6a6a50), 1.5), name, 0x6a6a50, false);
 }
 
@@ -276,9 +230,10 @@ export function propMaterials(): PropMaterials {
   if (cached) return cached;
   const glass = new MeshPhysicalNodeMaterial({ name: 'lantern glass', color: 0xf2eee0, roughness: 0.08, metalness: 0, transmission: 0, transparent: true, opacity: 0.35, ior: 1.5 });
   cached = {
-    planks: standard(tset('board', 256, () => boardWood(0x6f5d48), 3), 'planks'),
-    weatheredPlanks: standard(tset('weatheredBoard', 256, () => boardWood(0x6a5a48, 1), 3.5), 'weathered planks'),
-    darkWood: standard(tset('darkBoard', 256, () => boardWood(0x4e3c2c), 3), 'dark wood'),
+    // Scanned boards (photoTextures.ts), four planks to a texture, one per board.
+    planks: standard(photoTextureSet('old_planks_02'), 'planks'),
+    weatheredPlanks: standard(photoTextureSet('wood_planks_grey'), 'weathered planks'),
+    darkWood: standard(photoTextureSet('weathered_planks'), 'dark wood'),
     logBark: photoStandard(photoSet('bark006'), 'log bark'),
     piles: pileMaterial(photoSet('bark006')),
     rustyIron: new MeshStandardNodeMaterial({ name: 'rusty iron', color: 0x3d281c, roughness: 0.85, metalness: 0 }),

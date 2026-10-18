@@ -2,6 +2,7 @@ import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, Repe
 import { tileFbm, tileNoise } from '../core/noise.ts';
 import { makeTextureArray, makeTextureSet, type TextureArraySet, type TextureSet } from './textureSet.ts';
 import * as P from './patterns.ts';
+import { type PhotoSetId, photoTextureSet } from './photoTextures.ts';
 
 // Lazily generated texture sets for the lagoon, built once at load behind the
 // progress bar (rules §9). Base colour sRGB; normal, ORM and data maps linear.
@@ -11,7 +12,12 @@ const maps = new Map<string, DataTexture>();
 
 export type TerrainLayer = 'sand' | 'litter' | 'grass' | 'rock' | 'moss';
 
+/** Ground layers that are photographed (photoTextures.ts); the rest are generated. */
+const PHOTO_LAYERS: Partial<Record<TerrainLayer, PhotoSetId>> = { sand: 'dense_sand', litter: 'leaves_forest_ground', rock: 'rock_face_03' };
+
 export function terrainSet(layer: TerrainLayer): TextureSet {
+  const photo = PHOTO_LAYERS[layer];
+  if (photo) return photoTextureSet(photo);
   let s = sets.get(layer);
   if (!s) {
     const sampler = layer === 'sand' ? P.sand() : layer === 'litter' ? P.leafLitter() : layer === 'grass' ? P.tropicalGrass() : layer === 'rock' ? P.coastRock() : P.moss();

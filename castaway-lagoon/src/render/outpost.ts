@@ -314,10 +314,15 @@ function nailHead(): BufferGeometry {
   return new CylinderGeometry(0.0055, 0.006, 0.003, 6);
 }
 
-/** Box UVs stretched to the board's length so the grain is not smeared; offset per board. */
+/**
+ * Box UVs stretched to the board's length so the grain is not smeared, offset along it per board, and across
+ * it to one of the four planks a board texture holds (photoTextures.ts): a board straddling two would show a
+ * gap down its middle.
+ */
 function scaleUv(g: BufferGeometry, uScale: number, offset: number): void {
   const uv = g.getAttribute('uv');
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * uScale + offset, uv.getY(i) * 0.25 + offset * 3);
+  const plank = Math.floor((offset * 7) % 1 * 4) / 4;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * uScale + offset, uv.getY(i) * 0.25 + plank);
 }
 
 function wave(g: BufferGeometry, amp: number, seed: number): void {

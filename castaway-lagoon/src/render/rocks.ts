@@ -4,6 +4,7 @@ import { fbm2 } from '../core/noise.ts';
 import { WATER_LEVEL_M } from '../config.ts';
 import type { RockInstance } from '../game/world.ts';
 import { noiseMap, terrainSet } from './textures.ts';
+import { PHOTO_SIZE_M } from './photoTextures.ts';
 import { U } from './uniforms.ts';
 
 // Weathered coastal and jungle boulders: noise-displaced spheres, flattened
@@ -69,7 +70,8 @@ export function rockMaterial(): MeshStandardNodeMaterial {
   const m = new MeshStandardNodeMaterial({ name: 'rock', metalness: 0 });
   const p = positionWorld;
   const n = normalWorld;
-  const scale = float(1 / 2.2);
+  // The photographed rock at its measured size (photoTextures.ts).
+  const scale = float(1 / PHOTO_SIZE_M.rock_face_03);
   const colour = triplanarTexture(texture(rock.map), null, null, scale, p, n).rgb;
   const height = triplanarTexture(texture(rock.ormMap), null, null, scale, p, n);
   const mossColour = triplanarTexture(texture(moss.map), null, null, float(1 / 0.9), p, n).rgb;

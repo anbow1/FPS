@@ -71,8 +71,22 @@ function to8(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v * 255)));
 }
 
-function dataTexture(data: Uint8Array, size: number): DataTexture {
-  const tex = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
+/**
+ * A texture set from decoded pixels (RGBA, row 0 = v 0): photographed sets (photoTextures.ts) take the same
+ * shape as the generated ones, so every material and the ground's array textures use them unchanged.
+ */
+export function textureSetFromPixels(width: number, height: number, base: Uint8Array, normal: Uint8Array, orm: Uint8Array): TextureSet {
+  const map = dataTexture(base, width, height);
+  map.colorSpace = SRGBColorSpace;
+  const normalMap = dataTexture(normal, width, height);
+  normalMap.colorSpace = NoColorSpace;
+  const ormMap = dataTexture(orm, width, height);
+  ormMap.colorSpace = NoColorSpace;
+  return { map, normalMap, ormMap };
+}
+
+function dataTexture(data: Uint8Array, size: number, height = size): DataTexture {
+  const tex = new DataTexture(data, size, height, RGBAFormat, UnsignedByteType);
   tex.wrapS = RepeatWrapping;
   tex.wrapT = RepeatWrapping;
   tex.generateMipmaps = true;

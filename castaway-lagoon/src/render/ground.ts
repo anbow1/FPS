@@ -5,6 +5,7 @@ import { WATER_LEVEL_M } from '../config.ts';
 import { beachWidth, cliffiness, heightAt, LAGOON_CENTRE, normalAt, shoreDistance } from '../game/terrain.ts';
 import type { LagoonWorld } from '../game/world.ts';
 import { noiseMap, terrainArray } from './textures.ts';
+import { PHOTO_SIZE_M } from './photoTextures.ts';
 import { shorePhase, swash } from './shoreWaves.ts';
 import { type Caustics, causticAt } from './caustics.ts';
 import { U } from './uniforms.ts';
@@ -269,10 +270,12 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   const p = positionWorld;
   // The tangent points +X and the bitangent −Z, so V runs along −Z.
   const base = vec2(p.x, p.z.negate());
-  const uvS = base.div(3.2);
+  // Photographed layers repeat at their measured size (photoTextures.ts PHOTO_SIZE_M); the leaf litter a
+  // little larger than life, as its 1.26 m repeat showed on the jungle floor.
+  const uvS = base.div(PHOTO_SIZE_M.dense_sand);
   const uvG = base.div(3.6);
-  const uvL = base.div(3.0);
-  const uvR = base.div(5.5);
+  const uvL = base.div(PHOTO_SIZE_M.leaves_forest_ground * 1.25);
+  const uvR = base.div(PHOTO_SIZE_M.rock_face_03);
   const w = attribute('splat', 'vec4');
   const extra = attribute('extra', 'vec3');
   const ormS = at(layers.ormMap, uvS, LAYER.sand);
@@ -298,7 +301,7 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   // Rock is projected three ways so cliffs do not smear; the other layers lie flat.
   const tri = normalWorld.abs().pow(vec3(4));
   const triW = tri.div(tri.x.add(tri.y).add(tri.z));
-  const rs = float(1 / 5.5);
+  const rs = float(1 / PHOTO_SIZE_M.rock_face_03);
   const rockColour = at(layers.map, p.zy.mul(rs), LAYER.rock).mul(triW.x).add(at(layers.map, p.xz.mul(rs), LAYER.rock).mul(triW.y)).add(at(layers.map, p.xy.mul(rs), LAYER.rock).mul(triW.z));
   let albedo: Node<'vec3'> = blend(at(layers.map, uvS, LAYER.sand), at(layers.map, uvG, LAYER.grass), at(layers.map, uvL, LAYER.litter), rockColour).rgb;
   const orm = blend(ormS, ormG, ormL, ormR);
