@@ -39,6 +39,7 @@ import { CreatureView } from './creatures.ts';
 import { GuerrillaView } from './guerrillas.ts';
 import { buildCamp, type CampView } from './camp.ts';
 import { loadPhotoTextures } from './photoTextures.ts';
+import { loadMocap } from './mocap.ts';
 import { loadScanModels } from './scanModels.ts';
 
 // The render system: reads game state once per display frame and writes
@@ -113,7 +114,7 @@ export class LagoonView {
     // Scanned textures first: the view's constructor already builds the skiff and the jeep, whose materials
     // read them, and every material built after does too (impostors are baked from those).
     await progress('Loading textures', 0.02);
-    await Promise.all([loadPhotoTextures(), loadScanModels()]);
+    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap()]);
     const v = new LagoonView(canvas, settings);
     await v.build(game, progress, extra);
     return v;
