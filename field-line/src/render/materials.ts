@@ -211,15 +211,23 @@ function pineBark(ts: TextureSet): MeshStandardNodeMaterial {
   return m;
 }
 
+/** A colour grade for a scan photographed under other light or of other stone: saturation and gain. */
+export interface ScanGrade {
+  saturation: number;
+  gain: number;
+}
+
 /**
  * A photoscanned model's own surface (scanModels.ts): its colour, normal and
  * ORM maps on its own UVs, darkened and smoothed by rain like the rest of the
  * world, its AO dimmed under a roof.
  */
-function scanned(name: string, tex: ScanTextures): MeshStandardNodeMaterial {
+function scanned(name: string, tex: ScanTextures, grade: ScanGrade = { saturation: 1, gain: 1 }): MeshStandardNodeMaterial {
   const m = new MeshStandardNodeMaterial({ name, metalness: 0 });
   const orm = texture(tex.ormMap);
-  m.colorNode = texture(tex.map).rgb.mul(mix(float(1), float(0.6), wetness));
+  const raw = texture(tex.map).rgb;
+  const graded = mix(vec3(raw.dot(vec3(0.2126, 0.7152, 0.0722))), raw, grade.saturation).mul(grade.gain);
+  m.colorNode = graded.mul(mix(float(1), float(0.6), wetness));
   m.roughnessNode = mix(orm.g, float(0.3), wetness);
   const relief = mix(float(1), float(0.5), wetness);
   m.normalNode = normalMap(texture(tex.normalMap).xyz, vec2(relief, relief));
@@ -340,10 +348,10 @@ export class MaterialLibrary {
   }
 
   /** The material of a photoscanned model, one per texture set. */
-  scan(name: string, tex: ScanTextures): Material {
+  scan(name: string, tex: ScanTextures, grade?: ScanGrade): Material {
     let m = this.named.get(`scan-${name}`);
     if (!m) {
-      m = scanned(`scan-${name}`, tex);
+      m = scanned(`scan-${name}`, tex, grade);
       this.named.set(`scan-${name}`, m);
     }
     return m;

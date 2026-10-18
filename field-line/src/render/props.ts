@@ -263,7 +263,9 @@ function partsFor(kind: PropKind, variant: string, lib: MaterialLibrary): Part[]
       // Mossy forest rocks from one photoscanned set, 10 % wider than the unit they are normalised to,
       // the size the map's scale was chosen for.
       const scan = scanModel(`rock_moss_${variant}` as ScanId);
-      return [{ geometry: scan.geometry.clone().scale(1.1, 1.1, 1.1), material: lib.scan('rock_moss', scan) }];
+      // The scan is an ochre sandstone; in sun it read as golden lumps among the pines. Greyed toward the
+      // granite of a conifer ridge, its moss kept.
+      return [{ geometry: scan.geometry.clone().scale(1.1, 1.1, 1.1), material: lib.scan('rock_moss', scan, { saturation: 0.5, gain: 0.8 }) }];
     }
     case 'stump': {
       const scan = scanModel(`tree_stump_${variant}` as ScanId);
