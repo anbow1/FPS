@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { PLAY_HALF, RIFLE_556, RPG_ROCKET, WATER_LEVEL } from '../config';
 import { Rng } from '../core/rng';
-import { attribute } from 'three/tsl';
-import { bootGeometry, handGeometry, headGeometry, helmetGeometry, launcherGeometry, limb as clothLimb, rifleGeometry, torsoGeometry, warheadGeometry } from '../render/infantryModel';
+import { attribute, mix } from 'three/tsl';
+import { UNIFORM_COLOURS, bootGeometry, handGeometry, headGeometry, helmetGeometry, launcherGeometry, limb as clothLimb, rifleGeometry, torsoGeometry, warheadGeometry } from '../render/infantryModel';
 import { addThermalConst } from '../render/nodes';
 import type { World } from '../world/world';
 import type { Audio } from './audio';
@@ -106,7 +106,8 @@ export class Infantry {
   constructor() {
     // Clothes, kit and boots: per-vertex colour, darkened in the cloth's creases (render/infantryModel.ts).
     const uniform = new THREE.MeshStandardNodeMaterial({ roughness: 0.9 });
-    uniform.colorNode = attribute('color', 'vec3').mul(attribute('shade', 'float'));
+    // The uniform in each man's own colour (a per-instance `kit`), so a squad does not read as clones.
+    uniform.colorNode = mix(attribute('color', 'vec3'), attribute('kit', 'vec3'), attribute('camo', 'float')).mul(attribute('shade', 'float'));
     const helmet = new THREE.MeshStandardNodeMaterial({ color: 0x5c5b3e, roughness: 0.7 });
     const skin = new THREE.MeshStandardNodeMaterial({ color: 0x9c7a62, roughness: 0.75 });
     const gun = new THREE.MeshStandardNodeMaterial({ color: 0x3c3c3e, roughness: 0.62 });
@@ -205,6 +206,7 @@ export class Infantry {
       ['warhead', warheadGeometry(), gun, 1],
     ];
     for (const [name, g, m, per] of defs) {
+      g.setAttribute('kit', new THREE.InstancedBufferAttribute(new Float32Array(this.cap * per * 3), 3));
       const im = new THREE.InstancedMesh(g, m, this.cap * per);
       im.count = 0;
       im.castShadow = true;
@@ -411,24 +413,29 @@ export class Infantry {
 
   // ---------------------------------------------------------------- rendering
   private counts: Record<string, number> = {};
+  /** The uniform colour of the man being posed. */
+  private kit: readonly number[] = UNIFORM_COLOURS[0]!;
   private put(name: string, m: THREE.Matrix4): void {
     const im = this.parts[name]!;
     const i = this.counts[name] ?? 0;
     if (i >= im.instanceMatrix.count) return;
     im.setMatrixAt(i, m);
+    (im.geometry.getAttribute('kit').array as Float32Array).set(this.kit, i * 3);
     this.counts[name] = i + 1;
   }
 
   render(camPos: THREE.Vector3): void {
     this.counts = {};
-    for (const s of this.soldiers) {
-      if (s.deadT > 40) continue;
-      if (s.pos.distanceTo(camPos) > 700) continue;
+    this.soldiers.forEach((s, k) => {
+      if (s.deadT > 40) return;
+      if (s.pos.distanceTo(camPos) > 700) return;
+      this.kit = UNIFORM_COLOURS[(k * 7 + s.squad * 3) % UNIFORM_COLOURS.length]!;
       this.pose(s);
-    }
+    });
     for (const [name, im] of Object.entries(this.parts)) {
       im.count = this.counts[name] ?? 0;
       im.instanceMatrix.needsUpdate = true;
+      im.geometry.getAttribute('kit').needsUpdate = true;
     }
   }
 

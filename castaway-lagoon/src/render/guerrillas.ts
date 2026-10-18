@@ -1,5 +1,5 @@
 import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, vec3 } from 'three/tsl';
-import { BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, Shape, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
+import { BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedBufferAttribute, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, type Node, Shape, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
 import type { Guerrilla } from '../game/guerrillas.ts';
 import { merge } from './meshkit.ts';
 import { buildRifle } from './weaponModels.ts';
@@ -37,10 +37,15 @@ const ANKLE_Y = 0.09;
 const SPINE_M = 0.52;
 const SHOULDER_HALF = 0.19;
 
-type Kind = 0 | 1 | 2;
+type Kind = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 const HARD: Kind = 0;
 const PLAIN: Kind = 1;
+/** The shirt: tiger stripe, or the man's own plain colour (kitFor). */
 const STRIPE: Kind = 2;
+const TROUSERS: Kind = 3;
+const HAT: Kind = 4;
+const BANDANA: Kind = 5;
+const SKIN: Kind = 6;
 
 type Segment = 'pelvis' | 'torso' | 'head' | 'upperArm' | 'forearm' | 'hand' | 'thigh' | 'shin' | 'boot' | 'rifle';
 const PAIRED: Record<Segment, boolean> = { pelvis: false, torso: false, head: false, upperArm: true, forearm: true, hand: true, thigh: true, shin: true, boot: true, rifle: false };
@@ -55,7 +60,12 @@ export class GuerrillaView {
     const material = kitMaterial();
     const geos = segmentGeometries();
     for (const seg of Object.keys(PAIRED) as Segment[]) {
-      const mesh = new InstancedMesh(geos[seg], material, MAX_MEN * (PAIRED[seg] ? 2 : 1));
+      const per = PAIRED[seg] ? 2 : 1;
+      // Each man's own clothes (kitMaterial): shirt, trousers, skin, hat and bandana.
+      const kit = new Float32Array(MAX_MEN * per * 4);
+      for (let i = 0; i < MAX_MEN * per; i++) kit.set(kitFor(Math.floor(i / per)), i * 4);
+      geos[seg].setAttribute('kit', new InstancedBufferAttribute(kit, 4));
+      const mesh = new InstancedMesh(geos[seg], material, MAX_MEN * per);
       mesh.name = `guerrilla-${seg}`;
       mesh.count = 0;
       mesh.castShadow = true;
@@ -235,27 +245,83 @@ export function solveTwoBone(root: Vector3, target: Vector3, l1: number, l2: num
 
 // ------------------------------------------------------------------ material
 
+type Rgb = [number, number, number];
+/** Shirts after the tiger stripe (linear): faded olive, washed-out black, maroon, khaki. */
+const SHIRTS: Rgb[] = [
+  [0.09, 0.1, 0.06],
+  [0.04, 0.04, 0.042],
+  [0.17, 0.045, 0.035],
+  [0.24, 0.21, 0.13],
+];
+/** Trousers: olive, faded denim, khaki, black. */
+const TROUSER_COLOURS: Rgb[] = [
+  [0.07, 0.07, 0.035],
+  [0.06, 0.08, 0.13],
+  [0.2, 0.17, 0.1],
+  [0.035, 0.035, 0.038],
+];
+const HATS: Rgb[] = [
+  [0.1, 0.1, 0.05],
+  [0.22, 0.19, 0.12],
+  [0.03, 0.03, 0.03],
+  [0.07, 0.085, 0.06],
+];
+const BANDANAS: Rgb[] = [
+  [0.15, 0.025, 0.02],
+  [0.03, 0.03, 0.035],
+  [0.08, 0.08, 0.04],
+  [0.03, 0.05, 0.14],
+];
+
+/**
+ * One man's clothes, from his slot: [shirt 0 = tiger stripe or 1…4 a plain one, trousers 0…3, skin tone
+ * 0…1, headgear 0…3]. Irregulars wear what they have: a band in one uniform read as a platoon of clones.
+ */
+function kitFor(i: number): [number, number, number, number] {
+  const h = (k: number): number => {
+    let x = Math.imul(i * 374761393 + k * 668265263, 1274126177);
+    x ^= x >>> 15;
+    return ((x >>> 0) % 10000) / 10000;
+  };
+  return [h(1) < 0.4 ? 0 : 1 + Math.floor(h(2) * SHIRTS.length), Math.floor(h(3) * TROUSER_COLOURS.length), h(4), Math.floor(h(5) * HATS.length)];
+}
+
+/** The entry of `list` at index `i` (a float node holding a whole number), by a chain of steps. */
+function pickRgb(i: Node<'float'>, list: readonly Rgb[]): Node<'vec3'> {
+  let out: Node<'vec3'> = vec3(...(list[0] as Rgb));
+  for (let k = 1; k < list.length; k++) out = mix(out, vec3(...(list[k] as Rgb)), step(k - 0.5, i));
+  return out;
+}
+
 function kitMaterial(): MeshPhysicalNodeMaterial {
   const m = new MeshPhysicalNodeMaterial({ name: 'guerrilla', metalness: 0, sheenRoughness: 0.8 });
   const tint = attribute('tint', 'vec3');
   const kind = attribute('kind', 'float');
-  const striped = step(1.5, kind);
-  const cloth = step(0.5, kind);
+  const kit = attribute('kit', 'vec4');
+  const is = (k: number): Node<'float'> => step(k - 0.5, kind).mul(step(kind, k + 0.5));
+  const cloth = is(PLAIN).add(is(STRIPE)).add(is(TROUSERS)).add(is(HAT)).add(is(BANDANA));
   // Faded tiger stripe: dark brush strokes running round the body over a sun-bleached green.
   // Pre-instance space, so the pattern stays on the cloth as the man moves (positionLocal is instanced).
   const p = positionGeometry;
   const warp = mx_noise_float(p.mul(4.3)).mul(0.6);
   const strokes = mx_noise_float(vec3(p.x.mul(3), p.y.mul(18).add(warp.mul(3)), p.z.mul(3)));
   const patches = mx_noise_float(p.mul(7.1).add(vec3(2.1, 5.3, 0.7)));
-  const base = vec3(0.13, 0.13, 0.07);
-  const stripe = vec3(0.025, 0.028, 0.02);
-  const brown = vec3(0.09, 0.07, 0.04);
-  const pattern = mix(mix(base, brown, step(0.25, patches)), stripe, step(0.3, strokes));
+  const pattern = mix(mix(vec3(0.13, 0.13, 0.07), vec3(0.09, 0.07, 0.04), step(0.25, patches)), vec3(0.025, 0.028, 0.02), step(0.3, strokes));
+  // Plain cloth is faded unevenly: sun on the shoulders, sweat and wear in patches.
+  const mottle = mx_noise_float(p.mul(5.3).add(vec3(1.7, 0.3, 4.1))).mul(0.12).add(0.95);
+  const shirt = mix(pattern, pickRgb(kit.x.sub(1), SHIRTS).mul(mottle), step(0.5, kit.x));
+  const skin = mix(vec3(0.3, 0.15, 0.085), vec3(0.11, 0.055, 0.03), kit.z);
+  let base: Node<'vec3'> = tint;
+  base = mix(base, shirt, is(STRIPE));
+  base = mix(base, pickRgb(kit.y, TROUSER_COLOURS).mul(mottle), is(TROUSERS));
+  base = mix(base, pickRgb(kit.w, HATS).mul(mottle), is(HAT));
+  base = mix(base, pickRgb(kit.w, BANDANAS), is(BANDANA));
+  base = mix(base, skin, is(SKIN));
   // Mud and dust where they collect, in blotches: dried light dust over darker wet mud.
   const grime = attribute('grime', 'float');
   const blot = smoothstep(-0.2, 0.45, mx_noise_float(positionGeometry.mul(23)).add(grime.mul(0.9).sub(0.45)));
   const mud = mix(vec3(0.08, 0.06, 0.04), vec3(0.24, 0.2, 0.15), smoothstep(0.1, 0.6, mx_noise_float(positionGeometry.mul(9))));
-  const colour = mix(mix(tint, pattern, striped), mud, blot.mul(grime)).mul(attribute('shade', 'float'));
+  const colour = mix(base, mud, blot.mul(grime)).mul(attribute('shade', 'float'));
   m.colorNode = colour;
   m.roughnessNode = mix(float(0.55), float(0.9), cloth.max(blot.mul(grime)));
   m.sheenNode = colour.mul(cloth.mul(0.35));
@@ -520,7 +586,7 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
           [-0.14, 0.09, 0.08, 0.0],
         ]),
         C.trousers,
-        PLAIN,
+        TROUSERS,
       ),
       tag(box(0.35, 0.045, 0.25, 0, 0.06, 0), C.webbing, PLAIN), // belt
       tag(box(0.1, 0.12, 0.06, 0.15, 0.0, 0.1), C.bag, PLAIN, 0.2), // a canvas bag on the hip
@@ -543,22 +609,22 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
       tag(box(0.05, 0.3, 0.025, 0.1, 0.32, 0.1), C.webbing, PLAIN),
       // A rolled blanket across the back, and the neck.
       tag(new CylinderGeometry(0.06, 0.06, 0.3, 10).rotateZ(Math.PI / 2).translate(0, 0.42, 0.14), C.bag, PLAIN, 0.2),
-      tag(new CylinderGeometry(0.055, 0.065, 0.1, 10).translate(0, 0.53, 0), C.skin, HARD),
+      tag(new CylinderGeometry(0.055, 0.065, 0.1, 10).translate(0, 0.53, 0), C.skin, SKIN),
     ],
     'torso',
   );
   const head = joined(
     [
-      tag(faceShade(headGeometry()), C.skin, HARD),
+      tag(faceShade(headGeometry()), C.skin, SKIN),
       tag(new SphereGeometry(0.102, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.45).scale(0.84, 1.0, 0.98).translate(0, 0.01, 0.01), C.hair, PLAIN),
       // Bandana knotted at the back, and a boonie hat's brim and crown over it.
-      tag(new CylinderGeometry(0.087, 0.09, 0.05, 14, 1, true).scale(1, 1, 1.12).translate(0, 0.045, 0.005), C.bandana, PLAIN),
-      tag(box(0.05, 0.04, 0.05, 0, 0.04, 0.1), C.bandana, PLAIN),
-      tag(new CylinderGeometry(0.095, 0.1, 0.07, 16).translate(0, 0.09, 0.005), C.hat, PLAIN),
-      tag(new TorusGeometry(0.115, 0.022, 4, 20).rotateX(Math.PI / 2).scale(1, 1, 1.1).translate(0, 0.062, 0.005), C.hat, PLAIN),
+      tag(new CylinderGeometry(0.087, 0.09, 0.05, 14, 1, true).scale(1, 1, 1.12).translate(0, 0.045, 0.005), C.bandana, BANDANA),
+      tag(box(0.05, 0.04, 0.05, 0, 0.04, 0.1), C.bandana, BANDANA),
+      tag(new CylinderGeometry(0.095, 0.1, 0.07, 16).translate(0, 0.09, 0.005), C.hat, HAT),
+      tag(new TorusGeometry(0.115, 0.022, 4, 20).rotateX(Math.PI / 2).scale(1, 1, 1.1).translate(0, 0.062, 0.005), C.hat, HAT),
       // Ears; eyes in the sockets; brows.
-      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.026, 0.018).translate(-0.08, -0.005, 0.005), C.skin, HARD),
-      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.026, 0.018).translate(0.08, -0.005, 0.005), C.skin, HARD),
+      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.026, 0.018).translate(-0.08, -0.005, 0.005), C.skin, SKIN),
+      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.026, 0.018).translate(0.08, -0.005, 0.005), C.skin, SKIN),
       ...[-1, 1].map((sx) => tag(new SphereGeometry(0.0085, 8, 6).translate(sx * 0.031, 0.017, -0.074), C.eye, HARD)),
       ...[-1, 1].map((sx) => tag(new BoxGeometry(0.026, 0.006, 0.01).rotateZ(sx * -0.12).translate(sx * 0.032, 0.033, -0.086), C.hair, PLAIN)),
     ],
@@ -608,7 +674,7 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
           2,
         ),
         C.skin,
-        HARD,
+        SKIN,
       ),
     ],
     'forearm',
@@ -616,9 +682,9 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
   const hand = joined(
     [
       // Palm and knuckles, the curled fingers as one roll across the front, the thumb along the side.
-      tag(new SphereGeometry(1, 12, 8).scale(0.04, 0.05, 0.022).translate(0, -0.045, 0), C.skin, HARD),
-      tag(new CapsuleGeometry(0.014, 0.05, 3, 8).rotateZ(Math.PI / 2).translate(0, -0.088, -0.012), C.skin, HARD),
-      tag(new CapsuleGeometry(0.011, 0.035, 2, 6).rotateZ(0.5).translate(-0.035, -0.05, -0.02), C.skin, HARD),
+      tag(new SphereGeometry(1, 12, 8).scale(0.04, 0.05, 0.022).translate(0, -0.045, 0), C.skin, SKIN),
+      tag(new CapsuleGeometry(0.014, 0.05, 3, 8).rotateZ(Math.PI / 2).translate(0, -0.088, -0.012), C.skin, SKIN),
+      tag(new CapsuleGeometry(0.011, 0.035, 2, 6).rotateZ(0.5).translate(-0.035, -0.05, -0.02), C.skin, SKIN),
     ],
     'hand',
   );
@@ -642,10 +708,10 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
           3,
         ),
         C.trousers,
-        PLAIN,
+        TROUSERS,
         (y) => Math.max(0, (-y - L_THIGH * 0.7) / (L_THIGH * 0.3)) * 0.4,
       ),
-      ...[-1, 1].map((sx) => tag(new BoxGeometry(0.035, 0.15, 0.13).translate(sx * 0.08, -0.23, 0.0), C.trousers, PLAIN)),
+      ...[-1, 1].map((sx) => tag(new BoxGeometry(0.035, 0.15, 0.13).translate(sx * 0.08, -0.23, 0.0), C.trousers, TROUSERS)),
     ],
     'thigh',
   );
@@ -669,7 +735,7 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
           4,
         ),
         C.trousers,
-        PLAIN,
+        TROUSERS,
         (y) => 0.2 + Math.max(0, (-y - L_SHIN * 0.45) / (L_SHIN * 0.55)) * 0.8,
       ),
       tag(new CylinderGeometry(0.058, 0.062, 0.11, 14).translate(0, -L_SHIN + 0.045, 0), C.boot, HARD, 0.8),

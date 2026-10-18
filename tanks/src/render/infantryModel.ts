@@ -13,11 +13,14 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 //
 // Frame: +Z forward, +Y up, metres. Limbs are built at unit length along +Y
 // (the pose stretches each between two joints). Every part carries `color`
-// (linear) and `shade` (the cloth's creases) for the uniform material.
+// (linear), `shade` (the cloth's creases) and `camo` (1 on the uniform, which
+// takes each man's own colour) for the uniform material.
 
 type V3 = [number, number, number];
 
 const UNIFORM: V3 = lin(0x5a5e48);
+/** Uniform colours (linear) a squad's men wear, one each: woodland green, arid tan, urban grey, dark olive. */
+export const UNIFORM_COLOURS: readonly V3[] = [[0.1, 0.11, 0.065], [0.26, 0.21, 0.14], [0.15, 0.15, 0.15], [0.06, 0.075, 0.045]];
 const ARMOUR: V3 = lin(0x4b5340);
 const KHAKI: V3 = lin(0x5c5b3e);
 const WEBBING: V3 = lin(0x50503a);
@@ -41,6 +44,8 @@ function paint(g: THREE.BufferGeometry, colour: V3, shade?: Float32Array): THREE
   src.setAttribute('color', new THREE.BufferAttribute(col, 3));
   if (shade) src.setAttribute('shade', new THREE.BufferAttribute(shade, 1));
   else if (!src.getAttribute('shade')) src.setAttribute('shade', new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
+  // 1 on the uniform itself, which takes each man's own colour (infantry.ts); 0 on kit, boots and gloves.
+  src.setAttribute('camo', new THREE.BufferAttribute(new Float32Array(n).fill(colour === UNIFORM ? 1 : 0), 1));
   return src;
 }
 

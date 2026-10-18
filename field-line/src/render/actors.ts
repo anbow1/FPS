@@ -8,11 +8,13 @@ import {
   CylinderGeometry,
   ExtrudeGeometry,
   Group,
+  InstancedBufferAttribute,
   InstancedMesh,
   LatheGeometry,
   Matrix4,
   Mesh,
   MeshPhysicalNodeMaterial,
+  type Node,
   Shape,
   SphereGeometry,
   Vector2,
@@ -61,10 +63,14 @@ const ANKLE_Y = 0.09;
 const SPINE_M = 0.52;
 const SHOULDER_HALF = 0.19;
 
-type Kind = 0 | 1 | 2;
+type Kind = 0 | 1 | 2 | 3 | 4;
 const HARD: Kind = 0;
 const PLAIN: Kind = 1;
 const CAMO: Kind = 2;
+/** The helmet's cover: the man's kit colour. */
+const COVER: Kind = 3;
+/** Recognition tape round the upper arms. */
+const TAPE: Kind = 4;
 
 type Segment = 'pelvis' | 'torso' | 'head' | 'upperArm' | 'forearm' | 'hand' | 'thigh' | 'shin' | 'boot' | 'rifle';
 const PAIRED: Record<Segment, boolean> = { pelvis: false, torso: false, head: false, upperArm: true, forearm: true, hand: true, thigh: true, shin: true, boot: true, rifle: false };
@@ -81,7 +87,12 @@ export class ActorView {
     const material = soldierMaterial();
     const geos = segmentGeometries();
     for (const seg of Object.keys(PAIRED) as Segment[]) {
-      const mesh = new InstancedMesh(geos[seg], material, MAX_SOLDIERS * (PAIRED[seg] ? 2 : 1));
+      const per = PAIRED[seg] ? 2 : 1;
+      // Each man's kit (soldierMaterial): his camouflage, the colour of his carrier and pouches, how faded.
+      const kit = new Float32Array(MAX_SOLDIERS * per * 4);
+      for (let i = 0; i < MAX_SOLDIERS * per; i++) kit.set(kitFor(Math.floor(i / per)), i * 4);
+      geos[seg].setAttribute('kit', new InstancedBufferAttribute(kit, 4));
+      const mesh = new InstancedMesh(geos[seg], material, MAX_SOLDIERS * per);
       mesh.name = `soldier-${seg}`;
       mesh.count = 0;
       mesh.castShadow = true;
@@ -283,27 +294,100 @@ export function solveTwoBone(root: Vector3, target: Vector3, l1: number, l2: num
 
 // ------------------------------------------------------------------ material
 
+/**
+ * One man's kit, from his slot: [camouflage scheme 0…4, kit colour 0…3, unused, fading 0…1]. A squad of
+ * identical men in one woodland pattern read as clones, and as a dark green smear against a city.
+ */
+function kitFor(i: number): [number, number, number, number] {
+  const h = (k: number): number => {
+    let x = Math.imul(i * 374761393 + k * 668265263, 1274126177);
+    x ^= x >>> 15;
+    return ((x >>> 0) % 10000) / 10000;
+  };
+  return [Math.floor(h(1) * CAMO_SCHEMES.length), Math.floor(h(2) * KIT_COLOURS.length), 0, h(3)];
+}
+
+type Rgb = [number, number, number];
+/** Camouflage schemes (linear): base, second, dark, light — woodland, multi-terrain, urban, arid, plain green. */
+const CAMO_SCHEMES: [Rgb, Rgb, Rgb, Rgb][] = [
+  [
+    [0.1, 0.11, 0.065],
+    [0.13, 0.12, 0.07],
+    [0.045, 0.05, 0.035],
+    [0.19, 0.17, 0.11],
+  ],
+  [
+    [0.22, 0.18, 0.12],
+    [0.12, 0.09, 0.06],
+    [0.09, 0.1, 0.055],
+    [0.32, 0.29, 0.22],
+  ],
+  [
+    [0.16, 0.16, 0.16],
+    [0.27, 0.27, 0.26],
+    [0.035, 0.035, 0.04],
+    [0.4, 0.4, 0.38],
+  ],
+  [
+    [0.3, 0.25, 0.17],
+    [0.24, 0.19, 0.13],
+    [0.17, 0.13, 0.09],
+    [0.38, 0.33, 0.24],
+  ],
+  [
+    [0.065, 0.075, 0.05],
+    [0.075, 0.085, 0.055],
+    [0.05, 0.06, 0.04],
+    [0.085, 0.09, 0.06],
+  ],
+];
+/** Plate carrier, pouches and helmet cover (linear): ranger green, coyote, black, olive drab. */
+const KIT_COLOURS: Rgb[] = [
+  [0.06, 0.075, 0.05],
+  [0.24, 0.18, 0.11],
+  [0.03, 0.03, 0.033],
+  [0.14, 0.13, 0.08],
+];
+
+/** The entry of `list` at index `i` (a float node holding a whole number), by a chain of steps. */
+function pickRgb(i: Node<'float'>, list: readonly Rgb[]): Node<'vec3'> {
+  let out: Node<'vec3'> = vec3(...(list[0] as Rgb));
+  for (let k = 1; k < list.length; k++) out = mix(out, vec3(...(list[k] as Rgb)), step(k - 0.5, i));
+  return out;
+}
+
 function soldierMaterial(): MeshPhysicalNodeMaterial {
   const m = new MeshPhysicalNodeMaterial({ name: 'soldier', metalness: 0, sheenRoughness: 0.8 });
   const tint = attribute('tint', 'vec3');
   const kind = attribute('kind', 'float');
-  const camo = step(1.5, kind);
-  const fabric = step(0.5, kind);
-  // Four-colour woodland-style blotches in each segment's own space (sheet uniform #5A5E48 as the base):
-  // positionGeometry, as positionLocal is already instanced and the blotches would crawl as he moves.
+  const kit = attribute('kit', 'vec4');
+  const is = (k: number): Node<'float'> => step(k - 0.5, kind).mul(step(kind, k + 0.5));
+  const camo = is(CAMO);
+  const fabric = is(PLAIN).add(camo).add(is(COVER));
+  // Blotches in each segment's own space: positionGeometry, as positionLocal is already instanced and the
+  // pattern would crawl as he moves. The scheme is the man's own (kitFor), faded a little or a lot.
   const p = positionGeometry.mul(6.5);
   const n1 = mx_noise_float(p);
   const n2 = mx_noise_float(p.mul(1.7).add(vec3(3.1, 7.7, 1.3)));
-  const base = vec3(0.1, 0.11, 0.065); // #5A5E48 in linear
-  const olive = vec3(0.13, 0.12, 0.07);
-  const dark = vec3(0.045, 0.05, 0.035);
-  const sand = vec3(0.19, 0.17, 0.11);
-  const pattern = mix(mix(mix(base, olive, step(0.18, n1)), dark, step(0.32, n2)), sand, step(0.42, n1.mul(-1)));
+  const pick = (k: number): Node<'vec3'> => pickRgb(kit.x, CAMO_SCHEMES.map((s) => s[k] as Rgb));
+  const fade = kit.w.mul(0.3).add(0.85);
+  const pattern = mix(mix(mix(pick(0), pick(1), step(0.18, n1)), pick(2), step(0.32, n2)), pick(3), step(0.42, n1.mul(-1))).mul(fade);
+  // Carrier, pouches, webbing and pack in the man's kit colour, each keeping its own shade of it; the
+  // helmet cover too.
+  const kitColour = pickRgb(kit.y, KIT_COLOURS);
+  const lum = (c: Node<'vec3'>): Node<'float'> => c.dot(vec3(0.2126, 0.7152, 0.0722));
+  const plain = kitColour.mul(lum(tint).div(0.075).clamp(0.45, 1.6));
+  // Recognition tape: a faded red, as forces in the field wrap round their arms to tell friend from foe.
+  const tape = vec3(0.34, 0.035, 0.03);
+  let base: Node<'vec3'> = mix(tint, pattern, camo);
+  base = mix(base, plain, is(PLAIN));
+  base = mix(base, kitColour, is(COVER));
+  base = mix(base, tape, is(TAPE));
   // Mud and dust where they collect, in blotches: dried light dust over darker wet mud.
   const grime = attribute('grime', 'float');
   const blot = smoothstep(-0.2, 0.45, mx_noise_float(positionGeometry.mul(23)).add(grime.mul(0.9).sub(0.45)));
   const mud = mix(vec3(0.07, 0.055, 0.04), vec3(0.2, 0.17, 0.13), smoothstep(0.1, 0.6, mx_noise_float(positionGeometry.mul(9))));
-  const colour = mix(mix(tint, pattern, camo), mud, blot.mul(grime)).mul(attribute('shade', 'float'));
+  const colour = mix(base, mud, blot.mul(grime)).mul(attribute('shade', 'float'));
   m.colorNode = colour;
   m.roughnessNode = mix(float(0.6), float(0.9), fabric.max(blot.mul(grime)));
   // Sheen colour × intensity (three's sheenNode is the product): cloth only.
@@ -583,9 +667,9 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
   const head = joined(
     [
       tag(headGeometry(), C.balaclava, PLAIN),
-      tag(helmet, C.khaki, HARD),
+      tag(helmet, C.khaki, COVER),
       // High cut over the ears: the shell's rim, side rails and the NVG mount on the front.
-      tag(new CylinderGeometry(0.122, 0.124, 0.012, 18, 1, true).scale(0.95, 1, 1.05).translate(0, 0.022, 0.005), C.khaki, HARD),
+      tag(new CylinderGeometry(0.122, 0.124, 0.012, 18, 1, true).scale(0.95, 1, 1.05).translate(0, 0.022, 0.005), C.khaki, COVER),
       tag(box(0.01, 0.024, 0.1, -0.119, 0.035, 0.005), C.rubber, HARD),
       tag(box(0.01, 0.024, 0.1, 0.119, 0.035, 0.005), C.rubber, HARD),
       tag(box(0.05, 0.035, 0.024, 0, 0.075, -0.125), C.rubber, HARD),
@@ -619,6 +703,8 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
         C.uniform,
         CAMO,
       ),
+      // Recognition tape wound round the arm below the shoulder.
+      tag(new CylinderGeometry(0.0655, 0.064, 0.038, 14, 1, true).scale(1, 1, 0.93).translate(0, -L_UPPER_ARM * 0.28, 0), 0x000000, TAPE),
     ],
     'upperArm',
   );
