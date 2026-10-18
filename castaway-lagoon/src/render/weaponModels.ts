@@ -1,6 +1,8 @@
-import { BoxGeometry, type BufferGeometry, CylinderGeometry, ExtrudeGeometry, Group, IcosahedronGeometry, LatheGeometry, type Material, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, Shape, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { BoxGeometry, BufferAttribute, type BufferGeometry, CylinderGeometry, ExtrudeGeometry, Group, IcosahedronGeometry, LatheGeometry, type Material, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, Shape, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
 import { tileFbm, tileFbmXY, tileNoiseXY } from '../core/noise.ts';
 import { makeTextureSet } from './textureSet.ts';
+import { arc, sectionPart, sidePart, steelMaterial, taperX, woodMaterial } from './gunkit.ts';
 import { merge, rand, tube } from './meshkit.ts';
 import { hex } from './patterns.ts';
 
@@ -27,42 +29,27 @@ const woodSet = makeTextureSet(
   1.5,
 );
 
-// Phosphated steel, worn to bright metal along edges and where hands rub (ORM metal = 1 there).
-const receiverSet = makeTextureSet(
-  256,
-  (u, v, t) => {
-    const n = tileFbm(u * 6, v * 6, 6, 4, 411);
-    const edge = Math.min(u, 1 - u, v, 1 - v);
-    const rub = tileFbm(u * 3, v * 3, 3, 3, 413);
-    const worn = edge < 0.035 + rub * 0.03 || (rub > 0.7 && n > 0.55);
-    const k = worn ? 0.72 : 0.19 + n * 0.05;
-    t.r = k;
-    t.g = k;
-    t.b = k * (worn ? 1 : 1.06);
-    t.metal = worn ? 1 : 0;
-    t.rough = worn ? 0.3 : 0.45 + n * 0.12;
-    t.height = worn ? 0.3 : 0.5 + n * 0.1;
-  },
-  1,
-);
-
 export const WEAPON_MATERIALS = {
-  // Blued / phosphated steel: a dark dielectric finish (PBR sheet: paint and phosphate are metal 0).
-  receiver: new MeshStandardNodeMaterial({ name: 'ak receiver', map: receiverSet.map, normalMap: receiverSet.normalMap, roughnessMap: receiverSet.ormMap, metalnessMap: receiverSet.ormMap, roughness: 1, metalness: 1 }),
-  // Where the finish has worn through on the edges and the bolt carrier: bare steel.
+  // AKM finish: a black phosphate-and-paint, worn to bright steel on the edges hands and slings rub.
+  receiver: steelMaterial('ak receiver', [0.022, 0.022, 0.024], 1),
+  // The barrel and gas tube: blued, smoother, worn less.
+  barrel: steelMaterial('ak barrel', [0.018, 0.018, 0.02], 0.6, 0.42),
+  // Where the finish is gone altogether (the bolt carrier and its handle): bare steel.
   bare: new MeshStandardNodeMaterial({ name: 'ak bare steel', color: 0xb9b9b9, roughness: 0.3, metalness: 1 }),
-  wood: new MeshStandardNodeMaterial({ name: 'ak wood', map: woodSet.map, normalMap: woodSet.normalMap, roughnessMap: woodSet.ormMap, roughness: 1, metalness: 0 }),
+  wood: woodMaterial('ak wood', woodSet.map, [7, 3.5]),
   blade: new MeshStandardNodeMaterial({ name: 'blade', color: 0xc4c6c8, roughness: 0.22, metalness: 1 }),
   guard: new MeshStandardNodeMaterial({ name: 'guard', color: 0x2a2a2c, roughness: 0.5, metalness: 0 }),
   cord: new MeshStandardNodeMaterial({ name: 'paracord', color: 0x3f4430, roughness: 0.95, metalness: 0 }),
   stone: new MeshStandardNodeMaterial({ name: 'stone', color: 0x8d877c, roughness: 0.7, metalness: 0 }),
   brass: new MeshStandardNodeMaterial({ name: 'brass', color: 0xe8cf8a, roughness: 0.3, metalness: 1 }),
   // The red dot and its side mount: black anodised aluminium, and the objective's coated glass.
-  optic: new MeshStandardNodeMaterial({ name: 'optic', color: 0x1b1c1e, roughness: 0.38, metalness: 0 }),
+  optic: steelMaterial('optic', [0.02, 0.021, 0.023], 0.5, 0.38),
   glass: new MeshPhysicalNodeMaterial({ name: 'optic glass', color: 0xe6ebeb, roughness: 0.02, transparent: true, opacity: 0.12, ior: 1.52 }),
 } as const;
 
 function mesh(g: BufferGeometry, m: Material, name: string): Mesh {
+  // The worn finishes read `edge` (gunkit.ts); a part built without bevels has none.
+  if (!g.getAttribute('edge')) g.setAttribute('edge', new BufferAttribute(new Float32Array(g.getAttribute('position').count), 1));
   const out = new Mesh(g, m);
   out.name = name;
   out.castShadow = true;
@@ -70,19 +57,37 @@ function mesh(g: BufferGeometry, m: Material, name: string): Mesh {
   return out;
 }
 
-/** A box whose back (+Z) and front (−Z) faces have different heights and a vertical offset: stocks and grips. */
-function taperBox(length: number, wBack: number, hBack: number, yBack: number, wFront: number, hFront: number, yFront: number): BufferGeometry {
-  const g = new BoxGeometry(1, 1, length, 1, 1, 4);
-  const pos = g.getAttribute('position');
-  for (let i = 0; i < pos.count; i++) {
-    const t = pos.getZ(i) / length + 0.5; // 0 front … 1 back
-    const w = wFront + (wBack - wFront) * t;
-    const h = hFront + (hBack - hFront) * t;
-    const y = yFront + (yBack - yFront) * t;
-    pos.setXYZ(i, pos.getX(i) * w, y + pos.getY(i) * h, pos.getZ(i));
-  }
-  g.computeVertexNormals();
-  return g;
+/** Parts merged for one material: every part non-indexed with position, normal, uv and `edge` (0 where it has none). */
+function parts(list: BufferGeometry[], name: string): BufferGeometry {
+  const clean = list.map((g0) => {
+    const g = g0.index ? g0.toNonIndexed() : g0;
+    const n = g.getAttribute('position').count;
+    if (!g.getAttribute('uv')) g.setAttribute('uv', new BufferAttribute(new Float32Array(n * 2), 2));
+    if (!g.getAttribute('edge')) g.setAttribute('edge', new BufferAttribute(new Float32Array(n), 1));
+    for (const key of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'edge'].includes(key)) g.deleteAttribute(key);
+    g.clearGroups();
+    return g;
+  });
+  const out = mergeGeometries(clean, false);
+  if (!out) throw new Error(`geometry merge failed for '${name}'`);
+  return out;
+}
+
+/** A small part with rounded edges (sights, blocks, levers): a filleted rectangle in (z, y), bevelled. */
+function block(w: number, h: number, d: number, x: number, y: number, z: number, r = 0.0015): BufferGeometry {
+  return sidePart(
+    [
+      [z - d / 2, y - h / 2],
+      [z + d / 2, y - h / 2],
+      [z + d / 2, y + h / 2],
+      [z - d / 2, y + h / 2],
+    ],
+    w,
+    Math.min(r, w / 3),
+    Math.min(r * 1.5, h / 3, d / 3),
+    x,
+    2,
+  );
 }
 
 export interface RifleModel {
@@ -104,6 +109,46 @@ export interface RifleModel {
   sightY: number;
 }
 
+/**
+ * The magazine's side edges (local: its top centre at the origin, −Z forward): the 30-round curve, front
+ * and back concentric about a centre ahead of it, the body narrowing a little toward the floor plate.
+ * A point a fraction `f` of the way from the front edge to the back, `i` steps down.
+ */
+function magazineEdges(): { front: [number, number][]; back: [number, number][] } {
+  const front: [number, number][] = [];
+  const back: [number, number][] = [];
+  const n = 10;
+  const step = 0.2 / n;
+  let z = 0;
+  let y = 0;
+  let a = 0.1;
+  for (let i = 0; i <= n; i++) {
+    const half = (0.066 - (i / n) * 0.01) / 2;
+    // The curve's forward-pointing normal: the front edge leads, the back edge trails.
+    front.push([z - Math.cos(a) * half, y + Math.sin(a) * half]);
+    back.push([z + Math.cos(a) * half, y - Math.sin(a) * half]);
+    z -= Math.sin(a) * step;
+    y -= Math.cos(a) * step;
+    a += 2.6 * step;
+  }
+  return { front, back };
+}
+
+/** The strip between fractions f0 and f1 of the way from the front edge to the back, over the whole length. */
+function magazineBand(e: { front: [number, number][]; back: [number, number][] }, f0: number, f1: number): [number, number][] {
+  const at = (i: number, f: number): [number, number] => {
+    const p = e.front[i] as [number, number];
+    const q = e.back[i] as [number, number];
+    return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+  };
+  const n = e.front.length;
+  const out: [number, number][] = [];
+  // Counter-clockwise in (z, y): down the front side, up the back side.
+  for (let i = 0; i < n; i++) out.push(at(i, f0));
+  for (let i = n - 1; i >= 0; i--) out.push(at(i, f1));
+  return out;
+}
+
 /** `optic`: a red dot on a side mount over the receiver (the player's rifle; the guerrillas shoot irons). */
 export function buildRifle(options: { optic?: boolean } = {}): RifleModel {
   const W = WEAPON_MATERIALS;
@@ -112,74 +157,154 @@ export function buildRifle(options: { optic?: boolean } = {}): RifleModel {
   const bore = -0.047;
   const recTop = -0.03;
   const recBot = -0.096;
-  // Receiver, dust cover, rear trunnion and sight block.
-  const receiver = merge(
+  const RW = 0.036; // receiver width
+
+  // Receiver: the stamped box, its corners rounded, the dust cover on top with its stiffening ribs, the
+  // rear sight block and leaf, the trunnions, the dimples over the magazine well, rivets, the trigger guard.
+  const receiver = parts(
     [
-      new BoxGeometry(0.036, recTop - recBot, 0.27).translate(0, (recTop + recBot) / 2, 0.075),
-      new CylinderGeometry(0.018, 0.018, 0.25, 12, 1, false, -Math.PI / 2, Math.PI).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).scale(1, 0.55, 1).translate(0, recTop, 0.08),
-      new BoxGeometry(0.03, 0.03, 0.05).translate(0, recTop - 0.005, -0.075), // rear sight block
-      new BoxGeometry(0.026, 0.012, 0.075).translate(0, -0.006, -0.05), // rear sight leaf
-      new BoxGeometry(0.03, 0.035, 0.03).translate(0, bore + 0.01, -0.095), // front trunnion
-      new BoxGeometry(0.03, 0.03, 0.035).translate(0, bore + 0.005, -0.41), // gas block
-      new BoxGeometry(0.022, 0.035, 0.03).translate(0, bore + 0.012, -0.495), // front sight block
-      new BoxGeometry(0.004, 0.03, 0.004).translate(0, -0.012, -0.5), // front post (tip at y ≈ 0)
-      new TorusGeometry(0.011, 0.0025, 6, 12, Math.PI).translate(0, -0.006, -0.5), // post hood
-      new BoxGeometry(0.004, 0.035, 0.09).translate(0.021, -0.07, 0.085), // selector lever
-      tube([new Vector3(0, recBot, 0.09), new Vector3(0, recBot - 0.03, 0.08), new Vector3(0, recBot - 0.034, 0.03), new Vector3(0, recBot, 0.015)], [0.003, 0.003, 0.003, 0.003], 5, 0.2), // trigger guard
-      new BoxGeometry(0.005, 0.02, 0.006).translate(0, recBot - 0.01, 0.055), // trigger
-      // Rivet heads where the stamped receiver is riveted to the trunnions and the centre support.
-      ...[-0.052, -0.04, -0.028, 0.04, 0.188, 0.2].flatMap((z, i) =>
-        [-1, 1].map((sx) => new CylinderGeometry(0.0026, 0.0026, 0.002, 8).rotateZ(Math.PI / 2).translate(sx * 0.0185, recBot + (i % 2 ? 0.016 : 0.03), z)),
+      sidePart(
+        [
+          [-0.064, recBot],
+          [0.205, recBot],
+          [0.205, recTop - 0.004],
+          [-0.064, recTop - 0.004],
+        ],
+        RW,
+        0.0012,
+        [0.004, 0.006, 0.003, 0.003],
       ),
+      // Dust cover: half a rounded tube over the top, a hair wider than the box, its rear end squared.
+      sectionPart(arc(0, recTop - 0.004, 0.0185, 0.011, 0, Math.PI, 12), -0.045, 0.207, 0.0012, 0.001),
+      ...[0.17, 0.182, 0.194].map((z) => sectionPart(arc(0, recTop - 0.004, 0.0191, 0.0115, 0, Math.PI, 12), z - 0.002, z + 0.002, 0.0006, 0.0008)),
+      block(0.03, 0.03, 0.05, 0, recTop - 0.004, -0.075, 0.002), // rear sight block
+      block(0.024, 0.008, 0.075, 0, -0.004, -0.05, 0.0012), // rear sight leaf
+      block(0.012, 0.01, 0.012, 0, -0.012, -0.03, 0.001), // its slide
+      block(0.032, 0.036, 0.032, 0, bore + 0.01, -0.095, 0.002), // front trunnion
+      block(0.03, 0.03, 0.035, 0, bore + 0.006, -0.41, 0.002), // gas block
+      block(0.022, 0.036, 0.03, 0, bore + 0.012, -0.495, 0.002), // front sight block
+      block(0.004, 0.03, 0.004, 0, -0.013, -0.5, 0.0008), // front post (tip at y ≈ 0)
+      sectionPart(arc(0, -0.006, 0.011, 0.012, -0.15, Math.PI + 0.15, 10).concat(arc(0, -0.006, 0.0085, 0.0095, Math.PI + 0.15, -0.15, 10)), -0.508, -0.492, 0.0005, 0.0005), // post hood
+      // Dimples pressed into the receiver over the magazine well (AKM), and the rivets.
+      ...[-1, 1].map((sx) => block(0.002, 0.008, 0.02, sx * (RW / 2 + 0.0004), recBot + 0.022, -0.035, 0.0008)),
+      ...[-0.052, -0.04, -0.028, 0.04, 0.188, 0.2].flatMap((z, i) => [-1, 1].map((sx) => new CylinderGeometry(0.0026, 0.0026, 0.002, 10).rotateZ(Math.PI / 2).translate(sx * (RW / 2 + 0.0005), recBot + (i % 2 ? 0.016 : 0.03), z))),
+      tube([new Vector3(0, recBot, 0.09), new Vector3(0, recBot - 0.03, 0.08), new Vector3(0, recBot - 0.034, 0.03), new Vector3(0, recBot, 0.015)], [0.0032, 0.0032, 0.0032, 0.0032], 8, 0.2), // trigger guard
+      block(0.005, 0.022, 0.006, 0, recBot - 0.01, 0.055, 0.001), // trigger
+      // Selector: the long stamped lever on the right side, pivot at the back, finger tab at the front.
+      sidePart(
+        [
+          [0.178, -0.044],
+          [0.02, -0.058],
+          [0.012, -0.074],
+          [0.026, -0.078],
+          [0.04, -0.066],
+          [0.178, -0.054],
+        ],
+        0.0025,
+        0.0007,
+        0.003,
+        RW / 2 + 0.0015,
+        2,
+      ),
+      new CylinderGeometry(0.006, 0.006, 0.004, 14).rotateZ(Math.PI / 2).translate(RW / 2 + 0.002, -0.049, 0.172), // its pivot
     ],
     'ak receiver',
   );
   root.add(mesh(receiver, W.receiver, 'receiver'));
-  const barrel = merge(
+
+  const barrel = parts(
     [
-      new CylinderGeometry(0.0105, 0.0105, 0.23, 14).rotateX(Math.PI / 2).translate(0, bore, -0.4),
-      new CylinderGeometry(0.0135, 0.0135, 0.055, 14).rotateX(Math.PI / 2).translate(0, bore, -0.54), // slant brake
-      new CylinderGeometry(0.009, 0.009, 0.3, 12).rotateX(Math.PI / 2).translate(0, bore + 0.028, -0.26), // gas tube
+      new CylinderGeometry(0.0105, 0.0105, 0.23, 18).rotateX(Math.PI / 2).translate(0, bore, -0.4),
+      // Slant muzzle brake, the gas tube and its forward end, the bayonet lug and cleaning rod under it.
+      new CylinderGeometry(0.0128, 0.0135, 0.052, 18).rotateX(Math.PI / 2).translate(0, bore, -0.541),
+      new CylinderGeometry(0.009, 0.009, 0.3, 14).rotateX(Math.PI / 2).translate(0, bore + 0.028, -0.26),
+      block(0.008, 0.012, 0.02, 0, bore - 0.017, -0.47, 0.001),
+      new CylinderGeometry(0.003, 0.003, 0.36, 8).rotateX(Math.PI / 2).translate(0, bore - 0.018, -0.33),
     ],
     'ak barrel',
   );
-  root.add(mesh(barrel, W.receiver, 'barrel'));
-  // Laminated wood: stock, pistol grip, lower handguard, gas-tube cover.
-  const wood = merge(
-    [
-      taperBox(0.26, 0.04, 0.13, -0.092, 0.034, 0.06, -0.064).translate(0, 0, 0.34),
-      taperBox(0.1, 0.03, 0.036, -0.15, 0.03, 0.036, -0.12).rotateX(0.35).translate(0, 0, 0.135),
-      new CylinderGeometry(0.024, 0.022, 0.2, 14).rotateX(Math.PI / 2).scale(1, 0.95, 1).translate(0, bore - 0.004, -0.205),
-      new CylinderGeometry(0.017, 0.017, 0.16, 12).rotateX(Math.PI / 2).translate(0, bore + 0.03, -0.2),
-    ],
-    'ak wood',
+  root.add(mesh(barrel, W.barrel, 'barrel'));
+
+  // Laminated wood: the stock from its real side profile, swelling to the butt; the pistol grip with its
+  // swell; the lower handguard with palm swells round the barrel; the gas-tube cover over it.
+  const stock = taperX(
+    sidePart(
+      [
+        [0.205, -0.094],
+        [0.33, -0.121],
+        [0.466, -0.155],
+        [0.461, -0.028],
+        [0.33, -0.031],
+        [0.205, -0.036],
+      ],
+      0.042,
+      0.004,
+      [0.004, 0.02, 0.006, 0.006, 0.03, 0.004],
+    ),
+    (z) => 0.86 + Math.min(1, Math.max(0, (z - 0.2) / 0.26)) * 0.14,
   );
-  root.add(mesh(wood, W.wood, 'furniture'));
-  const butt = mesh(new BoxGeometry(0.041, 0.13, 0.008).translate(0, -0.093, 0.472), W.receiver, 'butt plate');
+  const grip = sidePart(
+    [
+      [0.116, -0.096],
+      [0.166, -0.096],
+      [0.174, -0.13],
+      [0.181, -0.172],
+      [0.176, -0.204],
+      [0.16, -0.214],
+      [0.143, -0.211],
+      [0.135, -0.186],
+      [0.131, -0.16],
+      [0.122, -0.128],
+    ],
+    0.03,
+    0.0045,
+    [0.002, 0.004, 0.01, 0.01, 0.01, 0.008, 0.008, 0.012, 0.012, 0.006],
+  );
+  const lower = taperX(
+    sectionPart(arc(0, bore - 0.004, 0.0245, 0.023, Math.PI * 0.08, -Math.PI * 1.08, 14).concat(arc(0, bore - 0.004, 0.0165, 0.0155, -Math.PI * 1.08, Math.PI * 0.08, 14)), -0.305, -0.105, 0.003, 0.0015),
+    (z) => 1 + 0.07 * Math.sin(Math.min(1, Math.max(0, (z + 0.29) / 0.17)) * Math.PI),
+  );
+  const upper = sectionPart(arc(0, bore + 0.028, 0.0185, 0.0165, -0.12, Math.PI + 0.12, 12).concat(arc(0, bore + 0.028, 0.0122, 0.0105, Math.PI + 0.12, -0.12, 12)), -0.28, -0.11, 0.0025, 0.0012);
+  root.add(mesh(parts([stock, grip, lower, upper], 'ak wood'), W.wood, 'furniture'));
+  const butt = mesh(
+    parts(
+      [
+        sidePart(
+          [
+            [0.4655, -0.157],
+            [0.4775, -0.159],
+            [0.4715, -0.026],
+            [0.4605, -0.026],
+          ],
+          0.0425,
+          0.0015,
+          0.004,
+        ),
+      ],
+      'ak butt plate',
+    ),
+    W.receiver,
+    'butt plate',
+  );
   root.add(butt);
-  // Curved magazine: segments along an arc, sweeping forward as it drops.
-  const segs: BufferGeometry[] = [];
-  const n = 9;
-  let y = 0;
-  let z = 0;
-  let a = 0.12;
-  for (let i = 0; i < n; i++) {
-    const len = 0.028;
-    const depth = 0.07 - i * 0.0015;
-    // The body, and the stiffening ribs pressed into each side of a steel magazine.
-    for (const part of [new BoxGeometry(0.027, len + 0.002, depth), new BoxGeometry(0.03, len + 0.002, 0.008).translate(0, 0, -depth * 0.18), new BoxGeometry(0.029, len + 0.002, 0.006).translate(0, 0, depth * 0.3)]) {
-      part.rotateX(-a);
-      part.translate(0, y - len / 2, z);
-      segs.push(part);
-    }
-    y -= Math.cos(a) * len;
-    z -= Math.sin(a) * len;
-    a += 0.07;
-  }
-  const magazine = mesh(merge(segs, 'ak magazine'), W.receiver, 'magazine');
-  magazine.position.set(0, recBot + 0.01, -0.03);
+
+  // Curved steel magazine: its side outline, two ribs pressed along each side, the floor plate's lip.
+  const edges = magazineEdges();
+  const last = edges.front.length - 1;
+  const fb = edges.front[last] as [number, number];
+  const bb = edges.back[last] as [number, number];
+  const floor: [number, number][] = [
+    [fb[0] - 0.004, fb[1] + 0.004],
+    [fb[0] - 0.004, fb[1] - 0.007],
+    [bb[0] + 0.004, bb[1] - 0.007],
+    [bb[0] + 0.004, bb[1] + 0.004],
+  ];
+  const magParts = [sidePart(magazineBand(edges, 0, 1), 0.027, 0.0015, 0.003), sidePart(floor, 0.031, 0.0015, 0.002)];
+  for (const f of [0.28, 0.66]) for (const sx of [-1, 1]) magParts.push(sidePart(magazineBand(edges, f - 0.05, f + 0.05), 0.0016, 0.0005, 0.002, sx * 0.0142, 1));
+  const magazine = mesh(parts(magParts, 'ak magazine'), W.receiver, 'magazine');
+  magazine.position.set(0, recBot + 0.012, -0.028);
   root.add(magazine);
-  const chargingHandle = mesh(merge([new CylinderGeometry(0.004, 0.004, 0.025, 8).rotateZ(Math.PI / 2).translate(0.03, 0, 0), new CylinderGeometry(0.007, 0.007, 0.01, 10).rotateZ(Math.PI / 2).translate(0.045, 0, 0)], 'charging handle'), W.bare, 'charging handle');
+  const chargingHandle = mesh(parts([new CylinderGeometry(0.004, 0.004, 0.025, 10).rotateZ(Math.PI / 2).translate(0.03, 0, 0), new CylinderGeometry(0.007, 0.0065, 0.01, 14).rotateZ(Math.PI / 2).translate(0.045, 0, 0)], 'charging handle'), W.bare, 'charging handle');
   chargingHandle.position.set(0, -0.045, -0.02);
   root.add(chargingHandle);
   let dotLens: Mesh | null = null;
@@ -190,13 +315,13 @@ export function buildRifle(options: { optic?: boolean } = {}): RifleModel {
     // the irons. (On an AK the optic cannot sit on the cover itself: it moves.)
     const DOT_Y = 0.036;
     const z0 = 0.08;
-    const mount = merge(
+    const mount = parts(
       [
-        new BoxGeometry(0.005, 0.016, 0.11).translate(-0.0205, -0.062, 0.09), // side rail
-        new BoxGeometry(0.008, 0.07, 0.07).translate(-0.027, -0.03, z0), // clamp arm
-        new CylinderGeometry(0.006, 0.006, 0.012, 10).rotateZ(Math.PI / 2).translate(-0.034, -0.055, z0), // clamp knob
-        new BoxGeometry(0.036, 0.008, 0.07).translate(-0.01, 0.007, z0), // bridge over the cover
-        new BoxGeometry(0.022, 0.012, 0.05).translate(0, 0.016, z0), // riser
+        block(0.005, 0.016, 0.11, -0.0205, -0.062, 0.09, 0.001), // side rail
+        block(0.008, 0.07, 0.07, -0.027, -0.03, z0, 0.002), // clamp arm
+        new CylinderGeometry(0.006, 0.006, 0.012, 14).rotateZ(Math.PI / 2).translate(-0.034, -0.055, z0), // clamp knob
+        block(0.036, 0.008, 0.07, -0.01, 0.007, z0, 0.0015), // bridge over the cover
+        block(0.022, 0.012, 0.05, 0, 0.016, z0, 0.0015), // riser
         new LatheGeometry(
           [
             [0.0205, -0.055],
@@ -206,12 +331,12 @@ export function buildRifle(options: { optic?: boolean } = {}): RifleModel {
             [0.0195, 0.046],
             [0.0195, 0.052],
           ].map(([r, y]) => new Vector2(r as number, y as number)),
-          24,
+          32,
         )
           .rotateX(Math.PI / 2)
           .translate(0, DOT_Y, z0),
-        new CylinderGeometry(0.0085, 0.0085, 0.016, 14).translate(0, DOT_Y + 0.024, z0 + 0.005), // elevation turret
-        new CylinderGeometry(0.0085, 0.0085, 0.016, 14).rotateZ(Math.PI / 2).translate(0.024, DOT_Y, z0 + 0.005), // windage turret
+        new CylinderGeometry(0.0085, 0.0085, 0.016, 18).translate(0, DOT_Y + 0.024, z0 + 0.005), // elevation turret
+        new CylinderGeometry(0.0085, 0.0085, 0.016, 18).rotateZ(Math.PI / 2).translate(0.024, DOT_Y, z0 + 0.005), // windage turret
       ],
       'ak red dot',
     );
