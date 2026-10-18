@@ -39,6 +39,12 @@ export const CLOUD_FIELD = {
   densityGain: 4,
   /** How deep the billows carve the shape (share of it lost in the grooves between cells). */
   billowDepth: 0.4,
+  /**
+   * How much the detail noise eats from a cloud's edge. At 0.4 the cells only frayed the rims; 0.5 cuts
+   * the gaps between them deep enough that each reads as its own lobe while the coverage still keeps
+   * within a few hundredths of the preset's (tests/clouds.test.ts).
+   */
+  detailErosion: 0.5,
   weatherTileM: 160_000,
 } as const;
 
@@ -293,7 +299,7 @@ function erode(data: CloudData, base: number, raw: number, hf: number, px: numbe
   const det = sample3(data.detail, CLOUD_FIELD.detailRes, dx, dy, dz) * 0.65 + sample3(data.detail, CLOUD_FIELD.detailRes, dx * k + 0.37, dy * k, dz * k + 0.71) * 0.35;
   // Wispy at the base (the cells eat holes), billowy above it (the gaps between cells are eaten).
   const t = Math.min(1, hf * 5);
-  const mod = (det * (1 - t) + (1 - det) * t) * 0.4 * smoothing;
+  const mod = (det * (1 - t) + (1 - det) * t) * CLOUD_FIELD.detailErosion * smoothing;
   return Math.min(1, Math.max(0, (base - mod) / (1 - mod)) * CLOUD_FIELD.densityGain);
 }
 
