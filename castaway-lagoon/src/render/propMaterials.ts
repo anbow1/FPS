@@ -1,8 +1,8 @@
-import { attribute, float, mix, mx_noise_float, normalMap, positionLocal, positionWorld, sin, smoothstep, texture, vec3 } from 'three/tsl';
+import { attribute, float, mix, mx_noise_float, normalMap, positionLocal, positionWorld, sin, smoothstep, texture, uv, vec2, vec3 } from 'three/tsl';
 import { DoubleSide, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { tileFbm, tileFbmXY, tileNoise, tileNoiseXY } from '../core/noise.ts';
 import { makeTextureSet, type Texel, type TexelSampler, type TextureSet } from './textureSet.ts';
-import { type PhotoSet, photoSet, photoTextureSet } from './photoTextures.ts';
+import { type PhotoSet, photoSet, photoTextureSet, WEAVE_SIZE_M, weaveSet } from './photoTextures.ts';
 import { hash2, hex } from './patterns.ts';
 import { U } from './uniforms.ts';
 
@@ -29,18 +29,15 @@ function put(t: Texel, c: Rgb, k: number): void {
   t.b = c[2] * k;
 }
 
-/** Army canvas: faded olive, water stains, a darker seam line. */
+/** Army canvas: faded olive, water stains, a darker seam line. The weave itself is photographed (fabricMaterial). */
 function canvas(colour: number): TexelSampler {
   const c = hex(colour);
   return (u, v, t) => {
-    const wu = Math.sin(u * Math.PI * 2 * 96);
-    const wv = Math.sin(v * Math.PI * 2 * 96);
-    const weave = (wu + wv) * 0.25 + 0.5;
     const stain = tileFbm(u * 3, v * 3, 3, 4, 311);
     const fade = tileFbmXY(u * 2, v * 2, 2, 2, 3, 313);
     const seam = Math.abs(((v * 3) % 1) - 0.5) > 0.485;
-    put(t, c, (0.88 + fade * 0.25 - Math.max(0, stain - 0.6) * 0.5 + weave * 0.05) * (seam ? 0.7 : 1));
-    t.height = seam ? 0.2 : weave * 0.6;
+    put(t, c, (0.9 + fade * 0.25 - Math.max(0, stain - 0.6) * 0.5) * (seam ? 0.7 : 1));
+    t.height = seam ? 0.2 : 0.6;
     t.rough = 0.92;
   };
 }
@@ -202,10 +199,32 @@ function outdoor() {
   return float(1).sub(attribute('dry', 'float'));
 }
 
-function fabricMaterial(ts: TextureSet, name: string, sheenColour: number, flutter: boolean): MeshPhysicalNodeMaterial {
-  const m = new MeshPhysicalNodeMaterial({ name, normalMap: ts.normalMap, side: DoubleSide, sheen: 0.6, sheenRoughness: 0.7, sheenColor: sheenColour, metalness: 0 });
-  m.colorNode = texture(ts.map).rgb.mul(mix(float(1), float(0.55), U.wetness.mul(outdoor())));
-  m.roughnessNode = mix(texture(ts.ormMap).g, float(0.55), U.wetness.mul(outdoor()));
+/**
+ * Canvas: the set's colour, stains and seams over the photographed weave (photoTextures.ts `weaveSet`),
+ * `weave` repeats of it per UV unit — the threads' light and dark in the colour, their relief blended into
+ * the seams' normal. A sine weave read as a printed grid up close. Null for a cloth that is not woven
+ * canvas (the blanket's wool): the set alone.
+ */
+function fabricMaterial(ts: TextureSet, name: string, sheenColour: number, flutter: boolean, weave: readonly [number, number] | null): MeshPhysicalNodeMaterial {
+  const m = new MeshPhysicalNodeMaterial({ name, side: DoubleSide, sheen: 0.6, sheenRoughness: 0.7, sheenColor: sheenColour, metalness: 0 });
+  const wet = mix(float(1), float(0.55), U.wetness.mul(outdoor()));
+  if (weave) {
+    const w = weaveSet();
+    const wuv = uv().mul(vec2(...weave));
+    const thread = texture(w.detail, wuv);
+    // The weave's albedo lies within ±12 % of its mean; a little more contrast keeps it at a few metres.
+    const detail = thread.r.mul(2).sub(1).mul(1.6).add(1);
+    m.colorNode = texture(ts.map).rgb.mul(detail).mul(wet);
+    m.roughnessNode = mix(texture(ts.ormMap).g.mul(mix(float(1), thread.g.div(0.72), 0.5)).min(1), float(0.55), U.wetness.mul(outdoor()));
+    // Whiteout blend of the two tangent-space normals: the seams' and the threads'.
+    const n1 = texture(ts.normalMap).xyz.mul(2).sub(1);
+    const n2 = texture(w.normalMap, wuv).xyz.mul(2).sub(1);
+    m.normalNode = normalMap(vec3(n1.xy.add(n2.xy), n1.z.mul(n2.z)).normalize().mul(0.5).add(0.5));
+  } else {
+    m.normalMap = ts.normalMap;
+    m.colorNode = texture(ts.map).rgb.mul(wet);
+    m.roughnessNode = mix(texture(ts.ormMap).g, float(0.55), U.wetness.mul(outdoor()));
+  }
   if (flutter) {
     // Cloth in the wind: a travelling ripple weighted by distance from the tie points (attribute `flap`).
     const flap = attribute('flap', 'float');
@@ -224,7 +243,8 @@ function fabricMaterial(ts: TextureSet, name: string, sheenColour: number, flutt
  */
 export function vehicleMaterial(kind: 'boards' | 'canvas', name: string): MeshStandardNodeMaterial {
   if (kind === 'boards') return standard(photoTextureSet('wood_planks_grey'), name);
-  return fabricMaterial(tset('cotCanvas', 256, () => canvas(0x6a6a50), 1.5), name, 0x6a6a50, false);
+  // Seat cushions: box UVs, 0…1 across each ~0.3–0.5 m face.
+  return fabricMaterial(tset('cotCanvas', 256, () => canvas(0x6a6a50), 1.5), name, 0x6a6a50, false, [1.6, 1.6]);
 }
 
 export function propMaterials(): PropMaterials {
@@ -241,8 +261,10 @@ export function propMaterials(): PropMaterials {
     piles: pileMaterial(photoSet('bark006')),
     rustyIron: new MeshStandardNodeMaterial({ name: 'rusty iron', color: 0x3d281c, roughness: 0.85, metalness: 0 }),
     bamboo: standard(tset('bamboo', 256, bamboo, 2), 'bamboo', 0.7),
-    tarp: fabricMaterial(tset('canvas', 512, () => canvas(0x5d5e44), 1.5), 'tarp', 0x5d5e44, true),
-    cotCanvas: fabricMaterial(tset('cotCanvas', 256, () => canvas(0x6a6a50), 1.5), 'cot canvas', 0x6a6a50, false),
+    // The weave at its real size: the tarp's one UV square is ~5.1 × 4.5 m (outpost.ts tarpGeometry), the
+    // cot's bed ~1.9 × 0.7 m (its bags and pouches wrap less, so their threads come a little finer).
+    tarp: fabricMaterial(tset('canvas', 512, () => canvas(0x5d5e44), 1.5), 'tarp', 0x5d5e44, true, [5.1 / WEAVE_SIZE_M, 4.5 / WEAVE_SIZE_M]),
+    cotCanvas: fabricMaterial(tset('cotCanvas', 256, () => canvas(0x6a6a50), 1.5), 'cot canvas', 0x6a6a50, false, [1.9 / WEAVE_SIZE_M, 0.7 / WEAVE_SIZE_M]),
     hides: [0x7a5a3a, 0x6a4a30, 0x8a6a48].map((c, i) => {
       const ts = tset(`hide${i}`, 256, () => hide(c, i * 3 + 1), 3, true);
       const m = standard(ts, `hide ${i}`, 0.7);
@@ -252,7 +274,7 @@ export function propMaterials(): PropMaterials {
       return m;
     }),
     rope: standard(tset('rope', 128, rope, 3), 'rope'),
-    blanket: fabricMaterial(tset('blanket', 256, blanket, 1.5), 'blanket', 0x6e3a2e, false),
+    blanket: fabricMaterial(tset('blanket', 256, blanket, 1.5), 'blanket', 0x6e3a2e, false, null),
     olivePaint: standard(tset('olive', 256, () => paintedSteel(0x4b5033), 1), 'olive paint', 0.8),
     steel: new MeshStandardNodeMaterial({ name: 'steel', color: 0xbdbdbd, roughness: 0.32, metalness: 1 }),
     glass,

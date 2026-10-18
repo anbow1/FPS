@@ -3,8 +3,8 @@ import { type TextureSet, textureSetFromPixels } from './textureSet.ts';
 
 // Photographed surfaces: scanned PBR sets where a procedural texture cannot
 // reach — bark's plates and fissures and lichen, sand's grain, leaf litter,
-// rock, weathered boards are what a scan has and noise does not. All CC0, from
-// ambientCG and Poly Haven (assets/photo/LICENSE.md). Loaded once before the
+// rock, weathered boards, a cloth's weave are what a scan has and noise does
+// not. All CC0, from ambientCG and Poly Haven (assets/photo/LICENSE.md). Loaded once before the
 // scene is built (view.ts), so every material and the impostors baked from
 // them see the real images, never a blank first frame.
 //
@@ -91,8 +91,26 @@ const SET_URLS: Record<PhotoSetId, SetUrls> = {
   },
 };
 
+/**
+ * A cloth's weave, as detail over a material's own colour and stains: Poly Haven's Rough Linen, a tight plain
+ * weave like army canvas. `detail` packs R = the threads' albedo over its mean (× 0.5, linear), G = roughness,
+ * B = AO; one repeat is `WEAVE_SIZE_M` across.
+ */
+export interface WeaveSet {
+  detail: Texture;
+  normalMap: Texture;
+}
+
+export const WEAVE_SIZE_M = 0.27;
+
+const WEAVE_URLS: Record<keyof WeaveSet, string> = {
+  detail: new URL('../assets/photo/rough_linen/weave.jpg', import.meta.url).href,
+  normalMap: new URL('../assets/photo/rough_linen/normal.jpg', import.meta.url).href,
+};
+
 const sets = new Map<PhotoId, PhotoSet>();
 const packed = new Map<PhotoSetId, TextureSet>();
+let weave: WeaveSet | null = null;
 
 interface Pixels {
   width: number;
@@ -146,7 +164,16 @@ export async function loadPhotoTextures(): Promise<void> {
       sets.set(id, { map, normalMap, roughnessMap });
     }),
     ...(Object.keys(SET_URLS) as PhotoSetId[]).map(async (id) => packed.set(id, await loadPacked(id))),
+    (async () => {
+      const [detail, normalMap] = await Promise.all([load(WEAVE_URLS.detail, false), load(WEAVE_URLS.normalMap, false)]);
+      weave = { detail, normalMap };
+    })(),
   ]);
+}
+
+export function weaveSet(): WeaveSet {
+  if (!weave) throw new Error('weave texture requested before loadPhotoTextures() finished');
+  return weave;
 }
 
 export function photoSet(id: PhotoId): PhotoSet {

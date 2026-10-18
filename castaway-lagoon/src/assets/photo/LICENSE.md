@@ -25,3 +25,8 @@ Fetched from the copies in https://github.com/dgreenheck/ez-tree
 | `wood_planks_grey/`     | https://polyhaven.com/a/wood_planks_grey                | the jetty, the skiff's boards          |
 | `old_planks_02/`        | https://polyhaven.com/a/old_planks_02                   | the shelter's deck, table, crates      |
 | `weathered_planks/`     | https://polyhaven.com/a/weathered_planks                | dark boards                            |
+| `rough_linen/`          | https://polyhaven.com/a/rough_linen                     | the weave in the tarp, cot and seats   |
+
+`rough_linen/` is a detail map, 512 px: `weave.jpg` packs the photograph's
+linear luminance over its mean (× 0.5) in red, roughness in green and AO in
+blue; `normal.jpg` is its OpenGL normal map.
