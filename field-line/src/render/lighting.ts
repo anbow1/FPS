@@ -232,9 +232,13 @@ export class Lighting {
     this.envTexture?.dispose();
     let rt;
     if (hdri) {
-      // The photographed environment, brought to the same sky irradiance and colour the probe would cast
-      // (its ground half carries the bounce the probe's flat dome stood for), its sun under the scene's.
-      const gain: [number, number, number] = [(skyK.r * e) / hdri.skyIrradiance[0], (skyK.g * e) / hdri.skyIrradiance[1], (skyK.b * e) / hdri.skyIrradiance[2]];
+      // The photographed environment, brought to the sky illuminance the probe would cast (its ground half
+      // carries the bounce the probe's flat dome stood for), its sun under the scene's. One gain for all
+      // three channels: matched per channel to the sky, the blue sky's correction turned a grey street
+      // orange and every car's paint and rims with it. The photograph keeps its own colours.
+      const [ir, ig, ib] = hdri.skyIrradiance;
+      const k = (p.skyIlluminanceLux * this.preExposure) / (0.2126 * ir + 0.7152 * ig + 0.0722 * ib);
+      const gain: [number, number, number] = [k, k, k];
       const equirect = environmentTexture(hdri, gain, cloudy ? null : equirectU(this.sunDir.x, this.sunDir.z));
       rt = this.pmrem.fromEquirectangular(equirect);
       equirect.dispose();
