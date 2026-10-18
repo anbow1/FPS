@@ -47,6 +47,8 @@ export interface RockInstance {
   yawRad: number;
   seed: number;
   moss: number; // 0..1: jungle rocks are furred with moss, surf-washed ones are bare
+  /** Ground height under the rock: a scanned rock is set down on it and partly buried. */
+  groundY: number;
 }
 
 export type InteractableKind = 'pickup' | 'harvest' | 'crate' | 'examine' | 'sleep' | 'fire' | 'boat' | 'jeep';
@@ -186,8 +188,9 @@ export function buildWorld(seed: number): LagoonWorld {
     const sx = size * rng.range(0.8, 1.4);
     const sy = size * rng.range(0.5, 0.9);
     const sz = size * rng.range(0.8, 1.3);
-    const y = heightAt(x, z) - sy * sink;
-    rocks.push({ x, y, z, sx, sy, sz, yawRad: rng.range(0, Math.PI * 2), seed: rng.int(0, 1e6), moss });
+    const groundY = heightAt(x, z);
+    const y = groundY - sy * sink;
+    rocks.push({ x, y, z, sx, sy, sz, yawRad: rng.range(0, Math.PI * 2), seed: rng.int(0, 1e6), moss, groundY });
     occupied.push({ x, z, r: Math.max(sx, sz) * 0.8 });
     const r = Math.min(sx, sy, sz) * 0.95;
     collision.add({ kind: 'sphere', x, y: y + sy * 0.1, z, radiusM: Math.max(sx, sz) * 0.85, surface: 'rock' });
