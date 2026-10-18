@@ -1,3 +1,4 @@
+import { loadGroundPhotos } from './render/photoGround';
 import * as THREE from 'three/webgpu';
 import { PHYS_DT, QUALITY } from './config';
 import { Input } from './core/input';
@@ -68,6 +69,7 @@ async function boot(): Promise<void> {
   const hud = new Hud();
   const audio = new Audio();
   const quality = QUALITY[qualitySel.value === 'low' ? 'low' : 'high'];
+  await loadGroundPhotos();
   const world = new World(20260923, quality);
   status.textContent = 'Kompilowanie shaderów…';
   await nextFrame();

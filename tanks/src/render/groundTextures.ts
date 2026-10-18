@@ -2,11 +2,13 @@ import * as THREE from 'three/webgpu';
 import { tileableFbm } from '../core/noise';
 import { Rng } from '../core/rng';
 import { hyp2, hyp3 } from '../core/mathx';
+import { type GroundPhoto, groundPhoto } from './photoGround';
 
 /**
- * Close-range ground layers, generated once at load (tileable, 512²):
+ * Close-range ground layers, built once at load (tileable, 512²):
  *   0 meadow floor (fresh + dead grass, clover), 1 dry soil with pebbles,
  *   2 granite with cracks and lichen, 3 wet mud.
+ * Photographed where the scans are loaded (photoGround.ts); generated otherwise (the tests).
  * Albedo is centred on the sheet colours; alpha holds a height used for height-blending and
  * the second array holds tangent-space XY normals derived from that height.
  */
@@ -229,8 +231,28 @@ export function makeGroundLayers(seed: number): GroundLayers {
     return Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255);
   };
   const strength = [1.2, 1.8, 2.4, 0.8];
+  // Photographed layers where they are loaded (photoGround.ts), in the generated layers' order.
+  const photo: (GroundPhoto | null)[] = (['sparse_grass', 'stony_dirt_path', 'rock_face_03', 'muddy_tracks'] as const).map((id) => {
+    const p = groundPhoto(id);
+    return p && p.size === S ? p : null;
+  });
   layers.forEach((L, li) => {
     const off = li * S * S * 4;
+    const ph = photo[li];
+    if (ph) {
+      for (let i = 0; i < S * S; i++) {
+        const o = off + i * 4;
+        alb[o] = ph.color[i * 4] as number;
+        alb[o + 1] = ph.color[i * 4 + 1] as number;
+        alb[o + 2] = ph.color[i * 4 + 2] as number;
+        alb[o + 3] = ph.height[i * 4] as number;
+        nrm[o] = ph.normal[i * 4] as number;
+        nrm[o + 1] = ph.normal[i * 4 + 1] as number;
+        nrm[o + 2] = ph.orm[i * 4] as number; // the scan's AO
+        nrm[o + 3] = 255;
+      }
+      return;
+    }
     for (let y = 0; y < S; y++) {
       for (let x = 0; x < S; x++) {
         const i = y * S + x;

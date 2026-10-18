@@ -1,3 +1,4 @@
+import { GROUND_PHOTO_M } from '../render/photoGround';
 import { cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, floor, fract, Fn, If, int, length, max, mix, normalize, normalWorldGeometry, positionWorld, pow, property, sin, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
@@ -117,13 +118,13 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground:
     const nS = flat.toVar();
     const nR = flat.toVar();
     const nM = flat.toVar();
-    const uvG = wp.div(2.2).toVar();
-    const uvS = wp.div(1.7).toVar();
+    const uvG = wp.div(GROUND_PHOTO_M.sparse_grass).toVar();
+    const uvS = wp.div(GROUND_PHOTO_M.stony_dirt_path).toVar();
     // rock on slopes: sample on the plane facing the slope so the pattern does not stretch
     const an = nW.abs();
     const side = mix(positionWorld.xy, positionWorld.zy, an.x.greaterThan(an.z).select(float(1), float(0)));
-    const uvR = mix(side, wp, smoothstep(0.55, 0.8, an.y)).div(3.5).toVar();
-    const uvM = wp.div(2.5).toVar();
+    const uvR = mix(side, wp, smoothstep(0.55, 0.8, an.y)).div(GROUND_PHOTO_M.rock_face_03).toVar();
+    const uvM = wp.div(GROUND_PHOTO_M.muddy_tracks).toVar();
     const d = (uv: V2): [V2, V2] => [dFdx(uv).toVar(), dFdy(uv).toVar()];
     const [gx, gy] = d(uvG);
     const [sx, sy] = d(uvS);
