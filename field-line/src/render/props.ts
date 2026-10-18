@@ -1,13 +1,11 @@
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   BoxGeometry,
-  BufferAttribute,
   type BufferGeometry,
   CanvasTexture,
   Color,
   CylinderGeometry,
   Group,
-  IcosahedronGeometry,
   InstancedMesh,
   LatheGeometry,
   type Material,
@@ -22,10 +20,10 @@ import {
   Vector3,
 } from 'three/webgpu';
 import { tube } from './meshkit.ts';
-import { fbm2 } from '../core/noise.ts';
 import type { MapProp, PropKind } from '../maps/types.ts';
 import type { MaterialLibrary } from './materials.ts';
 import { streetTreeGeometry } from './streetTree.ts';
+import { type ScanId, scanModel } from './scanModels.ts';
 import { swayingMaterial } from './foliage.ts';
 import { buildCar, type CarGeometry, type CarPart, type CarVariant } from './carModel.ts';
 
@@ -171,6 +169,9 @@ const _colour = new Color();
 
 /** Which model a prop uses: cars alternate hatchback and saloon by a hash of their place. */
 function variantOf(p: MapProp): string {
+  // Six scanned rocks and two stumps, by the prop's seed.
+  if (p.kind === 'rock') return `0${(p.seed % 6) + 1}`;
+  if (p.kind === 'stump') return `0${(p.seed % 2) + 1}`;
   if (p.kind !== 'car') return '';
   const h = Math.abs(Math.round(p.pos.x * 7.3 + p.pos.z * 13.1)) % 5;
   return h < 3 ? 'hatch' : 'saloon';
@@ -258,8 +259,20 @@ function partsFor(kind: PropKind, variant: string, lib: MaterialLibrary): Part[]
         { geometry: new CylinderGeometry(0.26, 0.26, 0.01, 16).translate(0, 0.9, 0), material: lib.get('carTrim'), castShadow: false },
       ];
     }
-    case 'rock':
-      return [{ geometry: rockGeometry(), material: lib.get('boulder') }];
+    case 'rock': {
+      // Mossy forest rocks from one photoscanned set, 10 % wider than the unit they are normalised to,
+      // the size the map's scale was chosen for.
+      const scan = scanModel(`rock_moss_${variant}` as ScanId);
+      return [{ geometry: scan.geometry.clone().scale(1.1, 1.1, 1.1), material: lib.scan('rock_moss', scan) }];
+    }
+    case 'stump': {
+      const scan = scanModel(`tree_stump_${variant}` as ScanId);
+      return [{ geometry: scan.geometry, material: lib.scan(`tree_stump_${variant}`, scan) }];
+    }
+    case 'deadLog': {
+      const scan = scanModel('dead_tree_trunk');
+      return [{ geometry: scan.geometry, material: lib.scan('dead_tree_trunk', scan) }];
+    }
     case 'hayBale':
       return [{ geometry: new CylinderGeometry(0.6, 0.6, 1.8, 14).rotateX(Math.PI / 2).translate(0, 0.6, 0), material: lib.get('hay') }];
     case 'beam':
@@ -279,38 +292,6 @@ function containerGeometry(): BufferGeometry {
     parts.push(box(2.48, 2.3, 0.1, 0, 1.3, z));
   }
   return merge(parts);
-}
-
-/**
- * A weathered boulder: a finely subdivided sphere pushed out by layered noise
- * with a flat facet or two, sunk flat where it sits in the ground. Welded
- * before the normals are computed so it shades smoothly, not as facets.
- */
-function rockGeometry(): BufferGeometry {
-  const seed = 5;
-  const g = new IcosahedronGeometry(1, 5);
-  g.deleteAttribute('normal');
-  g.deleteAttribute('uv');
-  const welded = mergeVertices(g);
-  const pos = welded.getAttribute('position');
-  const v = new Vector3();
-  const facetDir = new Vector3(Math.sin(seed), 0.4, Math.cos(seed)).normalize();
-  const uvs = new Float32Array(pos.count * 2);
-  for (let i = 0; i < pos.count; i++) {
-    v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
-    const a = fbm2(v.x * 1.6 + seed, v.z * 1.6 + v.y * 0.7, 5, seed);
-    const b = fbm2(v.y * 2.3 + seed * 0.3, v.x * 2.3 - v.z, 4, seed + 7);
-    let r = 1 + a * 0.28 + b * 0.12;
-    const facet = v.dot(facetDir);
-    if (facet > 0.55) r -= (facet - 0.55) * 0.9;
-    const y = v.y * r;
-    pos.setXYZ(i, v.x * r * 1.15, (y < -0.25 ? -0.25 + (y + 0.25) * 0.3 : y) * 0.8, v.z * r);
-    uvs[i * 2] = v.x;
-    uvs[i * 2 + 1] = v.z;
-  }
-  welded.setAttribute('uv', new BufferAttribute(uvs, 2));
-  welded.computeVertexNormals();
-  return welded.translate(0, 0.3, 0);
 }
 
 export interface PropsView {

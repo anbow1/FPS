@@ -45,6 +45,8 @@ export type PropKind =
   | 'bench'
   | 'trashBin'
   | 'rock'
+  | 'stump'
+  | 'deadLog'
   | 'rangeSign'
   | 'hayBale'
   | 'beam'

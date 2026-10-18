@@ -234,6 +234,12 @@ export class MapBuilder {
       case 'rock':
         inv('rock', 0, 0, -0.3 * k, 2.4 * k, 1.6 * k, 2.0 * k);
         break;
+      case 'stump':
+        inv('wood', 0, 0, 0, 1.1 * k, 0.5 * k, 1.2 * k, false); // the scanned stump, 1.4 m across its roots
+        break;
+      case 'deadLog':
+        inv('wood', 0, 0, 0, 3.0 * k, 0.3 * k, 0.3 * k, false); // the scanned trunk lies along its local x
+        break;
       case 'hayBale':
         inv('fabric', 0, 0, 0, 1.2, 1.2, 1.8);
         break;

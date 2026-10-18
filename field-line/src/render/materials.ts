@@ -1,4 +1,4 @@
-import { abs, attribute, bumpMap, cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, max, select, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, screenCoordinate, sin, smoothstep, step, texture, triplanarTexture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, attribute, cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, max, select, floor, Fn, fract, If, mix, normalize, mx_noise_float, normalMap, normalView, normalViewGeometry, normalWorld, positionViewDirection, positionWorld, pow, screenCoordinate, sin, smoothstep, step, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { DoubleSide, type Material, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { cityNight, lampLightNode, lensGlowNode } from './cityLights.ts';
 import type { BoxLook } from '../maps/types.ts';
@@ -12,6 +12,7 @@ import * as P from './patterns.ts';
 import * as PL from './plantPatterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
 import { PHOTO_SIZE_M, photoSampler } from './photoTextures.ts';
+import type { ScanTextures } from './scanModels.ts';
 
 // One material per surface, values from pbr-material-reference.png. Standard
 // material by default; physical only where clearcoat is needed (wet asphalt,
@@ -211,22 +212,17 @@ function pineBark(ts: TextureSet): MeshStandardNodeMaterial {
 }
 
 /**
- * Granite boulder: triplanar so no face stretches, with moss on the upward
- * faces broken up by a blotch pattern (as on the lagoon's jungle rocks), and
- * bump detail from the texture's height.
+ * A photoscanned model's own surface (scanModels.ts): its colour, normal and
+ * ORM maps on its own UVs, darkened and smoothed by rain like the rest of the
+ * world, its AO dimmed under a roof.
  */
-function boulder(rock: TextureSet, moss: TextureSet): MeshStandardNodeMaterial {
-  const m = new MeshStandardNodeMaterial({ name: 'boulder', metalness: 0 });
-  const p = positionWorld;
-  const n = normalWorld;
-  const colour = triplanarTexture(texture(rock.map), null, null, float(1 / 2.2), p, n).rgb;
-  const orm = triplanarTexture(texture(rock.ormMap), null, null, float(1 / 2.2), p, n);
-  const mossColour = triplanarTexture(texture(moss.map), null, null, float(1 / 0.9), p, n).rgb;
-  const blotch = texture(moss.ormMap, p.xz.div(3.1).add(p.y.mul(0.2))).r;
-  const mossMask = smoothstep(0.45, 0.8, n.y.add(blotch.sub(0.5).mul(1.1)));
-  m.colorNode = mix(colour, mossColour, mossMask).mul(mix(float(1), float(0.6), wetness));
-  m.roughnessNode = mix(mix(orm.g, float(0.95), mossMask), float(0.3), wetness);
-  m.normalNode = bumpMap(orm.r.add(mossMask.mul(0.3)), float(0.9));
+function scanned(name: string, tex: ScanTextures): MeshStandardNodeMaterial {
+  const m = new MeshStandardNodeMaterial({ name, metalness: 0 });
+  const orm = texture(tex.ormMap);
+  m.colorNode = texture(tex.map).rgb.mul(mix(float(1), float(0.6), wetness));
+  m.roughnessNode = mix(orm.g, float(0.3), wetness);
+  const relief = mix(float(1), float(0.5), wetness);
+  m.normalNode = normalMap(texture(tex.normalMap).xyz, vec2(relief, relief));
   m.aoNode = orm.r.mul(skyVisibilityNode());
   return m;
 }
@@ -339,6 +335,16 @@ export class MaterialLibrary {
       mat.emissiveNode = lamps ? lamps.add(rooms) : rooms;
       m = { material: mat, tileM: 1 };
       this.facades.set(look, m);
+    }
+    return m;
+  }
+
+  /** The material of a photoscanned model, one per texture set. */
+  scan(name: string, tex: ScanTextures): Material {
+    let m = this.named.get(`scan-${name}`);
+    if (!m) {
+      m = scanned(`scan-${name}`, tex);
+      this.named.set(`scan-${name}`, m);
     }
     return m;
   }
@@ -475,8 +481,6 @@ export class MaterialLibrary {
         return leafCard(set('grassTuft', 256, PL.grassTuft, 1.5, true), name, false);
       case 'pineBark':
         return pineBark(set('bark', 256, P.bark, 5));
-      case 'boulder':
-        return boulder(set('rock', 512, () => P.rock(), 4), set('moss', 256, PL.moss, 2));
       case 'carPaint': {
         // Sheet: car paint #6E2A24 rough 0.40 + clearcoat 1, ccRough 0.03. Per-instance colour tints it.
         return new MeshPhysicalNodeMaterial({ name, color: 0xffffff, roughness: 0.4, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03 });

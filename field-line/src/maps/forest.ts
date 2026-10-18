@@ -1,5 +1,6 @@
 import type { SurfaceKind } from '../config.ts';
 import { fbm2, noise2, ridged2 } from '../core/noise.ts';
+import { Rng } from '../core/rng.ts';
 import { Vec3 } from '../core/vec.ts';
 import type { Heightfield } from '../game/collision.ts';
 import { MapBuilder } from './builder.ts';
@@ -186,6 +187,41 @@ export function buildForest(): MapData {
   for (const bush of bushes) {
     const s = bush.heightM;
     b.boxOnBase('invisible', bush.pos.x, bush.pos.y, bush.pos.z, 1.5 * s, 1.0 * s, 1.5 * s, bush.yawRad, { surface: 'foliage', blocksMovement: false, blocksVision: true });
+  }
+
+  // Stumps and fallen trunks on the forest floor, a forest's evidence of storms and felling. Their own
+  // random stream, so the trees, rocks and spawns above keep their places.
+  const deco = new Rng(5113);
+  const clearOf = (x: number, z: number, r: number): boolean =>
+    trackDistance(x, z) > 5 + r && lakeRadius(lake(), x, z) > 1.4 && Math.hypot(x - FARM.x, z - FARM.z) > 45 && Math.hypot(x - 4, z - 330) > 14 && surfaceAt(x, z) !== 'rock' && !trees.some((t) => Math.abs(t.pos.x - x) < r && Math.abs(t.pos.z - z) < r);
+  for (let tries = 0, stumps = 0, logs = 0; tries < 6000 && (stumps < 80 || logs < 60); tries++) {
+    // Half of them along the track, where they are seen; the rest anywhere in the stands.
+    const nearTrack = deco.next() < 0.5;
+    const seg = deco.int(0, TRACK.length - 2);
+    const t = deco.next();
+    const a = TRACK[seg] as Vec3;
+    const c = TRACK[seg + 1] as Vec3;
+    const x = nearTrack ? a.x + (c.x - a.x) * t + deco.range(-30, 30) : deco.range(-360, 360);
+    const z = nearTrack ? a.z + (c.z - a.z) * t + deco.range(-30, 30) : deco.range(-360, 360);
+    if (Math.max(Math.abs(x), Math.abs(z)) > HALF_M - 12 || fbm2(x / 130, z / 130, 3, 91) + 0.12 < -0.05) continue;
+    if (deco.next() < 0.55 && stumps < 80) {
+      if (!clearOf(x, z, 1.4)) continue;
+      const low = Math.min(b.ground(x, z), b.ground(x + 0.6, z), b.ground(x - 0.6, z), b.ground(x, z + 0.6), b.ground(x, z - 0.6));
+      b.prop('stump', x, z, deco.range(0, Math.PI * 2), { scale: deco.range(0.7, 1.15), baseY: low - 0.04 });
+      stumps++;
+    } else if (logs < 60) {
+      if (!clearOf(x, z, 2.2)) continue;
+      const yaw = deco.range(0, Math.PI * 2);
+      const scale = deco.range(0.8, 1.3);
+      const ex = Math.cos(yaw) * 1.5 * scale;
+      const ez = -Math.sin(yaw) * 1.5 * scale;
+      const g0 = b.ground(x + ex, z + ez);
+      const g1 = b.ground(x - ex, z - ez);
+      // Only where the ground is near level along it: a 3 m trunk on a slope floats at one end.
+      if (Math.abs(g0 - g1) > 0.3) continue;
+      b.prop('deadLog', x, z, yaw, { scale, baseY: Math.min(g0, g1, b.ground(x, z)) - 0.06 });
+      logs++;
+    }
   }
 
   for (const [x, z, sx, sz] of [[0, -398, 800, 1], [0, 398, 800, 1], [-398, 0, 1, 800], [398, 0, 1, 800]] as const) {
