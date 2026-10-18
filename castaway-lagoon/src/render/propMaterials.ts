@@ -154,9 +154,10 @@ export interface PropMaterials {
 
 let cached: PropMaterials | null = null;
 
-function standard(ts: TextureSet, name: string, wetDarken = 0.6): MeshStandardNodeMaterial {
+/** `gain` scales the albedo (linear): a scan photographed darker than the sun-bleached surface it stands for. */
+function standard(ts: TextureSet, name: string, wetDarken = 0.6, gain = 1): MeshStandardNodeMaterial {
   const m = new MeshStandardNodeMaterial({ name, normalMap: ts.normalMap, metalness: 0 });
-  m.colorNode = texture(ts.map).rgb.mul(mix(float(1), float(wetDarken), U.wetness.mul(outdoor())));
+  m.colorNode = texture(ts.map).rgb.mul(mix(float(gain), float(gain * wetDarken), U.wetness.mul(outdoor())));
   m.roughnessNode = mix(texture(ts.ormMap).g, float(0.3), U.wetness.mul(outdoor()));
   m.metalnessNode = texture(ts.ormMap).b;
   m.aoNode = texture(ts.ormMap).r;
@@ -230,9 +231,11 @@ export function propMaterials(): PropMaterials {
   if (cached) return cached;
   const glass = new MeshPhysicalNodeMaterial({ name: 'lantern glass', color: 0xf2eee0, roughness: 0.08, metalness: 0, transmission: 0, transparent: true, opacity: 0.35, ior: 1.5 });
   cached = {
-    // Scanned boards (photoTextures.ts), four planks to a texture, one per board.
-    planks: standard(photoTextureSet('old_planks_02'), 'planks'),
-    weatheredPlanks: standard(photoTextureSet('wood_planks_grey'), 'weathered planks'),
+    // Scanned boards (photoTextures.ts), four planks to a texture, one per board. The scans are temperate
+    // boards (mean sRGB 0.38 and 0.28): under the shelter's roof the deck went near black, so they are
+    // bleached toward the grey a tropical sun leaves (~0.47 and ~0.36).
+    planks: standard(photoTextureSet('old_planks_02'), 'planks', 0.6, 1.6),
+    weatheredPlanks: standard(photoTextureSet('wood_planks_grey'), 'weathered planks', 0.6, 1.8),
     darkWood: standard(photoTextureSet('weathered_planks'), 'dark wood'),
     logBark: photoStandard(photoSet('bark006'), 'log bark'),
     piles: pileMaterial(photoSet('bark006')),
