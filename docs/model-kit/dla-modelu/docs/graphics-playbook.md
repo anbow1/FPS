@@ -689,6 +689,38 @@ toward the eye along the view ray, so integrate exactly that:
   pixel and frame; TRAA averages it. Off = scale the proxy to nothing (no
   fragments, no recompile).
 
+## 6m. Side by side with reference scenes: what still separated us (round 3)
+
+Three clips compared shot for shot with our own: a tropical-island shooter
+(sand, deck, shallow lagoon), a three.js river valley at dawn and in rain
+("Sakura River"), and a browser city seen from the rooftops. What they had
+that we lacked, and the fix:
+
+- **Clear shallows, not a white ring.** Our lagoon's shore wore a solid white
+  band. A debug build with the water's foam multiplied by 0 proved it was all
+  foam: every breaker, however small, laid a full roller and trail. Scale
+  whitewater by the breaker's amplitude (none under ~2.5 cm, full from 10 cm;
+  a ripple spills with a glassy lip), lighten the trail, keep the waterline a
+  thin broken lace. *Isolate a suspect term with a throwaway ×0 build before
+  tuning it.*
+- **Hillsides grown over.** Bare rock from 37° and a canopy paint that skipped
+  steep ground made the bay's hills brown scree between trees. Inland,
+  vegetation holds to ~60°; rock only on true cliffs. Past ~20–45 m from the
+  eye, paint the floor between modelled trunks as understory (in a jungle it
+  is hidden by shrubs); keep that paint off the floor near the eye.
+- **Mist that lies on the water.** A dawn that thickens the whole air only
+  greys the picture. Add a second exponential layer ~2 m thick at the water
+  level (same analytic ray integral as the haze), broken into drifting
+  patches by noise, and keep the hills clear above it. Confine a lake's mist by
+  the *ray's* point nearest the lake centre, not the fragment's, so a view
+  across the water to the far bank's trees picks it up (FL `lighting.ts`).
+- **A skyline to the horizon.** A city map that ends at its closing façades
+  reads as a film set. One instanced draw of ~200 boxes from 260 m to 1.5 km,
+  taller toward one quarter, in a curtain-wall shader (tinted pane per bay ×
+  storey, each tilted a fraction of a degree so the wall reflects many skies,
+  mullions, spandrels) or stone with punched windows, lit windows at night, no
+  shadows; the scene haze sets them back (FL `render/skyline.ts`).
+
 ## 6l. A light on the weapon, and a bodycam lens (FL `render/weaponLight.ts`, `render/bodycam.ts`)
 
 After the bodycam shooter "Block 17" (an AI-made browser game): indoors and at
