@@ -349,10 +349,15 @@ export class GuerrillaView {
       }
       if (side === 1) _gripR.copy(_end);
     }
-    // The AK stays in the right hand, along the forearm.
+    // The AK goes down in the right hand, along the forearm, and leaves it as he hits the ground: the
+    // capture ends with the forearms raised, and a rifle still along one stood up off the body.
     _rifleDir.set(1, 0, 0).applyQuaternion(D('RightForeArm'));
     _rifleUp.set(0, 1, 0).applyQuaternion(D('RightHand'));
     _rifleO.copy(_gripR).addScaledVector(_rifleUp, 0.15).addScaledVector(_rifleDir, 0.12);
+    const drop = smooth(0.3, 0.75, g.deathS);
+    _rifleO.lerp(DROPPED_O, drop);
+    _rifleDir.lerp(DROPPED_DIR, drop);
+    _rifleUp.lerp(DROPPED_UP, drop);
     this.place('rifle', i, 0, _rifleO, _rifleUp, _rifleDir);
   }
 
@@ -1106,6 +1111,13 @@ function rifleGeometry(): BufferGeometry {
   return joined(parts, 'guerrilla ak');
 }
 
+/**
+ * Where a dead man's rifle comes to rest (actor frame, before the fall's turn): on its side by his right
+ * hand, the muzzle toward his feet — the captured fall lands him on his back, head where he stood.
+ */
+const DROPPED_O = new Vector3(0.52, 0.04, -0.05);
+const DROPPED_DIR = new Vector3(0.15, 0, -1).normalize();
+const DROPPED_UP = new Vector3(1, 0, 0.15).normalize();
 const _actor = new Matrix4();
 const _fall = new Matrix4();
 const _rot = new Matrix4();
