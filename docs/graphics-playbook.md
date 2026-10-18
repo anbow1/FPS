@@ -801,6 +801,14 @@ them anyway in `assets/photo/LICENSE.md`.
 - **Budget**: a 512 px set is ~4 MB of GPU memory (three RGBA maps with mips); the four FL sets add
   ~0.8 MB of JPEG to the APK. Array textures keep the ground shader inside
   16 bindings.
+- **Cloth as detail** (lagoon `propMaterials.ts` `fabricMaterial`): a tarp's
+  stains, fading and seams are its own, one UV square over the whole sheet; the
+  weave is a photograph (Poly Haven's Rough Linen, a tight plain weave) tiled
+  at its real 27 cm on a second scale of the same UVs (`repeats = size_m /
+  0.27`). Pack it as one detail map — albedo luminance over its mean × 0.5
+  (linear) in R, roughness in G — so the material multiplies its colour by
+  `1 + (2R − 1)·k`, and blend the two normal maps whiteout-style
+  (`(n1.xy + n2.xy, n1.z·n2.z)`). A sine weave reads as a printed grid up close.
 
 ## 6p. A red dot that behaves like one (FL pistol, lagoon AK; `render/optics.ts`)
 
@@ -927,6 +935,14 @@ the kit, and procedural gaits as robots. Two changes, both phone-friendly:
   both feet are planted apart and hold it — a stance, not a frozen mid-step.
   Arms keep their IK to the rifle and the head its aim; only the dead fall
   entirely as captured.
+- **The lagoon's guerrillas share it** (`render/guerrillas.ts`, same rig and
+  segment frames). Their deaths used to tip away from the shot; the captured
+  fall goes backwards, so the pose is turned about the feet toward where the
+  round went — at most a quarter turn, eased in over the first 0.45 s, as a
+  hit spins a man — instead of snapping the body round at the moment of death.
+  Kneeling still stays built by hand. Tanks' infantry is seen through a
+  gunner's sight at hundreds of metres, where a gait reads the same either way:
+  not worth a second rig there.
 
 ## 6h. Animals and enemies (lagoon `render/creatures.ts`, `render/guerrillas.ts`)
 
