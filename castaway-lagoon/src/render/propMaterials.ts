@@ -30,18 +30,24 @@ function put(t: Texel, c: Rgb, k: number): void {
 }
 
 /** One sun-greyed board, grain along U. */
-function boardWood(colour: number): TexelSampler {
+/**
+ * Sawn boards. `weathered` 0…1: how far the sun and salt have bleached them silver-grey, with the grain
+ * opened into dark checks (a dock's boards in the island shooter we compared against are all but grey).
+ */
+function boardWood(colour: number, weathered = 0.6): TexelSampler {
   const c = hex(colour);
-  const grey = hex(0x8a847a);
+  const grey = hex(0x8f8a80);
   return (u, v, t) => {
     const grain = tileFbm(u * 3, v * 40, 3, 4, 301);
     const knot = tileFbm(u * 6, v * 6, 6, 3, 303);
-    const crack = Math.abs(tileFbm(u * 2, v * 12, 2, 3, 305) - 0.5) < 0.012;
-    const weather = tileFbm(u * 2, v * 3, 2, 3, 307);
-    const k = crack ? 0.45 : 0.78 + grain * 0.35 - Math.max(0, knot - 0.7) * 0.8;
-    const col: Rgb = [c[0] + (grey[0] - c[0]) * weather * 0.6, c[1] + (grey[1] - c[1]) * weather * 0.6, c[2] + (grey[2] - c[2]) * weather * 0.6];
+    const crack = Math.abs(tileFbm(u * 2, v * 12, 2, 3, 305) - 0.5) < 0.012 + weathered * 0.008;
+    // Raised grain: the soft earlywood wears away between the hard latewood lines.
+    const check = weathered > 0.7 && Math.abs(tileFbm(u * 9, v * 70, 9, 2, 309) - 0.5) < 0.03;
+    const weather = Math.min(1, tileFbm(u * 2, v * 3, 2, 3, 307) * weathered + weathered * 0.45);
+    const k = crack || check ? 0.45 : 0.78 + grain * 0.35 - Math.max(0, knot - 0.7) * 0.8;
+    const col: Rgb = [c[0] + (grey[0] - c[0]) * weather, c[1] + (grey[1] - c[1]) * weather, c[2] + (grey[2] - c[2]) * weather];
     put(t, col, k);
-    t.height = crack ? 0 : 0.5 + grain * 0.5;
+    t.height = crack ? 0 : check ? 0.25 : 0.5 + grain * 0.5;
     t.rough = 0.8 + grain * 0.1;
     t.ao = crack ? 0.5 : 1;
   };
@@ -147,6 +153,8 @@ function paintedSteel(colour: number): TexelSampler {
 
 export interface PropMaterials {
   planks: MeshStandardNodeMaterial;
+  /** Sun-and-salt-bleached boards for the dock. */
+  weatheredPlanks: MeshStandardNodeMaterial;
   darkWood: MeshStandardNodeMaterial;
   logBark: MeshStandardNodeMaterial;
   bamboo: MeshStandardNodeMaterial;
@@ -200,6 +208,7 @@ export function propMaterials(): PropMaterials {
   const glass = new MeshPhysicalNodeMaterial({ name: 'lantern glass', color: 0xf2eee0, roughness: 0.08, metalness: 0, transmission: 0, transparent: true, opacity: 0.35, ior: 1.5 });
   cached = {
     planks: standard(tset('board', 256, () => boardWood(0x6f5d48), 3), 'planks'),
+    weatheredPlanks: standard(tset('weatheredBoard', 256, () => boardWood(0x6a5a48, 1), 3.5), 'weathered planks'),
     darkWood: standard(tset('darkBoard', 256, () => boardWood(0x4e3c2c), 3), 'dark wood'),
     logBark: standard(tset('logBark', 256, F.jungleBark, 4), 'log bark'),
     bamboo: standard(tset('bamboo', 256, bamboo, 2), 'bamboo', 0.7),

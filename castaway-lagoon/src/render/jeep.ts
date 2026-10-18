@@ -25,6 +25,8 @@ import { JEEP } from '../config.ts';
 import type { Jeep } from '../game/jeep.ts';
 import { HeadlightBeams } from './lightBeams.ts';
 import { tube } from './meshkit.ts';
+import { bakeAmbientOcclusion } from './aoBake.ts';
+import { paintWear } from './wear.ts';
 
 // The old jeep as drawn, in the logic's frame (game/jeep.ts): forward −Z,
 // right +X, y = 0 the body's reference point (the floor over the axles). A
@@ -214,8 +216,12 @@ export class JeepView {
     const n = fract(sin(dot(p.mul(9.1), vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
     const dust = smoothstep(0.22, -0.32, p.y).mul(float(0.55).add(n.mul(0.25)));
     const faded = smoothstep(0.3, 0.6, p.y).mul(0.12);
-    paint.colorNode = mix(vec3(0.074, 0.098, 0.043).mul(float(1).add(faded)), vec3(0.42, 0.36, 0.26), dust);
-    paint.roughnessNode = mix(float(0.72), float(0.95), dust);
+    // Under the dust, a machine left on a beach (wear.ts): rust low and round the arches, chipped paint,
+    // rain-run dirt down the sides.
+    const worn = paintWear(p, vec3(0.074, 0.098, 0.043).mul(float(1).add(faded)), 0.72, { lowY: 0.05, amount: 0.75 });
+    paint.colorNode = mix(worn.colour, vec3(0.42, 0.36, 0.26), dust);
+    paint.roughnessNode = mix(worn.roughness, float(0.95), dust);
+    paint.metalnessNode = worn.metalness.mul(float(1).sub(dust));
     const dark = new MeshStandardNodeMaterial({ name: 'jeep chassis', color: 0x1f2120, roughness: 0.8, metalness: 0 });
     const tyre = new MeshStandardNodeMaterial({ name: 'jeep tyre', color: 0x1c1c1c, roughness: 0.93 });
     const seatMat = new MeshStandardNodeMaterial({ name: 'jeep seat', color: 0x3b3326, roughness: 0.95 });
@@ -381,6 +387,9 @@ export class JeepView {
         this.wheels.push({ pivot, spin, front });
       }
     }
+    // Grime in every corner and the sky light shut out under the body (aoBake.ts), baked once with the
+    // doors and bonnet shut; their occlusion rides along when they open.
+    bakeAmbientOcclusion(this.group);
   }
 
   update(jeep: Jeep, alpha: number, preExposure: number): void {

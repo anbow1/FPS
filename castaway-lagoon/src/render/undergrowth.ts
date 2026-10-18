@@ -157,14 +157,17 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
       const inland = shoreDistance(x, z) - beachWidth(x, z);
       if (!test(x, z, inland)) continue;
       normalAt(x, z, n);
-      if (n.y < 0.72 || !clear(x, z, r)) continue;
+      // Up to ~60°, as the ground's splat grows it (ground.ts): bare slopes read as brown scree.
+      if (n.y < 0.5 || !clear(x, z, r)) continue;
       lists[kind].push({ x, y: heightAt(x, z) - 0.05, z, yawRad: rng.range(0, Math.PI * 2), scale: rng.range(scale[0], scale[1]) });
     }
   };
   const nearBay = (x: number, z: number): boolean => Math.hypot(x + 10, z - 10) < 120 || Math.hypot(x, z + 58) < 150;
-  scatter('fern', Math.round(1800 * density), (x, z, d) => d > 1 && d < 60 && nearBay(x, z), [0.8, 1.4], 0.6);
-  scatter('shrub', Math.round(900 * density), (x, z, d) => d > 2 && d < 70 && nearBay(x, z), [0.8, 1.8], 0.9);
-  scatter('banana', Math.round(160 * density), (x, z, d) => d > 1 && d < 25 && nearBay(x, z), [0.9, 1.3], 1.2);
+  // Out to the ridges round the bay: the hillsides seen from the beach need their understory as much as
+  // the paths do (the island shooter we compared against has no bare ground behind its beach at all).
+  scatter('fern', Math.round(2600 * density), (x, z, d) => d > 1 && d < 110 && nearBay(x, z), [0.8, 1.5], 0.6);
+  scatter('shrub', Math.round(1500 * density), (x, z, d) => d > 2 && d < 120 && nearBay(x, z), [0.9, 2.2], 0.9);
+  scatter('banana', Math.round(260 * density), (x, z, d) => d > 1 && d < 45 && nearBay(x, z), [0.9, 1.4], 1.2);
   scatter('sprout', Math.round(700 * density), (_x, _z, d) => d > -9 && d < 0 && shoreDistanceOk(_x, _z), [0.6, 1.3], 0.2);
   // Vines hang from trees near the beach and the shelter.
   for (const t of world.trees) {

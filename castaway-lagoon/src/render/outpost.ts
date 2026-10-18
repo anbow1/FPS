@@ -371,7 +371,7 @@ function buildDock(): Group {
   const end = -DOCK.lengthM + 0.3;
   rope.push(tube([new Vector3(-DOCK.halfWidthM - 0.05, DOCK.deckY + 0.3, end), new Vector3(-DOCK.halfWidthM - 0.35, 0.05, end - 1.4)], [0.012, 0.012], 5, 0.5));
   for (const [parts, mat] of [
-    [planks, M.planks],
+    [planks, M.weatheredPlanks],
     [logs, M.logBark],
     [rope, M.rope],
   ] as const) {

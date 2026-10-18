@@ -1,8 +1,12 @@
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BoxGeometry, BufferAttribute, BufferGeometry, ConeGeometry, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, Shape, ShapeGeometry, SphereGeometry, Vector2 } from 'three/webgpu';
+import { positionLocal, vec3 } from 'three/tsl';
 import { BOAT } from '../config.ts';
 import type { Boat } from '../game/boat.ts';
+import { bakeAmbientOcclusion } from './aoBake.ts';
+import { propMaterials } from './propMaterials.ts';
+import { paintWear } from './wear.ts';
 
 // The dinghy as drawn: a lofted aluminium hull (painted outside, bare inside),
 // two thwarts, and an outboard on the transom that turns with the tiller and
@@ -28,7 +32,23 @@ export class BoatView {
     this.group.name = 'boat';
     this.group.rotation.order = 'YXZ';
     const paint = new MeshStandardNodeMaterial({ name: 'boat paint', color: 0x2e5a66, roughness: 0.55, metalness: 0.1, side: DoubleSide });
+    // Weathered board for the thwarts (the camp's planks), and a hull that has been in the water for years:
+    // paint chipped to bare aluminium, grey-green scum along and below the waterline (wear.ts).
+    // (Baked with a stand-in: the planks material is shared with the dock and the camp, whose meshes
+    // carry no `ao` attribute, so it must not be wired to one.)
     const wood = new MeshStandardNodeMaterial({ name: 'boat seat', color: 0x8a6a45, roughness: 0.8 });
+    const seats: Mesh[] = [];
+    const hullWear = paintWear(positionLocal, vec3(0.027, 0.1, 0.13), 0.55, {
+      lowY: -0.05,
+      amount: 0.85,
+      bloom: [
+        [0.05, 0.06, 0.035],
+        [0.16, 0.17, 0.12],
+      ],
+    });
+    paint.colorNode = hullWear.colour;
+    paint.roughnessNode = hullWear.roughness;
+    paint.metalnessNode = hullWear.metalness.add(0.1);
     const cowl = new MeshStandardNodeMaterial({ name: 'outboard cowl', color: 0xcfccc2, roughness: 0.42 });
     const metal = new MeshStandardNodeMaterial({ name: 'outboard leg', color: 0x3a3c3d, roughness: 0.45, metalness: 0.35 });
     const dark = new MeshStandardNodeMaterial({ name: 'outboard trim', color: 0x1d1f20, roughness: 0.7 });
@@ -48,6 +68,7 @@ export class BoatView {
       const seat = new Mesh(new BoxGeometry(w, t, 0.26), wood);
       seat.position.set(0, BOAT.seat.up - t / 2, -along);
       seat.castShadow = true;
+      seats.push(seat);
       this.group.add(seat);
     }
 
@@ -100,6 +121,10 @@ export class BoatView {
     this.motor.add(upper, trim, leg, this.prop);
     for (const m of [upper, trim, leg]) m.castShadow = true;
     this.group.add(this.motor);
+
+    // Grime under the thwarts and round the outboard's bracket (aoBake.ts); the mask is skipped (transparent).
+    bakeAmbientOcclusion(this.group);
+    for (const seat of seats) seat.material = propMaterials().planks;
 
     // Depth-only cap that keeps the water surface out of the hull.
     const mask = new Mesh(maskGeometry(), new MeshBasicNodeMaterial({ name: 'boat water mask', colorWrite: false, depthWrite: true, transparent: true, side: DoubleSide }));
