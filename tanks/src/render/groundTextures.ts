@@ -221,6 +221,11 @@ function mud(seed: number): Layer {
   return { rgb, h };
 }
 
+const SRGB_TO_LINEAR = Float32Array.from({ length: 256 }, (_, i) => {
+  const v = i / 255;
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+});
+
 export function makeGroundLayers(seed: number): GroundLayers {
   const layers = [meadow(seed + 1), soil(seed + 2), rock(seed + 3), mud(seed + 4)];
   const n = layers.length;
@@ -240,11 +245,24 @@ export function makeGroundLayers(seed: number): GroundLayers {
     const off = li * S * S * 4;
     const ph = photo[li];
     if (ph) {
+      // The photo's detail in the generated layer's colour: each channel scaled so its mean meets the
+      // pattern's. As shot, the grass scan's soil and the rock's warm granite turned the green hills and
+      // the grey-green mountains tan and orange, a steppe instead of this country.
+      const scale = [0, 0, 0];
+      for (let c = 0; c < 3; c++) {
+        let gen = 0;
+        let shot = 0;
+        for (let i = 0; i < S * S; i++) {
+          gen += Math.min(1, Math.max(0, L.rgb[i * 3 + c]!));
+          shot += SRGB_TO_LINEAR[ph.color[i * 4 + c]!]!;
+        }
+        scale[c] = gen / Math.max(shot, 1e-6);
+      }
       for (let i = 0; i < S * S; i++) {
         const o = off + i * 4;
-        alb[o] = ph.color[i * 4] as number;
-        alb[o + 1] = ph.color[i * 4 + 1] as number;
-        alb[o + 2] = ph.color[i * 4 + 2] as number;
+        alb[o] = toSrgb(SRGB_TO_LINEAR[ph.color[i * 4]!]! * scale[0]!);
+        alb[o + 1] = toSrgb(SRGB_TO_LINEAR[ph.color[i * 4 + 1]!]! * scale[1]!);
+        alb[o + 2] = toSrgb(SRGB_TO_LINEAR[ph.color[i * 4 + 2]!]! * scale[2]!);
         alb[o + 3] = ph.height[i * 4] as number;
         nrm[o] = ph.normal[i * 4] as number;
         nrm[o + 1] = ph.normal[i * 4 + 1] as number;
