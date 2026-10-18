@@ -363,9 +363,9 @@ function tigerGeometry(): Record<string, BufferGeometry> {
         tag(new ConeGeometry(0.01, 0.05, 6).rotateX(Math.PI).translate(0.035, -0.09, -0.21), T.tooth, PLAIN),
       ],
       'tiger head',
-    ),
+    ).scale(1.12, 1.12, 1.12),
     // Lower jaw, hinged at its back end (origin), along −Z.
-    jaw: joined([tag(ell(0.07, 0.035, 0.12, 0, -0.02, -0.11), T.tigerWhite, PLAIN), tag(ell(0.05, 0.02, 0.09, 0, 0.012, -0.12), 0x7a2a2a, PLAIN)], 'tiger jaw'),
+    jaw: joined([tag(ell(0.07, 0.035, 0.12, 0, -0.02, -0.11), T.tigerWhite, PLAIN), tag(ell(0.05, 0.02, 0.09, 0, 0.012, -0.12), 0x7a2a2a, PLAIN)], 'tiger jaw').scale(1.12, 1.12, 1.12),
     // Legs: heavy forearms and thighs, deeper front to back than wide, narrowing to the wrists and hocks.
     upperFore: joined(
       [
@@ -400,7 +400,8 @@ function tigerGeometry(): Record<string, BufferGeometry> {
           ),
           T.tiger,
           STRIPE_Y,
-          (_x, _y, z) => (z - 0.01) / 0.04,
+          // Paler down the back of the leg, not white: a tiger has no socks.
+          (_x, _y, z) => Math.min(0.4, (z - 0.02) / 0.05),
         ),
       ],
       'tiger lower fore',
@@ -438,7 +439,8 @@ function tigerGeometry(): Record<string, BufferGeometry> {
           ),
           T.tiger,
           STRIPE_Y,
-          (_x, _y, z) => (z - 0.01) / 0.04,
+          // Paler down the back of the leg, not white: a tiger has no socks.
+          (_x, _y, z) => Math.min(0.4, (z - 0.02) / 0.05),
         ),
       ],
       'tiger lower hind',
