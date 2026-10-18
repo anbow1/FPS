@@ -18,3 +18,12 @@ ORM, Poly Haven's arm map, at half that).
 | `namaqualand_boulder_05/` | https://polyhaven.com/a/namaqualand_boulder_05   | Jenelle van Heerden, Dario Barresi  | flat stones              |
 | `rock_07/`                | https://polyhaven.com/a/rock_07                  | Jenelle van Heerden                 | standing stones          |
 | `rock_09/`                | https://polyhaven.com/a/rock_09                  | Jenelle van Heerden                 | stones                   |
+
+Plants, kept at their scanned size (ferns whole, ~800–2400 triangles; the
+others cut to ~1500–1800), one texture set per species at 1024 px:
+
+| Folder       | Source                                          | Scanned by                  | Used for                         |
+| ------------ | ----------------------------------------------- | --------------------------- | -------------------------------- |
+| `fern/`      | https://polyhaven.com/a/fern_02                 | Rob Tuytel, Rico Cilliers   | ferns round the camp, four plants |
+| `calathea/`  | https://polyhaven.com/a/calathea_orbifolia_01   | Rob Tuytel, Rico Cilliers   | broad-leaved ground plants       |
+| `anthurium/` | https://polyhaven.com/a/anthurium_botany_01     | Rob Tuytel, Rico Cilliers   | broad-leaved ground plants       |

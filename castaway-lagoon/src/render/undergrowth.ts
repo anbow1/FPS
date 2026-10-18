@@ -4,7 +4,8 @@ import { GRAPHICS } from '../config.ts';
 import { OUTPOST } from '../game/outpost.ts';
 import { beachWidth, heightAt, normalAt, shoreDistance } from '../game/terrain.ts';
 import type { LagoonWorld } from '../game/world.ts';
-import { addSway, barkMaterial, leafMaterial, swayingSolid } from './foliageMaterials.ts';
+import { addSway, barkMaterial, leafMaterial, scanLeafMaterial, swayingSolid } from './foliageMaterials.ts';
+import { type ScanId, scanModel } from './scanModels.ts';
 import { pathWeight } from './ground.ts';
 import { card, foldedStrip, merge, rand, tube } from './meshkit.ts';
 
@@ -20,7 +21,7 @@ interface Placement {
   scale: number;
 }
 
-type Kind = 'fern' | 'shrub' | 'banana' | 'grass' | 'sprout' | 'vine';
+type Kind = 'fern' | 'shrub' | 'banana' | 'grass' | 'sprout' | 'vine' | 'scanFern' | 'calathea' | 'anthurium';
 
 function fernGeometry(fronds: number, lengthM: number, seed: number): BufferGeometry {
   const parts: BufferGeometry[] = [];
@@ -148,7 +149,7 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
     for (const k of keepClear) if (Math.abs(k.x - x) < r + 0.5 && Math.abs(k.z - z) < r + 0.5) return false;
     return true;
   };
-  const lists: Record<Kind, Placement[]> = { fern: [], shrub: [], banana: [], grass: [], sprout: [], vine: [] };
+  const lists: Record<Kind, Placement[]> = { fern: [], shrub: [], banana: [], grass: [], sprout: [], vine: [], scanFern: [], calathea: [], anthurium: [] };
   const n = { x: 0, y: 1, z: 0 };
   const scatter = (kind: Kind, count: number, test: (x: number, z: number, inland: number) => boolean, scale: [number, number], r: number): void => {
     for (let tries = 0; tries < count * 10 && lists[kind].length < count; tries++) {
@@ -169,6 +170,15 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
   scatter('shrub', Math.round(1500 * density), (x, z, d) => d > 2 && d < 120 && nearBay(x, z), [0.9, 2.2], 0.9);
   scatter('banana', Math.round(260 * density), (x, z, d) => d > 1 && d < 45 && nearBay(x, z), [0.9, 1.4], 1.2);
   scatter('sprout', Math.round(700 * density), (_x, _z, d) => d > -9 && d < 0 && shoreDistanceOk(_x, _z), [0.6, 1.3], 0.2);
+  // Photoscanned plants where the player spends their time: round the shelter, behind the beach and up the
+  // paths. The ferns there are the scanned fern (the cards stay for the hills, where 2600 scans would cost
+  // millions of triangles); calathea and anthurium, the rainforest floor's broad leaves, grow among them.
+  const nearCamp = (x: number, z: number): boolean => Math.hypot(x - OUTPOST.x, z - OUTPOST.z) < 75;
+  const keep: Placement[] = [];
+  for (const f of lists.fern) (nearCamp(f.x, f.z) && lists.scanFern.length < Math.round(260 * Math.max(density, 0.5)) ? lists.scanFern : keep).push(f);
+  lists.fern = keep;
+  scatter('calathea', Math.round(70 * Math.max(density, 0.5)), (x, z, d) => d > 1.5 && d < 40 && nearCamp(x, z), [1.3, 2.0], 0.5);
+  scatter('anthurium', Math.round(60 * Math.max(density, 0.5)), (x, z, d) => d > 2 && d < 40 && nearCamp(x, z), [1.0, 1.5], 0.6);
   // Vines hang from trees near the beach and the shelter.
   for (const t of world.trees) {
     if (lists.vine.length >= 40) break;
@@ -199,6 +209,21 @@ export function buildUndergrowth(world: LagoonWorld, quality: 'high' | 'low'): G
     ];
   }, true);
   variants('sprout', 1, () => [[sproutGeometry(), fernMat]], false);
+  // The scans at their own size times `grow`: the ferns were taken from small specimens, and the wild
+  // ones behind a beach stand a third bigger.
+  const scanned = (kind: Kind, ids: readonly ScanId[], name: string, grow: number, shadows: boolean): void => {
+    const material = scanLeafMaterial(`scan-${name}`, scanModel(ids[0] as ScanId));
+    ids.forEach((id, v) => {
+      const geo = scanModel(id).geometry.clone().scale(grow, grow, grow);
+      geo.computeBoundingBox();
+      const reach = Math.max(geo.boundingBox?.max.x ?? 0.5, geo.boundingBox?.max.z ?? 0.5, 0.2);
+      addSway(geo, 0.03, (x, _y, z) => Math.min(1, Math.hypot(x, z) / reach));
+      addAll(group, geo, material, lists[kind].filter((_, i) => i % ids.length === v), shadows);
+    });
+  };
+  scanned('scanFern', ['fern_a', 'fern_b', 'fern_c', 'fern_d'], 'fern', 1.35, quality === 'high');
+  scanned('calathea', ['calathea_a', 'calathea_b', 'calathea_c'], 'calathea', 1, quality === 'high');
+  scanned('anthurium', ['anthurium_a', 'anthurium_b', 'anthurium_c'], 'anthurium', 1, quality === 'high');
   variants('vine', 2, (s) => {
     const v = vineGeometry(s);
     return [

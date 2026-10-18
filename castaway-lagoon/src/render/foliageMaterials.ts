@@ -1,6 +1,7 @@
 import { attribute, cos, float, length, mix, normalMap, positionLocal, sin, texture, uv, vec2, vec3 } from 'three/tsl';
-import { BufferAttribute, type BufferGeometry, DoubleSide, MeshSSSNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
+import { BufferAttribute, type BufferGeometry, DoubleSide, MeshSSSNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { photoSet } from './photoTextures.ts';
+import type { ScanTextures } from './scanModels.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textureSet.ts';
 import * as F from './foliagePatterns.ts';
 import { U } from './uniforms.ts';
@@ -108,6 +109,30 @@ export function leafMaterial(kind: LeafKind, translucent = true, dead = false): 
   m.positionNode = windPosition();
   if (m instanceof MeshSSSNodeMaterial && FOLIAGE.translucent) {
     // Light through a leaf is yellower and more saturated than the leaf seen in reflection.
+    m.thicknessColorNode = albedo.mul(vec3(1.1, 1.2, 0.6));
+    m.thicknessDistortionNode = float(0.25);
+    m.thicknessAmbientNode = float(0);
+    m.thicknessAttenuationNode = float(0.6);
+    m.thicknessPowerNode = float(2.5);
+    m.thicknessScaleNode = float(2.2);
+  }
+  return m;
+}
+
+/**
+ * A photoscanned plant's leaves (scanModels.ts): modelled leaf blades, so no cut-out, both faces drawn, the
+ * scan's own colour, normal and ORM, light through the leaf on High, swaying with the wind like the cards.
+ */
+export function scanLeafMaterial(name: string, tex: ScanTextures): MeshStandardNodeMaterial {
+  const m = FOLIAGE.translucent ? new MeshSSSNodeMaterial({ name, side: DoubleSide }) : new MeshStandardNodeMaterial({ name, side: DoubleSide });
+  const albedo = texture(tex.map).rgb.mul(mix(float(1), float(0.78), U.wetness));
+  m.colorNode = albedo;
+  m.normalNode = normalMap(texture(tex.normalMap)) as unknown as Node<'vec3'>;
+  m.roughnessNode = mix(texture(tex.ormMap).g, float(0.22), U.wetness.mul(0.8));
+  m.metalnessNode = float(0);
+  m.aoNode = texture(tex.ormMap).r;
+  m.positionNode = windPosition();
+  if (m instanceof MeshSSSNodeMaterial) {
     m.thicknessColorNode = albedo.mul(vec3(1.1, 1.2, 0.6));
     m.thicknessDistortionNode = float(0.25);
     m.thicknessAmbientNode = float(0);
