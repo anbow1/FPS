@@ -1,4 +1,4 @@
-import { tileFbm, tileNoise } from '../core/noise.ts';
+import { tileFbm, tileFbmXY, tileNoise } from '../core/noise.ts';
 import type { Texel, TexelSampler } from './textureSet.ts';
 
 // Surface patterns for the lagoon's procedural texture sets. Base colours are
@@ -325,7 +325,7 @@ export function causticValue(u: number, v: number): number {
 /** Foam: bubbly cells with thin connecting streaks. */
 export function foamValue(u: number, v: number): number {
   const cells = 1 - causticValue(u * 2 % 1, v * 2 % 1) * 0.6;
-  const streak = tileFbm(u * 6, v * 3, 6, 4, 151);
+  const streak = tileFbmXY(u * 6, v * 3, 6, 3, 4, 151);
   const bubbles = tileNoise(u * 64, v * 64, 64, 153);
   return Math.min(1, Math.max(0, streak * 1.3 - 0.25 + (bubbles > 0.7 ? 0.25 : 0) - cells * 0.15));
 }

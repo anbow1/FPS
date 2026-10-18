@@ -1,5 +1,5 @@
 import { BoxGeometry, type BufferGeometry, CylinderGeometry, ExtrudeGeometry, Group, IcosahedronGeometry, type Material, Mesh, MeshStandardNodeMaterial, Shape, TorusGeometry, Vector3 } from 'three/webgpu';
-import { tileFbm, tileNoise } from '../core/noise.ts';
+import { tileFbm, tileFbmXY, tileNoiseXY } from '../core/noise.ts';
 import { makeTextureSet } from './textureSet.ts';
 import { merge, rand, tube } from './meshkit.ts';
 import { hex } from './patterns.ts';
@@ -14,8 +14,8 @@ const woodSet = makeTextureSet(
   256,
   (u, v, t) => {
     const c = hex(0x7a3e22);
-    const grain = tileFbm(u * 2, v * 24, 2, 4, 401);
-    const figure = tileNoise(u * 8, v * 64, 8, 403);
+    const grain = tileFbmXY(u * 2, v * 24, 2, 24, 4, 401);
+    const figure = tileNoiseXY(u * 8, v * 64, 8, 64, 403);
     const wear = tileFbm(u * 4, v * 4, 4, 3, 405);
     const k = 0.75 + grain * 0.35 + figure * 0.08 + Math.max(0, wear - 0.65) * 0.6;
     t.r = c[0] * k;

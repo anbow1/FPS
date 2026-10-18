@@ -96,3 +96,36 @@ export function tileFbm(x: number, y: number, period: number, octaves: number, s
   }
   return sum;
 }
+
+/**
+ * Tileable value noise with its own period on each axis, for textures stretched along one: a board's grain
+ * is long along the board and fine across it, and one period for both repeated the across-pattern several
+ * times over the tile (rows of identical knots and cracks).
+ */
+export function tileNoiseXY(x: number, y: number, periodX: number, periodY: number, seed = 0): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const wx = (v: number): number => ((v % periodX) + periodX) % periodX;
+  const wy = (v: number): number => ((v % periodY) + periodY) % periodY;
+  const a = hash2(wx(ix), wy(iy), seed);
+  const b = hash2(wx(ix + 1), wy(iy), seed);
+  const c = hash2(wx(ix), wy(iy + 1), seed);
+  const d = hash2(wx(ix + 1), wy(iy + 1), seed);
+  const u = fade(fx);
+  const v = fade(fy);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+/** Fractal sum of `tileNoiseXY`: (x, y) in [0, periodX) × [0, periodY) tiles. */
+export function tileFbmXY(x: number, y: number, periodX: number, periodY: number, octaves: number, seed = 0): number {
+  let sum = 0;
+  let amp = 0.5;
+  for (let i = 0; i < octaves; i++) {
+    const k = 2 ** i;
+    sum += amp * tileNoiseXY(x * k, y * k, periodX * k, periodY * k, seed + i * 13);
+    amp *= 0.5;
+  }
+  return sum;
+}

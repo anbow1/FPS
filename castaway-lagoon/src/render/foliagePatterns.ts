@@ -1,4 +1,4 @@
-import { tileFbm, tileNoise } from '../core/noise.ts';
+import { tileFbm, tileFbmXY, tileNoise, tileNoiseXY } from '../core/noise.ts';
 import type { Texel, TexelSampler } from './textureSet.ts';
 import { hash2, hex } from './patterns.ts';
 
@@ -225,7 +225,7 @@ export function palmBark(): TexelSampler {
   return (u, v, t) => {
     const ringPhase = v * 5 + tileNoise(u * 4, v * 4, 4, 41) * 0.35 + tileFbm(u, v * 2, 1, 2, 47) * 0.5;
     const ring = Math.abs((ringPhase % 1) - 0.5);
-    const fibre = tileNoise(u * 64, v * 8, 64, 43);
+    const fibre = tileNoiseXY(u * 64, v * 8, 64, 8, 43);
     const blotch = tileFbm(u * 2, v * 2, 2, 3, 45);
     const groove = ring > 0.46;
     set(t, mix(mix(c, dark, fibre * 0.3 + blotch * 0.35), dark, groove ? 0.22 : 0), 0.95 + (groove ? 0 : 0.06));
@@ -241,10 +241,10 @@ export function jungleBark(): TexelSampler {
   const lichen = hex(0x8c9474);
   const moss = hex(0x415a24);
   return (u, v, t) => {
-    const n = tileFbm(u * 4, v * 2, 4, 4, 51);
-    const crack = Math.abs(((u * 10 + tileFbm(u * 2, v * 3, 2, 2, 53) * 3) % 1) - 0.5) < 0.04;
+    const n = tileFbmXY(u * 4, v * 2, 4, 2, 4, 51);
+    const crack = Math.abs(((u * 10 + tileFbmXY(u * 2, v * 3, 2, 3, 2, 53) * 3) % 1) - 0.5) < 0.04;
     const l = tileFbm(u * 6, v * 6, 6, 3, 55);
-    const m = tileFbm(u * 3, v * 1.5, 3, 3, 57);
+    const m = tileFbmXY(u * 3, v * 2, 3, 2, 3, 57);
     let col = mix(c, lichen, Math.max(0, l - 0.55) * 3);
     col = mix(col, moss, Math.max(0, m - 0.6) * 3);
     set(t, col, crack ? 0.6 : 0.85 + n * 0.3);

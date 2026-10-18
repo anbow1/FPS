@@ -1,4 +1,4 @@
-import { tileFbm, tileNoise } from '../core/noise.ts';
+import { tileFbm, tileFbmXY, tileNoise } from '../core/noise.ts';
 import type { Texel, TexelSampler } from './textures.ts';
 
 // Surface patterns for the procedural texture sets. Base colours are the sRGB
@@ -43,7 +43,7 @@ export function concrete(colour: number, rough: number, seed = 3): TexelSampler 
   return (u, v, t) => {
     const blotch = tileFbm(u * 3, v * 3, 3, 4, seed);
     const pore = tileNoise(u * 128, v * 128, 128, seed + 5);
-    const stain = tileFbm(u * 2, v * 8, 2, 3, seed + 9);
+    const stain = tileFbmXY(u * 2, v * 8, 2, 8, 3, seed + 9);
     put(t, c, 0.84 + blotch * 0.26 - (stain > 0.62 ? 0.08 : 0) - (pore < 0.1 ? 0.12 : 0));
     t.height = blotch * 0.3 + (pore < 0.1 ? 0 : 0.6) + pore * 0.1;
     t.rough = rough;
@@ -427,8 +427,8 @@ export function rock(colour = 0x7a7672): TexelSampler {
 export function bark(): TexelSampler {
   const c = hex(0x4a3b30);
   return (u, v, t) => {
-    const plates = tileFbm(u * 8, v * 2, 8, 4, 111);
-    const groove = Math.abs(((u * 8 + tileFbm(u * 2, v * 4, 2, 2, 112) * 2) % 1) - 0.5) < 0.08;
+    const plates = tileFbmXY(u * 8, v * 2, 8, 2, 4, 111);
+    const groove = Math.abs(((u * 8 + tileFbmXY(u * 2, v * 4, 2, 4, 2, 112) * 2) % 1) - 0.5) < 0.08;
     put(t, c, groove ? 0.55 : 0.85 + plates * 0.35);
     t.height = groove ? 0 : 0.5 + plates * 0.5;
     t.rough = 0.93;
