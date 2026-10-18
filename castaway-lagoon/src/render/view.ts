@@ -109,6 +109,10 @@ export class LagoonView {
   }
 
   static async create(canvas: HTMLCanvasElement, game: LagoonGame, settings: StageSettings, progress: Progress, extra: (view: LagoonView, progress: Progress) => Promise<void>): Promise<LagoonView> {
+    // Scanned textures first: the view's constructor already builds the skiff and the jeep, whose materials
+    // read them, and every material built after does too (impostors are baked from those).
+    await progress('Loading textures', 0.02);
+    await loadPhotoTextures();
     const v = new LagoonView(canvas, settings);
     await v.build(game, progress, extra);
     return v;
@@ -118,9 +122,6 @@ export class LagoonView {
     const { stage } = this;
     await progress('Starting renderer', 0.04);
     await stage.init();
-    // Scanned textures first: the materials built below read them, and impostors are baked from those.
-    await progress('Loading textures', 0.07);
-    await loadPhotoTextures();
     await progress('Shaping the island', 0.1);
     this.caustics = new Caustics(stage.quality);
     stage.passTimer.name(this.caustics.target, 'water');
