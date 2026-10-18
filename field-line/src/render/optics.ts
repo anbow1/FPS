@@ -16,9 +16,9 @@ import { CAMERA, SCOPE } from '../config.ts';
 
 export class RedDot {
   readonly axis = uniform(new Vector3(0, 0, -1));
-  // Pre-exposed HDR; kept low enough that ACES does not bleach the red toward pink.
-  readonly brightness = uniform(0.35);
-  /** Angle one screen pixel covers; the dot is never drawn smaller than ~1.3 px across. */
+  // Pre-exposed HDR: bright enough to read against a sunlit wall, short of where ACES bleaches red to pink.
+  readonly brightness = uniform(1);
+  /** Angle one screen pixel covers; the dot is never drawn smaller than ~3 px across. */
   readonly pixelAngleRad = uniform(0.001);
   readonly material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
 
@@ -28,8 +28,13 @@ export class RedDot {
     const sinAngle = length(cross(viewDir, this.axis));
     const facing = viewDir.dot(this.axis).greaterThan(0);
     // A 2 MOA dot is 0.58 mrad: under one pixel on a 70° view, so a screen cannot show it at true size.
-    const r = max(float(SCOPE.redDotRadiusRad), this.pixelAngleRad.mul(0.65));
-    const dot = float(1).sub(smoothstep(r.mul(0.6), r, sinAngle)).mul(facing.select(float(1), float(0)));
+    // At 1 px (the old floor) the dot drowned in the glass at noon. An eye sees a 2 MOA dot as a crisp
+    // point with a little flare round it: a core of ~3 px and a faint halo three times as wide.
+    const r = max(float(SCOPE.redDotRadiusRad), this.pixelAngleRad.mul(1.5));
+    const front = facing.select(float(1), float(0));
+    const core = float(1).sub(smoothstep(r.mul(0.55), r, sinAngle));
+    const halo = float(1).sub(smoothstep(r, r.mul(3), sinAngle)).mul(0.22);
+    const dot = max(core, halo).mul(front);
     // Pre-exposed HDR red: sits a few stops over a sunlit wall so it reads at noon.
     this.material.colorNode = vec3(1.0, 0.06, 0.03).mul(this.brightness).mul(dot).add(vec3(0.02, 0.03, 0.05));
     this.material.opacityNode = dot.mul(0.9).add(0.08);
