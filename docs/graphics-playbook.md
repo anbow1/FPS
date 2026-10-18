@@ -822,6 +822,33 @@ shadows from the muzzle, the beam hanging in the dust.
   muzzle flash, smoke and a tracer (life cut at the first raycast hit) for every
   enemy shot; blood puffs, or a red cloud and a ripple under water; HUD arcs
   pointing at whoever hit you.
+- **Bodies, not dolls** (round 3: "make the enemies look real"). Thin
+  cylinders with a ball at each joint read as a robot or a toy at any distance,
+  whatever the kit on them. What fixed it, in all three games' enemies (FL
+  `render/actors.ts`, lagoon `render/guerrillas.ts` and `creatures.ts`, Tanks
+  `render/infantryModel.ts`), keeping the instanced rigid segments:
+  - **Clothed limbs lathed through measured profiles**: a thigh in trousers is
+    ~18 cm across at the top and 12 at the knee, a sleeve full at the deltoid;
+    the section oval; domes at both ends so a bent joint shows no gap. Press the
+    cloth's **folds** in as rings that wander round the limb where it bunches
+    (crotch, behind the knee, elbow, over the boot) and darken the creases with
+    a per-vertex `shade`.
+  - **One loft for a trunk**: hips with a seat, an animal's body deep at the
+    chest and tucked up at the waist (`bodyLoft()`); ellipsoids end to end make
+    a string of lumps. Split it between segments where it flexes, each loft's
+    rings running past the split.
+  - **A face**: brow, nose, cheekbones, jaw pressed into the head sphere; eyes in
+    shadowed sockets, brows, stubble as `shade`. Boots from a side profile,
+    hands as a grip (palm, a roll of curled fingers, a thumb).
+  - **Arms that bend**: two-bone IK with an outward-and-down pole; a straight
+    stick from shoulder to grip is a mannequin.
+  - **Dirt where it collects**: a per-vertex `grime` (boots, trouser bottoms,
+    knees) blended to mud in noisy blotches.
+  - **A coat as the animal wears it**: a tiger's stripes are bands down from the
+    spine, each its own width, tapering toward a cream belly, some doubled or
+    broken — stripes from noise zero-crossings look like scribbles. Cream as a
+    per-vertex `white` (belly, throat, under the paws), not a white ellipsoid
+    stuck on.
 
 ---
 
@@ -1410,6 +1437,7 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Instanced plants visible only in shadows | pre-compiled while `count = 0` | fill before compile; reveal with count ≥ 1 |
 | Hitch at dusk/dawn | toggling `castShadow` | never toggle; fade intensity |
 | Hitch every sky re-bake | new PMREM target per bake | re-bake into the same target |
+| Rows of identical ovals or a seam across a procedural texture | tiled noise with one period for both axes, scaled differently on each (`tileFbm(u*2, v*12, 2)` repeats six times across) | per-axis periods (`tileFbmXY(u*A, v*B, A, B)`); audit every call for scale ≠ period |
 | Black environment | sky dome beyond the probe camera's far plane | scale the dome inside it |
 | Float32 data texture blurry/wrong on some GPUs | float32 not filterable | nearest + manual bilinear with `textureLoad` |
 | Vertex-shader texture read fails on WebGPU | implicit LOD in the vertex stage | `.level(0)` |
