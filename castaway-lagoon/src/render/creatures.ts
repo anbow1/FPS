@@ -556,10 +556,24 @@ function crocGeometry(): Record<string, BufferGeometry> {
     // Body: neck to hips, 1.7 m, centred on its origin, with two ridges of scutes down the back.
     body: joined(
       [
-        tag(ell(0.38, 0.2, 0.85), K.croc, SCUTE),
-        tag(ell(0.025, 0.05, 0.75, -0.13, 0.17, 0, 8), ridgeColour, SCUTE),
-        tag(ell(0.025, 0.05, 0.75, 0.13, 0.17, 0, 8), ridgeColour, SCUTE),
-        tag(ell(0.22, 0.14, 0.3, 0, 0.0, -0.8), K.croc, SCUTE), // the neck into the head
+        // Flat and wide, widest behind the fore legs, narrowing into the neck and the tail.
+        tag(
+          bodyLoft([
+            [-0.92, 0.17, 0.12, 0.0],
+            [-0.7, 0.27, 0.15, 0.0],
+            [-0.35, 0.36, 0.19, 0.0],
+            [0.1, 0.38, 0.2, 0.0],
+            [0.55, 0.33, 0.18, 0.0],
+            [0.85, 0.22, 0.15, 0.0],
+            [0.92, 0.19, 0.14, 0.0],
+          ]),
+          K.croc,
+          SCUTE,
+        ),
+        // The armour: rows of keeled scutes down the back, four across, more at the shoulders.
+        ...Array.from({ length: 15 }, (_, k) => -0.75 + k * 0.105).flatMap((z, k) =>
+          [-0.15, -0.06, 0.06, 0.15].map((x) => tag(ell(0.022, 0.028, 0.038, x * (1 - Math.abs(z) * 0.25), 0.17 + 0.03 * (1 - Math.abs(z)) - Math.abs(x) * 0.12, z + (k % 2) * 0.01, 6), ridgeColour, SCUTE)),
+        ),
       ],
       'croc body',
     ),
