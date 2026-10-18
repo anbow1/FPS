@@ -54,6 +54,8 @@ export class GuerrillaView {
   readonly group = new Group();
   private readonly meshes = new Map<Segment, InstancedMesh>();
   private readonly walkPhase = new Map<number, number>();
+  /** The man whose kit each instance slot holds: the dead are dropped from the band, so slots shift. */
+  private readonly slotId = new Int32Array(MAX_MEN).fill(-1);
 
   constructor() {
     this.group.name = 'guerrillas';
@@ -61,10 +63,8 @@ export class GuerrillaView {
     const geos = segmentGeometries();
     for (const seg of Object.keys(PAIRED) as Segment[]) {
       const per = PAIRED[seg] ? 2 : 1;
-      // Each man's own clothes (kitMaterial): shirt, trousers, skin, hat and bandana.
-      const kit = new Float32Array(MAX_MEN * per * 4);
-      for (let i = 0; i < MAX_MEN * per; i++) kit.set(kitFor(Math.floor(i / per)), i * 4);
-      geos[seg].setAttribute('kit', new InstancedBufferAttribute(kit, 4));
+      // Each man's own clothes (kitMaterial): shirt, trousers, skin, hat and bandana; written per slot in update().
+      geos[seg].setAttribute('kit', new InstancedBufferAttribute(new Float32Array(MAX_MEN * per * 4), 4));
       const mesh = new InstancedMesh(geos[seg], material, MAX_MEN * per);
       mesh.name = `guerrilla-${seg}`;
       mesh.count = 0;
@@ -76,11 +76,24 @@ export class GuerrillaView {
     }
   }
 
+  /** Puts man `id`'s clothes on instance slot `i` of every segment. */
+  private dress(i: number, id: number): void {
+    this.slotId[i] = id;
+    const kit = kitFor(id);
+    for (const [seg, mesh] of this.meshes) {
+      const attr = mesh.geometry.getAttribute('kit') as InstancedBufferAttribute;
+      const per = PAIRED[seg] ? 2 : 1;
+      for (let k = 0; k < per; k++) (attr.array as Float32Array).set(kit, (i * per + k) * 4);
+      attr.needsUpdate = true;
+    }
+  }
+
   update(men: readonly Guerrilla[], alpha: number, frameSeconds: number): void {
     const n = Math.min(men.length, MAX_MEN);
     for (const [seg, mesh] of this.meshes) mesh.count = n * (PAIRED[seg] ? 2 : 1);
     for (let i = 0; i < n; i++) {
       const g = men[i] as Guerrilla;
+      if (this.slotId[i] !== g.id) this.dress(i, g.id);
       _feet.set(g.prev.x + (g.pos.x - g.prev.x) * alpha, g.prev.y + (g.pos.y - g.prev.y) * alpha, g.prev.z + (g.pos.z - g.prev.z) * alpha);
       let phase = this.walkPhase.get(g.id) ?? (g.id % 7) * 0.9;
       if (g.alive) phase = (phase + g.speedMs * frameSeconds * (g.crouch > 0.5 ? 4.2 : 3.2)) % (Math.PI * 2);
