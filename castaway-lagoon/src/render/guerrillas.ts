@@ -1,5 +1,5 @@
-import { attribute, float, mix, mx_noise_float, positionGeometry, step, vec3 } from 'three/tsl';
-import { BoxGeometry, BufferAttribute, type BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
+import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, vec3 } from 'three/tsl';
+import { BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, Shape, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
 import type { Guerrilla } from '../game/guerrillas.ts';
 import { merge } from './meshkit.ts';
 import { buildRifle } from './weaponModels.ts';
@@ -18,7 +18,14 @@ import { buildRifle } from './weaponModels.ts';
 // Kit: faded tiger-stripe shirt, olive trousers, a khaki chest rig with three
 // magazine pouches, a bandana or a boonie hat, a canvas bag, boots. One
 // material: per-vertex colour and a kind (0 hard, 1 plain cloth, 2 patterned
-// cloth) that sets roughness, sheen and the stripe pattern.
+// cloth) that sets roughness, sheen and the stripe pattern, a `shade` for the
+// cloth's creases and the face's hollows, and `grime` for mud and dust.
+//
+// Bodies as Field Line builds them (its render/actors.ts): men in loose
+// clothes lathed through measured profiles with the folds pressed in, not
+// cylinders with balls at the joints. Here the face shows: brow, nose,
+// cheekbones and jaw in the head, eyes in shadowed sockets, brows, and a
+// week's stubble; sleeves rolled over bare, muscled forearms.
 
 const MAX_MEN = 24;
 
@@ -239,9 +246,13 @@ function kitMaterial(): MeshPhysicalNodeMaterial {
   const stripe = vec3(0.025, 0.028, 0.02);
   const brown = vec3(0.09, 0.07, 0.04);
   const pattern = mix(mix(base, brown, step(0.25, patches)), stripe, step(0.3, strokes));
-  const colour = mix(tint, pattern, striped);
+  // Mud and dust where they collect, in blotches: dried light dust over darker wet mud.
+  const grime = attribute('grime', 'float');
+  const blot = smoothstep(-0.2, 0.45, mx_noise_float(positionGeometry.mul(23)).add(grime.mul(0.9).sub(0.45)));
+  const mud = mix(vec3(0.08, 0.06, 0.04), vec3(0.24, 0.2, 0.15), smoothstep(0.1, 0.6, mx_noise_float(positionGeometry.mul(9))));
+  const colour = mix(mix(tint, pattern, striped), mud, blot.mul(grime)).mul(attribute('shade', 'float'));
   m.colorNode = colour;
-  m.roughnessNode = mix(float(0.55), float(0.9), cloth);
+  m.roughnessNode = mix(float(0.55), float(0.9), cloth.max(blot.mul(grime)));
   m.sheenNode = colour.mul(cloth.mul(0.35));
   return m;
 }
@@ -253,29 +264,224 @@ function linear(hex: number): [number, number, number] {
   return [c.r, c.g, c.b];
 }
 
-function tag(g: BufferGeometry, hex: number, kind: Kind): BufferGeometry {
+/**
+ * Tags a geometry with its colour and kind for the shared material, and its grime: a constant, or by the
+ * vertex's height in the segment's frame. A `shade` already on the geometry (cloth creases) is kept.
+ */
+function tag(g: BufferGeometry, hex: number, kind: Kind, grime: number | ((y: number) => number) = 0): BufferGeometry {
   const n = g.index ? g.toNonIndexed() : g;
-  const count = n.getAttribute('position').count;
+  const pos = n.getAttribute('position');
+  const count = pos.count;
   const [r, gr, b] = linear(hex);
   const tint = new Float32Array(count * 3);
   const k = new Float32Array(count).fill(kind);
-  for (let i = 0; i < count; i++) tint.set([r, gr, b], i * 3);
+  const dirt = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    tint.set([r, gr, b], i * 3);
+    dirt[i] = typeof grime === 'number' ? grime : Math.min(1, Math.max(0, grime(pos.getY(i))));
+  }
   n.setAttribute('tint', new BufferAttribute(tint, 3));
   n.setAttribute('kind', new BufferAttribute(k, 1));
+  n.setAttribute('grime', new BufferAttribute(dirt, 1));
+  if (!n.getAttribute('shade')) n.setAttribute('shade', new BufferAttribute(new Float32Array(count).fill(1), 1));
   return n;
 }
 
+const TAGS: [string, number][] = [
+  ['tint', 3],
+  ['kind', 1],
+  ['shade', 1],
+  ['grime', 1],
+];
+
 function joined(parts: BufferGeometry[], name: string): BufferGeometry {
-  const tints: number[] = [];
-  const kinds: number[] = [];
-  for (const p of parts) {
-    tints.push(...(p.getAttribute('tint').array as Float32Array));
-    kinds.push(...(p.getAttribute('kind').array as Float32Array));
-  }
+  // meshkit.merge keeps only position/normal/uv; carry the tags across by merging them here.
+  const lists = TAGS.map(() => [] as number[]);
+  for (const p of parts) TAGS.forEach(([key], k) => (lists[k] as number[]).push(...(p.getAttribute(key).array as Float32Array)));
   const g = merge(parts, name);
-  g.setAttribute('tint', new BufferAttribute(new Float32Array(tints), 3));
-  g.setAttribute('kind', new BufferAttribute(new Float32Array(kinds), 1));
+  TAGS.forEach(([key, size], k) => g.setAttribute(key, new BufferAttribute(new Float32Array(lists[k] as number[]), size)));
   return g;
+}
+
+/** A cloth fold: where along the limb (0 top … 1 bottom), how wide a band, how deep (m). */
+type Fold = [centre: number, width: number, depthM: number];
+
+/**
+ * A clothed limb along −Y from the origin: a lathe through `profile` ([fraction of the length, radius] pairs,
+ * top to bottom, eased between), its section `depth` times as deep front to back as it is wide, closed by
+ * domes so a bent joint never shows a gap, and the cloth's folds pressed in — rings that wander round the
+ * limb, strongest where the cloth bunches. Creases carry a darker `shade` (the light they do not get).
+ */
+function clothLimb(length: number, profile: readonly [number, number][], depth: number, folds: readonly Fold[], seed: number): BufferGeometry {
+  const radiusAt = (t: number): number => {
+    for (let k = 1; k < profile.length; k++) {
+      const [t1, r1] = profile[k] as [number, number];
+      const [t0, r0] = profile[k - 1] as [number, number];
+      if (t <= t1) {
+        const u = (t - t0) / Math.max(1e-6, t1 - t0);
+        return r0 + (r1 - r0) * u * u * (3 - 2 * u);
+      }
+    }
+    return (profile[profile.length - 1] as [number, number])[1];
+  };
+  const r0 = radiusAt(0);
+  const r1 = radiusAt(1);
+  // Rings: a dome over the top, the body, a dome under the bottom. (y, radius, t for folds, or −1 on the domes.)
+  const rings: [number, number, number][] = [];
+  const DOME = 4;
+  for (let k = 0; k < DOME; k++) {
+    const a = (Math.PI / 2) * (1 - k / DOME);
+    rings.push([Math.sin(a) * r0 * 0.7, Math.cos(a) * r0, -1]);
+  }
+  const BODY = 22;
+  for (let k = 0; k <= BODY; k++) {
+    const t = k / BODY;
+    rings.push([-t * length, radiusAt(t), t]);
+  }
+  for (let k = 1; k <= DOME; k++) {
+    const a = (Math.PI / 2) * (k / DOME);
+    rings.push([-length - Math.sin(a) * r1 * 0.7, Math.cos(a) * r1, -1]);
+  }
+  const SEG = 14;
+  const pos: number[] = [];
+  const uvs: number[] = [];
+  const shade: number[] = [];
+  rings.forEach(([y, r, t], k) => {
+    for (let j = 0; j <= SEG; j++) {
+      const th = (j / SEG) * Math.PI * 2;
+      let d = 0;
+      if (t >= 0) {
+        for (const [c, w, amp] of folds) {
+          const env = Math.exp(-(((t - c) / w) ** 2));
+          // Rings ~5 cm apart, tilted and wandering round the limb.
+          d += amp * env * Math.sin(((t * length) / 0.05) * Math.PI * 2 + 1.6 * Math.sin(th * 2 + seed) + Math.cos(th) * 0.8 + seed);
+        }
+      }
+      const rr = Math.max(0.005, r + d);
+      pos.push(Math.cos(th) * rr, y, Math.sin(th) * rr * depth);
+      uvs.push(j / SEG, k / (rings.length - 1));
+      const deepest = folds.reduce((m, f) => Math.max(m, f[2]), 1e-6);
+      shade.push(1 + Math.min(0, d / deepest) * 0.28);
+    }
+  });
+  const idx: number[] = [];
+  for (let k = 0; k < rings.length - 1; k++) {
+    for (let j = 0; j < SEG; j++) {
+      const a = k * (SEG + 1) + j;
+      const b = a + SEG + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  g.setAttribute('shade', new BufferAttribute(new Float32Array(shade), 1));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A body section lofted through rings of (y, half-width, half-depth, z offset), closed at both ends. */
+function loft(rings: readonly [number, number, number, number][]): BufferGeometry {
+  const SEG = 18;
+  const pos: number[] = [];
+  const uvs: number[] = [];
+  const all: [number, number, number, number][] = [[(rings[0] as number[])[0] as number, 0.001, 0.001, 0], ...rings, [(rings[rings.length - 1] as number[])[0] as number, 0.001, 0.001, 0]];
+  all.forEach(([y, rx, rz, z], k) => {
+    for (let j = 0; j <= SEG; j++) {
+      const th = (j / SEG) * Math.PI * 2;
+      pos.push(Math.cos(th) * rx, y, z + Math.sin(th) * rz);
+      uvs.push(j / SEG, k / (all.length - 1));
+    }
+  });
+  const idx: number[] = [];
+  for (let k = 0; k < all.length - 1; k++) {
+    for (let j = 0; j < SEG; j++) {
+      const a = k * (SEG + 1) + j;
+      const b = a + SEG + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A head in a balaclava: brow, nose, cheekbones and jaw pressed into a sphere (front is −Z). */
+function headGeometry(): BufferGeometry {
+  const g = new SphereGeometry(0.1, 20, 14).scale(0.8, 1.06, 0.95);
+  const pos = g.getAttribute('position');
+  const v = new Vector3();
+  const bump = (p: Vector3, x: number, y: number, z: number, r: number): number => Math.exp(-((p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2) / (r * r));
+  for (let i = 0; i < pos.count; i++) {
+    v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const front = Math.max(0, -v.z / 0.095);
+    // Nose, brow ridge, cheekbones out; the eye sockets and under the cheekbones in; the jaw narrower at the back.
+    const out =
+      0.016 * bump(v, 0, -0.012, -0.095, 0.022) +
+      0.006 * bump(v, 0, 0.03, -0.088, 0.035) +
+      0.005 * (bump(v, -0.045, 0.0, -0.07, 0.025) + bump(v, 0.045, 0.0, -0.07, 0.025)) -
+      0.006 * (bump(v, -0.032, 0.018, -0.088, 0.018) + bump(v, 0.032, 0.018, -0.088, 0.018)) -
+      0.005 * (bump(v, -0.05, -0.045, -0.06, 0.03) + bump(v, 0.05, -0.045, -0.06, 0.03));
+    const jaw = v.y < -0.03 ? 1 - Math.min(0.18, (-0.03 - v.y) * 2.2) * (1 - front) : 1;
+    pos.setXYZ(i, v.x * jaw, v.y, v.z - out * front);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * The face's darks on the head: eye sockets in shadow, and a week's stubble over the jaw, chin and upper
+ * lip (the head's frame, front −Z), as `shade`.
+ */
+function faceShade(g: BufferGeometry): BufferGeometry {
+  const pos = g.getAttribute('position');
+  const shade = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const front = Math.max(0, -z / 0.095);
+    const socket = Math.exp(-(((Math.abs(x) - 0.032) / 0.016) ** 2 + ((y - 0.016) / 0.012) ** 2)) * front;
+    const jaw = Math.min(1, Math.max(0, (-0.028 - y) / 0.02)) * Math.min(1, front * 1.6 + Math.max(0, -y - 0.06) * 8);
+    const lip = Math.exp(-((x / 0.025) ** 2 + ((y + 0.03) / 0.007) ** 2)) * front;
+    shade[i] = 1 - socket * 0.55 - Math.min(1, jaw + lip) * 0.22;
+  }
+  g.setAttribute('shade', new BufferAttribute(shade, 1));
+  return g;
+}
+
+/** A combat boot from its side profile (z forward is −, y up from the ankle), the sole a darker band. */
+function bootGeometry(): BufferGeometry[] {
+  const s = new Shape();
+  s.moveTo(0.075, -0.088);
+  s.lineTo(0.08, 0.02);
+  s.quadraticCurveTo(0.075, 0.1, 0.045, 0.11);
+  s.lineTo(-0.03, 0.11);
+  s.quadraticCurveTo(-0.055, 0.04, -0.09, 0.0);
+  s.quadraticCurveTo(-0.17, -0.025, -0.195, -0.06);
+  s.quadraticCurveTo(-0.205, -0.085, -0.185, -0.088);
+  s.lineTo(0.075, -0.088);
+  const upper = new ExtrudeGeometry(s, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.016, bevelSize: 0.014, bevelSegments: 3, curveSegments: 8 });
+  // Shape (u, v) → boot (z = u, y = v), extruded across x and centred; up 2 cm so the sole meets the ground.
+  upper.rotateY(-Math.PI / 2).translate(0.035, 0.02, 0);
+  const sole = new ExtrudeGeometry(
+    (() => {
+      const o = new Shape();
+      o.moveTo(0.09, -0.11);
+      o.lineTo(0.09, -0.086);
+      o.lineTo(-0.2, -0.086);
+      o.quadraticCurveTo(-0.215, -0.095, -0.2, -0.11);
+      o.lineTo(0.09, -0.11);
+      return o;
+    })(),
+    { depth: 0.1, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.005, bevelSegments: 1 },
+  );
+  sole.rotateY(-Math.PI / 2).translate(0.05, 0.02, 0);
+  return [upper, sole];
 }
 
 const C = {
@@ -284,6 +490,7 @@ const C = {
   webbing: 0x4f4a36,
   skin: 0x8a5a3c,
   hair: 0x1c1712,
+  eye: 0x2a1e18,
   bandana: 0x6a2420,
   hat: 0x5c5a3c,
   boot: 0x2f2a24,
@@ -295,62 +502,177 @@ const C = {
 
 const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number): BufferGeometry => new BoxGeometry(sx, sy, sz).translate(x, y, z);
 
-function limbGeo(length: number, r0: number, r1: number): BufferGeometry {
-  return merge([new CylinderGeometry(r0, r1, length, 12, 1, true).translate(0, -length / 2, 0), new SphereGeometry(r0, 12, 8), new SphereGeometry(r1, 12, 8).translate(0, -length, 0)], 'limb');
-}
-
 function segmentGeometries(): Record<Segment, BufferGeometry> {
   const pelvis = joined(
     [
-      tag(new SphereGeometry(1, 16, 10).scale(0.17, 0.13, 0.12).translate(0, -0.02, 0), C.trousers, PLAIN),
+      // Hips and the seat of the trousers, narrowing to the crotch.
+      tag(
+        loft([
+          [0.1, 0.15, 0.11, 0],
+          [0.03, 0.175, 0.125, 0.005],
+          [-0.04, 0.18, 0.13, 0.012],
+          [-0.1, 0.155, 0.115, 0.01],
+          [-0.14, 0.09, 0.08, 0.0],
+        ]),
+        C.trousers,
+        PLAIN,
+      ),
       tag(box(0.35, 0.045, 0.25, 0, 0.06, 0), C.webbing, PLAIN), // belt
-      tag(box(0.1, 0.12, 0.06, 0.15, 0.0, 0.1), C.bag, PLAIN), // a canvas bag on the hip
+      tag(box(0.1, 0.12, 0.06, 0.15, 0.0, 0.1), C.bag, PLAIN, 0.2), // a canvas bag on the hip
     ],
     'pelvis',
   );
   const torso = joined(
     [
       tag(new LatheGeometry([new Vector2(0.001, 0), new Vector2(0.15, 0.02), new Vector2(0.152, 0.2), new Vector2(0.18, 0.38), new Vector2(0.165, 0.48), new Vector2(0.06, 0.52)], 14).scale(1, 1, 0.6), 0x000000, STRIPE),
-      tag(new SphereGeometry(0.062, 10, 8).translate(-SHOULDER_HALF, SPINE_M - 0.06, 0), 0x000000, STRIPE),
-      tag(new SphereGeometry(0.062, 10, 8).translate(SHOULDER_HALF, SPINE_M - 0.06, 0), 0x000000, STRIPE),
+      tag(new SphereGeometry(0.072, 12, 9).scale(1, 0.9, 1).translate(-SHOULDER_HALF, SPINE_M - 0.06, 0), 0x000000, STRIPE),
+      tag(new SphereGeometry(0.072, 12, 9).scale(1, 0.9, 1).translate(SHOULDER_HALF, SPINE_M - 0.06, 0), 0x000000, STRIPE),
       // Chest rig: a panel across the belly with three AK magazine pouches, straps over the shoulders.
-      tag(box(0.3, 0.17, 0.05, 0, 0.2, -0.11), C.rig, PLAIN),
-      tag(box(0.075, 0.13, 0.05, -0.085, 0.21, -0.145), C.rig, PLAIN),
-      tag(box(0.075, 0.13, 0.05, 0, 0.21, -0.145), C.rig, PLAIN),
-      tag(box(0.075, 0.13, 0.05, 0.085, 0.21, -0.145), C.rig, PLAIN),
+      tag(box(0.3, 0.17, 0.05, 0, 0.2, -0.11), C.rig, PLAIN, 0.15),
+      tag(box(0.075, 0.13, 0.05, -0.085, 0.21, -0.145), C.rig, PLAIN, 0.15),
+      tag(box(0.075, 0.13, 0.05, 0, 0.21, -0.145), C.rig, PLAIN, 0.15),
+      tag(box(0.075, 0.13, 0.05, 0.085, 0.21, -0.145), C.rig, PLAIN, 0.15),
       tag(box(0.05, 0.025, 0.24, -0.1, 0.45, 0), C.webbing, PLAIN),
       tag(box(0.05, 0.025, 0.24, 0.1, 0.45, 0), C.webbing, PLAIN),
       tag(box(0.05, 0.3, 0.025, -0.1, 0.32, 0.1), C.webbing, PLAIN),
       tag(box(0.05, 0.3, 0.025, 0.1, 0.32, 0.1), C.webbing, PLAIN),
       // A rolled blanket across the back, and the neck.
-      tag(new CylinderGeometry(0.06, 0.06, 0.3, 10).rotateZ(Math.PI / 2).translate(0, 0.42, 0.14), C.bag, PLAIN),
+      tag(new CylinderGeometry(0.06, 0.06, 0.3, 10).rotateZ(Math.PI / 2).translate(0, 0.42, 0.14), C.bag, PLAIN, 0.2),
       tag(new CylinderGeometry(0.055, 0.065, 0.1, 10).translate(0, 0.53, 0), C.skin, HARD),
     ],
     'torso',
   );
   const head = joined(
     [
-      tag(new SphereGeometry(0.1, 14, 10).scale(0.82, 1.05, 0.95), C.skin, HARD),
+      tag(faceShade(headGeometry()), C.skin, HARD),
       tag(new SphereGeometry(0.102, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.45).scale(0.84, 1.0, 0.98).translate(0, 0.01, 0.01), C.hair, PLAIN),
       // Bandana knotted at the back, and a boonie hat's brim and crown over it.
       tag(new CylinderGeometry(0.087, 0.09, 0.05, 14, 1, true).scale(1, 1, 1.12).translate(0, 0.045, 0.005), C.bandana, PLAIN),
       tag(box(0.05, 0.04, 0.05, 0, 0.04, 0.1), C.bandana, PLAIN),
       tag(new CylinderGeometry(0.095, 0.1, 0.07, 16).translate(0, 0.09, 0.005), C.hat, PLAIN),
       tag(new TorusGeometry(0.115, 0.022, 4, 20).rotateX(Math.PI / 2).scale(1, 1, 1.1).translate(0, 0.062, 0.005), C.hat, PLAIN),
-      // Nose and ears so the head is a head at ten metres.
-      tag(new SphereGeometry(1, 8, 6).scale(0.016, 0.025, 0.02).translate(0, -0.01, -0.095), C.skin, HARD),
-      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.025, 0.018).translate(-0.083, -0.005, 0.005), C.skin, HARD),
-      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.025, 0.018).translate(0.083, -0.005, 0.005), C.skin, HARD),
+      // Ears; eyes in the sockets; brows.
+      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.026, 0.018).translate(-0.08, -0.005, 0.005), C.skin, HARD),
+      tag(new SphereGeometry(1, 8, 6).scale(0.012, 0.026, 0.018).translate(0.08, -0.005, 0.005), C.skin, HARD),
+      ...[-1, 1].map((sx) => tag(new SphereGeometry(0.0085, 8, 6).translate(sx * 0.031, 0.017, -0.074), C.eye, HARD)),
+      ...[-1, 1].map((sx) => tag(new BoxGeometry(0.026, 0.006, 0.01).rotateZ(sx * -0.12).translate(sx * 0.032, 0.033, -0.086), C.hair, PLAIN)),
     ],
     'head',
   );
-  const upperArm = joined([tag(limbGeo(L_UPPER_ARM, 0.052, 0.044), 0x000000, STRIPE)], 'upperArm');
-  // Sleeves rolled to the elbow: bare forearms.
-  const forearm = joined([tag(new CylinderGeometry(0.05, 0.048, 0.06, 12).translate(0, -0.02, 0), 0x000000, STRIPE), tag(limbGeo(L_FOREARM, 0.04, 0.03), C.skin, HARD)], 'forearm');
-  const hand = joined([tag(new SphereGeometry(1, 10, 8).scale(0.04, 0.053, 0.026).translate(0, -0.05, 0), C.skin, HARD), tag(new CapsuleGeometry(0.011, 0.03, 2, 6).translate(0, -0.05, -0.028), C.skin, HARD)], 'hand');
-  const thigh = joined([tag(limbGeo(L_THIGH, 0.078, 0.06), C.trousers, PLAIN), tag(box(0.17, 0.12, 0.09, 0, -0.22, 0), C.trousers, PLAIN)], 'thigh');
-  const shin = joined([tag(limbGeo(L_SHIN, 0.058, 0.045), C.trousers, PLAIN), tag(new CylinderGeometry(0.056, 0.06, 0.13, 12).translate(0, -L_SHIN + 0.05, 0), C.boot, HARD)], 'shin');
-  const boot = joined([tag(new CapsuleGeometry(0.05, 0.16, 4, 10).rotateX(Math.PI / 2).scale(1, 0.9, 1).translate(0, -0.035, -0.055), C.boot, HARD), tag(box(0.105, 0.025, 0.28, 0, -0.08, -0.055), C.sole, HARD)], 'boot');
+  // Sleeve over the upper arm, full at the deltoid and biceps, bunched at the roll above the elbow.
+  const upperArm = joined(
+    [
+      tag(
+        clothLimb(
+          L_UPPER_ARM,
+          [
+            [0, 0.064],
+            [0.25, 0.06],
+            [0.75, 0.052],
+            [1, 0.05],
+          ],
+          0.92,
+          [
+            [0.12, 0.08, 0.004],
+            [0.9, 0.07, 0.006],
+          ],
+          1,
+        ),
+        0x000000,
+        STRIPE,
+      ),
+    ],
+    'upperArm',
+  );
+  // Sleeves rolled to the elbow: a thick roll of cloth, then a bare forearm, full below the elbow
+  // and tapering to the wrist.
+  const forearm = joined(
+    [
+      tag(new TorusGeometry(0.047, 0.016, 8, 16).rotateX(Math.PI / 2).scale(1, 1.2, 0.9).translate(0, -0.012, 0), 0x000000, STRIPE),
+      tag(
+        clothLimb(
+          L_FOREARM,
+          [
+            [0, 0.044],
+            [0.25, 0.046],
+            [0.7, 0.034],
+            [1, 0.029],
+          ],
+          0.8,
+          [],
+          2,
+        ),
+        C.skin,
+        HARD,
+      ),
+    ],
+    'forearm',
+  );
+  const hand = joined(
+    [
+      // Palm and knuckles, the curled fingers as one roll across the front, the thumb along the side.
+      tag(new SphereGeometry(1, 12, 8).scale(0.04, 0.05, 0.022).translate(0, -0.045, 0), C.skin, HARD),
+      tag(new CapsuleGeometry(0.014, 0.05, 3, 8).rotateZ(Math.PI / 2).translate(0, -0.088, -0.012), C.skin, HARD),
+      tag(new CapsuleGeometry(0.011, 0.035, 2, 6).rotateZ(0.5).translate(-0.035, -0.05, -0.02), C.skin, HARD),
+    ],
+    'hand',
+  );
+  const thigh = joined(
+    [
+      tag(
+        clothLimb(
+          L_THIGH,
+          [
+            [0, 0.093],
+            [0.15, 0.09],
+            [0.55, 0.077],
+            [0.88, 0.065],
+            [1, 0.063],
+          ],
+          0.94,
+          [
+            [0.1, 0.07, 0.005],
+            [0.92, 0.07, 0.007],
+          ],
+          3,
+        ),
+        C.trousers,
+        PLAIN,
+        (y) => Math.max(0, (-y - L_THIGH * 0.7) / (L_THIGH * 0.3)) * 0.4,
+      ),
+      ...[-1, 1].map((sx) => tag(new BoxGeometry(0.035, 0.15, 0.13).translate(sx * 0.08, -0.23, 0.0), C.trousers, PLAIN)),
+    ],
+    'thigh',
+  );
+  const shin = joined(
+    [
+      tag(
+        clothLimb(
+          L_SHIN,
+          [
+            [0, 0.066],
+            [0.3, 0.067],
+            [0.7, 0.059],
+            [0.86, 0.062],
+            [1, 0.057],
+          ],
+          0.95,
+          [
+            [0.06, 0.07, 0.005],
+            [0.84, 0.08, 0.008],
+          ],
+          4,
+        ),
+        C.trousers,
+        PLAIN,
+        (y) => 0.2 + Math.max(0, (-y - L_SHIN * 0.45) / (L_SHIN * 0.55)) * 0.8,
+      ),
+      tag(new CylinderGeometry(0.058, 0.062, 0.11, 14).translate(0, -L_SHIN + 0.045, 0), C.boot, HARD, 0.8),
+    ],
+    'shin',
+  );
+  const [bootUpper, sole] = bootGeometry() as [BufferGeometry, BufferGeometry];
+  const boot = joined([tag(bootUpper, C.boot, HARD, (y) => 0.6 + Math.max(0, -y) * 4), tag(sole, C.sole, HARD, 0.9)], 'boot');
   return { pelvis, torso, head, upperArm, forearm, hand, thigh, shin, boot, rifle: rifleGeometry() };
 }
 

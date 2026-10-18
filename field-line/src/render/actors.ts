@@ -1,17 +1,19 @@
-import { attribute, float, mix, mx_noise_float, positionGeometry, step, vec3 } from 'three/tsl';
+import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, vec3 } from 'three/tsl';
 import {
   BoxGeometry,
   BufferAttribute,
-  type BufferGeometry,
+  BufferGeometry,
   CapsuleGeometry,
   Color,
   CylinderGeometry,
+  ExtrudeGeometry,
   Group,
   InstancedMesh,
   LatheGeometry,
   Matrix4,
   Mesh,
   MeshPhysicalNodeMaterial,
+  Shape,
   SphereGeometry,
   Vector2,
   Vector3,
@@ -37,8 +39,17 @@ import { buildRifle } from './weaponModels.ts';
 // belt, high-cut helmet with ear defenders and a night-vision mount, knee and
 // elbow pads, gloves, boots. One material for all of it: per-vertex colour and
 // a kind (0 hard, 1 plain fabric, 2 camouflage fabric) that sets roughness,
-// sheen and a procedural four-colour camouflage. Sheet values: uniform
-// #5A5E48 rough 0.9 sheen 0.4, NATO green #4B5340, khaki #5C5B3E, rubber.
+// sheen and a procedural four-colour camouflage, a `shade` that darkens the
+// creases of the cloth, and `grime` where mud and dust collect (boots, trouser
+// bottoms, knees). Sheet values: uniform #5A5E48 rough 0.9 sheen 0.4, NATO
+// green #4B5340, khaki #5C5B3E, rubber.
+//
+// Bodies are built as a man in loose combat clothes, not as a jointed doll:
+// limbs are lathed through measured profiles (a thigh in trousers is ~18 cm
+// across at the top, the knee 12), their sections oval, with the cloth's
+// folds pressed in where it bunches — behind the knee, at the elbow, over the
+// boot. Thin cylinders with balls at the joints read as a robot however good
+// the kit on them.
 
 const MAX_SOLDIERS = 96;
 
@@ -283,9 +294,13 @@ function soldierMaterial(): MeshPhysicalNodeMaterial {
   const dark = vec3(0.045, 0.05, 0.035);
   const sand = vec3(0.19, 0.17, 0.11);
   const pattern = mix(mix(mix(base, olive, step(0.18, n1)), dark, step(0.32, n2)), sand, step(0.42, n1.mul(-1)));
-  const colour = mix(tint, pattern, camo);
+  // Mud and dust where they collect, in blotches: dried light dust over darker wet mud.
+  const grime = attribute('grime', 'float');
+  const blot = smoothstep(-0.2, 0.45, mx_noise_float(positionGeometry.mul(23)).add(grime.mul(0.9).sub(0.45)));
+  const mud = mix(vec3(0.07, 0.055, 0.04), vec3(0.2, 0.17, 0.13), smoothstep(0.1, 0.6, mx_noise_float(positionGeometry.mul(9))));
+  const colour = mix(mix(tint, pattern, camo), mud, blot.mul(grime)).mul(attribute('shade', 'float'));
   m.colorNode = colour;
-  m.roughnessNode = mix(float(0.6), float(0.9), fabric);
+  m.roughnessNode = mix(float(0.6), float(0.9), fabric.max(blot.mul(grime)));
   // Sheen colour × intensity (three's sheenNode is the product): cloth only.
   m.sheenNode = colour.mul(fabric.mul(0.4));
   return m;
@@ -298,31 +313,203 @@ function linear(hex: number): [number, number, number] {
   return [c.r, c.g, c.b];
 }
 
-/** Tags a geometry with its colour and kind for the shared material. */
-function tag(g: BufferGeometry, hex: number, kind: Kind): BufferGeometry {
+/**
+ * Tags a geometry with its colour and kind for the shared material, and its grime: a constant, or by the
+ * vertex's height in the segment's frame. A `shade` already on the geometry (cloth creases) is kept.
+ */
+function tag(g: BufferGeometry, hex: number, kind: Kind, grime: number | ((y: number) => number) = 0): BufferGeometry {
   const n = g.index ? g.toNonIndexed() : g;
-  const count = n.getAttribute('position').count;
+  const pos = n.getAttribute('position');
+  const count = pos.count;
   const [r, gr, b] = linear(hex);
   const tint = new Float32Array(count * 3);
   const k = new Float32Array(count).fill(kind);
-  for (let i = 0; i < count; i++) tint.set([r, gr, b], i * 3);
+  const dirt = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    tint.set([r, gr, b], i * 3);
+    dirt[i] = typeof grime === 'number' ? grime : Math.min(1, Math.max(0, grime(pos.getY(i))));
+  }
   n.setAttribute('tint', new BufferAttribute(tint, 3));
   n.setAttribute('kind', new BufferAttribute(k, 1));
+  n.setAttribute('grime', new BufferAttribute(dirt, 1));
+  if (!n.getAttribute('shade')) n.setAttribute('shade', new BufferAttribute(new Float32Array(count).fill(1), 1));
   return n;
 }
 
+const TAGS: [string, number][] = [
+  ['tint', 3],
+  ['kind', 1],
+  ['shade', 1],
+  ['grime', 1],
+];
+
 function joined(parts: BufferGeometry[], name: string): BufferGeometry {
   // meshkit.merge keeps only position/normal/uv; carry the tags across by merging them here.
-  const tints: number[] = [];
-  const kinds: number[] = [];
-  for (const p of parts) {
-    tints.push(...(p.getAttribute('tint').array as Float32Array));
-    kinds.push(...(p.getAttribute('kind').array as Float32Array));
-  }
+  const lists = TAGS.map(() => [] as number[]);
+  for (const p of parts) TAGS.forEach(([key], k) => (lists[k] as number[]).push(...(p.getAttribute(key).array as Float32Array)));
   const g = merge(parts, name);
-  g.setAttribute('tint', new BufferAttribute(new Float32Array(tints), 3));
-  g.setAttribute('kind', new BufferAttribute(new Float32Array(kinds), 1));
+  TAGS.forEach(([key, size], k) => g.setAttribute(key, new BufferAttribute(new Float32Array(lists[k] as number[]), size)));
   return g;
+}
+
+/** A cloth fold: where along the limb (0 top … 1 bottom), how wide a band, how deep (m). */
+type Fold = [centre: number, width: number, depthM: number];
+
+/**
+ * A clothed limb along −Y from the origin: a lathe through `profile` ([fraction of the length, radius] pairs,
+ * top to bottom, eased between), its section `depth` times as deep front to back as it is wide, closed by
+ * domes so a bent joint never shows a gap, and the cloth's folds pressed in — rings that wander round the
+ * limb, strongest where the cloth bunches. Creases carry a darker `shade` (the light they do not get).
+ */
+function clothLimb(length: number, profile: readonly [number, number][], depth: number, folds: readonly Fold[], seed: number): BufferGeometry {
+  const radiusAt = (t: number): number => {
+    for (let k = 1; k < profile.length; k++) {
+      const [t1, r1] = profile[k] as [number, number];
+      const [t0, r0] = profile[k - 1] as [number, number];
+      if (t <= t1) {
+        const u = (t - t0) / Math.max(1e-6, t1 - t0);
+        return r0 + (r1 - r0) * u * u * (3 - 2 * u);
+      }
+    }
+    return (profile[profile.length - 1] as [number, number])[1];
+  };
+  const r0 = radiusAt(0);
+  const r1 = radiusAt(1);
+  // Rings: a dome over the top, the body, a dome under the bottom. (y, radius, t for folds, or −1 on the domes.)
+  const rings: [number, number, number][] = [];
+  const DOME = 4;
+  for (let k = 0; k < DOME; k++) {
+    const a = (Math.PI / 2) * (1 - k / DOME);
+    rings.push([Math.sin(a) * r0 * 0.7, Math.cos(a) * r0, -1]);
+  }
+  const BODY = 22;
+  for (let k = 0; k <= BODY; k++) {
+    const t = k / BODY;
+    rings.push([-t * length, radiusAt(t), t]);
+  }
+  for (let k = 1; k <= DOME; k++) {
+    const a = (Math.PI / 2) * (k / DOME);
+    rings.push([-length - Math.sin(a) * r1 * 0.7, Math.cos(a) * r1, -1]);
+  }
+  const SEG = 14;
+  const pos: number[] = [];
+  const uvs: number[] = [];
+  const shade: number[] = [];
+  rings.forEach(([y, r, t], k) => {
+    for (let j = 0; j <= SEG; j++) {
+      const th = (j / SEG) * Math.PI * 2;
+      let d = 0;
+      if (t >= 0) {
+        for (const [c, w, amp] of folds) {
+          const env = Math.exp(-(((t - c) / w) ** 2));
+          // Rings ~5 cm apart, tilted and wandering round the limb.
+          d += amp * env * Math.sin(((t * length) / 0.05) * Math.PI * 2 + 1.6 * Math.sin(th * 2 + seed) + Math.cos(th) * 0.8 + seed);
+        }
+      }
+      const rr = Math.max(0.005, r + d);
+      pos.push(Math.cos(th) * rr, y, Math.sin(th) * rr * depth);
+      uvs.push(j / SEG, k / (rings.length - 1));
+      const deepest = folds.reduce((m, f) => Math.max(m, f[2]), 1e-6);
+      shade.push(1 + Math.min(0, d / deepest) * 0.28);
+    }
+  });
+  const idx: number[] = [];
+  for (let k = 0; k < rings.length - 1; k++) {
+    for (let j = 0; j < SEG; j++) {
+      const a = k * (SEG + 1) + j;
+      const b = a + SEG + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  g.setAttribute('shade', new BufferAttribute(new Float32Array(shade), 1));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A body section lofted through rings of (y, half-width, half-depth, z offset), closed at both ends. */
+function loft(rings: readonly [number, number, number, number][]): BufferGeometry {
+  const SEG = 18;
+  const pos: number[] = [];
+  const uvs: number[] = [];
+  const all: [number, number, number, number][] = [[(rings[0] as number[])[0] as number, 0.001, 0.001, 0], ...rings, [(rings[rings.length - 1] as number[])[0] as number, 0.001, 0.001, 0]];
+  all.forEach(([y, rx, rz, z], k) => {
+    for (let j = 0; j <= SEG; j++) {
+      const th = (j / SEG) * Math.PI * 2;
+      pos.push(Math.cos(th) * rx, y, z + Math.sin(th) * rz);
+      uvs.push(j / SEG, k / (all.length - 1));
+    }
+  });
+  const idx: number[] = [];
+  for (let k = 0; k < all.length - 1; k++) {
+    for (let j = 0; j < SEG; j++) {
+      const a = k * (SEG + 1) + j;
+      const b = a + SEG + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A head in a balaclava: brow, nose, cheekbones and jaw pressed into a sphere (front is −Z). */
+function headGeometry(): BufferGeometry {
+  const g = new SphereGeometry(0.1, 20, 14).scale(0.8, 1.06, 0.95);
+  const pos = g.getAttribute('position');
+  const v = new Vector3();
+  const bump = (p: Vector3, x: number, y: number, z: number, r: number): number => Math.exp(-((p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2) / (r * r));
+  for (let i = 0; i < pos.count; i++) {
+    v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const front = Math.max(0, -v.z / 0.095);
+    // Nose, brow ridge, cheekbones out; the eye sockets and under the cheekbones in; the jaw narrower at the back.
+    const out =
+      0.016 * bump(v, 0, -0.012, -0.095, 0.022) +
+      0.006 * bump(v, 0, 0.03, -0.088, 0.035) +
+      0.005 * (bump(v, -0.045, 0.0, -0.07, 0.025) + bump(v, 0.045, 0.0, -0.07, 0.025)) -
+      0.006 * (bump(v, -0.032, 0.018, -0.088, 0.018) + bump(v, 0.032, 0.018, -0.088, 0.018)) -
+      0.005 * (bump(v, -0.05, -0.045, -0.06, 0.03) + bump(v, 0.05, -0.045, -0.06, 0.03));
+    const jaw = v.y < -0.03 ? 1 - Math.min(0.18, (-0.03 - v.y) * 2.2) * (1 - front) : 1;
+    pos.setXYZ(i, v.x * jaw, v.y, v.z - out * front);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A combat boot from its side profile (z forward is −, y up from the ankle), the sole a darker band. */
+function bootGeometry(): BufferGeometry[] {
+  const s = new Shape();
+  s.moveTo(0.075, -0.088);
+  s.lineTo(0.08, 0.02);
+  s.quadraticCurveTo(0.075, 0.1, 0.045, 0.11);
+  s.lineTo(-0.03, 0.11);
+  s.quadraticCurveTo(-0.055, 0.04, -0.09, 0.0);
+  s.quadraticCurveTo(-0.17, -0.025, -0.195, -0.06);
+  s.quadraticCurveTo(-0.205, -0.085, -0.185, -0.088);
+  s.lineTo(0.075, -0.088);
+  const upper = new ExtrudeGeometry(s, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.016, bevelSize: 0.014, bevelSegments: 3, curveSegments: 8 });
+  // Shape (u, v) → boot (z = u, y = v), extruded across x and centred; up 2 cm so the sole meets the ground.
+  upper.rotateY(-Math.PI / 2).translate(0.035, 0.02, 0);
+  const sole = new ExtrudeGeometry(
+    (() => {
+      const o = new Shape();
+      o.moveTo(0.09, -0.11);
+      o.lineTo(0.09, -0.086);
+      o.lineTo(-0.2, -0.086);
+      o.quadraticCurveTo(-0.215, -0.095, -0.2, -0.11);
+      o.lineTo(0.09, -0.11);
+      return o;
+    })(),
+    { depth: 0.1, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.005, bevelSegments: 1 },
+  );
+  sole.rotateY(-Math.PI / 2).translate(0.05, 0.02, 0);
+  return [upper, sole];
 }
 
 const C = {
@@ -340,15 +527,21 @@ const C = {
 
 const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number): BufferGeometry => new BoxGeometry(sx, sy, sz).translate(x, y, z);
 
-/** A tapered limb along −Y from the origin, rounded at both ends so joints never show a gap. */
-function limbGeo(length: number, r0: number, r1: number): BufferGeometry {
-  return merge([new CylinderGeometry(r0, r1, length, 12, 1, true).translate(0, -length / 2, 0), new SphereGeometry(r0, 12, 8), new SphereGeometry(r1, 12, 8).translate(0, -length, 0)], 'limb');
-}
-
 function segmentGeometries(): Record<Segment, BufferGeometry> {
   const pelvis = joined(
     [
-      tag(new SphereGeometry(1, 16, 10).scale(0.17, 0.13, 0.12).translate(0, -0.02, 0), C.uniform, CAMO),
+      // Hips and seat of the trousers: wide at the hip joints, the seat behind, narrowing to the crotch.
+      tag(
+        loft([
+          [0.1, 0.155, 0.115, 0],
+          [0.03, 0.18, 0.13, 0.005],
+          [-0.04, 0.185, 0.135, 0.012],
+          [-0.1, 0.16, 0.12, 0.01],
+          [-0.14, 0.09, 0.08, 0.0],
+        ]),
+        C.uniform,
+        CAMO,
+      ),
       tag(box(0.36, 0.06, 0.26, 0, 0.06, 0), C.webbing, PLAIN), // battle belt
       tag(box(0.09, 0.1, 0.05, -0.16, 0.03, -0.06), C.khaki, PLAIN), // pouches on the belt
       tag(box(0.09, 0.1, 0.05, 0.16, 0.03, -0.06), C.khaki, PLAIN),
@@ -359,8 +552,8 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
   const torso = joined(
     [
       tag(new LatheGeometry([new Vector2(0.001, 0), new Vector2(0.15, 0.02), new Vector2(0.155, 0.2), new Vector2(0.19, 0.38), new Vector2(0.17, 0.48), new Vector2(0.06, 0.52)], 14).scale(1, 1, 0.62), C.uniform, CAMO),
-      tag(new SphereGeometry(0.065, 10, 8).translate(-SHOULDER_HALF, SPINE_M - 0.06, 0), C.uniform, CAMO),
-      tag(new SphereGeometry(0.065, 10, 8).translate(SHOULDER_HALF, SPINE_M - 0.06, 0), C.uniform, CAMO),
+      tag(new SphereGeometry(0.074, 12, 9).scale(1, 0.9, 1).translate(-SHOULDER_HALF, SPINE_M - 0.06, 0), C.uniform, CAMO),
+      tag(new SphereGeometry(0.074, 12, 9).scale(1, 0.9, 1).translate(SHOULDER_HALF, SPINE_M - 0.06, 0), C.uniform, CAMO),
       // Plate carrier: front and back plates, cummerbund, shoulder straps.
       tag(box(0.29, 0.31, 0.05, 0, 0.3, -0.105), C.armour, PLAIN),
       tag(box(0.29, 0.33, 0.05, 0, 0.31, 0.105), C.armour, PLAIN),
@@ -384,7 +577,7 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
   const helmet = new SphereGeometry(0.127, 18, 9, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(0.95, 0.85, 1.05).translate(0, 0.02, 0.005);
   const head = joined(
     [
-      tag(new SphereGeometry(0.1, 14, 10).scale(0.82, 1.05, 0.95), C.balaclava, PLAIN),
+      tag(headGeometry(), C.balaclava, PLAIN),
       tag(helmet, C.khaki, HARD),
       // High cut over the ears: the shell's rim, side rails and the NVG mount on the front.
       tag(new CylinderGeometry(0.122, 0.124, 0.012, 18, 1, true).scale(0.95, 1, 1.05).translate(0, 0.022, 0.005), C.khaki, HARD),
@@ -399,26 +592,121 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
     ],
     'head',
   );
-  const upperArm = joined([tag(limbGeo(L_UPPER_ARM, 0.055, 0.045), C.uniform, CAMO)], 'upperArm');
-  const forearm = joined([tag(limbGeo(L_FOREARM, 0.046, 0.034), C.uniform, CAMO), tag(new SphereGeometry(1, 10, 6).scale(0.045, 0.05, 0.03).translate(0, -0.015, -0.035), C.rubber, HARD), tag(new CylinderGeometry(0.038, 0.036, 0.04, 10).translate(0, -L_FOREARM + 0.01, 0), C.glove, HARD)], 'forearm');
+  // Sleeves: the upper arm full at the deltoid and biceps, the forearm tapering to a cuff over the glove.
+  const upperArm = joined(
+    [
+      tag(
+        clothLimb(
+          L_UPPER_ARM,
+          [
+            [0, 0.066],
+            [0.25, 0.062],
+            [0.7, 0.053],
+            [1, 0.048],
+          ],
+          0.92,
+          [
+            [0.12, 0.08, 0.004],
+            [0.92, 0.07, 0.006],
+          ],
+          1,
+        ),
+        C.uniform,
+        CAMO,
+      ),
+    ],
+    'upperArm',
+  );
+  const forearm = joined(
+    [
+      tag(
+        clothLimb(
+          L_FOREARM,
+          [
+            [0, 0.052],
+            [0.3, 0.051],
+            [0.85, 0.041],
+            [1, 0.04],
+          ],
+          0.85,
+          [
+            [0.08, 0.08, 0.005],
+            [0.88, 0.06, 0.004],
+          ],
+          2,
+        ),
+        C.uniform,
+        CAMO,
+      ),
+      tag(new SphereGeometry(1, 10, 6).scale(0.048, 0.052, 0.032).translate(0, -0.015, -0.04), C.rubber, HARD, 0.3),
+      tag(new CylinderGeometry(0.041, 0.038, 0.045, 12).translate(0, -L_FOREARM + 0.012, 0), C.glove, HARD),
+    ],
+    'forearm',
+  );
   const hand = joined([tag(new SphereGeometry(1, 10, 8).scale(0.042, 0.055, 0.028).translate(0, -0.05, 0), C.glove, HARD), tag(new CapsuleGeometry(0.012, 0.03, 2, 6).translate(0, -0.05, -0.03), C.glove, HARD)], 'hand');
-  // Cargo pockets on both sides: the left thigh is the same mesh as the right one.
-  const thigh = joined([tag(limbGeo(L_THIGH, 0.078, 0.06), C.uniform, CAMO), tag(box(0.17, 0.12, 0.09, 0, -0.22, 0), C.uniform, CAMO)], 'thigh');
+  // Trousers: loose, full at the top of the thigh, folds at the crotch and behind the knee. Cargo pockets on
+  // both sides: the left thigh is the same mesh as the right one.
+  const thighGrime = (y: number): number => Math.max(0, (-y - L_THIGH * 0.7) / (L_THIGH * 0.3)) * 0.45;
+  const thigh = joined(
+    [
+      tag(
+        clothLimb(
+          L_THIGH,
+          [
+            [0, 0.095],
+            [0.15, 0.092],
+            [0.55, 0.079],
+            [0.88, 0.066],
+            [1, 0.064],
+          ],
+          0.94,
+          [
+            [0.1, 0.07, 0.005],
+            [0.92, 0.07, 0.007],
+          ],
+          3,
+        ),
+        C.uniform,
+        CAMO,
+        thighGrime,
+      ),
+      ...[-1, 1].map((sx) => tag(new BoxGeometry(0.035, 0.15, 0.13).translate(sx * 0.082, -0.23, 0.0), C.uniform, CAMO)),
+      ...[-1, 1].map((sx) => tag(new BoxGeometry(0.04, 0.03, 0.135).translate(sx * 0.084, -0.15, 0.0), C.uniform, CAMO)),
+    ],
+    'thigh',
+  );
+  // The shin: the trouser leg bunched ("bloused") over the boot top, mud splashed up from it.
+  const shinGrime = (y: number): number => 0.25 + Math.max(0, (-y - L_SHIN * 0.45) / (L_SHIN * 0.55)) * 0.75;
   const shin = joined(
     [
-      tag(limbGeo(L_SHIN, 0.058, 0.045), C.uniform, CAMO),
-      tag(new SphereGeometry(1, 12, 8).scale(0.055, 0.07, 0.035).translate(0, -0.035, -0.05), C.rubber, HARD), // knee pad
-      tag(new CylinderGeometry(0.058, 0.062, 0.12, 12).translate(0, -L_SHIN + 0.05, 0), C.boot, HARD), // boot collar
+      tag(
+        clothLimb(
+          L_SHIN,
+          [
+            [0, 0.067],
+            [0.3, 0.068],
+            [0.7, 0.06],
+            [0.86, 0.063],
+            [1, 0.058],
+          ],
+          0.95,
+          [
+            [0.06, 0.07, 0.005],
+            [0.84, 0.08, 0.008],
+          ],
+          4,
+        ),
+        C.uniform,
+        CAMO,
+        shinGrime,
+      ),
+      tag(new SphereGeometry(1, 12, 8).scale(0.06, 0.075, 0.038).translate(0, -0.035, -0.055), C.rubber, HARD, 0.55), // knee pad
+      tag(new CylinderGeometry(0.06, 0.064, 0.11, 14).translate(0, -L_SHIN + 0.045, 0), C.boot, HARD, 0.8), // boot top
     ],
     'shin',
   );
-  const boot = joined(
-    [
-      tag(new CapsuleGeometry(0.05, 0.16, 4, 10).rotateX(Math.PI / 2).scale(1, 0.9, 1).translate(0, -0.035, -0.055), C.boot, HARD),
-      tag(box(0.105, 0.025, 0.28, 0, -0.08, -0.055), C.rubber, HARD),
-    ],
-    'boot',
-  );
+  const [bootUpper, sole] = bootGeometry() as [BufferGeometry, BufferGeometry];
+  const boot = joined([tag(bootUpper, C.boot, HARD, (y) => 0.55 + Math.max(0, -y) * 4), tag(sole, C.rubber, HARD, 0.9)], 'boot');
   return { pelvis, torso, head, upperArm, forearm, hand, thigh, shin, boot, rifle: rifleGeometry() };
 }
 
