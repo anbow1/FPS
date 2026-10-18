@@ -123,7 +123,8 @@ export class Lighting {
    * ends on the far shore's trees), broken into slowly drifting patches.
    */
   private lakeMistNode() {
-    const MIST_DENSITY = 0.03;
+    // (0.03 turned the whole lake milky across 100 m: the far bank, and anyone on it, should still read.)
+    const MIST_DENSITY = 0.02;
     const f = 1 / 2.0;
     const o = cameraPosition;
     const ray = positionWorld.sub(o);
@@ -143,7 +144,7 @@ export class Lighting {
     const near = oN.add(rN.mul(t));
     const over = smoothstep(1.6, 0.9, near.length());
     const at = c.add(near.mul(radii));
-    const patches = smoothstep(-0.35, 0.45, mx_noise_float(vec3(at.div(22), this.mistTime.mul(0.015)))).mul(0.8).add(0.2);
+    const patches = smoothstep(-0.15, 0.5, mx_noise_float(vec3(at.div(22), this.mistTime.mul(0.015)))).mul(0.88).add(0.12);
     return float(1).sub(exp(this.mistAmount.mul(MIST_DENSITY).mul(over).mul(patches).mul(d).mul(integral).negate()));
   }
 
