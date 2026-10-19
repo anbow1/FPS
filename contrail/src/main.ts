@@ -459,7 +459,9 @@ async function main(): Promise<void> {
         status.textContent = game.status();
         const camY = stage.camera.position.y;
         lighting.setCloudCover(clouds.layer.coverage, camY < clouds.layer.baseM ? 'below' : camY > clouds.layer.topM ? 'above' : 'inside');
-        lighting.update(stage.camera, playerView.renderPos);
+        // In the seat the shadow map follows the eye, a few metres across (lighting.ts).
+        lighting.setShadowReach(inside);
+        lighting.update(stage.camera, inside ? stage.camera.position : playerView.renderPos);
         clouds.update(frameS, stage.camera.position, high);
         stage.scene.environment = lighting.environment;
         {

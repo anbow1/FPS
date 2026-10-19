@@ -1068,6 +1068,38 @@ fraction of the sun's colour and intensity, with the sun's visibility through
 the cloud field sampled four times a second. At a few thousand per square
 metre they look like a used canopy. At seven thousand they read as hail.
 
+## 6y. A cockpit you sit in (Contrail `render/cockpitModel.ts`)
+
+The old office was a dozen boxes: a hood, a flat panel, four cubes for dials,
+square sills, no floor. Looking sideways showed the desert through it. Against
+footage of a real cockpit, what makes it read as a place:
+
+- **Close the tub**: walls, floor, footwell, bulkheads, a roof over the knee
+  well.
+- **Frame the view with real parts**: sill rails with two rows of bolt heads,
+  a padded glare shield with a stitched lip, and on it the HUD (projector, a
+  tall frame, a tinted combiner) and the warning lamps.
+- **Panels, not a panel**: display bezels with their push-buttons and corner
+  rockers, round instruments (case, printed face, bezel ring, glass), caution
+  tiles, the gear handle, switch panels on the consoles with toggles and
+  knobs, throttle and side stick, the pilot's legs.
+- **Print the faces**: one canvas atlas for legends, seams, Dzus fasteners
+  and dial faces. Use 2 px/mm for small text, less for big faces, and 0.6
+  px/mm for the bare backing. At one density the atlas overflowed.
+- **Bevel everything** (a box's edge catches no light), tessellate the big
+  faces, and bake AO at 2 cm with 45 cm reach at 0.6 strength. A bubble
+  canopy floods the tub with sky, so full strength turned it black.
+- **Shadows**: in the seat views the sun's shadow map shrinks to ±3 m round
+  the eye (3 mm texels), sits 30 m out, and gets a 3 mm normal bias. The
+  outside view's 5 cm normal bias would lift every shadow off a switch panel.
+- **Put things where the eye is**: the keypad set into the panel's top sat
+  behind the glare shield's lip, out of sight. It stands out under the lip
+  instead, and the default view looks 11° down, so the whole panel is in
+  view.
+- **Mind the HUD clip**: the symbology fits into the combiner's outline. A
+  realistically narrow glass stacked the corner data over the ladder, so it
+  is 33° wide.
+
 ## 6w. Decals that belong to their surface (lagoon `render/footprints.ts`)
 
 A decal is seen where its colour differs from the ground and where its alpha

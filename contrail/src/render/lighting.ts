@@ -47,6 +47,7 @@ export type CloudSide = 'below' | 'inside' | 'above';
 export class SkyLighting {
   readonly sun = new DirectionalLight(0xffffff, 1);
   readonly sunDir = new Vector3(0, 1, 0);
+  private closeShadow = false;
   preset: LightPreset;
   exposure = 1;
   private readonly pmrem: PMREMGenerator;
@@ -122,6 +123,28 @@ export class SkyLighting {
     this.cloud.side = side;
   }
 
+  /**
+   * The sun's shadow map drawn tight round the eye in the seat views — 3 m either way, a few millimetres a
+   * texel, so the glare shield, the frames and the sills cast crisp shadows into the cockpit — or round the
+   * aircraft and the ground near it. The biases scale with it: the outside view's 5 cm normal offset would
+   * lift every shadow off a switch panel.
+   */
+  setShadowReach(close: boolean): void {
+    if (close === this.closeShadow) return;
+    this.closeShadow = close;
+    const l = this.sun;
+    const sc = l.shadow.camera;
+    const r = close ? 3 : 45;
+    sc.left = -r;
+    sc.right = r;
+    sc.top = r;
+    sc.bottom = -r;
+    sc.far = close ? 60 : 2000;
+    sc.updateProjectionMatrix();
+    l.shadow.bias = close ? -0.0002 : -0.0004;
+    l.shadow.normalBias = close ? 0.003 : 0.05;
+  }
+
   /** Per frame: sun colour from the transmittance at this altitude, the LUTs, the probe when stale. */
   update(camera: { position: Vector3; projectionMatrix: import('three/webgpu').Matrix4; matrixWorld: import('three/webgpu').Matrix4 }, followM: Vector3): void {
     const sunIll = SUN_TOA_LUX * this.exposure;
@@ -138,7 +161,7 @@ export class SkyLighting {
       this.groundColour.setRGB((GROUND_ALBEDO / Math.PI) * e * Tg.x, (GROUND_ALBEDO / Math.PI) * e * Tg.y, (GROUND_ALBEDO / Math.PI) * e * Tg.z);
       this.lastSunT = { band, sunY: this.sunDir.y };
     }
-    this.sun.position.copy(followM).addScaledVector(this.sunDir, 800);
+    this.sun.position.copy(followM).addScaledVector(this.sunDir, this.closeShadow ? 30 : 800);
     this.sun.target.position.copy(followM);
     const probeBand = Math.round(camera.position.y / 1000);
     const b = this.lastBake;

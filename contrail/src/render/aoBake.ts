@@ -1,4 +1,4 @@
-import { attribute, materialColor, mix, smoothstep, vec3 } from 'three/tsl';
+import { attribute, float, materialColor, mix, smoothstep, vec3 } from 'three/tsl';
 import { BufferAttribute, type Group, Matrix3, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, Vector3 } from 'three/webgpu';
 
 // Ambient occlusion baked once per airframe at load: every opaque surface is
@@ -13,9 +13,15 @@ import { BufferAttribute, type Group, Matrix3, Matrix4, Mesh, MeshStandardNodeMa
 // on the WebGL2 fallback (see LOOK.md). Static parts only: a deflected flap
 // keeps the occlusion of its neutral position, which is invisible in practice.
 
-const CELL_M = 0.08;
-const RANGE_M = 1.6;
-const RAYS = 20;
+/** Grid cell, ray reach and rays per vertex: an airframe's defaults; a cockpit wants centimetres. */
+export interface AoOptions {
+  cellM: number;
+  rangeM: number;
+  rays: number;
+  /** How much of the occlusion and the grime to apply, 0…1: a bubble canopy floods its tub with sky. */
+  strength: number;
+}
+const AIRFRAME: AoOptions = { cellM: 0.08, rangeM: 1.6, rays: 20, strength: 1 };
 /** Materials already wired to `ao`: a material shared by several baked models gets the grime once, not once per bake. */
 const wired = new WeakSet<MeshStandardNodeMaterial>();
 
@@ -32,7 +38,8 @@ function hemisphere(n: number): Vector3[] {
 }
 
 /** Bakes and applies `ao` to every opaque mesh under `root` (in root's own frame). */
-export function bakeAmbientOcclusion(root: Group): void {
+export function bakeAmbientOcclusion(root: Group, options: AoOptions = AIRFRAME): void {
+  const { cellM, rangeM, rays, strength } = options;
   root.updateMatrixWorld(true);
   const inv = new Matrix4().copy(root.matrixWorld).invert();
   const meshes: { mesh: Mesh; toRoot: Matrix4 }[] = [];
@@ -54,16 +61,16 @@ export function bakeAmbientOcclusion(root: Group): void {
       max.max(v);
     }
   }
-  min.subScalar(RANGE_M);
-  max.addScalar(RANGE_M);
-  const nx = Math.ceil((max.x - min.x) / CELL_M);
-  const ny = Math.ceil((max.y - min.y) / CELL_M);
-  const nz = Math.ceil((max.z - min.z) / CELL_M);
+  min.subScalar(rangeM);
+  max.addScalar(rangeM);
+  const nx = Math.ceil((max.x - min.x) / cellM);
+  const ny = Math.ceil((max.y - min.y) / cellM);
+  const nz = Math.ceil((max.z - min.z) / cellM);
   const grid = new Uint8Array(nx * ny * nz);
   const cellOf = (x: number, y: number, z: number): number => {
-    const i = Math.floor((x - min.x) / CELL_M);
-    const j = Math.floor((y - min.y) / CELL_M);
-    const k = Math.floor((z - min.z) / CELL_M);
+    const i = Math.floor((x - min.x) / cellM);
+    const j = Math.floor((y - min.y) / cellM);
+    const k = Math.floor((z - min.z) / cellM);
     if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return -1;
     return (k * ny + j) * nx + i;
   };
@@ -83,7 +90,7 @@ export function bakeAmbientOcclusion(root: Group): void {
       a.fromBufferAttribute(p, ia).applyMatrix4(toRoot);
       b.fromBufferAttribute(p, ib).applyMatrix4(toRoot);
       c.fromBufferAttribute(p, ic).applyMatrix4(toRoot);
-      const steps = Math.max(1, Math.ceil(Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)) / (CELL_M * 0.5)));
+      const steps = Math.max(1, Math.ceil(Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)) / (cellM * 0.5)));
       for (let s = 0; s <= steps; s++) {
         for (let r = 0; r <= steps - s; r++) {
           const u = s / steps;
@@ -98,14 +105,14 @@ export function bakeAmbientOcclusion(root: Group): void {
     }
   }
   // Rays from every vertex over its normal's hemisphere.
-  const dirs = hemisphere(RAYS);
+  const dirs = hemisphere(rays);
   const n = new Vector3();
   const tangent = new Vector3();
   const bitangent = new Vector3();
   const dir = new Vector3();
   const normalMatrix = new Matrix3();
-  const startOffset = CELL_M * 1.8;
-  const stepM = CELL_M * 0.7;
+  const startOffset = cellM * 1.8;
+  const stepM = cellM * 0.7;
   for (const { mesh, toRoot } of meshes) {
     const g = mesh.geometry;
     if (g.getAttribute('ao')) continue;
@@ -127,7 +134,7 @@ export function bakeAmbientOcclusion(root: Group): void {
       for (const d of dirs) {
         dir.copy(tangent).multiplyScalar(d.x).addScaledVector(bitangent, d.y).addScaledVector(n, d.z);
         let hit = false;
-        for (let t = startOffset; t < RANGE_M; t += stepM) {
+        for (let t = startOffset; t < rangeM; t += stepM) {
           const cell = cellOf(v.x + dir.x * t, v.y + dir.y * t, v.z + dir.z * t);
           if (cell >= 0 && grid[cell]) {
             hit = true;
@@ -136,7 +143,7 @@ export function bakeAmbientOcclusion(root: Group): void {
         }
         if (!hit) open++;
       }
-      ao[i] = open / RAYS;
+      ao[i] = open / rays;
     }
     g.setAttribute('ao', new BufferAttribute(ao, 1));
   }
@@ -148,9 +155,9 @@ export function bakeAmbientOcclusion(root: Group): void {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const m of mats) {
       if (!(m instanceof MeshStandardNodeMaterial) || wired.has(m)) continue;
-      const ao = attribute('ao', 'float');
       // Remap so open skin stays at 1 and only real cavities darken.
-      m.aoNode = ao.mul(1.15).clamp(0, 1);
+      const ao = mix(float(1), attribute('ao', 'float').mul(1.15).clamp(0, 1), strength);
+      m.aoNode = ao;
       const grime = mix(vec3(0.6, 0.57, 0.52), vec3(1, 1, 1), smoothstep(0.3, 0.85, ao));
       m.colorNode = ((m.colorNode ?? materialColor) as Node<'vec3'>).mul(grime);
       wired.add(m);
