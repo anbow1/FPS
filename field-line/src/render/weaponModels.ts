@@ -21,7 +21,7 @@ import {
   Vector2,
   Vector3,
 } from 'three/webgpu';
-import { finish, polymerMaterial, steelMaterial } from './gunkit.ts';
+import { finish, polymerMaterial, sidePart, steelMaterial } from './gunkit.ts';
 import { handData, posedHandGeometry } from './handMesh.ts';
 
 // First-person weapon and hand models in metres, facing −Z, with the sight
@@ -86,7 +86,25 @@ function mesh(g: BufferGeometry, m: Material, name: string): Mesh {
   return out;
 }
 
-const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number): BufferGeometry => new BoxGeometry(sx, sy, sz).translate(x, y, z);
+/**
+ * A small block (sights, rail teeth, levers, pads), its edges rounded by a bevel with smooth normals and the
+ * `edge` attribute, so the finish wears through on it like on the profiles (gunkit.ts). A knife-edged box
+ * caught no light and read as a toy's part.
+ */
+const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number): BufferGeometry =>
+  sidePart(
+    [
+      [z - sz / 2, y - sy / 2],
+      [z + sz / 2, y - sy / 2],
+      [z + sz / 2, y + sy / 2],
+      [z - sz / 2, y + sy / 2],
+    ],
+    sx,
+    Math.min(0.0008, sx / 4, sy / 4, sz / 4),
+    Math.min(0.0012, sy / 4, sz / 4),
+    x,
+    2,
+  );
 const rod = (r: number, len: number, seg = 12): CylinderGeometry => new CylinderGeometry(r, r, len, seg).rotateX(Math.PI / 2);
 
 /**

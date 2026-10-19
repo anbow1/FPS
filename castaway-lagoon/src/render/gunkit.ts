@@ -82,6 +82,10 @@ export function sidePart(outline: readonly Pt[], width: number, bevel: number, f
 export function sectionPart(section: readonly Pt[], z0: number, z1: number, bevel: number, fillet: number | readonly number[] = 0.002, segments = 3): BufferGeometry {
   const g = finish(extrude(filleted(section, fillet), z1 - z0, bevel, segments));
   g.translate(0, 0, z0 + bevel);
+  // The extrusion's side walls run v along the part; swap so u runs along it, as on the profiles' faces —
+  // a wood grain laid along u then follows every part's length, not across a handguard.
+  const uv = g.getAttribute('uv');
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getY(i), uv.getX(i));
   return g;
 }
 

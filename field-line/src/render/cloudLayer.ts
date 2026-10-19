@@ -23,7 +23,8 @@ import { tileFbm } from '../core/noise.ts';
 //     multiple scattering, the sky's own light from above and the ground's
 //     bounce on the bases;
 //   - cirrus at 8.5 km behind them (after "Open Ocean", a WebGPU ocean
-//     demo): fbm combed 5:1 along the wind, thin, lit through;
+//     demo): fbm combed 5:1 along the wind, thin, lit through; and patches
+//     of altocumulus, small round puffs, speckling the sky between;
 //   - distance: detail fades as a pixel covers more of the layer (explicit
 //     mip levels from the footprint, so it cannot shimmer), and far clouds
 //     dissolve into the sky behind them.
@@ -152,6 +153,16 @@ export class CloudLayer {
     return smoothstep(0.5, 0.82, c).mul(this.cirrusAmount);
   }
 
+  /**
+   * Altocumulus 0…1 on the high layer: fields of small round puffs (the billow cells, ~250 m) in patches a
+   * few kilometres across — the speckled sky over fair-weather cumulus.
+   */
+  private flecks(q: V2, lod: F): F {
+    const cells = texture(this.noise, q.div(2000).add(vec2(0.13, 0.41))).level(lod.add(Math.log2(5200 / 2000)).max(0)).g;
+    const patch = texture(this.noise, q.div(60000).add(vec2(0.61, 0.27))).level(lod.sub(3.5).max(0)).r;
+    return smoothstep(0.66, 0.86, cells).mul(smoothstep(0.55, 0.8, patch)).mul(this.cirrusAmount);
+  }
+
   /** `sky` (the dome's colour, scene units) with the cloud layers over it: high cirrus, then the cumulus. */
   over(sky: V3): V3 {
     return Fn(() => {
@@ -179,6 +190,10 @@ export class CloudLayer {
         const ciColour = E.mul(float(0.9 / Math.PI).mul(0.35).add(hg.mul(0.5))).add(this.skyRadiance.mul(0.9));
         const ciAlpha = ci.mul(0.45).mul(exp(tc.div(-70000))).mul(smoothstep(0.01, 0.08, dir.y));
         out.assign(mix(out, ciColour, ciAlpha));
+        // Altocumulus: the puffs lit like small clouds, their undersides a little shaded.
+        const fl = this.flecks(qc, lodC);
+        const flColour = E.mul(float(0.9 / Math.PI).mul(0.75).add(hg.mul(0.3))).add(this.skyRadiance.mul(0.75));
+        out.assign(mix(out, flColour, fl.mul(0.8).mul(exp(tc.div(-50000))).mul(smoothstep(0.02, 0.1, dir.y))));
         const h0 = this.thickness(q, lod).mul(this.coverage.greaterThan(0).select(float(1), float(0)));
         If(h0.greaterThan(0.002), () => {
           // Relief: the thickness as a dome THICK_M tall; its slope over a couple of pixels (no finer).

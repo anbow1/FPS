@@ -28,7 +28,7 @@ export const POSES = {
 } as const satisfies Record<string, HandPose>;
 
 /** Tanned skin (sRGB): brown, not orange. */
-const SKIN_HEX = 0x9c7560;
+const SKIN_HEX = 0xa2785c;
 
 /** How far the glove's leather stands off the skin (m). */
 const GLOVE_THICKNESS_M = 0.0013;
@@ -101,25 +101,26 @@ function tattooTexture(): CanvasTexture {
     c.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
   }
   // Veins on the inside of the wrist and up the forearm (u ≈ 0 is its inside), faint blue-green under the tan.
-  c.strokeStyle = 'rgba(70,80,95,0.16)';
-  c.lineWidth = 2.5;
+  c.strokeStyle = 'rgba(70,80,95,0.07)';
+  c.lineWidth = 3;
   for (const x0 of [10, 238, 30]) {
     c.beginPath();
     c.moveTo(x0, 0);
     for (let y = 0; y <= 256; y += 32) c.lineTo(x0 + Math.sin(y * 0.05 + x0) * 10, y);
     c.stroke();
   }
-  // Hair: short dark strokes lying along the arm toward the elbow, thicker over its back (u ≈ 0.5).
-  for (let i = 0; i < 2600; i++) {
+  // Hair: fine, faint strokes lying along the arm toward the elbow, thicker over its back (u ≈ 0.5). At arm's
+  // length they only darken the skin a touch and break up its sheen; drawn bolder they read as scratches.
+  for (let i = 0; i < 5000; i++) {
     const x = Math.random() * 256;
     const onBack = Math.exp(-(((x - 128) / 70) ** 2));
     if (Math.random() > 0.25 + onBack * 0.75) continue;
     const y = 20 + Math.random() * 236;
-    c.strokeStyle = `rgba(40,28,20,${0.18 + Math.random() * 0.25})`;
-    c.lineWidth = 0.6;
+    c.strokeStyle = `rgba(55,38,28,${0.05 + Math.random() * 0.07})`;
+    c.lineWidth = 0.4;
     c.beginPath();
     c.moveTo(x, y);
-    c.lineTo(x + (Math.random() - 0.5) * 2, y + 3 + Math.random() * 3);
+    c.lineTo(x + (Math.random() - 0.5) * 1.5, y + 2 + Math.random() * 2);
     c.stroke();
   }
   c.strokeStyle = 'rgba(28,32,36,0.88)';
