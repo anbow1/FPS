@@ -199,6 +199,8 @@ export class Lighting {
     // lenses at full cover. Broken cloud is cloudLayer.ts's; SkyMesh's own clouds stay off.
     u.cloudCoverage.value = 0;
     this.clouds.coverage.value = cloudy ? 0 : p.cloudCover;
+    // High cirrus streaks fair skies; at golden hour they catch the low sun.
+    this.clouds.cirrusAmount.value = cloudy ? 0 : p.id === 'golden' ? 0.9 : 0.6;
     this.clouds.sunIrradiance.value.set(sunK.r, sunK.g, sunK.b).multiplyScalar(p.sunIlluminanceLux * this.preExposure);
     // Under a full deck the sky is the cloud base: grey-white, not Preetham's clear-sky blue (the sheet's
     // colour temperature tints it below through skyGain).
