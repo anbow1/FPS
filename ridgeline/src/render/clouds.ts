@@ -288,6 +288,8 @@ export class Clouds {
         // step, easing back out after the cloud — the edges are where coarse steps show as grain lines.
         const fine = float(1).toVar();
         const prevDt = stepOf(seg.start).toVar();
+        // How the sun meets the cloud's surface where this ray entered it (1 until it does): see firstHit.
+        const lobe = float(1).toVar();
         Loop(q.steps, () => {
           If(T.lessThan(0.01).or(t.greaterThan(seg.end)), () => {
             Break();
@@ -304,6 +306,15 @@ export class Clouds {
             fine.assign(1 / 3);
             t.subAssign(prevDt.mul(0.75));
             dt.assign(0);
+            // The surface the ray just entered: its outward normal from the shape's gradient (shape only, 60 m,
+            // once per cloud entered — not per step), lit by the sun with a wrap. Each lobe then has a bright
+            // side and a shaded one; lit by the march alone the interior was uniform and the clouds flat slabs.
+            const e = 60;
+            const d0 = this.density(px, h, pz, false);
+            const g = vec3(this.density(px.add(e), h, pz, false).sub(d0), this.density(px, h.add(e), pz, false).sub(d0), this.density(px, h, pz.add(e), false).sub(d0));
+            const gl = g.length();
+            const facing = g.negate().div(max(gl, 1e-4)).dot(sun).add(0.4).div(1.4).clamp(0, 1);
+            lobe.assign(select(gl.greaterThan(1e-4), mix(float(0.35), float(1.3), facing), float(1)));
           }).ElseIf(dens.greaterThan(0.001), () => {
             const sigmaT = dens.mul(sigma);
             // Light where the step's energy comes from: within one mean free path of its start, not
@@ -347,7 +358,7 @@ export class Clouds {
             // GPU), so without this every billow was lit alike and the clouds read as smooth slabs. Toward
             // the sun the thin folds glow instead.
             const folds = float(1).sub(fold.mul(0.55).mul(float(1).sub(smoothstep(0.2, 0.85, cosSun))));
-            const S = sunColour.mul(ms).mul(powderK).mul(folds).add(ambient.mul(folds.mul(0.4).add(0.6))).mul(sigmaT);
+            const S = sunColour.mul(ms).mul(powderK).mul(folds).mul(lobe).add(ambient.mul(folds.mul(0.4).add(0.6))).mul(sigmaT);
             const stepT = exp(sigmaT.mul(dt).negate());
             // Integrate S·T over the step analytically (Hillaire 2016).
             scatter.addAssign(T.mul(S.sub(S.mul(stepT)).div(sigmaT)));
