@@ -1,4 +1,4 @@
-import { Break, cameraPosition, exp, float, Fn, hash, If, Loop, max, min, mix, positionWorld, pow, screenCoordinate, select, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { Break, cameraPosition, exp, float, Fn, hash, If, Loop, max, min, mix, positionWorld, pow, screenCoordinate, select, smoothstep, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import { DataTexture, LinearFilter, Mesh, type Node, NodeMaterial, type Object3D, RedFormat, RepeatWrapping, UnsignedByteType, Vector2, Vector3 } from 'three/webgpu';
 import { CLOUD_EXTINCTION_PER_M, CLOUD_FIELD, type CloudData, type CloudLayer, densityAt } from '../sim/cloudField.ts';
 import type { Atmosphere } from './atmosphere.ts';
@@ -165,8 +165,11 @@ export class Clouds {
 
   // ---- shader side
 
-  /** Density at a point given as flat-world x, z and true altitude h — cloudField.densityAt, term for term. */
-  private density(x: F, h: F, z: F, detail: boolean): F {
+  /**
+   * Density at a point given as flat-world x, z and true altitude h — cloudField.densityAt, term for term.
+   * `out.erosion` (with the detail): how much of the shape the detail ate there, 0…1 — the folds between lobes.
+   */
+  private density(x: F, h: F, z: F, detail: boolean, out?: { erosion: F }): F {
     const hf = h.sub(this.base).div(this.top.sub(this.base));
     const profile = min(hf.div(0.12), 1).mul(min(float(1).sub(hf).div(0.4), 1)).max(0);
     const px = x.add(this.windOffset.x);
@@ -177,6 +180,7 @@ export class Clouds {
     const base = max(shape.sub(float(1).sub(coverage)).div(max(coverage, 1e-3)), 0);
     if (!detail) return base;
     const det = sampleVolume(this.detail, vec3(px, h, pz).div(CLOUD_FIELD.detailTileM)).mul(0.35);
+    if (out) out.erosion = det.div(0.35);
     return max(base.sub(det).div(float(1).sub(det)), 0);
   }
 
@@ -265,7 +269,9 @@ export class Clouds {
           const px = cam.x.add(dir.x.mul(t));
           const pz = cam.z.add(dir.z.mul(t));
           const h = cam.y.add(dir.y.mul(t)).add(a.mul(t).mul(t));
-          const dens = this.density(px, h, pz, true).toVar();
+          const eroded = { erosion: float(0) as F };
+          const dens = this.density(px, h, pz, true, eroded).toVar();
+          const fold = eroded.erosion.toVar();
           const firstHit = dens.greaterThan(0.001).and(fine.greaterThan(0.99));
           If(firstHit, () => {
             fine.assign(1 / 3);
@@ -288,13 +294,25 @@ export class Clouds {
               travelled += stepM;
               tauSun.addAssign(this.density(lx.add(sun.x.mul(along)), lh.add(sun.y.mul(along)), lz.add(sun.z.mul(along)), false).mul(stepM));
             }
-            tauSun.mulAssign(sigma);
+            // Half the view's extinction towards the sun: at full extinction the light died in the first tens
+            // of metres and every cloud went grey (as Ridgeline's did, render/clouds.ts there).
+            tauSun.mulAssign(sigma.mul(0.5));
             // Wrenninge octaves: a = 0.6, b = 0.3 — the energy of higher scattering orders.
             let ms: F = float(0);
             for (let k = 0; k < 4; k++) ms = ms.add(exp(tauSun.mul(-(0.3 ** k))).mul(phases[k]!).mul(0.6 ** k));
             const hf = lh.sub(this.base).div(this.top.sub(this.base)).clamp(0, 1);
-            const ambient = skyUp.mul(mix(float(0.7), float(1.5), hf)).add(groundUp.mul(float(1).sub(hf)));
-            const S = sunColour.mul(ms).add(ambient).mul(sigmaT);
+            // Sky light from above through the cloud over the point (the local density standing in for up to
+            // 250 m of column): bases and the folds between towers go blue-grey, the tops stay white.
+            const upM = min(this.top.sub(lh), float(250)).max(0);
+            const skyVis = exp(dens.mul(upM).mul(CLOUD_EXTINCTION_PER_M * 0.25).negate());
+            const ambient = skyUp.mul(mix(float(0.6), float(1.4), hf)).mul(mix(float(0.45), float(1), skyVis)).add(groundUp.mul(float(1).sub(hf)));
+            // Beer–powder (Schneider 2015): rims seen away from the sun darker than the body, so every billow
+            // outlines itself; toward the sun the forward lobe wins and the rims glow.
+            const powder = float(1).sub(exp(sigmaT.mul(-140)).mul(0.6));
+            const powderK = mix(powder, float(1), cosSun.mul(0.5).add(0.5).pow(2));
+            // The folds between lobes lie in their neighbours' shadow (the light march sees only the shape).
+            const folds = float(1).sub(fold.mul(0.55).mul(float(1).sub(smoothstep(0.2, 0.85, cosSun))));
+            const S = sunColour.mul(ms).mul(powderK).mul(folds).add(ambient.mul(folds.mul(0.4).add(0.6))).mul(sigmaT);
             const stepT = exp(sigmaT.mul(dt).negate());
             // Integrate S·T over the step analytically (Hillaire 2016).
             scatter.addAssign(T.mul(S.sub(S.mul(stepT)).div(sigmaT)));
