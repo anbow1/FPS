@@ -30,6 +30,11 @@ function lin(hex: number): Node<'vec3'> {
   return vec3(c.r, c.g, c.b);
 }
 
+/** 1 on the bare ploughed strips (the brown soil band of the crop palette), 0 elsewhere. */
+function ploughedOf(id: Node<'float'>): Node<'float'> {
+  return smoothstep(0.38, 0.42, id).mul(smoothstep(0.55, 0.6, id)).mul(float(1).sub(smoothstep(0.8, 0.85, id)));
+}
+
 export class TerrainRenderer {
   readonly mesh: Mesh;
   private readonly instances: InstancedBufferAttribute;
@@ -159,9 +164,20 @@ export class TerrainRenderer {
     const wheeling = float(1).sub(smoothstep(0.15, fieldFoot.add(0.3), abs(tramD.sub(0.9)))).mul(float(1).sub(smoothstep(0.6, 2.5, fieldFoot)));
     const growth = mx_noise_float(P.xz.div(18).add(id.mul(13))).mul(0.07).add(mx_noise_float(P.xz.div(4.5)).mul(0.04).mul(float(1).sub(smoothstep(0.4, 1.5, fieldFoot))));
     const drill = abs(fract(r.x.div(0.75)).sub(0.5)).mul(0.1).mul(float(1).sub(smoothstep(0.08, 0.3, fieldFoot)));
-    const crops = field.mul(growth.add(1)).mul(drill.add(0.97));
+    // From a few hundred metres the strips still read as flat paint. Harvested and mown strips (the straw
+    // and pale greens) carry the swaths the machines left, light and dark in turn as the stubble lies one
+    // way then the other, 9–14 m wide; a grass margin a few metres wide runs inside many field edges; and
+    // ploughed soil darkens in wet hollows. Each faded by its footprint, so none of it shimmers from altitude.
+    const swathM = mix(float(9), float(14), hash(id.mul(17.3)));
+    const swathTri = abs(fract(r.x.div(swathM).add(id.mul(5))).sub(0.5)).mul(2);
+    const swathFade = float(1).sub(smoothstep(2.5, 7, fieldFoot));
+    const harvested = smoothstep(0.38, 0.42, id).mul(float(1).sub(smoothstep(0.55, 0.6, id))).add(smoothstep(0.8, 0.85, id));
+    const swaths = smoothstep(0.3, 0.7, swathTri).sub(0.5).mul(0.22).mul(harvested).mul(swathFade);
+    const margin = float(1).sub(smoothstep(2.5, 5, min(edgeX, edgeY))).mul(step(0.45, hash(blockId.mul(23.1)))).mul(float(1).sub(smoothstep(4, 9, fieldFoot)));
+    const hollows = smoothstep(0.1, 0.6, mx_noise_float(P.xz.div(160).add(id.mul(9)))).mul(ploughedOf(id)).mul(0.18);
+    const crops = mix(field.mul(growth.add(1)).mul(drill.add(0.97)).mul(swaths.add(1)).mul(float(1).sub(hollows)), lin(0x5f6e3c), margin.mul(0.7));
     // (No wheelings on bare ploughed strips: they are soil already.)
-    const ploughedK = smoothstep(0.38, 0.42, id).mul(smoothstep(0.55, 0.6, id)).mul(float(1).sub(smoothstep(0.8, 0.85, id)));
+    const ploughedK = ploughedOf(id);
     const tilled = mix(crops, lin(0x6b5a47).mul(0.9), wheeling.mul(0.45).mul(float(1).sub(ploughedK)));
     let farm: Node<'vec3'> = mix(tilled.mul(rows), lin(0x34472a), max(hedge.mul(0.8), furrow.mul(0.3)));
     farm = mix(farm, lin(0x9b9488), track.mul(0.7));

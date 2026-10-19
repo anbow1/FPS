@@ -1,5 +1,5 @@
-import { cameraPosition, cross, dot, exp, float, length, materialOpacity, max, min, mix, modelNormalMatrix, modelWorldMatrix, normalize, normalLocal, positionLocal, positionWorld, pow, select, smoothstep, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
-import { DataTexture, LinearFilter, LinearMipmapLinearFilter, type MeshPhysicalNodeMaterial, type Node, RepeatWrapping, RGBAFormat, UnsignedByteType, Vector3 } from 'three/webgpu';
+import { cameraPosition, cross, dot, exp, float, length, max, mix, modelNormalMatrix, modelWorldMatrix, normalize, normalLocal, positionLocal, positionWorld, pow, select, smoothstep, sqrt, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { AdditiveBlending, type BufferGeometry, DataTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, Mesh, MeshBasicNodeMaterial, RepeatWrapping, RGBAFormat, UnsignedByteType, Vector3 } from 'three/webgpu';
 
 // Hairline scratches in the canopy's acrylic, which catch the sun the way a
 // real one does from the seat: in arcs round the sun, and as a glow of every
@@ -88,8 +88,12 @@ function bake(): DataTexture {
 
 let map: DataTexture | null = null;
 
-/** Adds the scratches to a canopy glass material: an emissive glint and the opacity it needs to show. */
-export function addCanopyScratches(m: MeshPhysicalNodeMaterial): void {
+/**
+ * The scratches' glints over a canopy: the glass's own geometry again, drawn after it and added to whatever
+ * it shows. Additive, not the glass's opacity raised: over a tinted pane a raised opacity drew each
+ * scratch as a dark line.
+ */
+export function canopyScratchMesh(geometry: BufferGeometry): Mesh {
   map ??= bake();
   const n = normalize(normalLocal);
   // A frame on the pane from a fixed axis, the model's forward, or its up on panes facing along it.
@@ -112,13 +116,12 @@ export function addCanopyScratches(m: MeshPhysicalNodeMaterial): void {
   // sun the canopy lights up, elsewhere only the odd arc. Only where the sun falls on the pane's outside.
   const outward = normalize(modelNormalMatrix.mul(normalLocal));
   const lit = smoothstep(-0.02, 0.12, dot(outward, L));
-  const forward = mix(float(0.04), float(1.2), pow(max(dot(V, L).negate(), 0), 8));
-  const w = cover.mul(glint).mul(lit).mul(forward) as Node<'float'>;
-  // Over a near-clear glass: the glint added on top of what is seen through it, whatever the opacity.
-  const base = (m.opacityNode as Node<'float'> | null) ?? materialOpacity;
-  const extra = min(w.mul(0.5), 0.5);
-  const opacity = base.add(extra);
-  m.opacityNode = opacity;
-  // A scratch reflects a few per cent and is narrower than a pixel: a fraction of the sun's light, not all of it.
-  m.emissiveNode = scratchSun.mul(w.mul(0.15)).div(max(opacity, 0.05));
+  const forward = mix(float(0.08), float(1.2), pow(max(dot(V, L).negate(), 0), 6));
+  const m = new MeshBasicNodeMaterial({ name: 'canopy scratches', transparent: true, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+  // A scratch reflects a few per cent and is narrower than a pixel: a fraction of the sun's light.
+  m.colorNode = vec4(scratchSun.mul(cover.mul(glint).mul(lit).mul(forward).mul(0.25)), 1);
+  m.fog = false;
+  const out = new Mesh(geometry, m);
+  out.name = 'canopy scratches';
+  return out;
 }

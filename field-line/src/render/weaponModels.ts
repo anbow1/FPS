@@ -1,9 +1,9 @@
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { attribute, bumpMap, float, mix, mx_noise_float, positionGeometry, vec3 } from 'three/tsl';
+import { attribute, bumpMap, color, float, mix, mx_noise_float, positionGeometry, vec3 } from 'three/tsl';
 import {
   BoxGeometry,
   BufferAttribute,
-  type BufferGeometry,
+  BufferGeometry,
   CylinderGeometry,
   DoubleSide,
   ExtrudeGeometry,
@@ -57,6 +57,8 @@ export const VM_MATERIALS = {
   medkit: new MeshPhysicalNodeMaterial({ name: 'medkit', color: 0x6e2a24, roughness: 0.9, sheen: 0.3, sheenColor: 0x6e2a24 }),
   ammoPouch: new MeshPhysicalNodeMaterial({ name: 'ammoPouch', color: 0x5c5b3e, roughness: 0.9, sheen: 0.3, sheenColor: 0x5c5b3e }),
 } as const;
+// The sleeve's creases, shaded per vertex (sleeveGeometry), get less light than its ridges.
+VM_MATERIALS.sleeve.colorNode = color(0x5a5e48).mul(attribute('shade', 'float'));
 
 // ------------------------------------------------------------------ geometry helpers
 
@@ -686,15 +688,52 @@ export function buildHand(side: 1 | -1 = 1): Group {
     ],
     14,
   );
-  const sleevePts: [number, number][] = [];
-  for (let k = 0; k <= 12; k++) {
-    const z = 0.075 + k * 0.025;
-    // Folds gathered at the wrist, smoothing out up the arm.
-    const fold = Math.sin(k * 2.3) * 0.0025 * (1 - k / 14);
-    sleevePts.push([0.041 + k * 0.0012 + fold, z]);
-  }
   g.add(mesh(cuff, P.gloveLeather, 'cuff'));
-  g.add(mesh(lathe(sleevePts, 14), P.sleeve, 'sleeve'));
+  g.add(mesh(sleeveGeometry(side), P.sleeve, 'sleeve'));
+  return g;
+}
+
+/**
+ * The sleeve up the forearm from the cuff: an oval section (a forearm is wider across than deep) whose cloth
+ * lies in folds that wander round it — two families of diagonal ridges, bunched at the cuff and easing up
+ * the arm — with the creases shaded (`shade`). A lathe's folds ran round it as rings, and the sleeve read
+ * as a ribbed tube.
+ */
+function sleeveGeometry(side: 1 | -1): BufferGeometry {
+  const rings = 30;
+  const around = 32;
+  const z0 = 0.075;
+  const len = 0.3;
+  const pos: number[] = [];
+  const shade: number[] = [];
+  for (let k = 0; k <= rings; k++) {
+    const t = k / rings;
+    const z = z0 + t * len;
+    const r0 = 0.041 + t * 0.0145;
+    const amp = 0.0034 * (1 - t * 0.65);
+    for (let j = 0; j <= around; j++) {
+      const a = (j / around) * Math.PI * 2;
+      // The second arm's folds run the other way round: the two sleeves never match.
+      const f = Math.sin(z * 95 + a * 2 * side + 1.3) * 0.55 + Math.sin(z * 170 - a * 3 * side + 0.4) * 0.35 + Math.sin(z * 290 + a * 5) * 0.25 * (1 - t);
+      const r = r0 + f * amp;
+      pos.push(Math.cos(a) * r * 1.08, Math.sin(a) * r * 0.92, z);
+      shade.push(0.72 + 0.28 * Math.min(1, Math.max(0, f * 0.45 + 0.5)));
+    }
+  }
+  const index: number[] = [];
+  const row = around + 1;
+  for (let k = 0; k < rings; k++) {
+    for (let j = 0; j < around; j++) {
+      const a = k * row + j;
+      // Counter-clockwise round +Z, then along it: the faces look outward.
+      index.push(a, a + 1, a + row, a + 1, a + row + 1, a + row);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('shade', new BufferAttribute(new Float32Array(shade), 1));
+  g.setIndex(index);
+  g.computeVertexNormals();
   return g;
 }
 

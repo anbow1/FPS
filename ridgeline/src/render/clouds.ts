@@ -295,6 +295,8 @@ export class Clouds {
         const prevDt = stepOf(seg.start).toVar();
         // How the sun meets the cloud's surface where this ray entered it (1 until it does): see firstHit.
         const lobe = float(1).toVar();
+        // Set on entering a cloud; the lobe is taken at the next sample inside.
+        const needLobe = float(0).toVar();
         Loop(q.steps, () => {
           If(T.lessThan(0.01).or(t.greaterThan(seg.end)), () => {
             Break();
@@ -311,17 +313,23 @@ export class Clouds {
             fine.assign(1 / 3);
             t.subAssign(prevDt.mul(0.75));
             dt.assign(0);
-            // The surface the ray just entered: its outward normal from the gradient of the full density, detail
-            // and all (once per cloud entered — not per step), lit by the sun with a wrap. Each billow then has
-            // a bright side and a shaded one: the cauliflower. From the shape alone the faces were the cloud's
-            // whole flank and the clouds read as smooth plaster; over 40 m the finest detail made rough stone.
-            // 90 m is about how far light diffuses inside before it shows, so smaller bumps are smoothed.
-            const e = 90;
-            const g = vec3(this.density(px.add(e), h, pz, true).sub(dens), this.density(px, h.add(e), pz, true).sub(dens), this.density(px, h, pz.add(e), true).sub(dens));
-            const gl = g.length();
-            const facing = g.negate().div(max(gl, 1e-4)).dot(sun).add(0.35).div(1.35).clamp(0, 1);
-            lobe.assign(select(gl.greaterThan(1e-4), mix(float(0.22), float(1.45), facing), float(1)));
+            needLobe.assign(1);
           }).ElseIf(dens.greaterThan(0.001), () => {
+            If(needLobe.greaterThan(0.5), () => {
+              needLobe.assign(0);
+              // The surface the ray entered, taken at the first fine step inside (within a third of a coarse
+              // step of it — at the coarse hit, wherever the jitter put it, it flickered pixel to pixel): its
+              // outward normal from the gradient of the full density, detail and all, once per cloud entered,
+              // lit by the sun with a wrap. Each billow then has a bright side and a shaded one: the
+              // cauliflower. From the shape alone the faces were the cloud's whole flank and the clouds read as
+              // smooth plaster; over 40 m the finest detail made rough stone. 90 m is about how far light
+              // diffuses inside before it shows, so smaller bumps are smoothed.
+              const e = 90;
+              const g = vec3(this.density(px.add(e), h, pz, true).sub(dens), this.density(px, h.add(e), pz, true).sub(dens), this.density(px, h, pz.add(e), true).sub(dens));
+              const gl = g.length();
+              const facing = g.negate().div(max(gl, 1e-4)).dot(sun).add(0.5).div(1.5).clamp(0, 1);
+              lobe.assign(select(gl.greaterThan(1e-4), mix(float(0.4), float(1.4), facing), float(1)));
+            });
             const sigmaT = dens.mul(sigma);
             // Light where the step's energy comes from: within one mean free path of its start, not
             // at its middle (a 300 m step into a cloud would otherwise be lit from deep inside).

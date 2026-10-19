@@ -1036,6 +1036,22 @@ hardware, so FL now uses it too:
   the coarse shape, so every billow was lit alike. Fold shading from the
   detail erosion, plus each lobe lit by the face the ray entered, fixed it.
   Detail samples inside the light march lost the device on a software GPU.
+- **Towers, not slabs**: multiplying the shape by a height profile and then
+  thresholding at 1 − coverage cut every cloud off at about a third of the
+  layer. Raise the threshold with height instead: `thr = 1 − coverage ·
+  dome(h)`, with dome falling from 1 above the base to 0 at the type's top.
+  Clouds narrow as they climb, and only the densest columns reach the top.
+  Normalise `(raw − thr) / max(1 − thr, 0.25)`: the floor keeps the crowns
+  from turning into plaster shells.
+- **Light each billow by its face**: take the entry normal from the full
+  density, detail included, over ~90 m. Once per ray this is affordable. At
+  40 m the clouds read as rough stone, and from the shape alone as smooth
+  plaster. A thick cloud's sunlit face is nearly a white diffuser, but the
+  octaves' forward phases give a third of that from the side, so add a gain
+  (1.8) on the sun term.
+- **Tune in a lab**: a page with only the clouds over a gradient sky, 12
+  jitter frames averaged, takes 20 s per view in a software GPU. The game
+  takes 15–25 minutes to load there.
 
 ## 6x. Scratched canopy glass (Contrail/Ridgeline `render/canopyScratches.ts`)
 
@@ -1045,9 +1061,12 @@ light up at once. A scratch is a thin cylinder. Light along −L leaves it on a
 cone about its axis T, so the eye at V sees it where T·(V + L) = 0. Bake the
 scratches once (coverage, plus direction as a coverage-weighted double angle
 so the mips average sensibly). Lay them on the pane in a frame from a fixed
-axis. Add the glint as emissive divided by the raised opacity, so it adds
-over a near-clear glass. Scale it by the sun's colour and intensity, with the
-sun's visibility through the cloud field four times a second.
+axis. Draw the glints as a second, additive mesh on the glass's geometry,
+after it: raising the glass's opacity under each scratch drew dark lines on a
+tinted pane. Weight them heavily toward the sun (forward scattering), at a
+fraction of the sun's colour and intensity, with the sun's visibility through
+the cloud field sampled four times a second. At a few thousand per square
+metre they look like a used canopy. At seven thousand they read as hail.
 
 ## 6w. Decals that belong to their surface (lagoon `render/footprints.ts`)
 

@@ -23,7 +23,7 @@ import { bakeAmbientOcclusion } from './aoBake.ts';
 import { bandMaterials, bladeAntenna, dispenser, irJammer, missile, navLight, opticsMaterial, rocketPod, sensorTurret, step, suppressor, wheel, wireCutter } from './heliDetail.ts';
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
-import { addCanopyScratches } from './canopyScratches.ts';
+import { canopyScratchMesh } from './canopyScratches.ts';
 
 // The two helicopters, procedural (no model files), in body axes (x right,
 // y up, −z forward, origin at the centre of gravity) so they line up with the
@@ -292,6 +292,10 @@ function canopy(sections: CanopySection[], glassMat: Material, frameMat: Materia
   const glass = new Mesh(quads(panes), glassMat);
   glass.renderOrder = 1;
   g.add(glass);
+  // Its scratches, glinting round the sun (canopyScratches.ts), over the glass.
+  const scratches = canopyScratchMesh(glass.geometry);
+  scratches.renderOrder = 2;
+  g.add(scratches);
   // Frames: along the four edges, and a bow round every section.
   for (let k = 0; k < 4; k++)
     g.add(
@@ -337,7 +341,6 @@ export function buildHeli(id: HeliId): HeliModel {
   const glass = canopyMaterial(0x2c363c, null);
   glass.side = DoubleSide;
   addCanopyRain(glass);
-  addCanopyScratches(glass);
   root.add(canopy(s.canopy, glass, flat));
   const sh = s.canopy[s.shieldAt]!;
   const shieldMat = canopyMaterial(0x3a444a, null);

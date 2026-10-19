@@ -16,7 +16,7 @@ import { EMISSIVE_EXPOSURE } from './render/jetModels.ts';
 import { JetView } from './render/jetView.ts';
 import { SkyLighting } from './render/lighting.ts';
 import { addCanopyRain, canopyFlow, canopyFlowSpeed, canopyRain, canopyTime } from './render/canopyRain.ts';
-import { addCanopyScratches, scratchSun, scratchSunDir } from './render/canopyScratches.ts';
+import { canopyScratchMesh, scratchSun, scratchSunDir } from './render/canopyScratches.ts';
 import { canopyMaterial } from './render/jetMaterials.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
@@ -141,10 +141,13 @@ async function main(): Promise<void> {
       inner.opacity = 0.06;
       inner.side = DoubleSide;
       addCanopyRain(inner);
-      addCanopyScratches(inner);
       const glassInside = new Mesh(shell.geometry, inner);
       glassInside.renderOrder = 4;
       cockpit.root.add(glassInside);
+      // Its scratches, glinting round the sun (render/canopyScratches.ts), over the glass.
+      const scratches = canopyScratchMesh(shell.geometry);
+      scratches.renderOrder = 5;
+      cockpit.root.add(scratches);
     }
   }
   stage.scene.add(cockpit.root);
