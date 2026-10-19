@@ -32,4 +32,15 @@ describe('tilt steering', () => {
     expect(tiltStick(tiltAngles(pose(41, 1)), neutral)).toEqual({ x: 0, y: 0 });
     expect(tiltStick(tiltAngles(pose(40, 60)), neutral).x).toBe(1);
   });
+
+  it('keeps the wheel and the lean apart', () => {
+    // Turning the wheel does not move the nose.
+    const neutral = tiltAngles(pose(40, 0));
+    expect(tiltStick(tiltAngles(pose(40, 25)), neutral).y).toBe(0);
+    // And the same turn gives the same roll however far back the phone leans.
+    for (const back of [15, 40, 65]) {
+      const n = tiltAngles(pose(back, 0));
+      expect(tiltStick(tiltAngles(pose(back, 15)), n).x).toBeCloseTo(tiltStick(tiltAngles(pose(40, 15)), neutral).x, 5);
+    }
+  });
 });

@@ -32,6 +32,13 @@ const PANEL_FOV_DEG = 80;
  */
 const COMPACT_LOOK_DOWN_RAD = 3 * DEG;
 const COMPACT_FOV_DEG = 64;
+/**
+ * And the panel view there: on a 20:9 screen 80° of vertical field is ~140° across, which stretched the
+ * cockpit into a tunnel filling the screen. Less bowed and narrower, the horizon stays in the top third
+ * while the displays, the gyro and the hands fill the rest.
+ */
+const COMPACT_PANEL_LOOK_DOWN_RAD = 28 * DEG;
+const COMPACT_PANEL_FOV_DEG = 68;
 /** How fast the head turns between the two (1/s). */
 const HEAD_RATE = 7;
 
@@ -97,9 +104,10 @@ export class CameraRig {
       cam.quaternion.copy(jetRot);
       const panel = this.mode === 'panel';
       const k = 1 - Math.exp(-HEAD_RATE * dtS);
-      const ahead = this.compact ? COMPACT_LOOK_DOWN_RAD : COCKPIT_LOOK_DOWN_RAD;
-      this.headDownRad += ((panel ? PANEL_LOOK_DOWN_RAD : ahead) - this.headDownRad) * k;
-      this.headFovDeg += ((panel ? PANEL_FOV_DEG : this.compact ? COMPACT_FOV_DEG : 70) - this.headFovDeg) * k;
+      const down = panel ? (this.compact ? COMPACT_PANEL_LOOK_DOWN_RAD : PANEL_LOOK_DOWN_RAD) : this.compact ? COMPACT_LOOK_DOWN_RAD : COCKPIT_LOOK_DOWN_RAD;
+      const fov = panel ? (this.compact ? COMPACT_PANEL_FOV_DEG : PANEL_FOV_DEG) : this.compact ? COMPACT_FOV_DEG : 70;
+      this.headDownRad += (down - this.headDownRad) * k;
+      this.headFovDeg += (fov - this.headFovDeg) * k;
       // The default view looks 11° down, as simulators do: on a flat screen the whole panel — displays,
       // keypad, standby instruments — is then in view, while the over-the-nose line and the HUD stay in the
       // upper half. At 6° the panel was a dark strip under the glare shield.

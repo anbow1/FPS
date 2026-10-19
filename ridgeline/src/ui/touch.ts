@@ -8,7 +8,10 @@
 //   right side   buttons that press the key codes the game already binds
 //                (fire, weapon, lock, radar, flares, chaff, camera, gear,
 //                brakes), so the rebindable input layer stays the only path;
-//   elsewhere    on the right, a drag orbits the camera (orbit view).
+//   elsewhere    on the right, a drag moves the gun cursor (or orbits the
+//                camera). While the phone's tilt flies (`aimOnly`), there is
+//                no floating stick: a finger anywhere off the lever and the
+//                buttons aims.
 // Multi-touch throughout: each finger is tracked by its pointer id.
 
 export interface FlightTouchSink {
@@ -57,6 +60,8 @@ export class FlightTouchControls {
   throttle = 0.75;
   /** Called on every touch (the game starts audio and "locks" on the first). */
   onTouch: (() => void) | null = null;
+  /** Tilt flies: no floating stick, every drag off the lever aims. */
+  aimOnly = false;
 
   constructor(
     private readonly sink: FlightTouchSink,
@@ -149,7 +154,7 @@ export class FlightTouchControls {
     if (e.clientX < LEVER_WIDTH_PX + 16 && this.leverId === null) {
       this.leverId = e.pointerId;
       this.setLever(e.clientY);
-    } else if (e.clientX < w * 0.5 && this.stickId === null) {
+    } else if (!this.aimOnly && e.clientX < w * 0.5 && this.stickId === null) {
       this.stickId = e.pointerId;
       this.originX = e.clientX;
       this.originY = e.clientY;

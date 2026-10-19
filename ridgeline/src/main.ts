@@ -332,9 +332,12 @@ async function main(): Promise<void> {
         if (touch) {
           // With SAS the lever springs back to its middle — hold the height — when the thumb lets go.
           if (pilot.input.sas && !touch.leverHeld && touch.throttle !== 0.5) touch.setThrottle(0.5);
-          pilot.setTouch(touch.stick, touch.throttle);
+          // Under tilt a stick left from before it was switched on must not override it.
+          pilot.setTouch(tilt?.enabled ? null : touch.stick, touch.throttle);
         }
         pilot.setTilt(tilt?.enabled ? tilt.stick : null);
+        // Tilt flies, so the thumbs are free: the right one aims the gun from wherever it lands.
+        if (touch) touch.aimOnly = tilt?.enabled ?? false;
         if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
         else moveCursor(pilot.delta.dx, pilot.delta.dy);
         if (input.pressed('centreView')) cursor.x = cursor.y = 0;

@@ -25,7 +25,7 @@ and missions follow.
 | Turn | A / D: mostly a yaw in a hover, a banked turn with speed | the same stick, sideways |
 | Rotate on the spot | Q / E (pedals) | ◀ ▶ |
 | Power | Shift climb, Ctrl descend, neither holds the height; the wheel sets a standing climb or descent | lever on the left edge: above the mark climb, below descend, let go to hold |
-| Aim (gun cursor) | mouse moves a cursor over the view, the aircraft flies on; middle click or X centres it | drag with the right thumb |
+| Aim (gun cursor) | mouse moves a cursor over the view, the aircraft flies on; middle click or X centres it | drag with the right thumb; with tilt steering on, a drag anywhere off the lever and the buttons (no floating stick then) |
 | Fire | left click or Space | FIRE |
 | Laser designator | right click or L | LSR |
 | Weapon (gun, rockets, missiles) / rocket ripple 1-4-8 | R / V | WPN steps through all of them |
@@ -33,8 +33,8 @@ and missions follow.
 | Stability augmentation | Z | SAS |
 | Engines (autorotation practice) | I | ENG |
 | Wheel brakes | B | — |
-| Camera (chase, pilot, gunner, orbit) | C | CAM |
-| Tilt steering on/off, set hands-off | — (menu) | TILT, CAL |
+| Camera (outside, front seat) | C | CAM |
+| Tilt steering on/off, set hands-off (how the phone is held just after tap to fly, or at CAL) | — (menu) | TILT, CAL |
 | Flight data / sky / quality / sound | H / K / O / M | — |
 
 With SAS on, the flight computer flies what the controls ask for. The power
