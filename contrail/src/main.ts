@@ -176,6 +176,7 @@ async function main(): Promise<void> {
   // Tilt steering listens only when chosen (the sensor runs at 60 Hz otherwise for nothing).
   const tilt = controls.tilt ? new TiltSteering() : null;
   const rig = new CameraRig(stage.camera);
+  rig.compact = input.touch;
   const hudLayer = document.getElementById('hud') ?? ui;
   const hud = new Hud(hudLayer);
   hud.touchLayout = input.touch;

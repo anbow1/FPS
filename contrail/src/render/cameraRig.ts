@@ -25,6 +25,13 @@ const COCKPIT_LOOK_DOWN_RAD = 11 * DEG;
 /** Looking down at the panel: 36° down and 80° of view take in the displays and both hands on the controls. */
 const PANEL_LOOK_DOWN_RAD = 36 * DEG;
 const PANEL_FOV_DEG = 80;
+/**
+ * On a phone held in landscape (20:9 and wider) the same view gave the cockpit nearly half the screen: the
+ * head comes up to 3° down and the eye narrows a little, so the glare shield sits in the bottom quarter and
+ * the sky and the HUD get the rest.
+ */
+const COMPACT_LOOK_DOWN_RAD = 3 * DEG;
+const COMPACT_FOV_DEG = 64;
 /** How fast the head turns between the two (1/s). */
 const HEAD_RATE = 7;
 
@@ -36,6 +43,8 @@ export class CameraRig {
   orbitPitchRad = 0.15;
   /** Orbit distance as a multiple of the chase distance (screenshots, a closer look). */
   orbitZoom = 1;
+  /** A phone: the cockpit view keeps more of the sky (see COMPACT_LOOK_DOWN_RAD). */
+  compact = false;
   private readonly smoothed = new Quaternion();
   private readonly tmp = new Vector3();
   private readonly tmp2 = new Vector3();
@@ -88,8 +97,9 @@ export class CameraRig {
       cam.quaternion.copy(jetRot);
       const panel = this.mode === 'panel';
       const k = 1 - Math.exp(-HEAD_RATE * dtS);
-      this.headDownRad += ((panel ? PANEL_LOOK_DOWN_RAD : COCKPIT_LOOK_DOWN_RAD) - this.headDownRad) * k;
-      this.headFovDeg += ((panel ? PANEL_FOV_DEG : 70) - this.headFovDeg) * k;
+      const ahead = this.compact ? COMPACT_LOOK_DOWN_RAD : COCKPIT_LOOK_DOWN_RAD;
+      this.headDownRad += ((panel ? PANEL_LOOK_DOWN_RAD : ahead) - this.headDownRad) * k;
+      this.headFovDeg += ((panel ? PANEL_FOV_DEG : this.compact ? COMPACT_FOV_DEG : 70) - this.headFovDeg) * k;
       // The default view looks 11° down, as simulators do: on a flat screen the whole panel — displays,
       // keypad, standby instruments — is then in view, while the over-the-nose line and the HUD stay in the
       // upper half. At 6° the panel was a dark strip under the glare shield.
