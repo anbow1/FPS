@@ -29,6 +29,8 @@ const EARTH_RADIUS_M = 6_360_000;
 /** Pixels nearer than this take the cloud as uniform fog at the camera's density (the aircraft inside a cloud). */
 export const CLOUD_NEAR_M = 300;
 const MAX_MARCH_M = 120_000;
+/** Gain on the sun's multiple scattering (see the march). */
+const SUN_GAIN = 1.8;
 
 type F = Node<'float'>;
 type V3 = Node<'vec3'>;
@@ -188,8 +190,10 @@ export class Clouds {
     // cloudTop: the type's top, closing to the layer's top as the coverage reaches an overcast.
     const c2 = this.coverage.mul(this.coverage);
     const kind = weather.g.sqrt();
-    const topF = kind.add(float(1).sub(kind).mul(c2).mul(c2)).mul(0.65).add(0.35);
-    const profile = min(hf.div(0.08), 1).mul(topF.sub(hf).div(topF.mul(0.5)).clamp(0, 1)).max(0);
+    const topF = kind.add(float(1).sub(kind).mul(c2).mul(c2)).mul(0.5).add(0.5);
+    // cloudField.dome: the coverage left at this height — towers narrowing to rounded crowns.
+    const rel = hf.div(topF).clamp(0, 1);
+    const dome = smoothstep(0, 0.06, hf).mul(float(1).sub(rel.mul(rel)));
     const coverage = pow(this.coverage.add(weather.r.sub(0.5).mul(0.5)).clamp(0, 1), 1.3);
     // Shape and billows in one fetch (R, G): cloudField.billowed.
     const sb = sampleVolume(this.shape, vec3(px, h, pz).div(CLOUD_FIELD.shapeTileM));
@@ -197,7 +201,8 @@ export class Clouds {
     const smoothing = float(1).sub(c2.mul(c2).mul(0.6));
     const cut = sb.y.oneMinus().mul(CLOUD_FIELD.billowDepth).mul(smoothing);
     const raw = max(sb.x.sub(cut).div(float(1).sub(cut)), 0);
-    const base = max(raw.mul(profile).sub(float(1).sub(coverage)).div(max(coverage, 1e-3)), 0);
+    const thr = float(1).sub(coverage.mul(dome));
+    const base = max(raw.sub(thr), 0).div(max(float(1).sub(thr), 0.25));
     // The light march and the ground shadows skip the detail but keep the gain, or light would reach
     // four times deeper into a cloud than the eye does.
     if (!detail) return base.mul(CLOUD_FIELD.densityGain).min(1);
@@ -306,15 +311,16 @@ export class Clouds {
             fine.assign(1 / 3);
             t.subAssign(prevDt.mul(0.75));
             dt.assign(0);
-            // The surface the ray just entered: its outward normal from the shape's gradient (shape only, 60 m,
-            // once per cloud entered — not per step), lit by the sun with a wrap. Each lobe then has a bright
-            // side and a shaded one; lit by the march alone the interior was uniform and the clouds flat slabs.
-            const e = 60;
-            const d0 = this.density(px, h, pz, false);
-            const g = vec3(this.density(px.add(e), h, pz, false).sub(d0), this.density(px, h.add(e), pz, false).sub(d0), this.density(px, h, pz.add(e), false).sub(d0));
+            // The surface the ray just entered: its outward normal from the gradient of the full density, detail
+            // and all (once per cloud entered — not per step), lit by the sun with a wrap. Each billow then has
+            // a bright side and a shaded one: the cauliflower. From the shape alone the faces were the cloud's
+            // whole flank and the clouds read as smooth plaster; over 40 m the finest detail made rough stone.
+            // 90 m is about how far light diffuses inside before it shows, so smaller bumps are smoothed.
+            const e = 90;
+            const g = vec3(this.density(px.add(e), h, pz, true).sub(dens), this.density(px, h.add(e), pz, true).sub(dens), this.density(px, h, pz.add(e), true).sub(dens));
             const gl = g.length();
-            const facing = g.negate().div(max(gl, 1e-4)).dot(sun).add(0.4).div(1.4).clamp(0, 1);
-            lobe.assign(select(gl.greaterThan(1e-4), mix(float(0.35), float(1.3), facing), float(1)));
+            const facing = g.negate().div(max(gl, 1e-4)).dot(sun).add(0.35).div(1.35).clamp(0, 1);
+            lobe.assign(select(gl.greaterThan(1e-4), mix(float(0.22), float(1.45), facing), float(1)));
           }).ElseIf(dens.greaterThan(0.001), () => {
             const sigmaT = dens.mul(sigma);
             // Light where the step's energy comes from: within one mean free path of its start, not
@@ -358,7 +364,9 @@ export class Clouds {
             // GPU), so without this every billow was lit alike and the clouds read as smooth slabs. Toward
             // the sun the thin folds glow instead.
             const folds = float(1).sub(fold.mul(0.55).mul(float(1).sub(smoothstep(0.2, 0.85, cosSun))));
-            const S = sunColour.mul(ms).mul(powderK).mul(folds).mul(lobe).add(ambient.mul(folds.mul(0.4).add(0.6))).mul(sigmaT);
+            // SUN_GAIN: the octaves' phases are mostly forward lobes, so a face lit from the side came out a third
+            // as bright as white card; a thick cloud's lit face is nearly a white diffuser.
+            const S = sunColour.mul(ms.mul(SUN_GAIN)).mul(powderK).mul(folds).mul(lobe).add(ambient.mul(folds.mul(0.4).add(0.6))).mul(sigmaT);
             const stepT = exp(sigmaT.mul(dt).negate());
             // Integrate S·T over the step analytically (Hillaire 2016).
             scatter.addAssign(T.mul(S.sub(S.mul(stepT)).div(sigmaT)));

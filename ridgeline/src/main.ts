@@ -13,6 +13,7 @@ import { updateContact } from './render/contactShadow.ts';
 import { SkyLighting } from './render/lighting.ts';
 import { Rain } from './render/rain.ts';
 import { canopyFlow, canopyFlowSpeed, canopyRain, canopyTime } from './render/canopyRain.ts';
+import { scratchSun, scratchSunDir } from './render/canopyScratches.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
@@ -21,7 +22,7 @@ import { Forest } from './render/forest.ts';
 import { buildGrass } from './render/groundGrass.ts';
 import { makeGroundLayers } from './render/groundTextures.ts';
 import { buildTerrainTextures } from './render/terrainTextures.ts';
-import { bakeCloudData } from './sim/cloudField.ts';
+import { bakeCloudData, lineTransmittance } from './sim/cloudField.ts';
 import { Helicopter } from './sim/helicopter.ts';
 import { GroundForce, type GroundTarget } from './sim/targets.ts';
 import { Armament, clearLine } from './sim/weapons.ts';
@@ -143,6 +144,9 @@ async function main(): Promise<void> {
   const rainVel = new Vector3();
   const noWind = new Vector3();
   const bodyInv = new Quaternion();
+  // The sun on the canopy's scratches (render/canopyScratches.ts): hidden by cloud, sampled four times a second.
+  let sunSeen = 1;
+  let sunSeenAgeS = 1;
   const flowLocal = new Vector3();
   const downLocal = new Vector3();
   pilot.invertPitch = controls.invertPitch;
@@ -485,6 +489,17 @@ async function main(): Promise<void> {
           canopyFlowSpeed.value = Math.min(1.6, 0.06 + heli.airspeedMs * 0.02);
           canopyRain.value = wet;
           canopyTime.value = clockS;
+          sunSeenAgeS += frameS;
+          if (sunSeenAgeS > 0.25) {
+            sunSeenAgeS = 0;
+            const c = stage.camera.position;
+            const w = clouds.windOffset.value;
+            const sd = lighting.sunDir;
+            sunSeen = sd.y < -0.02 ? 0 : lineTransmittance(clouds.data, clouds.layer, c.x, c.y, c.z, c.x + sd.x * 20_000, c.y + sd.y * 20_000, c.z + sd.z * 20_000, w.x, w.y);
+          }
+          scratchSunDir.value.copy(lighting.sunDir);
+          const sunI = lighting.sun.intensity * sunSeen;
+          scratchSun.value.set(lighting.sun.color.r * sunI, lighting.sun.color.g * sunI, lighting.sun.color.b * sunI);
         }
         overlay.update(heli, pilot.input, `${stage.backendName} · ${settings.quality} · ${lighting.preset.label} · camera ${rig.mode} · terrain ${terrain.nodesDrawn} patches · ${stage.governorLabel}`);
         if (frameS > 0 && !document.hidden) stage.governor.update(frameS);

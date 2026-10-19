@@ -23,6 +23,7 @@ import { W } from './waterUniforms.ts';
 import { sampleHeight } from '../maps/terrain.ts';
 import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './interior.ts';
 import { Lighting } from './lighting.ts';
+import { bakeCloudField, CLOUD_QUALITY, VolumeClouds } from './volumeClouds.ts';
 import { CITY, FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
 import { CityLights } from './cityLights.ts';
 import { buildProps, type PropsView } from './props.ts';
@@ -55,6 +56,7 @@ export type Progress = (label: string, fraction: number) => Promise<void>;
 export class GameView {
   readonly stage: Stage;
   private lighting!: Lighting;
+  private clouds!: VolumeClouds;
   private exposure!: AutoExposure;
   private world!: StaticWorld;
   private readonly actors = new ActorView();
@@ -157,6 +159,10 @@ export class GameView {
     await progress('Lighting', 0.6);
     this.lighting = new Lighting(stage.renderer, stage.scene, this.settings.quality);
     this.lighting.setLake(map.lake ?? null);
+    await progress('Raising clouds', 0.6);
+    this.clouds = new VolumeClouds(await bakeCloudField(), CLOUD_QUALITY[this.settings.quality]);
+    this.lighting.clouds = this.clouds;
+    stage.setClouds(this.clouds);
     await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y, await loadHdri(hdriSetting(map.id), this.settings.preset));
     this.exposure = new AutoExposure(stage.renderer, this.lighting.preset.ev100);
     if (map.id === 'city') this.cityLights = new CityLights(map, stage.scene, this.settings.quality);
@@ -172,6 +178,8 @@ export class GameView {
     // Before the shader pre-compile: a light added later would recompile every material (weaponLight.ts).
     this.weaponLight = new WeaponLight(stage.scene, this.settings.quality);
     this.syncPreExposure();
+    // Cloud shadows on everything the sun shadows, now that the world is built.
+    this.clouds.shadeReceivers(stage.scene, this.settings.quality === 'high' ? 3 : 2);
     await progress('Compiling shaders', 0.75);
     // Pre-compile every material the first frames will need (rules §9): no stall on the first shot.
     this.stage.camera.position.set(map.playerSpawn.pos.x, map.playerSpawn.pos.y + 1.7, map.playerSpawn.pos.z);
@@ -208,6 +216,8 @@ export class GameView {
   async applySettings(s: ViewSettings): Promise<void> {
     const presetChanged = s.preset !== this.settings.preset;
     this.settings = { ...s };
+    // The march is built into the pipeline: its quality first, then the rebuild.
+    this.clouds.quality = CLOUD_QUALITY[s.quality];
     this.stage.applySettings(s);
     if (presetChanged) {
       await this.lighting.apply(s.preset, this.map.playerSpawn.pos.y, await loadHdri(hdriSetting(this.map.id), s.preset));
@@ -306,6 +316,7 @@ export class GameView {
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);
+    this.clouds.update(frameSeconds);
     this.lighting.mistTime.value = game.timeSeconds;
     // The weapon light's beam shows in the haze, in rain, and in the dust of a closed room.
     const scatter = this.lighting.preset.fogDensityPerM + 0.0012 + wetness.value * rainRate.value * 0.02 + (inside ? 0.004 : 0);

@@ -1,8 +1,8 @@
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { float, Fn, int, length, Loop, mrt, output, pass, pow, saturation, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { convertToTexture, float, Fn, int, length, Loop, mrt, normalize, output, pass, pow, rtt, saturation, screenSize, select, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, type Node, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -10,6 +10,7 @@ import { screenReflectionOn } from './screenReflection.ts';
 import { bodycamLens } from './bodycam.ts';
 import { isTouchDevice } from '../core/input.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
+import type { VolumeClouds } from './volumeClouds.ts';
 
 // Renderer and post chain (rules §2.1, §2.5). One code path: WebGPURenderer
 // falls back to its WebGL2 backend by itself. The scene pass renders HDR half
@@ -89,6 +90,8 @@ export class Stage {
   private pipeline: RenderPipeline | null = null;
   private sceneTexture: Texture | null = null;
   private settings: StageSettings;
+  /** Volumetric cumulus (volumeClouds.ts): a reduced-resolution march composited over the sky before TRAA. */
+  private clouds: VolumeClouds | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -125,6 +128,11 @@ export class Stage {
   /** HDR colour of the last scene pass, before exposure: auto exposure meters this. */
   get hdrTexture(): Texture | null {
     return this.sceneTexture;
+  }
+
+  setClouds(clouds: VolumeClouds): void {
+    this.clouds = clouds;
+    this.buildPipeline();
   }
 
   private makeGovernor(): FrameGovernor<GovernorStep> {
@@ -167,11 +175,39 @@ export class Stage {
   private buildPipeline(): void {
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
     scenePass.setMRT(mrt({ output, velocity }));
-    const colour = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
     const motion = scenePass.getTextureNode('velocity');
     this.sceneTexture = scenePass.getTexture('output');
     const high = this.settings.quality === 'high';
+    let colour = scenePass.getTextureNode('output');
+    if (this.clouds) {
+      const screen = uv();
+      const d = depth.sample(screen).r;
+      // The scene camera as uniforms: inside a post pass the camera nodes are the quad's. Reversed depth on
+      // both backends, so the buffer holds NDC z as it is; the sky (0, never written) is infinitely far.
+      const clip = vec4(screen.x.mul(2).sub(1), screen.y.oneMinus().mul(2).sub(1), d, 1);
+      const view4 = uniform(this.camera.projectionMatrixInverse).mul(clip);
+      const viewPos = view4.xyz.div(view4.w);
+      const distanceM = select(d.lessThanEqual(0), float(1e7), length(viewPos));
+      const dir = normalize(uniform(this.camera.matrixWorld).mul(vec4(viewPos, 0)).xyz);
+      const cam = uniform(this.camera.position);
+      const scale = this.clouds.quality.resolutionScale;
+      const cloudTex = rtt(this.clouds.march(dir, cam), null, null, { resolutionScale: scale });
+      // At half resolution bilinear is enough (TRAA does the rest); coarser, four taps half a texel apart make
+      // a tent over 3 × 3 texels, or each texel shows as a block of its own jitter.
+      let cloud: Node<'vec4'> = cloudTex.sample(screen);
+      if (scale < 0.5) {
+        const o = vec2(0.5).div(screenSize.mul(scale));
+        cloud = cloudTex
+          .sample(screen.add(o))
+          .add(cloudTex.sample(screen.sub(o)))
+          .add(cloudTex.sample(screen.add(vec2(o.x, o.y.negate()))))
+          .add(cloudTex.sample(screen.add(vec2(o.x.negate(), o.y))))
+          .mul(0.25);
+      }
+      // TRAA and the shafts re-sample their input at other positions: they need a texture, not an expression.
+      colour = convertToTexture(vec4(this.clouds.composite(colour.sample(screen).rgb, cloud, dir, cam, distanceM), 1));
+    }
     // TRAA on both presets: the velocity buffer is rendered either way, so it costs only its resolve, and
     // on a phone it is what keeps the 2× picture (and its foliage) from shimmering.
     const aa = traa(colour, depth, motion, this.camera);

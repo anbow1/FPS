@@ -4,19 +4,48 @@
 //   shape   64³, Perlin-Worley (Schneider, "The Real-Time Volumetric Cloudscapes
 //           of Horizon Zero Dawn", SIGGRAPH 2015): billowy cells with fbm
 //           detail, tiling every SHAPE_TILE_M;
-//   detail  32³, Worley fbm, erodes the edges into wisps;
+//   billow  64³ beside it (the GPU's G channel), a Worley fbm two octaves
+//           finer (cells of 1.1 km down to 280 m) that carves the shape into
+//           domes: the bumps the light march sees, so a cloud's body shades
+//           as heaped billows rather than one smooth slab;
+//   detail  48³, Worley fbm, erodes the edges: sampled twice (the second
+//           3.1× finer), its coordinates warped by the shape so the edges
+//           curl, and inverted above the base — wispy undersides, billowy
+//           tops (Schneider 2015, "high-frequency noise modifier");
 //   weather 256², coverage 0…1 over WEATHER_TILE_M, so the sky has clear gaps
-//           and denser banks.
+//           and denser banks;
+//   kind    256², the cloud type 0…1 over the same tile: flat stratocumulus
+//           whose tops stay low (0) to cumulus towering to the layer's top
+//           (1), so one layer holds clouds of different heights.
 //
 // `densityAt` evaluates the same formula as the GPU pass from the same bytes,
 // so "inside a cloud" means the same thing to the AI's eyes and to the player's.
 
 export const CLOUD_FIELD = {
   shapeRes: 64,
-  detailRes: 32,
+  detailRes: 48,
   weatherRes: 256,
-  shapeTileM: 9000,
-  detailTileM: 1600,
+  shapeTileM: 7000,
+  detailTileM: 1100,
+  /** The second detail octave's frequency over the first. */
+  detailFine: 3.1,
+  /** How far the shape warps the detail's coordinates (m per unit of shape away from ½). */
+  detailWarpM: 260,
+  /**
+   * Density gain after the erosion (clamped to 1): the coverage remap ramps density up over the shape
+   * noise's own scale, a hundred metres or more — edges a dozen pixels soft from a few kilometres.
+   * Cumulus have hard edges: the ramp is cut to a third, the inside saturates. (At a quarter, with the
+   * domes' steeper remap, the crowns read as plaster shells.)
+   */
+  densityGain: 3,
+  /** How deep the billows carve the shape (share of it lost in the grooves between cells). */
+  billowDepth: 0.4,
+  /**
+   * How much the detail noise eats from a cloud's edge. At 0.4 the cells only frayed the rims; 0.5 cuts
+   * the gaps between them deep enough that each reads as its own lobe while the coverage still keeps
+   * within a few hundredths of the preset's (tests/clouds.test.ts).
+   */
+  detailErosion: 0.5,
   weatherTileM: 160_000,
 } as const;
 
@@ -28,8 +57,10 @@ export interface CloudLayer {
 
 export interface CloudData {
   shape: Uint8Array;
+  billow: Uint8Array;
   detail: Uint8Array;
   weather: Uint8Array;
+  kind: Uint8Array;
 }
 
 function hash3(x: number, y: number, z: number, seed: number): number {
@@ -107,6 +138,7 @@ function equalise(values: Float32Array): Uint8Array {
 export async function bakeCloudData(): Promise<CloudData> {
   const S = CLOUD_FIELD.shapeRes;
   const shapeF = new Float32Array(S * S * S);
+  const billow = new Uint8Array(S * S * S);
   for (let z = 0; z < S; z++) {
     for (let y = 0; y < S; y++) {
       for (let x = 0; x < S; x++) {
@@ -114,10 +146,13 @@ export async function bakeCloudData(): Promise<CloudData> {
         const v = y / S;
         const w = z / S;
         const perlin = valueNoise(u, v, w, 4, 1) * 0.5 + valueNoise(u, v, w, 8, 2) * 0.3 + valueNoise(u, v, w, 16, 3) * 0.2;
-        const wfbm = worley(u, v, w, 4, 7) * 0.625 + worley(u, v, w, 8, 8) * 0.25 + worley(u, v, w, 16, 9) * 0.125;
+        const w8 = worley(u, v, w, 8, 8);
+        const w16 = worley(u, v, w, 16, 9);
+        const wfbm = worley(u, v, w, 4, 7) * 0.625 + w8 * 0.25 + w16 * 0.125;
         // Perlin-Worley: perlin remapped by the worley fbm (Schneider 2015).
         const pw = Math.min(1, Math.max(0, remap(perlin, wfbm - 1, 1, 0, 1)));
         shapeF[(z * S + y) * S + x] = pw;
+        billow[(z * S + y) * S + x] = Math.round((w8 * 0.625 + w16 * 0.25 + worley(u, v, w, 32, 10) * 0.125) * 255);
       }
     }
     if (z % 8 === 7) await new Promise((r) => setTimeout(r, 0));
@@ -137,15 +172,18 @@ export async function bakeCloudData(): Promise<CloudData> {
   }
   const W = CLOUD_FIELD.weatherRes;
   const weatherF = new Float32Array(W * W);
+  const kindF = new Float32Array(W * W);
   for (let y = 0; y < W; y++) {
     for (let x = 0; x < W; x++) {
       const u = x / W;
       const v = y / W;
       const n = valueNoise(u, v, 0.5, 6, 31) * 0.55 + valueNoise(u, v, 0.5, 14, 32) * 0.3 + valueNoise(u, v, 0.5, 30, 33) * 0.15;
       weatherF[y * W + x] = n;
+      // Cloud type in bands a few tens of kilometres wide, finer patches inside.
+      kindF[y * W + x] = valueNoise(u, v, 0.25, 9, 41) * 0.7 + valueNoise(u, v, 0.25, 23, 42) * 0.3;
     }
   }
-  return { shape, detail, weather: equalise(weatherF) };
+  return { shape, billow, detail, weather: equalise(weatherF), kind: equalise(kindF) };
 }
 
 function sample3(data: Uint8Array, res: number, u: number, v: number, w: number): number {
@@ -184,12 +222,35 @@ function sample2(data: Uint8Array, res: number, u: number, v: number): number {
 
 /**
  * Coverage threshold at a point: the layer's coverage ±0.25 from the weather map (banks and clear
- * gaps), raised to 1.8 because a column is cloudy if any height in it is — measured: the fraction of
- * cloudy columns ≈ threshold^0.55 (tests/clouds.test.ts keeps it honest).
+ * gaps), raised to 1.3 because a column is cloudy if any height in it is — re-fitted whenever the
+ * profile, the billows or the erosion change (tests/clouds.test.ts keeps it honest).
  */
 export function localCoverage(layerCoverage: number, weather: number): number {
   const c = Math.min(1, Math.max(0, layerCoverage + (weather - 0.5) * 0.5));
-  return c ** 1.8;
+  return c ** 1.3;
+}
+
+/**
+ * Relative top of a cloud of type `kind` (0 low heaps … 1 cumulus to the layer's top). An overcast is a
+ * deck whatever the type: the spread closes as the coverage reaches 1.
+ */
+export function cloudTop(kind: number, coverage: number): number {
+  // Biased towards cumulus (the square root): a layer of flat heaps read as pancakes from below.
+  const k = Math.sqrt(kind);
+  const c2 = coverage * coverage;
+  return 0.5 + 0.5 * (k + (1 - k) * c2 * c2);
+}
+
+/**
+ * How much of the coverage is left at height fraction `hf` under a top at `topF`: all of it just above
+ * the base, none at the top. The threshold rises with height, so a cloud narrows as it climbs and only
+ * its densest columns reach the top — towers with rounded crowns over flat bases. (A height profile
+ * multiplied into the shape cut every cloud off at a third of the layer, and they read as slabs.)
+ */
+export function dome(hf: number, topF: number): number {
+  const b = Math.min(1, Math.max(0, hf / 0.06));
+  const rel = Math.min(1, hf / topF);
+  return b * b * (3 - 2 * b) * (1 - rel * rel);
 }
 
 /**
@@ -199,17 +260,55 @@ export function localCoverage(layerCoverage: number, weather: number): number {
 export function densityAt(data: CloudData, layer: CloudLayer, x: number, y: number, z: number, windOffsetX = 0, windOffsetZ = 0): number {
   if (y < layer.baseM || y > layer.topM) return 0;
   const hf = (y - layer.baseM) / (layer.topM - layer.baseM);
-  // Rounded bottoms, anvil-ish tops.
-  const profile = Math.min(1, hf / 0.12) * Math.min(1, (1 - hf) / 0.4);
   const px = x + windOffsetX;
   const pz = z + windOffsetZ;
-  const cover = sample2(data.weather, CLOUD_FIELD.weatherRes, px / CLOUD_FIELD.weatherTileM, pz / CLOUD_FIELD.weatherTileM);
-  const coverage = localCoverage(layer.coverage, cover);
-  const shape = sample3(data.shape, CLOUD_FIELD.shapeRes, px / CLOUD_FIELD.shapeTileM, y / CLOUD_FIELD.shapeTileM, pz / CLOUD_FIELD.shapeTileM) * profile;
-  const base = Math.max(0, (shape - (1 - coverage)) / Math.max(coverage, 1e-3));
+  const wu = px / CLOUD_FIELD.weatherTileM;
+  const wv = pz / CLOUD_FIELD.weatherTileM;
+  const d = dome(hf, cloudTop(sample2(data.kind, CLOUD_FIELD.weatherRes, wu, wv), layer.coverage));
+  if (d <= 0) return 0;
+  const coverage = localCoverage(layer.coverage, sample2(data.weather, CLOUD_FIELD.weatherRes, wu, wv));
+  const su = px / CLOUD_FIELD.shapeTileM;
+  const sv = y / CLOUD_FIELD.shapeTileM;
+  const sw = pz / CLOUD_FIELD.shapeTileM;
+  const raw = billowed(sample3(data.shape, CLOUD_FIELD.shapeRes, su, sv, sw), sample3(data.billow, CLOUD_FIELD.shapeRes, su, sv, sw), layer.coverage);
+  const thr = 1 - coverage * d;
+  // Normalised over at least a quarter of the range: near the crowns 1 − thr is small, and dividing by it
+  // made every top a hard shell.
+  const base = Math.max(0, raw - thr) / Math.max(1 - thr, 0.25);
   if (base <= 0) return 0;
-  const det = sample3(data.detail, CLOUD_FIELD.detailRes, px / CLOUD_FIELD.detailTileM, y / CLOUD_FIELD.detailTileM, pz / CLOUD_FIELD.detailTileM);
-  return Math.max(0, (base - det * 0.35) / (1 - det * 0.35));
+  return erode(data, base, raw, hf, px, y, pz, overcastSmoothing(layer.coverage));
+}
+
+/**
+ * The shape carved by the billows: grooves between the Worley cells, domes on them. A remap, not a
+ * product, so the shape's top values stay where they were and the coverage keeps its meaning.
+ */
+export function billowed(shape: number, billow: number, coverage: number): number {
+  const cut = CLOUD_FIELD.billowDepth * (1 - billow) * overcastSmoothing(coverage);
+  return Math.max(0, (shape - cut) / (1 - cut));
+}
+
+/**
+ * How much of the billows and the edge erosion a layer keeps: all of it in broken cumulus, half in an
+ * overcast, whose deck is a smoother sheet (and would otherwise be holed).
+ */
+export function overcastSmoothing(coverage: number): number {
+  const c2 = coverage * coverage;
+  return 1 - 0.6 * c2 * c2;
+}
+
+/** The detail erosion of a base density: `raw` is the shape before the dome, which warps the detail. */
+function erode(data: CloudData, base: number, raw: number, hf: number, px: number, y: number, pz: number, smoothing: number): number {
+  const warp = (raw - 0.5) * CLOUD_FIELD.detailWarpM;
+  const dx = (px + warp) / CLOUD_FIELD.detailTileM;
+  const dy = y / CLOUD_FIELD.detailTileM;
+  const dz = (pz - warp) / CLOUD_FIELD.detailTileM;
+  const k = CLOUD_FIELD.detailFine;
+  const det = sample3(data.detail, CLOUD_FIELD.detailRes, dx, dy, dz) * 0.65 + sample3(data.detail, CLOUD_FIELD.detailRes, dx * k + 0.37, dy * k, dz * k + 0.71) * 0.35;
+  // Wispy at the base (the cells eat holes), billowy above it (the gaps between cells are eaten).
+  const t = Math.min(1, hf * 5);
+  const mod = (det * (1 - t) + (1 - det) * t) * CLOUD_FIELD.detailErosion * smoothing;
+  return Math.min(1, Math.max(0, (base - mod) / (1 - mod)) * CLOUD_FIELD.densityGain);
 }
 
 /** Extinction per metre at density 1 (cumulus, roughly 0.05–0.1 m⁻¹). Shared with the renderer. */

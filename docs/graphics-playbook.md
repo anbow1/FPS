@@ -1007,26 +1007,47 @@ are CC0 (`makehumancommunity/makehuman`, `data/3dobjs/base.obj`,
   `push(...array)` a merged gun: past ~100k elements the spread overflows the
   call stack. Copy into one typed array instead.
 
-## 6v. Cumulus as a lit layer (FL `render/cloudLayer.ts`)
+## 6v. Cumulus over the street: march them (FL `render/volumeClouds.ts`)
 
-SkyMesh's clouds (noise lit by its own density) are soft smears. Without a
-volume march, a layer can still look like cumulus:
+Two cheaper tries failed before the march. SkyMesh's clouds (noise lit by
+their own density) are soft smears. A 2.5-D layer, its thickness taken as a
+dome and lit through the slope, read as grey plastic: no billow had a sunlit
+side and a shaded one, no rim glowed, and its cirrus combed the whole sky into
+brush strokes. Ridgeline's and Contrail's march (§6s) runs on the same
+hardware, so FL now uses it too:
 
-- **Shape**: equalised low-frequency field over the coverage, carved by
-  inverted Worley cells (the lobes) and frayed by fine noise only where thin.
-- **Relief**: the result as a dome's thickness; its slope (two extra samples)
-  gives each lobe a surface the sun lights. Overhead the base faces down;
-  toward the horizon the sides face the eye.
-- **Light**: three thickness samples along the sun's bearing for the
-  self-shadow; Henyey–Greenstein on thin rims; a little multiple-scattering
-  glow; sky above, ground bounce on bases; all in scene units from the preset.
-- **No shimmer, no stalls**: fetches inside branches need explicit mip levels
-  (WGSL), taken from the footprint (`fwidth` outside the branch); finer maps
-  start a few levels coarser. Turn the layer off while the raw dome is
-  measured for calibration.
-- Ridgeline's volumetric clouds had the same flatness for another reason: the
-  light march sampled only the coarse shape, so every billow was lit alike.
-  The first light steps now take the detail erosion: lobes shade each other.
+- **Same field, same light**: Perlin-Worley shape carved by Worley billows,
+  eroded by a warped Worley fbm; Wrenninge's octaves, dual-lobe phase,
+  Beer–powder, sky light from above, ground bounce, the entry face's lobe
+  lighting. It is baked at load (about a second, yielding).
+- **In the post chain, before TRAA**: half resolution (a quarter on Low) in
+  an `rtt`, composited over the sky where the scene lies beyond the slab's
+  entry. Then `convertToTexture`, because TRAA and the shafts re-sample it.
+- **Ignore the scene's depth in the march**: nothing on the ground reaches
+  1.4 km. A coarse texel straddling a roof edge would cut a clear halo into
+  the sky.
+- **Haze by fading opacity**, not toward a fixed colour: far clouds dissolve
+  into whatever the dome is behind them, toward the sun or away.
+- **Shadows on the city**: `receivedShadowNode` on every sun-shadowed
+  material, with 2–3 shape samples along the sun ray through the slab and a
+  floor of 0.12. Set it after the world is built, before the shaders
+  compile.
+- Ridgeline's flat lighting had its own cause: the light march sampled only
+  the coarse shape, so every billow was lit alike. Fold shading from the
+  detail erosion, plus each lobe lit by the face the ray entered, fixed it.
+  Detail samples inside the light march lost the device on a software GPU.
+
+## 6x. Scratched canopy glass (Contrail/Ridgeline `render/canopyScratches.ts`)
+
+From the seat, a canopy shows its wear the way a car's paint does: hairline
+scratches glint in arcs round the sun, and looking toward the sun they all
+light up at once. A scratch is a thin cylinder. Light along −L leaves it on a
+cone about its axis T, so the eye at V sees it where T·(V + L) = 0. Bake the
+scratches once (coverage, plus direction as a coverage-weighted double angle
+so the mips average sensibly). Lay them on the pane in a frame from a fixed
+axis. Add the glint as emissive divided by the raised opacity, so it adds
+over a near-clear glass. Scale it by the sun's colour and intensity, with the
+sun's visibility through the cloud field four times a second.
 
 ## 6w. Decals that belong to their surface (lagoon `render/footprints.ts`)
 

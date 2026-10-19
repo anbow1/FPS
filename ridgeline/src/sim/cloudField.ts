@@ -25,7 +25,7 @@ export const CLOUD_FIELD = {
   shapeRes: 64,
   detailRes: 48,
   weatherRes: 256,
-  shapeTileM: 9000,
+  shapeTileM: 7000,
   detailTileM: 1100,
   /** The second detail octave's frequency over the first. */
   detailFine: 3.1,
@@ -34,9 +34,10 @@ export const CLOUD_FIELD = {
   /**
    * Density gain after the erosion (clamped to 1): the coverage remap ramps density up over the shape
    * noise's own scale, a hundred metres or more — edges a dozen pixels soft from a few kilometres.
-   * Cumulus have hard edges: the ramp is cut to a quarter, the inside saturates.
+   * Cumulus have hard edges: the ramp is cut to a third, the inside saturates. (At a quarter, with the
+   * domes' steeper remap, the crowns read as plaster shells.)
    */
-  densityGain: 4,
+  densityGain: 3,
   /** How deep the billows carve the shape (share of it lost in the grooves between cells). */
   billowDepth: 0.4,
   /**
@@ -230,22 +231,26 @@ export function localCoverage(layerCoverage: number, weather: number): number {
 }
 
 /**
- * Relative top of a cloud of type `kind` (0 flat stratocumulus … 1 cumulus to the layer's top). An
- * overcast is a deck whatever the type: the spread closes as the coverage reaches 1.
+ * Relative top of a cloud of type `kind` (0 low heaps … 1 cumulus to the layer's top). An overcast is a
+ * deck whatever the type: the spread closes as the coverage reaches 1.
  */
 export function cloudTop(kind: number, coverage: number): number {
   // Biased towards cumulus (the square root): a layer of flat heaps read as pancakes from below.
   const k = Math.sqrt(kind);
   const c2 = coverage * coverage;
-  return 0.35 + 0.65 * (k + (1 - k) * c2 * c2);
+  return 0.5 + 0.5 * (k + (1 - k) * c2 * c2);
 }
 
 /**
- * Height profile at height fraction `hf` for a cloud whose top is at `topF`: flat, slightly rounded
- * bases, tops that taper over their upper half (towers narrow as they rise).
+ * How much of the coverage is left at height fraction `hf` under a top at `topF`: all of it just above
+ * the base, none at the top. The threshold rises with height, so a cloud narrows as it climbs and only
+ * its densest columns reach the top — towers with rounded crowns over flat bases. (A height profile
+ * multiplied into the shape cut every cloud off at a third of the layer, and they read as slabs.)
  */
-export function heightProfile(hf: number, topF: number): number {
-  return Math.min(1, hf / 0.08) * Math.min(1, Math.max(0, (topF - hf) / (topF * 0.5)));
+export function dome(hf: number, topF: number): number {
+  const b = Math.min(1, Math.max(0, hf / 0.06));
+  const rel = Math.min(1, hf / topF);
+  return b * b * (3 - 2 * b) * (1 - rel * rel);
 }
 
 /**
@@ -259,14 +264,17 @@ export function densityAt(data: CloudData, layer: CloudLayer, x: number, y: numb
   const pz = z + windOffsetZ;
   const wu = px / CLOUD_FIELD.weatherTileM;
   const wv = pz / CLOUD_FIELD.weatherTileM;
-  const profile = heightProfile(hf, cloudTop(sample2(data.kind, CLOUD_FIELD.weatherRes, wu, wv), layer.coverage));
-  if (profile <= 0) return 0;
+  const d = dome(hf, cloudTop(sample2(data.kind, CLOUD_FIELD.weatherRes, wu, wv), layer.coverage));
+  if (d <= 0) return 0;
   const coverage = localCoverage(layer.coverage, sample2(data.weather, CLOUD_FIELD.weatherRes, wu, wv));
   const su = px / CLOUD_FIELD.shapeTileM;
   const sv = y / CLOUD_FIELD.shapeTileM;
   const sw = pz / CLOUD_FIELD.shapeTileM;
   const raw = billowed(sample3(data.shape, CLOUD_FIELD.shapeRes, su, sv, sw), sample3(data.billow, CLOUD_FIELD.shapeRes, su, sv, sw), layer.coverage);
-  const base = Math.max(0, (raw * profile - (1 - coverage)) / Math.max(coverage, 1e-3));
+  const thr = 1 - coverage * d;
+  // Normalised over at least a quarter of the range: near the crowns 1 − thr is small, and dividing by it
+  // made every top a hard shell.
+  const base = Math.max(0, raw - thr) / Math.max(1 - thr, 0.25);
   if (base <= 0) return 0;
   return erode(data, base, raw, hf, px, y, pz, overcastSmoothing(layer.coverage));
 }
@@ -289,7 +297,7 @@ export function overcastSmoothing(coverage: number): number {
   return 1 - 0.6 * c2 * c2;
 }
 
-/** The detail erosion of a base density: `raw` is the shape before the profile, which warps the detail. */
+/** The detail erosion of a base density: `raw` is the shape before the dome, which warps the detail. */
 function erode(data: CloudData, base: number, raw: number, hf: number, px: number, y: number, pz: number, smoothing: number): number {
   const warp = (raw - 0.5) * CLOUD_FIELD.detailWarpM;
   const dx = (px + warp) / CLOUD_FIELD.detailTileM;

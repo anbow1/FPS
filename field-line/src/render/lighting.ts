@@ -4,7 +4,7 @@ import { cameraPosition, clamp, dot, exp, float, fog, max, mix, mx_noise_float, 
 import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, PMREMGenerator, RenderTarget, Scene, SphereGeometry, type Texture, Vector3, Vector4, type WebGPURenderer } from 'three/webgpu';
 import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '../config.ts';
 import { lightColour, preExposureFor } from './colour.ts';
-import { CloudLayer } from './cloudLayer.ts';
+import type { VolumeClouds } from './volumeClouds.ts';
 import { revealSun } from './facadeReveal.ts';
 import { environmentTexture, equirectU, type Hdri } from './hdri.ts';
 
@@ -37,8 +37,8 @@ export class Lighting {
   private readonly fogColour = uniform(new Vector3());
   private readonly sunGlowColour = uniform(new Vector3());
   private readonly sunDirection = uniform(new Vector3(0, 1, 0));
-  /** The cumulus over the dome (cloudLayer.ts); SkyMesh's own clouds stay off. */
-  readonly clouds = new CloudLayer(this.sunDirection);
+  /** The cumulus over the dome (volumeClouds.ts, composited in the post chain); SkyMesh's own clouds stay off. */
+  clouds: VolumeClouds | null = null;
   private readonly fogDensity = uniform(0);
   /** Pre-exposed radiance of the ground as the probe sees it from above. */
   private readonly groundRadiance = uniform(new Vector3());
@@ -88,7 +88,7 @@ export class Lighting {
     const skyColour = baseColour as unknown as ReturnType<typeof vec4>;
     const hue = skyColour.xyz;
     const grey = vec3(dot(hue, vec3(0.2126, 0.7152, 0.0722)));
-    this.sky.material.colorNode = vec4(this.clouds.over(mix(hue, grey, this.skyDesaturation).mul(this.skyGain)), 1);
+    this.sky.material.colorNode = vec4(mix(hue, grey, this.skyDesaturation).mul(this.skyGain), 1);
     scene.add(this.sky);
     // The probe scene renders the same sky: the clone shares the material, so it shares the uniforms.
     this.skyScene.add(this.sky.clone());
@@ -196,19 +196,22 @@ export class Lighting {
     u.mieCoefficient.value = cloudy ? 0.02 : 0.005;
     u.mieDirectionalG.value = 0.8;
     // Full overcast is a uniform haze (high turbidity and Mie), not a cloud layer, which renders as dark
-    // lenses at full cover. Broken cloud is cloudLayer.ts's; SkyMesh's own clouds stay off.
+    // lenses at full cover. Broken cloud is volumeClouds.ts's; SkyMesh's own clouds stay off.
     u.cloudCoverage.value = 0;
-    this.clouds.coverage.value = cloudy ? 0 : p.cloudCover;
-    // High cirrus streaks fair skies; at golden hour they catch the low sun.
-    this.clouds.cirrusAmount.value = cloudy ? 0 : p.id === 'golden' ? 0.9 : 0.6;
-    this.clouds.sunIrradiance.value.set(sunK.r, sunK.g, sunK.b).multiplyScalar(p.sunIlluminanceLux * this.preExposure);
     // Under a full deck the sky is the cloud base: grey-white, not Preetham's clear-sky blue (the sheet's
     // colour temperature tints it below through skyGain).
     this.skyDesaturation.value = cloudy ? 0.85 : 0;
     u.showSunDisc.value = cloudy ? 0 : 1;
     u.sunPosition.value.copy(this.sunDir);
     const skyLum = (p.skyIlluminanceLux / Math.PI) * this.preExposure;
-    this.clouds.skyRadiance.value.set(skyK.r, skyK.g, skyK.b).multiplyScalar(skyLum);
+    if (this.clouds) {
+      // A little over the sheet's cover: the march's coverage counts columns, and fair-weather cumulus
+      // under it left the sky nearly bare.
+      this.clouds.coverage.value = cloudy ? 0 : Math.min(1, p.cloudCover + 0.12);
+      this.clouds.sunDir.value.copy(this.sunDir);
+      this.clouds.sunIrradiance.value.set(sunK.r, sunK.g, sunK.b).multiplyScalar(p.sunIlluminanceLux * this.preExposure);
+      this.clouds.skyRadiance.value.set(skyK.r, skyK.g, skyK.b).multiplyScalar(skyLum);
+    }
 
     // Fog: horizon colour = sky luminance tinted by the sky temperature; sun glow by the sun temperature.
     this.fogColour.value.set(skyK.r * skyLum * 1.1, skyK.g * skyLum * 1.1, skyK.b * skyLum * 1.1);
@@ -230,10 +233,7 @@ export class Lighting {
     // disc stays out of the probe: the directional light already carries the sun.
     u.showSunDisc.value = 0;
     this.skyGain.value.set(1, 1, 1);
-    // The cloud layer is in scene units, the raw dome is not: measure the dome alone.
-    this.clouds.enabled.value = 0;
     const raw = await this.measureSkyIrradiance();
-    this.clouds.enabled.value = 1;
     // Target: the sheet's sky illuminance at the sheet's sky colour temperature (luminance-normalised).
     const k = 1 / (0.2126 * skyK.r + 0.7152 * skyK.g + 0.0722 * skyK.b);
     const e = p.skyIlluminanceLux * this.preExposure * k;

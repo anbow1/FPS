@@ -16,6 +16,7 @@ import { EMISSIVE_EXPOSURE } from './render/jetModels.ts';
 import { JetView } from './render/jetView.ts';
 import { SkyLighting } from './render/lighting.ts';
 import { addCanopyRain, canopyFlow, canopyFlowSpeed, canopyRain, canopyTime } from './render/canopyRain.ts';
+import { addCanopyScratches, scratchSun, scratchSunDir } from './render/canopyScratches.ts';
 import { canopyMaterial } from './render/jetMaterials.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
@@ -140,6 +141,7 @@ async function main(): Promise<void> {
       inner.opacity = 0.06;
       inner.side = DoubleSide;
       addCanopyRain(inner);
+      addCanopyScratches(inner);
       const glassInside = new Mesh(shell.geometry, inner);
       glassInside.renderOrder = 4;
       cockpit.root.add(glassInside);
@@ -158,6 +160,9 @@ async function main(): Promise<void> {
   const pilot = new PilotControls(input);
   // Water on the canopy (render/canopyRain.ts).
   let canopyWet = 0;
+  // The sun on the canopy's scratches (render/canopyScratches.ts): hidden by cloud, sampled four times a second.
+  let sunSeen = 1;
+  let sunSeenAgeS = 1;
   const wetCanopyParam = params.has('wetcanopy');
   const bodyInv = new Quaternion();
   const flowLocal = new Vector3();
@@ -467,6 +472,17 @@ async function main(): Promise<void> {
           const tas = Math.hypot(aircraft.velocity.x, aircraft.velocity.y, aircraft.velocity.z);
           canopyFlowSpeed.value = Math.min(1.6, 0.06 + tas * 0.02);
           canopyTime.value += frameS;
+          sunSeenAgeS += frameS;
+          if (sunSeenAgeS > 0.25) {
+            sunSeenAgeS = 0;
+            const c = stage.camera.position;
+            const w = clouds.windOffset.value;
+            const sd = lighting.sunDir;
+            sunSeen = sd.y < -0.02 ? 0 : lineTransmittance(clouds.data, clouds.layer, c.x, c.y, c.z, c.x + sd.x * 20_000, c.y + sd.y * 20_000, c.z + sd.z * 20_000, w.x, w.y);
+          }
+          scratchSunDir.value.copy(lighting.sunDir);
+          const sunI = lighting.sun.intensity * sunSeen;
+          scratchSun.value.set(lighting.sun.color.r * sunI, lighting.sun.color.g * sunI, lighting.sun.color.b * sunI);
         }
         stage.greyOut.value = greyOut(aircraft.g);
         stage.redOut.value = aircraft.g.redOut;

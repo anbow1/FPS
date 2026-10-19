@@ -23,6 +23,7 @@ import { bakeAmbientOcclusion } from './aoBake.ts';
 import { bandMaterials, bladeAntenna, dispenser, irJammer, missile, navLight, opticsMaterial, rocketPod, sensorTurret, step, suppressor, wheel, wireCutter } from './heliDetail.ts';
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
+import { addCanopyScratches } from './canopyScratches.ts';
 
 // The two helicopters, procedural (no model files), in body axes (x right,
 // y up, −z forward, origin at the centre of gravity) so they line up with the
@@ -336,6 +337,7 @@ export function buildHeli(id: HeliId): HeliModel {
   const glass = canopyMaterial(0x2c363c, null);
   glass.side = DoubleSide;
   addCanopyRain(glass);
+  addCanopyScratches(glass);
   root.add(canopy(s.canopy, glass, flat));
   const sh = s.canopy[s.shieldAt]!;
   const shieldMat = canopyMaterial(0x3a444a, null);
