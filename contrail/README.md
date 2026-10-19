@@ -39,7 +39,7 @@ the sky.
 | Weapon (gun, short range, medium range) | X | WPN |
 | Radar: lock / mode / range / antenna | V / R / `,` `.` / PgUp PgDn | LOCK / RDR / RNG |
 | Flares / chaff | F / Z (hold) | FLR / CHF |
-| Camera (chase, cockpit, orbit, padlock, missile) | C | CAM |
+| Camera (chase, cockpit, panel — looking down at the instruments and the hands, orbit, padlock, missile) | C | CAM |
 | Gear / brakes / G-limiter | G / B / L | GEAR / BRK |
 | Sky / quality / tone map / data | K / O / T / H | — |
 | Sound on / off | M | — |

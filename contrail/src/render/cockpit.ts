@@ -46,6 +46,18 @@ export interface MfdData {
   chaff: number;
 }
 
+/** The pilot's hands on the controls: stick deflection (−1…1 each way) and the throttle lever (0…1.25). */
+export interface CockpitControls {
+  pitch: number;
+  roll: number;
+  throttle: number;
+}
+
+/** The side stick's travel at full deflection (rad: a force stick barely moves), the throttle's (m). */
+const STICK_TRAVEL_RAD = 0.07;
+const THROTTLE_TRAVEL_M = 0.075;
+const ATTITUDE_PX = 256;
+
 export class Cockpit {
   readonly root = new Group();
   /** Combiner glass corners in eye space (the HUD clips to their projection); null with a helmet display. */
@@ -55,6 +67,13 @@ export class Cockpit {
   private readonly tex: CanvasTexture;
   private sinceDrawS = REDRAW_S;
   private readonly eye: Vector3;
+  /** The standby attitude indicator's ball, redrawn every frame (a gyro that steps reads as broken). */
+  private readonly attitudeCanvas = document.createElement('canvas');
+  private readonly attitudeCtx: CanvasRenderingContext2D;
+  private readonly attitudeTex: CanvasTexture;
+  private readonly stick: Group;
+  private readonly throttle: Group;
+  private readonly throttleRest: number;
 
   constructor(
     readonly kind: AircraftId,
@@ -75,8 +94,19 @@ export class Cockpit {
     // strip on the stealth type's one wide screen.
     const screen = new MeshBasicNodeMaterial({ name: 'cockpit display' });
     screen.colorNode = texture(this.tex).rgb.mul(DISPLAY_LEVEL).add(vec3(0.002));
+    this.attitudeCanvas.width = this.attitudeCanvas.height = ATTITUDE_PX;
+    const actx = this.attitudeCanvas.getContext('2d');
+    if (!actx) throw new Error('2D canvas unavailable for the attitude indicator');
+    this.attitudeCtx = actx;
+    this.attitudeTex = new CanvasTexture(this.attitudeCanvas);
+    this.attitudeTex.colorSpace = SRGBColorSpace;
+    this.attitudeTex.minFilter = LinearFilter;
+    this.attitudeTex.generateMipmaps = false;
+    // A lit instrument: its own light, like the displays, so it reads in the panel's shade.
+    const attitude = new MeshBasicNodeMaterial({ name: 'attitude indicator' });
+    attitude.colorNode = texture(this.attitudeTex).rgb.mul(DISPLAY_LEVEL * 0.8);
     const square = 0.135;
-    const office = buildOffice(kind, screen, {
+    const office = buildOffice(kind, screen, attitude, {
       left: { w: square, h: square, x: 0, y: 0, u0: 0, u1: CANVAS_H / CANVAS_W },
       right: { w: square, h: square, x: 0, y: 0, u0: 1 - CANVAS_H / CANVAS_W, u1: 1 },
       wide: { w: 0.5, h: 0.195, x: 0, y: 0, u0: 0, u1: 1 },
@@ -85,14 +115,22 @@ export class Cockpit {
     this.root.add(office.group);
     this.root.visible = false;
     this.combiner = office.combiner;
+    this.stick = office.stick;
+    this.throttle = office.throttle;
+    this.throttleRest = office.throttle.position.z;
   }
 
   /** Follows the jet's render transform; shown only in the cockpit views. */
-  update(pos: Vector3, rot: Quaternion, visible: boolean, frameS: number, data: MfdData): void {
+  update(pos: Vector3, rot: Quaternion, visible: boolean, frameS: number, data: MfdData, controls: CockpitControls): void {
     this.root.visible = visible;
     if (!visible) return;
     this.root.position.copy(pos);
     this.root.quaternion.copy(rot);
+    // The hands go with the controls: stick back (pitch up) tilts the grip toward the pilot, roll to the side.
+    this.stick.rotation.set(controls.pitch * STICK_TRAVEL_RAD, 0, -controls.roll * STICK_TRAVEL_RAD);
+    this.throttle.position.z = this.throttleRest - Math.min(1.25, Math.max(0, controls.throttle)) * THROTTLE_TRAVEL_M;
+    this.drawAttitude(data.pitchRad, data.rollRad);
+    this.attitudeTex.needsUpdate = true;
     this.sinceDrawS += frameS;
     if (this.sinceDrawS >= REDRAW_S) {
       this.sinceDrawS = 0;
@@ -109,6 +147,96 @@ export class Cockpit {
       out[i] = (out[i] ?? new Vector3()).copy(c).add(this.eye).applyMatrix4(this.root.matrixWorld);
     });
     return true;
+  }
+
+  /**
+   * The attitude indicator's ball: sky over ground split by the horizon, pitched and rolled, a pitch ladder
+   * every 10°, the bank scale round the top with its pointer, and the fixed aircraft symbol.
+   */
+  private drawAttitude(pitchRad: number, rollRad: number): void {
+    const c = this.attitudeCtx;
+    const s = ATTITUDE_PX;
+    const r = s / 2;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = '#0b0c0d';
+    c.fillRect(0, 0, s, s);
+    c.save();
+    c.translate(r, r);
+    c.beginPath();
+    c.arc(0, 0, r * 0.96, 0, Math.PI * 2);
+    c.clip();
+    c.rotate(-rollRad);
+    const pxPerRad = r / (Math.PI / 5);
+    const py = pitchRad * pxPerRad;
+    const sky = c.createLinearGradient(0, -2 * r + py, 0, py);
+    sky.addColorStop(0, '#3d6f9e');
+    sky.addColorStop(1, '#8fb4d6');
+    c.fillStyle = sky;
+    c.fillRect(-2 * r, -3 * r + py, 4 * r, 3 * r);
+    const ground = c.createLinearGradient(0, py, 0, py + 2 * r);
+    ground.addColorStop(0, '#6b4a2b');
+    ground.addColorStop(1, '#3a2716');
+    c.fillStyle = ground;
+    c.fillRect(-2 * r, py, 4 * r, 3 * r);
+    c.strokeStyle = '#f2f2ee';
+    c.fillStyle = '#f2f2ee';
+    c.lineWidth = 3;
+    c.beginPath();
+    c.moveTo(-2 * r, py);
+    c.lineTo(2 * r, py);
+    c.stroke();
+    c.lineWidth = 2;
+    c.font = '600 15px Arial, Helvetica, sans-serif';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    for (let deg = -30; deg <= 30; deg += 5) {
+      if (deg === 0) continue;
+      const y = py - ((deg * Math.PI) / 180) * pxPerRad;
+      const half = deg % 10 === 0 ? r * 0.3 : r * 0.14;
+      c.beginPath();
+      c.moveTo(-half, y);
+      c.lineTo(half, y);
+      c.stroke();
+      if (deg % 10 === 0) c.fillText(String(Math.abs(deg)), half + 5, y);
+    }
+    c.restore();
+    // Bank scale (fixed) and the pointer that turns with the ball.
+    c.save();
+    c.translate(r, r);
+    c.strokeStyle = '#f2f2ee';
+    c.lineWidth = 3;
+    for (const deg of [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60]) {
+      const a = (deg * Math.PI) / 180 - Math.PI / 2;
+      const long = deg % 30 === 0;
+      c.beginPath();
+      c.moveTo(Math.cos(a) * r * 0.93, Math.sin(a) * r * 0.93);
+      c.lineTo(Math.cos(a) * r * (long ? 0.8 : 0.86), Math.sin(a) * r * (long ? 0.8 : 0.86));
+      c.stroke();
+    }
+    c.rotate(-rollRad);
+    c.fillStyle = '#f2f2ee';
+    c.beginPath();
+    c.moveTo(0, -r * 0.79);
+    c.lineTo(-r * 0.05, -r * 0.7);
+    c.lineTo(r * 0.05, -r * 0.7);
+    c.closePath();
+    c.fill();
+    c.restore();
+    // The fixed aircraft symbol.
+    c.strokeStyle = '#ffb01f';
+    c.lineWidth = 7;
+    c.beginPath();
+    c.moveTo(r * 0.38, r);
+    c.lineTo(r * 0.8, r);
+    c.lineTo(r * 0.88, r * 1.09);
+    c.moveTo(r * 1.62, r);
+    c.lineTo(r * 1.2, r);
+    c.lineTo(r * 1.12, r * 1.09);
+    c.stroke();
+    c.fillStyle = '#ffb01f';
+    c.beginPath();
+    c.arc(r, r, 5, 0, Math.PI * 2);
+    c.fill();
   }
 
   private draw(d: MfdData): void {

@@ -1099,6 +1099,22 @@ footage of a real cockpit, what makes it read as a place:
 - **Mind the HUD clip**: the symbology fits into the combiner's outline. A
   realistically narrow glass stacked the corner data over the ladder, so it
   is 33° wide.
+- **Hands on the controls**: FL's MakeHuman hand (`handMesh.ts`), posed
+  round each grip and gloved (sage Nomex backs, leather palms). Place it by
+  a basis: the grip's axis, where the back of the hand faces, the forearm
+  from their cross product. The grip's axis passes through a fixed point
+  under the palm. A gauntlet and the suit's sleeve run back to the elbow on
+  the armrest. The stick and throttle groups carry the hands and arms and
+  move with the input: a few degrees of stick, 7.5 cm of throttle.
+- **A live gyro**: the standby attitude ball is its own canvas, redrawn every
+  frame, because a horizon that steps at the displays' 15 Hz reads as
+  broken. It is self-lit like the screens, so it reads in the panel's shade.
+- **A view for them**: a "panel" camera (36° down, 80° wide, eased in) shows
+  the displays, the gyro and both hands. In the forward view they are below
+  the frame.
+- Keep an instrument's face in front of its case. A face set inside the
+  case's closed cylinder was hidden by the cap, and every dial read as a
+  dark disc.
 
 ## 6w. Decals that belong to their surface (lagoon `render/footprints.ts`)
 

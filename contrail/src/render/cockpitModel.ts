@@ -1,5 +1,5 @@
 import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-import { attribute, color, float, mx_noise_float, positionLocal, texture } from 'three/tsl';
+import { attribute, color, float, mix, mx_noise_float, positionLocal, texture } from 'three/tsl';
 import {
   BoxGeometry,
   BufferAttribute,
@@ -30,6 +30,7 @@ import {
 } from 'three/webgpu';
 import type { AircraftId } from '../config.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
+import { handData, type HandPose, posedHandGeometry } from './handMesh.ts';
 
 // The pilot's office as a modelled place (cockpit.ts drives its displays and
 // the HUD clip). What a few boxes lacked against the reference footage of a
@@ -69,6 +70,10 @@ export interface OfficeModel {
   group: Group;
   /** The combiner glass corners in the office frame (the HUD clips to them), or null with a helmet display. */
   combiner: Vector3[] | null;
+  /** The side stick with the right hand and arm on it, pivoting at its base (tilt it for the stick's input). */
+  stick: Group;
+  /** The throttle grip with the left hand and arm on it (slide it along z for the throttle). */
+  throttle: Group;
 }
 
 /**
@@ -237,7 +242,7 @@ class Parts {
     if (!n.getAttribute('normal')) n.computeVertexNormals();
     const count = n.getAttribute('position').count;
     if (!n.getAttribute('uv')) n.setAttribute('uv', new BufferAttribute(new Float32Array(count * 2), 2));
-    for (const key of Object.keys(n.attributes)) if (!['position', 'normal', 'uv', 'shade'].includes(key)) n.deleteAttribute(key);
+    for (const key of Object.keys(n.attributes)) if (!['position', 'normal', 'uv', 'shade', 'leather'].includes(key)) n.deleteAttribute(key);
     n.clearGroups();
     const list = this.lists.get(m) ?? [];
     list.push(n);
@@ -246,9 +251,11 @@ class Parts {
 
   build(group: Group): void {
     for (const [m, list] of this.lists) {
-      // Shading attributes must match within a merge: the cloth's `shade` defaults to 1 elsewhere.
-      if (list.some((g) => g.getAttribute('shade'))) {
-        for (const g of list) if (!g.getAttribute('shade')) g.setAttribute('shade', new BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(1), 1));
+      // Shading attributes must match within a merge: the cloth's `shade` defaults to 1 elsewhere, the
+      // gloves' `leather` to 0.
+      for (const [key, fill] of [['shade', 1], ['leather', 0]] as const) {
+        if (!list.some((g) => g.getAttribute(key))) continue;
+        for (const g of list) if (!g.getAttribute(key)) g.setAttribute(key, new BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(fill), 1));
       }
       const merged = mergeGeometries(list, false);
       if (!merged) throw new Error(`cockpit merge failed for ${m.name}`);
@@ -500,9 +507,11 @@ function keyTop(s: string): Draw {
  * Builds the office for `kind`. `screen` is the displays' material (cockpit.ts's live canvas); `slots`
  * where its displays go on the panel.
  */
-export function buildOffice(kind: AircraftId, screen: Material, slots: DisplaySlotSpec): OfficeModel {
+export function buildOffice(kind: AircraftId, screen: Material, attitude: Material, slots: DisplaySlotSpec): OfficeModel {
   const group = new Group();
   const parts = new Parts();
+  const stickParts = new Parts();
+  const throttleParts = new Parts();
   const atlas = new Atlas();
   const printed = new MeshStandardNodeMaterial({ name: 'cockpit printed faces', roughness: 0.6, metalness: 0 });
   const M = {
@@ -624,12 +633,17 @@ export function buildOffice(kind: AircraftId, screen: Material, slots: DisplaySl
     for (const [cx, cy] of [[-1, 1], [1, 1], [-1, -1], [1, -1]] as const) onPanel(M.key, at(rbox(0.009, 0.024, 0.009, 0.002), s.x + cx * (bw / 2 - 0.012), s.y + cy * (bh / 2 - 0.012), 0.025, 0, 0, (cx * cy * Math.PI) / 4));
   };
 
-  /** A round instrument: case, printed face, bezel ring, glass. */
-  const instrument = (x: number, y: number, r: number, face: Draw): void => {
-    onPanel(M.bezel, at(new CylinderGeometry(r + 0.007, r + 0.009, 0.016, 28).rotateX(Math.PI / 2), x, y, 0.008));
-    onPanel(printed, at(atlas.disc(r, face), x, y, 0.0125));
-    onPanel(M.bezel, at(new TorusGeometry(r + 0.003, 0.0035, 6, 28), x, y, 0.017));
-    onPanel(glassMat, at(new CircleGeometry(r, 28), x, y, 0.0165));
+  /**
+   * A round instrument: case, face (printed, or the live attitude ball when `face` is null) just proud of the
+   * case's front, the glass over it and the bezel ring standing out round it. (Set inside the case, the faces
+   * were hidden behind its front: every dial a dark disc.)
+   */
+  const instrument = (x: number, y: number, r: number, face: Draw | null): void => {
+    onPanel(M.bezel, at(new CylinderGeometry(r + 0.007, r + 0.009, 0.01, 28).rotateX(Math.PI / 2), x, y, 0.005));
+    if (face) onPanel(printed, at(atlas.disc(r, face), x, y, 0.0104));
+    else onPanel(attitude, at(new CircleGeometry(r, 32), x, y, 0.0104));
+    onPanel(M.bezel, at(new TorusGeometry(r + 0.003, 0.0035, 6, 28), x, y, 0.0128));
+    onPanel(glassMat, at(new CircleGeometry(r, 28), x, y, 0.0122));
     onPanel(M.knob, at(new CylinderGeometry(0.0045, 0.0045, 0.008, 12).rotateX(Math.PI / 2), x + r * 0.85, y - r * 0.85, 0.02));
   };
 
@@ -649,7 +663,8 @@ export function buildOffice(kind: AircraftId, screen: Material, slots: DisplaySl
     display({ ...slots.wide, y: 0.045 });
     // Below the screen: a standby flight display, the gear panel and the caution tiles.
     onPanel(M.bezel, at(rbox(0.11, 0.08, 0.016, 0.004), 0, -0.12, 0.008));
-    onPanel(printed, at(atlas.face(0.096, 0.066, dialFace('attitude', 0)), 0, -0.12, 0.0165));
+    // A standby attitude display, the gyro's ball live in it.
+    onPanel(attitude, at(new PlaneGeometry(0.066, 0.066), 0, -0.12, 0.0165));
     gearPanel(-0.28, -0.15);
     onPanel(printed, at(atlas.face(0.15, 0.08, tiles(4, 4, ['FUEL', 'HYD', 'ENG', 'OIL', 'GEN', 'ICE', 'FIRE', 'ECS', 'BRK', 'NWS', 'O2', 'CANOPY'])), 0.28, -0.15, 0.002));
     onPanel(M.bezel, at(rbox(0.165, 0.095, 0.01, 0.003), 0.28, -0.15, -0.002));
@@ -657,10 +672,11 @@ export function buildOffice(kind: AircraftId, screen: Material, slots: DisplaySl
     display({ ...slots.left, x: -0.205, y: 0.0 });
     display({ ...slots.right, x: 0.205, y: 0.0 });
     // Standby instruments in the centre column, below the keypad (which hides the column's top from the seat).
-    instrument(0, -0.06, 0.036, dialFace('attitude', 0));
-    instrument(-0.056, -0.15, 0.026, dialFace('speed', 0.31));
-    instrument(0.056, -0.15, 0.026, dialFace('alt', 0.62));
-    instrument(0, -0.172, 0.019, dialFace('small', 0.08));
+    // The standby attitude indicator: the gyro's ball, live (cockpit.ts draws it every frame).
+    instrument(0, -0.065, 0.042, null);
+    instrument(-0.062, -0.165, 0.026, dialFace('speed', 0.31));
+    instrument(0.062, -0.165, 0.026, dialFace('alt', 0.62));
+    instrument(0, -0.205, 0.016, dialFace('small', 0.08));
     gearPanel(-0.33, -0.18);
     onPanel(printed, at(atlas.face(0.12, 0.075, tiles(3, 4, ['FUEL', 'HYD', 'ENG', 'OIL', 'GEN', 'ICE', 'FIRE', 'ECS', 'BRK', 'NWS', 'O2', 'CANOPY'])), 0.33, -0.18, 0.002));
     onPanel(M.bezel, at(rbox(0.135, 0.09, 0.01, 0.003), 0.33, -0.18, -0.002));
@@ -780,19 +796,30 @@ export function buildOffice(kind: AircraftId, screen: Material, slots: DisplaySl
       z -= len + 0.012;
     });
   }
-  // Throttle: a quadrant on the left console's inboard edge, the lever and its many-buttoned grip.
+  // Throttle: a quadrant on the left console's inboard edge (fixed), the lever and its many-buttoned grip with
+  // the left hand on it (the throttle group, which slides along the quadrant).
   parts.add(M.console, at(rbox(0.05, 0.05, 0.3, 0.008), -0.255, -0.515, -0.12));
-  parts.add(M.metal, at(new BoxGeometry(0.012, 0.06, 0.012), -0.255, -0.48, -0.15, -0.35));
-  parts.add(M.grip, at(rbox(0.05, 0.09, 0.07, 0.016, 0.012), -0.262, -0.43, -0.17, -0.25, 0, 0.12));
-  for (const [dx, dy, dz] of [[0.02, 0.03, -0.01], [0.022, 0.0, -0.03], [-0.005, 0.045, -0.02]] as const) parts.add(M.key, at(new CylinderGeometry(0.005, 0.005, 0.006, 10).rotateZ(Math.PI / 2), -0.262 + dx, -0.43 + dy, -0.17 + dz));
-  // Side stick: an armrest, a rubber boot and the grip leaning forward, with its trigger and hats.
+  const tp = THROTTLE_PIVOT;
+  const onThrottle = (m: Material, g: BufferGeometry): void => throttleParts.add(m, g.translate(-tp.x, -tp.y, -tp.z));
+  onThrottle(M.metal, at(new BoxGeometry(0.012, 0.06, 0.012), -0.255, -0.48, -0.15, -0.35));
+  onThrottle(M.grip, at(rbox(0.05, 0.09, 0.07, 0.016, 0.012), -0.262, -0.43, -0.17, -0.25, 0, 0.12));
+  for (const [dx, dy, dz] of [[0.02, 0.03, -0.01], [0.022, 0.0, -0.03], [-0.005, 0.045, -0.02]] as const) onThrottle(M.key, at(new CylinderGeometry(0.005, 0.005, 0.006, 10).rotateZ(Math.PI / 2), -0.262 + dx, -0.43 + dy, -0.17 + dz));
+  // Side stick: an armrest and a rubber boot (fixed), the grip leaning forward with its trigger and hats and
+  // the right hand on it (the stick group, pivoting at the boot).
   parts.add(M.grip, at(rbox(0.085, 0.035, 0.24, 0.012, 0.01), 0.36, -0.505, 0.05));
   const bootGeo = new LatheGeometry([new Vector2(0.032, 0), new Vector2(0.028, 0.008), new Vector2(0.031, 0.014), new Vector2(0.025, 0.022), new Vector2(0.027, 0.03), new Vector2(0.018, 0.04)], 16);
   parts.add(M.rubber, at(bootGeo, 0.335, -0.535, -0.16));
+  const sp = STICK_PIVOT;
+  const onStick = (m: Material, g: BufferGeometry): void => stickParts.add(m, g.translate(-sp.x, -sp.y, -sp.z));
   const gripGeo = new LatheGeometry([new Vector2(0.0, 0), new Vector2(0.017, 0.0), new Vector2(0.019, 0.03), new Vector2(0.021, 0.07), new Vector2(0.019, 0.1), new Vector2(0.012, 0.118), new Vector2(0.0, 0.122)], 16).scale(1, 1, 1.25);
-  parts.add(M.grip, at(gripGeo, 0.335, -0.5, -0.16, -0.18, 0, 0.05));
-  parts.add(M.metal, at(new BoxGeometry(0.008, 0.026, 0.008), 0.335, -0.43, -0.183, -0.5));
-  for (const [dx, dy] of [[0.0, 0.112], [-0.012, 0.1]] as const) parts.add(M.key, at(new CylinderGeometry(0.0045, 0.0045, 0.006, 10), 0.335 + dx, -0.5 + dy, -0.172));
+  onStick(M.grip, at(gripGeo, 0.335, -0.5, -0.16, -0.18, 0, 0.05));
+  onStick(M.metal, at(new BoxGeometry(0.008, 0.026, 0.008), 0.335, -0.43, -0.183, -0.5));
+  for (const [dx, dy] of [[0.0, 0.112], [-0.012, 0.1]] as const) onStick(M.key, at(new CylinderGeometry(0.0045, 0.0045, 0.006, 10), 0.335 + dx, -0.5 + dy, -0.172));
+
+  // ---- the pilot's hands on the stick and the throttle, gloved, the arms back to the shoulders in the suit
+  const glove = gloveMaterial();
+  pilotArm(onStick, 1, glove, M.suit, new Vector3(0.335, -0.44, -0.171), new Vector3(0, -0.984, 0.179), new Vector3(1, 0, 0), new Vector3(0.375, -0.465, 0.14), new Vector3(0.21, -0.28, 0.24));
+  pilotArm(onThrottle, -1, glove, M.suit, new Vector3(-0.262, -0.425, -0.17), new Vector3(0, 0.97, -0.247), new Vector3(-0.99, 0, 0.12), new Vector3(-0.36, -0.445, 0.11), new Vector3(-0.21, -0.28, 0.24));
 
   // ---- the pilot's legs down to the rudder pedals, the boots on them
   for (const side of [-1, 1]) {
@@ -805,10 +832,94 @@ export function buildOffice(kind: AircraftId, screen: Material, slots: DisplaySl
   }
 
   parts.build(group);
+  const stick = new Group();
+  stick.position.copy(STICK_PIVOT);
+  stickParts.build(stick);
+  const throttle = new Group();
+  throttle.position.copy(THROTTLE_PIVOT);
+  throttleParts.build(throttle);
+  group.add(stick, throttle);
   printed.colorNode = texture(atlas.texture()).rgb;
-  // Occlusion at 2 cm reach 45 cm: deep corners dark, the panel under the hood dim, the tops open.
+  // Occlusion at 2 cm reach 45 cm: deep corners dark, the panel under the hood dim, the tops open. The stick
+  // and the throttle keep the occlusion of their neutral places.
   bakeAmbientOcclusion(group, { cellM: 0.02, rangeM: 0.45, rays: 16, strength: 0.6 });
-  return { group, combiner };
+  return { group, combiner, stick, throttle };
+}
+
+/** Where the side stick pivots (the top of its boot) and the throttle lever's origin, office frame. */
+const STICK_PIVOT = new Vector3(0.335, -0.535, -0.16);
+const THROTTLE_PIVOT = new Vector3(-0.255, -0.49, -0.12);
+
+/** The hand frame's point that sits on a grip's axis: ahead of the wrist, under the palm (hand frame, m). */
+const GRIP_IN_HAND = new Vector3(0, -0.033, -0.05);
+const GLOVE_THICKNESS_M = 0.0018;
+
+/** Flight gloves: sage Nomex on the backs, pale leather over the palms and fingertips (`leather`). */
+function gloveMaterial(): MeshPhysicalNodeMaterial {
+  const m = new MeshPhysicalNodeMaterial({ name: 'flight gloves', metalness: 0, sheenRoughness: 0.7 });
+  const leather = attribute('leather', 'float');
+  const n = mx_noise_float(positionLocal.mul(70)).mul(0.08).add(1);
+  const fabric = color(0x4b4d38).mul(n);
+  const hide = color(0x6d6352).mul(n);
+  m.colorNode = mix(fabric, hide, leather);
+  m.roughnessNode = mix(float(0.86), float(0.55), leather);
+  m.sheenNode = mix(fabric.mul(1.4), hide.mul(0.5), leather);
+  return m;
+}
+
+/**
+ * A gloved hand closed round a grip and its arm back to the shoulder. `grip`: a point on the grip's axis;
+ * `axis`: the grip's direction (the hand frame's x — thumb end opposite for the right hand); `back`: where the
+ * back of the hand faces. The hand is MakeHuman's (handMesh.ts), posed round a ~40 mm grip and gloved; the
+ * forearm under a glove cuff and the suit's sleeve to the elbow (`elbow`) and on to the shoulder.
+ */
+function pilotArm(put: (m: Material, g: BufferGeometry) => void, side: 1 | -1, glove: Material, suit: Material, grip: Vector3, axis: Vector3, back: Vector3, elbow: Vector3, shoulder: Vector3): void {
+  const x = axis.clone().normalize();
+  const y = back.clone().sub(x.clone().multiplyScalar(back.dot(x))).normalize();
+  const z = new Vector3().crossVectors(x, y);
+  const frame = new Matrix4().makeBasis(x, y, z);
+  frame.setPosition(grip.clone().sub(GRIP_IN_HAND.clone().applyMatrix4(new Matrix4().makeBasis(x, y, z))));
+  const pose = side === 1 ? { curl: [0.55, 0.85, 0.9, 0.92] as [number, number, number, number], thumb: 0.75, spread: 0.05 } : { curl: [0.7, 0.76, 0.8, 0.84] as [number, number, number, number], thumb: 0.55, spread: 0.08 };
+  put(glove, glovedHand(side, pose).applyMatrix4(frame));
+  const wrist = (d: number): Vector3 => new Vector3(0, 0, d).applyMatrix4(frame);
+  // The glove's gauntlet over the wrist, then the sleeve.
+  put(glove, limb([wrist(0.045), wrist(0.08), wrist(0.115)], [0.031, 0.034, 0.036], side * 2.1));
+  put(suit, limb([wrist(0.105), wrist(0.17), elbow, elbow.clone().lerp(shoulder, 0.5), shoulder], [0.037, 0.042, 0.047, 0.055, 0.06], side * 0.7));
+}
+
+/**
+ * The hand posed and gloved, in the hand frame: leather (`leather` 1) over the palm and the fingertips' pads,
+ * the glove standing off the skin, the forearm cut at the cuff (the sleeve covers the rest).
+ */
+function glovedHand(side: 1 | -1, pose: HandPose): BufferGeometry {
+  const rest = handData(side).geometry;
+  const hand = posedHandGeometry(side, pose);
+  const pos = hand.getAttribute('position');
+  const nrm = hand.getAttribute('normal');
+  const rPos = rest.getAttribute('position');
+  const rNrm = rest.getAttribute('normal');
+  const idx = hand.getAttribute('skinIndex');
+  const wgt = hand.getAttribute('skinWeight');
+  const leather = new Float32Array(pos.count);
+  for (let v = 0; v < pos.count; v++) {
+    let fingers = 0;
+    for (let k = 0; k < 4; k++) if (idx.getComponent(v, k) >= 6) fingers += wgt.getComponent(v, k);
+    const ny = rNrm.getY(v);
+    const palm = Math.min(1, Math.max(0, (-ny - 0.3) / 0.3)) * (rPos.getZ(v) < 0.02 ? 1 : 0);
+    leather[v] = palm * (0.6 + 0.4 * fingers);
+    pos.setXYZ(v, pos.getX(v) + nrm.getX(v) * GLOVE_THICKNESS_M, pos.getY(v) + nrm.getY(v) * GLOVE_THICKNESS_M, pos.getZ(v) + nrm.getZ(v) * GLOVE_THICKNESS_M);
+  }
+  hand.setAttribute('leather', new BufferAttribute(leather, 1));
+  const index = hand.getIndex();
+  if (index) {
+    const kept: number[] = [];
+    for (let t = 0; t < index.count; t += 3) {
+      const a = index.getX(t);
+      if (rPos.getZ(a) < 0.1) kept.push(a, index.getX(t + 1), index.getX(t + 2));
+    }
+    hand.setIndex(kept);
+  }
+  return hand;
 }
 
 /** The glare shield's top curve at t (0…1 across): the Bézier of the hood's shape, its y. */

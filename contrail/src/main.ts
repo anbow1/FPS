@@ -34,6 +34,7 @@ import { type AttackCue, Hud } from './ui/hud.ts';
 import { chooseOptions, optionsFromParams } from './ui/menu.ts';
 import { SensorDisplays } from './ui/sensors.ts';
 import { Cockpit } from './render/cockpit.ts';
+import { loadHandMesh } from './render/handMesh.ts';
 import { FlightSound } from './ui/sound.ts';
 import { Tones } from './ui/tones.ts';
 import { graphicsSetup, loadControls } from './ui/settings.ts';
@@ -130,7 +131,8 @@ async function main(): Promise<void> {
   const views = new Map<number, JetView>();
   for (const f of game.combat.fighters) views.set(f.id, new JetView(f.kind, stage.scene, atmosphere));
   const playerView = views.get(player.id)!;
-  // The office around the pilot's eye, for the cockpit and padlock views.
+  // The office around the pilot's eye, for the cockpit and padlock views (the pilot's hands: handMesh.ts).
+  await loadHandMesh();
   const cockpit = new Cockpit(opts.player, playerView.model.eye);
   {
     // The canopy seen from the seat (the outside model is hidden there): the same shell, nearly clear,
@@ -335,7 +337,7 @@ async function main(): Promise<void> {
         const high = settings.quality === 'high';
         EMISSIVE_EXPOSURE.value = lighting.exposure;
         const frame = { alpha, frameS, clockS, eye: stage.camera.position, humidity: lighting.preset.humidity, highQuality: high };
-        for (const f of game.combat.fighters) views.get(f.id)!.update(f.aircraft, frame, f === player ? rig.mode !== 'cockpit' && rig.mode !== 'padlock' : true);
+        for (const f of game.combat.fighters) views.get(f.id)!.update(f.aircraft, frame, f === player ? rig.mode !== 'cockpit' && rig.mode !== 'panel' && rig.mode !== 'padlock' : true);
         // Cameras: padlock on the radar's target (or the nearest enemy), missile cam on our last missile.
         const radar = player.radar;
         const tgtFighter = radar.target ? game.combat.get(radar.target.id) : game.combat.fighters.find((f) => f !== player && f.alive);
@@ -345,7 +347,7 @@ async function main(): Promise<void> {
         rig.update(playerView.renderPos, playerView.renderRot, playerView.model.eye, aircraft.loadFactor, AIRCRAFT[opts.player].lengthM, frameS, { padlock, missile });
         stage.camera.updateMatrixWorld();
         combatView.update(game.combat, clockS, stage.camera.position);
-        const inside = (rig.mode === 'cockpit' || rig.mode === 'padlock') && player.alive;
+        const inside = (rig.mode === 'cockpit' || rig.mode === 'panel' || rig.mode === 'padlock') && player.alive;
         const nose = aircraft.orientation.rotate(new Vec3(0, 0, -1));
         const wingR = aircraft.orientation.rotate(new Vec3(1, 0, 0));
         const roof = aircraft.orientation.rotate(new Vec3(0, 1, 0));
@@ -367,10 +369,13 @@ async function main(): Promise<void> {
           mrm: ps.mrm,
           flares: ps.flares,
           chaff: ps.chaff,
-        });
+        }, { pitch: pilot.input.pitch, roll: pilot.input.roll, throttle: pilot.input.throttle });
         // The screen-corner radar and threat displays are the cockpit's own screens inside.
         sensors.visible = !inside;
-        hud.clipToCombiner = rig.mode === 'cockpit';
+        hud.clipToCombiner = rig.mode === 'cockpit' || rig.mode === 'panel';
+        // Head bowed to the panel, a helmet display's symbology would float over the instruments: it stays
+        // off until the head comes up. (A combiner's stays on its glass, out of the way.)
+        hud.visible = !(rig.mode === 'panel' && !cockpit.combiner);
         hud.combinerOutline = null;
         if (hud.clipToCombiner && cockpit.combinerWorld(combinerCorners)) {
           hud.combinerOutline = combinerCorners.map((c) => {
@@ -449,7 +454,7 @@ async function main(): Promise<void> {
             alphaRad: aircraft.alphaRad,
             gunFiring: alive && orders.trigger && player.stores.gunRounds > 0,
             gunRoundsPerS: GUN.roundsPerS,
-            cockpit: rig.mode === 'cockpit' || rig.mode === 'padlock',
+            cockpit: rig.mode === 'cockpit' || rig.mode === 'panel' || rig.mode === 'padlock',
             listener: stage.camera.position,
             listenerVelocity: aircraft.velocity,
             others: game.combat.fighters.filter((f) => f !== player).map((f) => ({ position: f.aircraft.position, velocity: f.aircraft.velocity, core: f.aircraft.engine.core, burner: f.aircraft.engine.burner, alive: f.alive })),
@@ -491,7 +496,7 @@ async function main(): Promise<void> {
         }
         stage.greyOut.value = greyOut(aircraft.g);
         stage.redOut.value = aircraft.g.redOut;
-        arrows.update(playerView.renderPos, aircraft.forces, aircraft.velocity, overlay.visible && rig.mode !== 'cockpit');
+        arrows.update(playerView.renderPos, aircraft.forces, aircraft.velocity, overlay.visible && rig.mode !== 'cockpit' && rig.mode !== 'panel');
         overlay.update(aircraft, pilot.input, `${stage.backendName} · ${settings.quality} · ${settings.toneMap} · ${lighting.preset.label} · camera ${rig.mode} · terrain ${terrain.nodesDrawn} patches · radar ${radar.mode} · AI ${game.ais.map((a) => a.state).join('/')}`);
         if (frameS > 0 && !document.hidden) stage.governor.update(frameS);
         stage.render();

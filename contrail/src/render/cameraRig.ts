@@ -6,10 +6,12 @@ import { type PerspectiveCamera, Quaternion, Vector3 } from 'three/webgpu';
 // and the head sags under G; the orbit camera turns round the jet with the
 // mouse; the padlock camera keeps the pilot's head turned to the tracked
 // target (the head can turn ~160° either way, no further); the missile camera
-// rides behind the last missile launched until it is gone.
+// rides behind the last missile launched until it is gone. The panel camera
+// is the cockpit's with the head bowed to the panel and a wider eye: the
+// attitude ball, the radar and the hands on the stick and the throttle.
 
-export type CameraMode = 'chase' | 'cockpit' | 'orbit' | 'padlock' | 'missile';
-export const CAMERA_MODES: readonly CameraMode[] = ['chase', 'cockpit', 'orbit', 'padlock', 'missile'];
+export type CameraMode = 'chase' | 'cockpit' | 'panel' | 'orbit' | 'padlock' | 'missile';
+export const CAMERA_MODES: readonly CameraMode[] = ['chase', 'cockpit', 'panel', 'orbit', 'padlock', 'missile'];
 
 /** What the padlock and missile cameras look at, when there is something. */
 export interface CameraFocus {
@@ -20,6 +22,11 @@ export interface CameraFocus {
 const CHASE_ATTITUDE_RATE = 5; // 1/s, tuned by hand: lag enough to see the roll, not so much it feels loose
 const DEG = Math.PI / 180;
 const COCKPIT_LOOK_DOWN_RAD = 11 * DEG;
+/** Looking down at the panel: 36° down and 80° of view take in the displays and both hands on the controls. */
+const PANEL_LOOK_DOWN_RAD = 36 * DEG;
+const PANEL_FOV_DEG = 80;
+/** How fast the head turns between the two (1/s). */
+const HEAD_RATE = 7;
 
 export class CameraRig {
   mode: CameraMode = 'chase';
@@ -34,6 +41,9 @@ export class CameraRig {
   private readonly tmp2 = new Vector3();
   private readonly look = new Vector3();
   private first = true;
+  /** The head's bow and the eye's field in the seat, eased between the cockpit and panel views. */
+  private headDownRad = COCKPIT_LOOK_DOWN_RAD;
+  private headFovDeg = 70;
 
   constructor(private readonly camera: PerspectiveCamera) {}
 
@@ -70,17 +80,21 @@ export class CameraRig {
       this.first = false;
     }
     this.smoothed.slerp(jetRot, 1 - Math.exp(-CHASE_ATTITUDE_RATE * dtS));
-    if (this.mode === 'cockpit') {
+    if (this.mode === 'cockpit' || this.mode === 'panel') {
       // The head sinks a few centimetres per G and the view dips a little (tuned by hand).
       const sag = Math.max(-0.12, Math.min(0.08, -(loadFactor - 1) * 0.012));
       this.tmp.set(eye[0], eye[1] + sag, eye[2]).applyQuaternion(jetRot).add(jetPos);
       cam.position.copy(this.tmp);
       cam.quaternion.copy(jetRot);
+      const panel = this.mode === 'panel';
+      const k = 1 - Math.exp(-HEAD_RATE * dtS);
+      this.headDownRad += ((panel ? PANEL_LOOK_DOWN_RAD : COCKPIT_LOOK_DOWN_RAD) - this.headDownRad) * k;
+      this.headFovDeg += ((panel ? PANEL_FOV_DEG : 70) - this.headFovDeg) * k;
       // The default view looks 11° down, as simulators do: on a flat screen the whole panel — displays,
       // keypad, standby instruments — is then in view, while the over-the-nose line and the HUD stay in the
       // upper half. At 6° the panel was a dark strip under the glare shield.
-      cam.rotateX(-COCKPIT_LOOK_DOWN_RAD - Math.max(0, loadFactor - 1) * 0.15 * DEG);
-      cam.fov = 70;
+      cam.rotateX(-this.headDownRad - Math.max(0, loadFactor - 1) * 0.15 * DEG);
+      cam.fov = this.headFovDeg;
       cam.near = 0.05;
     } else if (this.mode === 'chase') {
       const d = Math.max(this.chaseDistanceM, lengthM * 0.9);
