@@ -1,6 +1,7 @@
 import { attribute, float, floor, mix, mx_noise_float, positionGeometry, positionLocal, smoothstep, step, vec3 } from 'three/tsl';
 import { BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedBufferAttribute, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, type Node, Quaternion, Shape, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
 import type { Guerrilla } from '../game/guerrillas.ts';
+import { coarseParts } from './gunkit.ts';
 import { merge } from './meshkit.ts';
 import { boneIndex, clipDuration, clipSpeed, MocapPose, mocapReady } from './mocap.ts';
 import { BoneTexture, skinnedPosition } from './skinning.ts';
@@ -717,10 +718,16 @@ const TAGS: [string, number][] = [
 
 function joined(parts: BufferGeometry[], name: string): BufferGeometry {
   // meshkit.merge keeps only position/normal/uv; carry the tags across by merging them here.
-  const lists = TAGS.map(() => [] as number[]);
-  for (const p of parts) TAGS.forEach(([key], k) => (lists[k] as number[]).push(...(p.getAttribute(key).array as Float32Array)));
+  // Copied into one typed array per tag: spreading a big part into push() overflows the call stack.
+  const total = parts.reduce((n, p) => n + p.getAttribute('position').count, 0);
+  const lists = TAGS.map(([, size]) => new Float32Array(total * size));
+  let at = 0;
+  for (const p of parts) {
+    TAGS.forEach(([key, size], k) => (lists[k] as Float32Array).set(p.getAttribute(key).array as Float32Array, at * size));
+    at += p.getAttribute('position').count;
+  }
   const g = merge(parts, name);
-  TAGS.forEach(([key, size], k) => g.setAttribute(key, new BufferAttribute(new Float32Array(lists[k] as number[]), size)));
+  TAGS.forEach(([key, size], k) => g.setAttribute(key, new BufferAttribute(lists[k] as Float32Array, size)));
   return g;
 }
 
@@ -1101,7 +1108,8 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
 
 /** The player's AK (weaponModels.ts) merged into one geometry: wood furniture, dark steel. */
 function rifleGeometry(): BufferGeometry {
-  const model = buildRifle();
+  // Cut without bevels (gunkit.ts): every man carries one, and at their distance a bevel is under a pixel.
+  const model = coarseParts(() => buildRifle());
   model.root.updateMatrixWorld(true);
   const parts: BufferGeometry[] = [];
   model.root.traverse((o) => {

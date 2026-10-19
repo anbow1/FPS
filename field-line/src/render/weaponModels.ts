@@ -21,7 +21,7 @@ import {
   Vector2,
   Vector3,
 } from 'three/webgpu';
-import { finish, polymerMaterial, sidePart, steelMaterial } from './gunkit.ts';
+import { bevelOf, finish, polymerMaterial, sidePart, steelMaterial } from './gunkit.ts';
 import { handData, posedHandGeometry } from './handMesh.ts';
 
 // First-person weapon and hand models in metres, facing −Z, with the sight
@@ -89,7 +89,8 @@ function mesh(g: BufferGeometry, m: Material, name: string): Mesh {
 /**
  * A small block (sights, rail teeth, levers, pads), its edges rounded by a bevel with smooth normals and the
  * `edge` attribute, so the finish wears through on it like on the profiles (gunkit.ts). A knife-edged box
- * caught no light and read as a toy's part.
+ * caught no light and read as a toy's part. One bevel step and square corners: a rail carries sixty teeth,
+ * and filleted corners made each a thousand vertices.
  */
 const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number): BufferGeometry =>
   sidePart(
@@ -101,9 +102,9 @@ const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number
     ],
     sx,
     Math.min(0.0008, sx / 4, sy / 4, sz / 4),
-    Math.min(0.0012, sy / 4, sz / 4),
+    0,
     x,
-    2,
+    1,
   );
 const rod = (r: number, len: number, seg = 12): CylinderGeometry => new CylinderGeometry(r, r, len, seg).rotateX(Math.PI / 2);
 
@@ -111,7 +112,8 @@ const rod = (r: number, len: number, seg = 12): CylinderGeometry => new Cylinder
  * A side profile, (z, y) points in the gun frame, extruded `widthM` across X and centred on x = 0, with
  * a bevel of `bevelM` on every edge. `holes` cut through it (a trigger guard's opening).
  */
-function profile(points: readonly [number, number][], widthM: number, bevelM = 0.0012, holes: readonly (readonly [number, number][])[] = []): BufferGeometry {
+function profile(points: readonly [number, number][], widthM: number, bevelWanted = 0.0012, holes: readonly (readonly [number, number][])[] = []): BufferGeometry {
+  const bevelM = bevelOf(bevelWanted);
   const shape = new Shape(points.map(([z, y]) => new Vector2(z, y)));
   for (const h of holes) shape.holes.push(new Path(h.map(([z, y]) => new Vector2(z, y))));
   const depth = Math.max(1e-4, widthM - 2 * bevelM);

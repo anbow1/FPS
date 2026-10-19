@@ -23,6 +23,7 @@ import {
 } from 'three/webgpu';
 import type { Soldier } from '../game/soldier.ts';
 import { merge } from './meshkit.ts';
+import { coarseParts } from './gunkit.ts';
 import { buildRifle } from './weaponModels.ts';
 import { BoneTexture, skinnedPosition } from './skinning.ts';
 import { boneIndex, clipDuration, clipSpeed, MocapPose, mocapReady } from './mocap.ts';
@@ -772,10 +773,16 @@ const TAGS: [string, number][] = [
 
 function joined(parts: BufferGeometry[], name: string): BufferGeometry {
   // meshkit.merge keeps only position/normal/uv; carry the tags across by merging them here.
-  const lists = TAGS.map(() => [] as number[]);
-  for (const p of parts) TAGS.forEach(([key], k) => (lists[k] as number[]).push(...(p.getAttribute(key).array as Float32Array)));
+  // Copied into one typed array per tag: spreading a big part into push() overflows the call stack.
+  const total = parts.reduce((n, p) => n + p.getAttribute('position').count, 0);
+  const lists = TAGS.map(([, size]) => new Float32Array(total * size));
+  let at = 0;
+  for (const p of parts) {
+    TAGS.forEach(([key, size], k) => (lists[k] as Float32Array).set(p.getAttribute(key).array as Float32Array, at * size));
+    at += p.getAttribute('position').count;
+  }
   const g = merge(parts, name);
-  TAGS.forEach(([key, size], k) => g.setAttribute(key, new BufferAttribute(new Float32Array(lists[k] as number[]), size)));
+  TAGS.forEach(([key, size], k) => g.setAttribute(key, new BufferAttribute(lists[k] as Float32Array, size)));
   return g;
 }
 
@@ -1147,9 +1154,12 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
   return { pelvis, torso, head, upperArm, forearm, hand, thigh, shin, boot, rifle: rifleGeometry() };
 }
 
-/** The player's carbine (weaponModels.ts) merged into one dark geometry, without its optic glass. */
+/**
+ * The player's carbine (weaponModels.ts) merged into one dark geometry, without its optic glass, cut without
+ * bevels (gunkit.ts): every soldier carries one, and at their distance a bevel is under a pixel.
+ */
 function rifleGeometry(): BufferGeometry {
-  const model = buildRifle();
+  const model = coarseParts(() => buildRifle());
   model.root.updateMatrixWorld(true);
   const parts: BufferGeometry[] = [];
   model.root.traverse((o) => {

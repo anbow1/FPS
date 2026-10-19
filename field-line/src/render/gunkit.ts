@@ -28,7 +28,9 @@ export function filleted(points: readonly Pt[], radius: number | readonly number
     const r = typeof radius === 'number' ? radius : ((radius[i] as number | undefined) ?? 0);
     const inLen = p.distanceTo(prev);
     const outLen = p.distanceTo(next);
-    const rr = Math.min(r, inLen * 0.45, outLen * 0.45);
+    // A point on a smooth run (along an arc) turns too little for a fillet to show; it would only cost vertices.
+    const turn = Math.acos(Math.min(1, Math.max(-1, _in.subVectors(p, prev).normalize().dot(_out.subVectors(next, p).normalize()))));
+    const rr = coarse || turn < 0.35 ? 0 : Math.min(r, inLen * 0.45, outLen * 0.45);
     const a = p.clone().addScaledVector(prev.clone().sub(p).normalize(), rr);
     const b = p.clone().addScaledVector(next.clone().sub(p).normalize(), rr);
     if (i === 0) s.moveTo(a.x, a.y);
@@ -38,6 +40,9 @@ export function filleted(points: readonly Pt[], radius: number | readonly number
   s.closePath();
   return s;
 }
+
+const _in = new Vector2();
+const _out = new Vector2();
 
 /** Smooth normals over the bevels, hard creases between faces, and the `edge` attribute from the extrusion axis. */
 export function finish(g: BufferGeometry): BufferGeometry {
@@ -53,6 +58,28 @@ export function finish(g: BufferGeometry): BufferGeometry {
   return out;
 }
 
+let coarse = false;
+
+/**
+ * Builds with every part cut as its bare outline — no fillets, no bevels: for the same gun carried across a
+ * field, where a bevel is under a pixel and would cost twenty times the vertices (an outline's fillets times
+ * the bevel's rings).
+ */
+export function coarseParts<T>(build: () => T): T {
+  const was = coarse;
+  coarse = true;
+  try {
+    return build();
+  } finally {
+    coarse = was;
+  }
+}
+
+/** The bevel a part gets (m): none while building coarse. */
+export function bevelOf(m: number): number {
+  return coarse ? 0 : m;
+}
+
 function extrude(shape: Shape, depth: number, bevel: number, segments: number): ExtrudeGeometry {
   return new ExtrudeGeometry(shape, {
     depth: Math.max(1e-4, depth - 2 * bevel),
@@ -62,7 +89,8 @@ function extrude(shape: Shape, depth: number, bevel: number, segments: number): 
     // The bevel cuts inward, so the outline stays the part's outer edge.
     bevelOffset: -bevel,
     bevelSegments: segments,
-    curveSegments: 6,
+    // A 1–3 mm fillet needs no more: its facets are finer than the bevel's smooth normals can show.
+    curveSegments: 3,
   });
 }
 
@@ -70,7 +98,8 @@ function extrude(shape: Shape, depth: number, bevel: number, segments: number): 
  * A part cut from its side profile: `outline` in (z, y) model metres (−Z forward), `width` across x
  * centred on `x`, corners filleted by `fillet`, edges rounded by `bevel`.
  */
-export function sidePart(outline: readonly Pt[], width: number, bevel: number, fillet: number | readonly number[] = 0.002, x = 0, segments = 3): BufferGeometry {
+export function sidePart(outline: readonly Pt[], width: number, bevelM: number, fillet: number | readonly number[] = 0.002, x = 0, segments = 2): BufferGeometry {
+  const bevel = bevelOf(bevelM);
   const g = finish(extrude(filleted(outline, fillet), width, bevel, segments));
   // Shape (x, y) is model (z, y); the extrusion runs along x. A rotation, so the winding holds.
   const d = Math.max(1e-4, width - 2 * bevel);
@@ -79,7 +108,8 @@ export function sidePart(outline: readonly Pt[], width: number, bevel: number, f
 }
 
 /** A part from its cross-section: `section` in (x, y) model metres, run along z from `z0` back to `z1` (> z0). */
-export function sectionPart(section: readonly Pt[], z0: number, z1: number, bevel: number, fillet: number | readonly number[] = 0.002, segments = 3): BufferGeometry {
+export function sectionPart(section: readonly Pt[], z0: number, z1: number, bevelM: number, fillet: number | readonly number[] = 0.002, segments = 2): BufferGeometry {
+  const bevel = bevelOf(bevelM);
   const g = finish(extrude(filleted(section, fillet), z1 - z0, bevel, segments));
   g.translate(0, 0, z0 + bevel);
   // The extrusion's side walls run v along the part; swap so u runs along it, as on the profiles' faces —

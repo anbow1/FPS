@@ -997,6 +997,15 @@ are CC0 (`makehumancommunity/makehuman`, `data/3dobjs/base.obj`,
   as "simplified" at arm's length.
 - Every mesh using these materials needs the attribute (fill zeros), or the
   node falls back with a warning per draw.
+- **Count the vertices**: an outline's fillets times the bevel's rings
+  multiply. A 62-tooth rail of filleted, two-step blocks was 60k vertices,
+  and FL's carbine went from 7.6k to 102k. Fillet only real corners (a
+  point on an arc turns < 20°: none), 3 curve segments per fillet, square
+  small blocks with one bevel step. That brought the guns to 4–26k.
+- **Coarse for the world**: `coarseParts(() => buildRifle())` cuts the same
+  gun without fillets or bevels for the soldiers' copies (7k). And never
+  `push(...array)` a merged gun: past ~100k elements the spread overflows the
+  call stack. Copy into one typed array instead.
 
 ## 6v. Cumulus as a lit layer (FL `render/cloudLayer.ts`)
 
