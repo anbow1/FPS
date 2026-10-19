@@ -26,6 +26,7 @@ import { streetTreeGeometry } from './streetTree.ts';
 import { type ScanId, scanModel } from './scanModels.ts';
 import { swayingMaterial } from './foliage.ts';
 import { buildCar, type CarGeometry, type CarPart, type CarVariant } from './carModel.ts';
+import { streetPropParts } from './streetProps.ts';
 
 // Props: one InstancedMesh per (kind, material part), sized from real objects
 // (scale sheet: light 4x4 4.60 m, a hatchback 4.2 m; ISO container 6.06 m).
@@ -178,6 +179,8 @@ function variantOf(p: MapProp): string {
 }
 
 function partsFor(kind: PropKind, variant: string, lib: MaterialLibrary): Part[] {
+  const street = streetPropParts(kind, lib);
+  if (street) return street;
   switch (kind) {
     case 'car':
       return carParts(variant === 'saloon' ? 'saloon' : 'hatch', lib);
@@ -284,6 +287,8 @@ function partsFor(kind: PropKind, variant: string, lib: MaterialLibrary): Part[]
     case 'rangeSign':
     case 'dummy':
       return []; // signs are built one by one (each has its own label); dummies are soldiers
+    default:
+      return []; // the street props (streetProps.ts), handled above
   }
 }
 

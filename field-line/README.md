@@ -33,7 +33,7 @@ WebGL2 by itself.
 | Scope zoom 4× ⇄ 10× | V or wheel up |
 | Range finder | T |
 | Suppressor on / off | N |
-| Grenade: hold to cook, release to throw / next type | G · 4 or wheel down |
+| Grenade: hold to cook, release to throw / next type (a frag against a city façade blows a hole in it) | G · 4 or wheel down |
 | Med kit / ammo pack | H · J |
 | Pause | Esc |
 

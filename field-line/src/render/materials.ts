@@ -8,6 +8,7 @@ import { shopfront } from './shopfront.ts';
 import { cityRoad } from './cityRoad.ts';
 import { facadeWear } from './facadeWear.ts';
 import { windowReveal } from './facadeReveal.ts';
+import { breachColour, breachMask, breachState } from './breaches.ts';
 import * as P from './patterns.ts';
 import * as PL from './plantPatterns.ts';
 import { makeTextureSet, type TexelSampler, type TextureSet } from './textures.ts';
@@ -324,7 +325,10 @@ export class MaterialLibrary {
       // Weather and people on the wall (facadeWear.ts); the glass stays clean and dark.
       const wear = facadeWear(base, pane);
       const albedo = mix(wear.colour, base.mul(0.2), pane);
-      mat.colorNode = albedo;
+      // Grenade breaches (breaches.ts): the wall is cut away inside each hole, broken and scorched round it.
+      const breach = breachState();
+      mat.colorNode = breachColour(albedo, breach);
+      mat.maskNode = breachMask(breach);
       // Glass, frame and fascia are flat: the wall's relief must not show through them.
       const relief = mix(float(1), float(0.35), wetness);
       const wallNormal = mix(normalMap(texture(ts.normalMap, rv.uv).grad(gx, gy).xyz, vec2(relief, relief)) as unknown as Node<'vec3'>, rv.revealNormal, rv.reveal);

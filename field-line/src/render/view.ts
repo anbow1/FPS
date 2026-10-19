@@ -24,6 +24,7 @@ import { sampleHeight } from '../maps/terrain.ts';
 import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './interior.ts';
 import { Lighting } from './lighting.ts';
 import { bakeCloudField, CLOUD_QUALITY, VolumeClouds } from './volumeClouds.ts';
+import { Breaches } from './breaches.ts';
 import { CITY, FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
 import { CityLights } from './cityLights.ts';
 import { buildProps, type PropsView } from './props.ts';
@@ -57,6 +58,8 @@ export class GameView {
   readonly stage: Stage;
   private lighting!: Lighting;
   private clouds!: VolumeClouds;
+  /** Holes the grenades blow in the city's façades (breaches.ts); null on maps without façades. */
+  private breaches: Breaches | null = null;
   private exposure!: AutoExposure;
   private world!: StaticWorld;
   private readonly actors = new ActorView();
@@ -145,6 +148,8 @@ export class GameView {
     if (map.id === 'city') {
       // The city beyond the map: a skyline of towers to the horizon (skyline.ts).
       stage.scene.add(buildSkyline());
+      this.breaches = new Breaches(map.boxes);
+      stage.scene.add(this.breaches.group);
       stage.scene.add(buildWetStreet(map, this.settings.quality));
       this.rain = new Rain(map, this.settings.quality);
       const w = WORLD_WIND.city;
@@ -258,6 +263,11 @@ export class GameView {
         continue;
       }
       if (e.type === 'playerHit') this.shake += e.armour ? 0.4 : 0.7;
+      if (e.type === 'explosion' && e.kind === 'frag' && this.breaches) {
+        // Against a façade, a frag breaks the wall (breaches.ts): the masonry flies out of the hole.
+        const hole = this.breaches.blast(e.pos.x, e.pos.y, e.pos.z);
+        if (hole) this.effects.wallBurst(hole.x, hole.y, hole.z, hole.nx, hole.nz, hole.look === 'brick' || hole.look === 'brickDark' ? 0x7a4636 : 0x8a8781);
+      }
       if (e.type === 'explosion' && e.kind !== 'smoke') {
         // the blast lays the grass flat outward from the centre
         this.undergrowth.grass?.stamp(e.pos.x, e.pos.z, 4, 0, 0, 1);

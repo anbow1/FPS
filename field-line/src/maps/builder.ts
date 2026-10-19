@@ -252,6 +252,35 @@ export class MapBuilder {
       case 'rangeSign':
         inv('wood', 0, 0, 0, 1.2, 1.6, 0.08, false);
         break;
+      case 'kiosk':
+        inv('sheetMetal', 0, 0, 0, 2.5, 2.5, 2.3);
+        break;
+      case 'planter':
+        inv('concrete', 0, 0, 0, 2.2, 0.55, 0.9); // waist-high cover; the hedge above it hides, it does not stop
+        break;
+      case 'bollard':
+        inv('sheetMetal', 0, 0, 0, 0.15, 0.95, 0.15, false);
+        break;
+      case 'busShelter':
+        inv('glass', 0, -0.56, 0, 3.6, 2.4, 0.08, false);
+        inv('sheetMetal', 1.75, 0, 0, 0.16, 2.0, 1.15);
+        break;
+      case 'roadBarrier':
+        inv('fabric', 0, 0, 0, 1.4, 1.0, 0.3, false);
+        break;
+      case 'cone':
+        inv('fabric', 0, 0, 0, 0.35, 0.75, 0.35, false);
+        break;
+      case 'hydrant':
+        inv('sheetMetal', 0, 0, 0, 0.35, 0.8, 0.35, false);
+        break;
+      case 'cafeSet':
+        inv('sheetMetal', 0, 0, 0, 0.8, 0.75, 0.8, false);
+        break;
+      case 'memorial':
+        inv('concrete', 0, 0, 0, 3.4, 0.6, 3.4);
+        inv('concrete', 0, 0, 0, 1.5, 7.6, 1.5);
+        break;
       case 'dummy':
         break; // dummies are soldiers; their hitboxes do the work
     }

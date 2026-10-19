@@ -99,6 +99,7 @@ export function buildCity(): MapData {
   }
 
   streetDressing(b);
+  streetFurnishing(b);
 
   const pickups: Pickup[] = [
     { kind: 'medKit', pos: new Vec3(-30, kerb + 0.05, -40) },
@@ -217,8 +218,18 @@ function cityPark(b: MapBuilder, cx: number, cz: number): void {
     const r = 12 + (i % 4) * 6;
     b.prop('streetTree', cx + Math.cos(a) * r, cz + Math.sin(a) * r, a, { baseY: kerb, scale: 0.9 + (i % 3) * 0.15 });
   }
-  for (const [x, z, yaw] of [[-8, -6, 0], [8, 6, Math.PI], [-6, 10, 1.2], [6, -12, 2.2]] as const) b.prop('bench', cx + x, cz + z, yaw, { baseY: kerb });
-  b.boxOnBase('stone', cx, kerb, cz, 5, 0.6, 5); // dry fountain basin
+  // The memorial in the middle (streetProps.ts), planters and benches round it facing in, a bin by each bench.
+  b.prop('memorial', cx, cz, 0, { baseY: kerb });
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI / 4 + (i * Math.PI) / 2;
+    b.prop('planter', cx + Math.cos(a) * 8, cz + Math.sin(a) * 8, -a + Math.PI / 2, { baseY: kerb });
+    const ab = (i * Math.PI) / 2;
+    const bx = cx + Math.cos(ab) * 7;
+    const bz = cz + Math.sin(ab) * 7;
+    // A bench's front (+z local) toward the memorial.
+    b.prop('bench', bx, bz, Math.atan2(cx - bx, cz - bz), { baseY: kerb });
+    b.prop('trashBin', bx + Math.sin(ab) * 1.4, bz - Math.cos(ab) * 1.4, 0, { baseY: kerb });
+  }
 }
 
 /** Parked cars, wrecks, lamp posts and barriers along the road grid. */
@@ -259,4 +270,88 @@ function streetDressing(b: MapBuilder): void {
       if (hash % 41 === 5) b.prop('barrier', a, c, Math.PI / 2 + 0.2);
     }
   }
+}
+
+/** No prop within `r` of (x, z): street furniture must not stand in a tree pit or on a lamp post. */
+function clear(b: MapBuilder, x: number, z: number, r: number): boolean {
+  return !b.props.some((p) => Math.hypot(p.pos.x - x, p.pos.z - z) < r);
+}
+
+/**
+ * What a lived-in street has besides cars, lamps and trees (render/streetProps.ts): bus shelters and
+ * hydrants along the pavements, bollards round the corners, a newsstand and café tables in the open places,
+ * planters, roadworks in one lane, and a memorial in the park.
+ */
+function streetFurnishing(b: MapBuilder): void {
+  const kerb = CITY_SCALE.kerbM;
+  const roadH = ROAD_WIDTH_M / 2;
+  const nearJunction = (a: number): boolean => ROAD_CENTRES.some((cc) => Math.abs(a - cc) < roadH + 8);
+  // Along every road, both pavements: a shelter now and then facing the road, hydrants between.
+  let k = 0;
+  for (const c of ROAD_CENTRES) {
+    for (const side of [-1, 1]) {
+      for (let a = -172; a <= 172; a += 3) {
+        k++;
+        if (nearJunction(a)) continue;
+        const h = (k * 2654435761) >>> 0;
+        const off = c + side * (roadH + 2.2);
+        // Roads along z (x = c) and along x (z = c); the shelter's open front (+z local) toward the road.
+        const along: [number, number, number][] = [
+          [off, a, side > 0 ? -Math.PI / 2 : Math.PI / 2],
+          [a, off, side > 0 ? Math.PI : 0],
+        ];
+        for (const [x, z, yaw] of along) {
+          if (h % 53 === 7 && clear(b, x, z, 3.2)) b.prop('busShelter', x, z, yaw, { baseY: kerb });
+          else if (h % 29 === 11) {
+            const hx = x === off ? c + side * (roadH + 0.5) : x;
+            const hz = z === off ? c + side * (roadH + 0.5) : z;
+            if (clear(b, hx, hz, 1.6)) b.prop('hydrant', hx, hz, yaw, { baseY: kerb });
+          }
+        }
+      }
+    }
+  }
+  // Bollards round every junction's four corners, in an L along both kerbs.
+  for (const cx of ROAD_CENTRES) {
+    for (const cz of ROAD_CENTRES) {
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          for (let i = 0; i < 2; i++) {
+            const d = roadH + 0.45;
+            const x1 = cx + sx * d;
+            const z1 = cz + sz * (roadH + 1.2 + i * 1.4);
+            const x2 = cx + sx * (roadH + 1.2 + i * 1.4);
+            const z2 = cz + sz * d;
+            if (clear(b, x1, z1, 0.8)) b.prop('bollard', x1, z1, 0, { baseY: kerb });
+            if (clear(b, x2, z2, 0.8)) b.prop('bollard', x2, z2, 0, { baseY: kerb });
+          }
+        }
+      }
+    }
+  }
+  // The park: a newsstand with café tables beside it, planters round its edge.
+  const pcx = 0;
+  const pcz = 105;
+  b.prop('kiosk', pcx - 16, pcz - 8, Math.PI / 2, { baseY: kerb });
+  for (const [dx, dz] of [[-12, -13], [-11.5, -3], [-14.5, -1.5], [-15, -14.5]] as const) {
+    if (clear(b, pcx + dx, pcz + dz, 2)) b.prop('cafeSet', pcx + dx, pcz + dz, (dx * 7 + dz) % 3, { baseY: kerb });
+  }
+  for (let t = -30; t <= 30; t += 8) {
+    for (const [x, z, yaw] of [[pcx + t, pcz - 34, 0], [pcx + t, pcz + 34, 0], [pcx - 34, pcz + t, Math.PI / 2], [pcx + 34, pcz + t, Math.PI / 2]] as const) {
+      // Gaps by the spawn and where a tree stands.
+      if (Math.hypot(x - 0, z - 125) < 6) continue;
+      if (clear(b, x, z, 2.5)) b.prop('planter', x, z, yaw, { baseY: kerb });
+    }
+  }
+  // The central courtyard: planters (low cover) and a second newsstand by the north-west building.
+  for (const [x, z, yaw] of [[-20, 8, 0], [22, -2, Math.PI / 2], [-6, -24, 0.2], [8, 30, 0]] as const) {
+    if (clear(b, x, z, 2.5)) b.prop('planter', x, z, yaw, { baseY: kerb });
+  }
+  if (clear(b, -40, 20, 3)) b.prop('kiosk', -40, 20, Math.PI / 2, { baseY: kerb });
+  // Roadworks in the outer lane of the west inner road: barriers round a fresh asphalt patch, cones ahead.
+  const rx = -INNER_ROAD_M + 4.5;
+  b.boxOnBase('roofTar', rx, 0, -24, 3.6, 0.03, 7, 0, { surface: 'asphalt' });
+  for (const z of [-28.2, -19.8]) b.prop('roadBarrier', rx, z, 0);
+  for (const z of [-26, -24, -22]) for (const x of [rx - 2.1, rx + 2.1]) b.prop('roadBarrier', x, z, Math.PI / 2);
+  for (let i = 0; i < 6; i++) b.prop('cone', rx - 1.6 + i * 0.25, -31 - i * 2.2, i * 0.7);
 }

@@ -51,7 +51,16 @@ export type PropKind =
   | 'hayBale'
   | 'beam'
   | 'crate'
-  | 'dummy';
+  | 'dummy'
+  | 'kiosk'
+  | 'planter'
+  | 'bollard'
+  | 'busShelter'
+  | 'roadBarrier'
+  | 'cone'
+  | 'hydrant'
+  | 'cafeSet'
+  | 'memorial';
 
 export interface MapProp {
   kind: PropKind;

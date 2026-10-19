@@ -148,6 +148,15 @@ export class Effects {
     }
   }
 
+  /**
+   * A wall blown in (breaches.ts): lumps of its masonry thrown out along the face's normal (nx, nz), from the
+   * hole at (x, y, z), and a spray of dust.
+   */
+  wallBurst(x: number, y: number, z: number, nx: number, nz: number, colour: number): void {
+    for (let i = 0; i < 30; i++) this.debris(x + nx * 0.3, y + (Math.random() - 0.5) * 1.6, z + nz * 0.3, colour, 3 + Math.random() * 5, 0.14, 2.6, nx, 0.25, nz);
+    for (let i = 0; i < 18; i++) this.debris(x + nx * 0.3, y, z + nz * 0.3, 0xa29d93, 2 + Math.random() * 3, 0.05, 1.6, nx, 0.4, nz);
+  }
+
   /** `flicker`: the light dies away over `seconds` (a fire), instead of holding then cutting (a muzzle flash). */
   private flashLight(x: number, y: number, z: number, intensityCd: number, colour: Color, seconds: number, flicker = false): void {
     const f = this.flashes[this.nextFlash] as Flash;

@@ -1073,6 +1073,35 @@ fraction of the sun's colour and intensity, with the sun's visibility through
 the cloud field sampled four times a second. At a few thousand per square
 metre they look like a used canopy. At seven thousand they read as hail.
 
+## 6z. A street people use, and walls that break (FL `render/streetProps.ts`, `render/breaches.ts`)
+
+Against a three.js city demo (statue on its plinth, kiosk with an awning,
+planters, café parasols, roadworks, a tower block with rocket holes through
+whole storeys), FL's city had façades, cars, lamps and trees but empty
+pavements and an empty plaza, and walls that shrugged off grenades.
+
+- **Street furniture as instanced kinds**: newsstand, planter with a clipped
+  hedge (the street tree's leaf cards squashed into a block), bollards, bus
+  shelters, road barriers and cones, hydrants, café sets, a memorial. Each is
+  a few parts coloured per vertex, one draw per kind and material, with a
+  collider from the map builder. Place them with a clearance check against
+  the props already there (no shelter in a tree pit). Put the eye-catcher
+  (the memorial) where the spawn view looks.
+- **Breaches without touching collision**: the façade box stays solid. Its
+  shader reads a uniform array of holes (centre, radius, wall normal) and
+  discards the wall inside each one through `maskNode`. The outline is noise
+  on the in-plane distance, taken only for the nearest hole (two noise reads,
+  not two per hole). Round it the broken core is darker than the face, then
+  soot.
+- **Fill the hole with geometry**: a solid box's other faces are culled from
+  inside, so a bare hole shows the sky through the house. Behind each hole
+  build a cavity: the room as a box drawn BackSide, shaded darker toward the
+  back and the ceiling, slabs across it at the storey lines with rebar, and
+  rubble on each floor. Outside, a mound and lumps on the pavement, fewer and
+  wider-spread the higher the hole. A ring of 10 recycles the oldest.
+- Broken surfaces in sun read paper-white: rubble and the rim must be darker
+  than the wall they came from.
+
 ## 6y. A cockpit you sit in (Contrail `render/cockpitModel.ts`)
 
 The old office was a dozen boxes: a hood, a flat panel, four cubes for dials,
