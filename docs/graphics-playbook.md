@@ -1118,6 +1118,66 @@ pavements and an empty plaza, and walls that shrugged off grenades.
 - Broken surfaces in sun read paper-white: rubble and the rim must be darker
   than the wall they came from.
 
+## 6z2. A town on a third of the map (Tanks `world/cityPlan.ts`, `world/cityBuildings.ts`, `render/cityMaterial.ts`, `render/cityGround.ts`)
+
+About 520 buildings, 860 lamps and 500 trees on 0.9 km². They fit the
+budget because the town is data first, and the shaders draw what geometry
+cannot afford.
+
+- **Plan as plain data.** The street grid, the block kinds, the lots, the lamps and
+  the trees are a three.js-free module with tests. The tests cover coverage, that
+  no house corner sits on a pavement, that nothing is built on the lake shore,
+  that frontages are whole even bays, and that lamps stand on pavements. The
+  terrain shader, the geometry, the grass, the forest mask, the minimap and
+  the AI routes all read the same numbers. Level the terrain under the town
+  before the lakes are carved, so the shore keeps its banks.
+- **Perimeter blocks as rows**. The north and south rows run the full width,
+  and their end houses are the corner houses. Only those get windows on their
+  gables; every other gable is a blank party wall, as real ones are. Make
+  frontages and corner depths a whole even number of bays: the shader then
+  centres windows with `fract(u / bay)`, and no window is cut at a corner.
+- **Windows in the facade shader, not in geometry**. Each vertex carries a
+  building index. A float texture (3 texels per building) holds the centre,
+  yaw, floor level, storey heights, bay and window scheme. The fragment shader
+  rotates `positionWorld` and `normalWorld` into the building's frame and draws
+  the following:
+  - openings with a lintel shadow in the reveal, frames, mullions and transoms;
+  - sills, curtains, shop fronts with fascias and doors;
+  - prefab panel joints, and arched church windows with belfry openings.
+  Trims (cornices, parapets, gables, balconies) carry a negative index, so
+  they keep the wall's surface but get no windows. Fade to the
+  wall-plus-glass average between 0.18 and 0.55 m per pixel. Fading from
+  0.05 m blanked windows on a house 40 m away. Tint the render per building
+  with pastel limewash colours, and keep flaking low: the village's patches
+  read as blood spots on a town front.
+- **Paving analytic from the grid**. The heightfield's 2 m texels could not
+  hold a kerb. Instead, the terrain shader works out the nearest grid lines,
+  street or avenue widths, and block activity (one texel per block) to draw:
+  asphalt with wheel tracks and patches, centre lines, zebras just outside
+  each junction, 50 cm slabs, a granite kerb with a tilted face, and setts on
+  the square. All of it fades before it aliases. Where paving covers the
+  ground fully, the photo layers are skipped.
+- **Lamp light without lights**. The lamps sit on a lattice, so the shader
+  finds the four nearest on each of the two nearest streets. For each it adds
+  E = I·cos^1.6θ/d² (a wide street optic) and emits ρ·E/π as an emissive term.
+  It uses the same skip rule as the CPU placement: no lamp within a crossing
+  street plus 3 m.
+- **Night needs display ceilings**. With the night preset's exposure, a
+  physical 39 lx pool was 20 000× the scene and bloomed the street white.
+  Cap the pre-exposed lamp intensity (here 340 cd·exposure, pavement peaking
+  at ~0.6). Cap lit rooms at ~1.2 and LED lenses at ~12. Keep the physical
+  value and the named cap separate in config.
+- **A spatial grid for colliders** (32 m cells, a DDA walk for segments) once
+  there are more than a few hundred. Shells, lines of sight, tank pushes, AI
+  probes (test the distance to the box, not a circle round it: a 30 m house's
+  circle covered the street), infantry and the drone's roof floor all use it.
+- **Driving the AI through the town.** Snap goals onto a street and route
+  Manhattan-style: along the current street to the cross street nearest the
+  goal, then turn. Spawn tanks only on streets or in parks, never in a
+  courtyard.
+- Merge per material in 256 m chunks: a few dozen draws, and the cascades only
+  draw nearby chunks. Instance the lamps (two draws); a tank folds one over.
+
 ## 6y. A cockpit you sit in (Contrail `render/cockpitModel.ts`)
 
 The old office was a dozen boxes: a hood, a flat panel, four cubes for dials,
@@ -2198,6 +2258,19 @@ can fly them. Each item below came from a player's complaint.
    soft landing, heading held through lever snatches, attitude step response,
    key mapping (W never flips, A yaws at hover and banks at speed), rockets on
    the axis while drifting.
+
+9. **Pause when the controls are let go**, once the player has actually played.
+   That means losing the pointer lock (Esc, P), the touch pause button, or
+   Android's Back (`window.__gamePause`, which returns true when it paused).
+   The fixed-step loop stops stepping but keeps drawing with no time passing.
+   Suspend the AudioContext. Do not pause before the first flight: test scripts
+   drive the game without a pointer lock. Put the pause layer and button on
+   `body`: a `position: fixed` `#ui` is its own stacking context, under the touch
+   controls' z-index, and a phone tap never reached the button.
+10. **Every pause menu has Quit game.** In the APK it calls `AndroidApp.quit()` (a
+    `@JavascriptInterface` that runs `finishAndRemoveTask`). In a browser it calls
+    `window.close()`, which a tab the player opened ignores, and then falls back
+    to the start menu.
 
 ## 15. Sources and credits
 
