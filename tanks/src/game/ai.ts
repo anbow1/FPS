@@ -1,9 +1,11 @@
 import * as THREE from 'three/webgpu';
 import { PLAY_HALF, WATER_LEVEL } from '../config';
 import { Rng } from '../core/rng';
-import type { World } from '../world/world';
+import { obbDistance, type World } from '../world/world';
 import { aimDirection, timeOfFlight } from './ballistics';
 import type { Tank } from './tank';
+import { halfX, halfZ, insideCityBounds, lineX, lineZ, PITCH_X, PITCH_Z } from '../world/cityPlan';
+import { CITY } from '../config';
 import { hyp2 } from '../core/mathx';
 
 const PROBE_OFFSETS = [0, -0.45, 0.45, -0.9, 0.9, -1.4, 1.4];
@@ -15,6 +17,8 @@ const _to = new THREE.Vector3();
 const _m = new THREE.Vector3();
 const _aim = new THREE.Vector3();
 const _dir = { x: 0, y: 0, z: 0 };
+const _near: number[] = [];
+const _snap = { x: 0, z: 0 };
 
 /**
  * Enemy commander: perceives with terrain line-of-sight, leads moving targets using the same
@@ -204,13 +208,7 @@ export class TankAI {
       if (slope > 0.4) score -= 6;
       if (WATER_LEVEL - h > 0.9) score -= 8;
       if (Math.abs(px) > PLAY_HALF || Math.abs(pz) > PLAY_HALF) score -= 10;
-      for (let i = 0; i < buildings.length; i++) {
-        const b = buildings[i]!;
-        const r = Math.max(b.hw, b.hd) + 6;
-        const dx = b.x - px;
-        const dz = b.z - pz;
-        if (dx * dx + dz * dz < r * r) score -= 5;
-      }
+      for (const i of world.nearBuildings(px, pz, 6, _near)) if (obbDistance(buildings[i]!, px, pz) < 6) score -= 5;
       for (let i = 0; i < rocks.length; i++) {
         const r = rocks[i]!;
         const dx = r.x - px;
@@ -235,10 +233,10 @@ export class TankAI {
       if (this.unstickT <= 0) this.state = 'patrol';
       return;
     }
-    const gx = this.goal.x - t.pos.x;
-    const gz = this.goal.y - t.pos.z;
-    const gd = hyp2(gx, gz);
-    let wantYaw = Math.atan2(gx, gz);
+    const gd = hyp2(this.goal.x - t.pos.x, this.goal.y - t.pos.z);
+    // in the town the tank follows the streets to its goal (townWaypoint); elsewhere straight at it
+    townWaypoint(world, t.pos.x, t.pos.z, this.goal.x, this.goal.y, _snap);
+    let wantYaw = Math.atan2(_snap.x - t.pos.x, _snap.z - t.pos.z);
     let throttle = this.state === 'patrol' ? 0.55 : 0.9;
     if (this.state === 'engage') {
       // short halt, hull angled towards the threat
@@ -272,5 +270,46 @@ export class TankAI {
         this.state = 'unstick';
       }
     } else this.stuckT = 0;
+  }
+}
+
+/**
+ * Where to drive next toward a goal when the town is involved: along the street the tank is on to
+ * the cross street nearest the goal, then along that one (a Manhattan route on the grid); off the
+ * streets (a courtyard, the square) back to the nearest one first. Outside the town, the goal itself
+ * (snapped onto a street if it lies in the town). Writes `out`.
+ */
+export function townWaypoint(world: World, x: number, z: number, goalX: number, goalZ: number, out: { x: number; z: number }): void {
+  const city = world.city;
+  out.x = goalX;
+  out.z = goalZ;
+  if (insideCityBounds(goalX, goalZ)) city.snapToStreet(goalX, goalZ, out);
+  if (!insideCityBounds(x, z)) return;
+  const gx = out.x;
+  const gz = out.z;
+  const kx = Math.min(CITY.blocksX, Math.max(0, Math.round((x - CITY.x0M) / PITCH_X)));
+  const kz = Math.min(CITY.blocksZ, Math.max(0, Math.round((z - CITY.z0M) / PITCH_Z)));
+  const onX = Math.abs(x - lineX(kx)) < halfX(kx) + 2 && city.isStreet(lineX(kx), z);
+  const onZ = Math.abs(z - lineZ(kz)) < halfZ(kz) + 2 && city.isStreet(x, lineZ(kz));
+  const kgx = Math.min(CITY.blocksX, Math.max(0, Math.round((gx - CITY.x0M) / PITCH_X)));
+  const kgz = Math.min(CITY.blocksZ, Math.max(0, Math.round((gz - CITY.z0M) / PITCH_Z)));
+  if (onX && onZ) {
+    // at a junction: take the axis with more of the way left
+    if (Math.abs(gx - x) > Math.abs(gz - z)) {
+      out.x = kgx === kx ? gx : lineX(kgx);
+      out.z = lineZ(kz);
+    } else {
+      out.x = lineX(kx);
+      out.z = kgz === kz ? gz : lineZ(kgz);
+    }
+  } else if (onX) {
+    // running along z on the x-line: to the goal if it is on this street, else to the junction
+    out.x = lineX(kx);
+    out.z = Math.abs(gx - lineX(kx)) < 3 ? gz : lineZ(kgz);
+  } else if (onZ) {
+    out.x = Math.abs(gz - lineZ(kz)) < 3 ? gx : lineX(kgx);
+    out.z = lineZ(kz);
+  } else {
+    city.snapToStreet(x, z, out);
   }
 }

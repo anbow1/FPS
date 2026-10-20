@@ -1,5 +1,5 @@
 import { GROUND_PHOTO_M } from '../render/photoGround';
-import { cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, floor, fract, Fn, If, int, length, max, mix, normalize, normalWorldGeometry, positionWorld, pow, property, sin, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { cameraPosition, cameraViewMatrix, dFdx, dFdy, dot, float, floor, fract, Fn, fwidth, If, int, length, max, mix, normalize, normalWorldGeometry, positionWorld, pow, property, sin, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import { linear, PBR } from '../render/palette';
@@ -7,6 +7,8 @@ import { G, thermalOutput, vnoise2 } from '../render/nodes';
 import type { GroundLayers } from '../render/groundTextures';
 import type { NoiseSet } from '../render/textures';
 import { makeRoadTexture } from '../render/textures';
+import { CITY_LIGHT } from '../render/cityMaterial';
+import { cityPaving, LAMP_COLOUR } from '../render/cityGround';
 import type { Heightfield } from './heightfield';
 import { hyp2, hyp3 } from '../core/mathx';
 
@@ -49,7 +51,7 @@ function rainRings(p: V2, time: THREE.Node<'float'>): V2 {
  * The whole ground evaluation runs once, in the colour node; roughness, the shading normal and the
  * thermal heat it produces travel to the other nodes through shader-scope properties.
  */
-export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground: GroundLayers, fancy: boolean): THREE.MeshStandardNodeMaterial {
+export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground: GroundLayers, fancy: boolean, blocks: THREE.DataTexture): THREE.MeshStandardNodeMaterial {
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.9, metalness: 0 });
   mat.name = fancy ? 'terrain-fancy' : 'terrain';
   const dryTint = (() => {
@@ -63,6 +65,8 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground:
   const tkRough = property('float', 'tkRough');
   const tkNrmW = property('vec3', 'tkNrmW');
   const tkHeat = property('float', 'tkHeat');
+  const tkAlbedo = property('vec3', 'tkAlbedo');
+  const tkLamp = property('float', 'tkLamp');
 
   // one layer: two offset lookups blended on a low-frequency index (stochastic tiling), with
   // explicit gradients so the offsets never break mip selection and sampling is legal inside a
@@ -103,12 +107,14 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground:
     const wet = float(1).sub(smoothstep(0.2, 2.4, positionWorld.y.sub(uWater).add(fine.sub(0.5).mul(0.8))));
     const beach = float(1).sub(smoothstep(1.2, 3.5, positionWorld.y.sub(uWater))).mul(float(1).sub(wet));
     const rockMask = smoothstep(0.24, 0.36, slope.add(mid.sub(0.5).mul(0.14)).add(macro2.sub(0.5).mul(0.06)));
+    // the town's paving over the ground (render/cityGround.ts); fully paved ground skips the photo layers
+    const pave = cityPaving(wp, length(fwidth(wp)), blocks, fine, mid, G.uRain);
     // bare soil: small scattered patches (a few per cent of a grazed meadow: worn spots, molehills — at a
     // quarter of the ground it read as camouflage), worn banks on moderate slopes, roads, the beach. The
     // patches fade in over a wide band with little fine noise: a hard, speckled rim read as a stain.
     const soilW = max(max(max(smoothstep(0.78, 0.93, mid.add(fine.sub(0.5).mul(0.15)).add(dry.mul(0.06))), smoothstep(0.15, 0.24, slope).mul(0.7)), smoothstep(0.05, 0.5, road)), beach.mul(0.8));
     // layer weights: meadow, soil, rock, mud
-    const w = mix(mix(vec4(float(1).sub(soilW), soilW, 0, 0), vec4(0, 0, 1, 0), rockMask), vec4(0, 0, 0, 1), wet).toVar();
+    const w = mix(mix(vec4(float(1).sub(soilW), soilW, 0, 0), vec4(0, 0, 1, 0), rockMask), vec4(0, 0, 0, 1), wet).mul(float(1).sub(smoothstep(0.97, 1, pave.mask))).toVar();
     const flat = vec4(0.5, 0.5, 1, 1);
     const aG = vec4(0).toVar();
     const aS = vec4(0).toVar();
@@ -181,10 +187,22 @@ export function terrainMaterial(noise: NoiseSet, roadTex: THREE.Texture, ground:
     tkRough.assign(mix(mix(tkRough, max(tkRough.mul(0.5), 0.3), soak), float(0.03), rainPuddle));
     tkNrmW.assign(normalize(mix(tkNrmW, normalize(nW.sub(vec3(rings.x, 0, rings.y))), rainPuddle)));
     const ground = col.mul(ao.mul(0.45).add(0.55)).mul(float(1).sub(puddle.mul(0.35))).mul(mix(float(1), float(0.6), soak)).mul(float(1).sub(rainPuddle.mul(0.45)));
-    return mix(ground.mul(mix(float(1), float(0.6), max(soaked.mul(0.7), film))), vec3(0.8), lace.mul(0.8));
+    const natural = mix(ground.mul(mix(float(1), float(0.6), max(soaked.mul(0.7), film))), vec3(0.8), lace.mul(0.8));
+    // paving: its own colour and roughness, kerb faces in the normal, rain standing in the low spots
+    const pm = pave.mask;
+    const paveWet = rain.mul(smoothstep(0.64, 0.72, pool));
+    tkRough.assign(mix(tkRough, mix(pave.rough, float(0.04), paveWet), pm));
+    tkNrmW.assign(normalize(mix(tkNrmW, normalize(nW.add(vec3(pave.tilt.x, 0, pave.tilt.y))), pm)));
+    tkHeat.assign(tkHeat.add(pave.heat.mul(pm).mul(G.uDay.add(0.4))));
+    const albedo = mix(natural, pave.colour.mul(float(1).sub(paveWet.mul(0.3))), pm);
+    tkAlbedo.assign(albedo);
+    tkLamp.assign(pave.lampLux);
+    return albedo;
   })();
   mat.roughnessNode = tkRough;
   mat.normalNode = normalize(cameraViewMatrix.mul(vec4(tkNrmW, 0)).xyz);
+  // street lamps' light pools: Lambertian, L = ρ·E/π, E from the lamps' intensity (pre-exposed)
+  mat.emissiveNode = tkAlbedo.mul(LAMP_COLOUR).mul(tkLamp.mul(CITY_LIGHT.lampCd).div(Math.PI));
   thermalOutput(mat, tkHeat);
   return mat;
 }
@@ -205,19 +223,21 @@ export class Terrain {
   private readonly noise: NoiseSet;
   private readonly ground: GroundLayers;
   private readonly roadTex: THREE.Texture;
+  private readonly blocks: THREE.DataTexture;
   private fancy: boolean;
   private farRing: THREE.Mesh;
   private chunks: Chunk[] = [];
   private readonly hf: Heightfield;
   private readonly normals: Float32Array;
 
-  constructor(hf: Heightfield, noise: NoiseSet, ground: GroundLayers, fancy: boolean) {
+  constructor(hf: Heightfield, noise: NoiseSet, ground: GroundLayers, fancy: boolean, blocks: THREE.DataTexture) {
     this.hf = hf;
     this.noise = noise;
     this.ground = ground;
     this.fancy = fancy;
     this.roadTex = makeRoadTexture(hf.road, hf.n);
-    this.material = terrainMaterial(noise, this.roadTex, ground, fancy);
+    this.blocks = blocks;
+    this.material = terrainMaterial(noise, this.roadTex, ground, fancy, blocks);
     this.normals = this.computeNormals();
     const per = (hf.n - 1) / CHUNK_CELLS;
     for (let cj = 0; cj < per; cj++) {
@@ -369,7 +389,7 @@ export class Terrain {
     if (on === this.fancy) return;
     this.fancy = on;
     const old = this.material;
-    this.material = terrainMaterial(this.noise, this.roadTex, this.ground, on);
+    this.material = terrainMaterial(this.noise, this.roadTex, this.ground, on, this.blocks);
     for (const ch of this.chunks) ch.mesh.material = this.material;
     this.farRing.material = this.material;
     old.dispose();

@@ -17,7 +17,8 @@ type V3 = THREE.Node<'vec3'>;
 const bh = (p: V2): F => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
 
 /** Colour, roughness and height (0..1) of one surface kind at a point of the building frame. */
-function facade(kind: SurfaceKind, lp: V3, nL: V3, seed: F, above: F): { col: V3; rough: F; h: F } {
+/** `flaking` raises the threshold at which the render has fallen off (0 = the village's tired walls, 1 = kept up). */
+export function facade(kind: SurfaceKind, lp: V3, nL: V3, seed: F, above: F, flaking = 0): { col: V3; rough: F; h: F } {
   const wall = select(abs(nL.x).greaterThan(abs(nL.z)), lp.zy, lp.xy);
   const wuv = select(abs(nL.y).greaterThan(0.9), lp.xz, wall);
   // screen footprint of one pixel in metres: patterns fade to their average before they alias
@@ -47,7 +48,7 @@ function facade(kind: SurfaceKind, lp: V3, nL: V3, seed: F, above: F): { col: V3
       // lime render over brick, flaking off in patches
       const tint = mix(vec3(0.62, 0.58, 0.5), vec3(0.66, 0.6, 0.46), bh(vec2(seed, seed)));
       const render = tint.mul(n1.mul(0.25).add(0.82)).mul(n2.mul(0.1).add(0.93));
-      const flake = smoothstep(0.66, 0.7, fbm3(vec3(wuv.mul(0.55), seed.add(9))).add(select(above.lessThan(1.2), float(0.08), float(0))));
+      const flake = smoothstep(0.66 + flaking * 0.12, 0.7 + flaking * 0.12, fbm3(vec3(wuv.mul(0.55), seed.add(9))).add(select(above.lessThan(1.2), float(0.08), float(0))));
       col = mix(render, col, flake);
       rough = mix(float(0.9), rough, flake);
       h = mix(n2.mul(0.05).add(1), h.mul(0.7), flake);
@@ -122,18 +123,22 @@ export function buildingMaterial(kind: SurfaceKind): THREE.MeshStandardNodeMater
     return f.col.mul(mix(float(1), float(0.72), G.uRain));
   })();
   mat.roughnessNode = tkRough;
-  // Mikkelsen's surface-gradient bump from the height's screen derivatives
-  mat.normalNode = Fn(() => {
+  mat.normalNode = heightBump(tkH, bumpScale);
+  addThermalConst(mat, kind === 'metal' ? 0.14 : kind === 'tiles' ? 0.12 : 0.1);
+  return mat;
+}
+
+/** Mikkelsen's surface-gradient bump from a height's screen derivatives (no UVs or tangents needed). */
+export function heightBump(h: F, bumpScale: number): V3 {
+  return Fn(() => {
     const n = normalViewGeometry;
     const sx = dFdx(positionView);
     const sy = dFdy(positionView);
-    const dh = vec2(dFdx(tkH), dFdy(tkH)).mul(bumpScale * 60);
+    const dh = vec2(dFdx(h), dFdy(h)).mul(bumpScale * 60);
     const r1 = cross(sy, n);
     const r2 = cross(n, sx);
     const det = dot(sx, r1);
     const grad = sign(det).mul(r1.mul(dh.x).add(r2.mul(dh.y)));
     return normalize(abs(det).mul(n).sub(grad));
   })();
-  addThermalConst(mat, kind === 'metal' ? 0.14 : kind === 'tiles' ? 0.12 : 0.1);
-  return mat;
 }

@@ -1,10 +1,11 @@
 import * as THREE from 'three/webgpu';
-import { DRONE, ENEMY_TANK, HMG_127, MG_762, MG_AIM, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
+import { CITY, DRONE, ENEMY_TANK, HMG_127, MG_762, MG_AIM, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
 import type { Input } from '../core/input';
 import { Rng } from '../core/rng';
 import { ATMO, installAtmosphere } from '../render/atmosphere';
 import { Lighting, PRESETS } from '../render/lighting';
 import type { Pipeline } from '../render/pipeline';
+import { CITY_LIGHT } from '../render/cityMaterial';
 import { G } from '../render/nodes';
 import { Rain } from '../render/rain';
 import { revealOnePerPipeline, warmAllPipelines } from '../render/warmup.ts';
@@ -176,6 +177,12 @@ export class Game {
     this.rain.rate.value = rain;
     const sky = (p.skyLux / Math.PI) * this.lighting.exposure;
     this.rain.light.value.set(sky * 0.9, sky * 0.95, sky);
+    // the town's lights: rooms, lamp lenses and the lamps' light on the paving, from dusk
+    const ex = this.lighting.exposure;
+    const on = p.skyLux < CITY.lightsOnSkyLux ? 1 : 0;
+    CITY_LIGHT.window.value = on * Math.min(CITY.windowDisplayCap, CITY.windowLuminanceCdM2 * ex);
+    CITY_LIGHT.lamp.value = on * Math.min(CITY.lensDisplayCap, CITY.lampLensCdM2 * ex);
+    CITY_LIGHT.lampCd.value = on * Math.min(CITY.poolDisplayCapCd, CITY.lampIntensityCd * ex);
   }
 
   /** particle sizes are in pixels: refresh after the render resolution changes */
@@ -340,7 +347,10 @@ export class Game {
         z = p.pos.z + Math.sin(ang) * d;
         if (Math.abs(x) > PLAY_HALF - 60 || Math.abs(z) > PLAY_HALF - 60) continue;
         if (this.world.hf.heightAt(x, z) < WATER_LEVEL + 1.5) continue;
-        if (this.world.buildings.some((b) => hyp2(b.x - x, b.z - z) < 25)) continue;
+        if (this.world.insideBuilding(x, z, 12)) continue;
+        // in the town only on a street or in a park: never shut in a courtyard
+        const ground = this.world.city.surfaceAt(x, z);
+        if (ground === 'block' || ground === 'walk' || ground === 'square') continue;
         if (this.tanks.some((t) => hyp2(t.pos.x - x, t.pos.z - z) < 40)) continue;
         break;
       }

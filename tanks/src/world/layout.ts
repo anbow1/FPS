@@ -13,8 +13,7 @@ export const LAKES: Lake[] = [
 export const SITES: Site[] = [
   { x: 60, z: -40, r: 120 }, // village
   { x: -500, z: -430, r: 55 }, // farm SW
-  { x: 540, z: 380, r: 55 }, // farm NE
-  { x: -620, z: 560, r: 45 }, // barn NW
+  // the north third is the town (world/cityPlan.ts, config CITY)
 ];
 
 export const ROADS: Road[] = [

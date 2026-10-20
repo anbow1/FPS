@@ -124,6 +124,40 @@ src/
 tests/                 vitest: balistyka, pancerz
 ```
 
+## Miasto
+
+Północna trzecia część mapy (ok. 0,92 km², `CITY` w `config.ts`) to miasteczko w siatce ulic
+16 × 7 kwartałów, z aleją co czwartą ulicę wzdłuż i co trzecią w poprzek, obwodnicą na brzegach,
+placem z kościołem w centrum i parkami nad jeziorem. Polne drogi kończą się na obwodnicy, przez
+parki biegną dalej jako dukty. Plan (`world/cityPlan.ts`) to czyste dane bez three.js, więc jest
+testowany bez przeglądarki (`tests/cityPlan.test.ts`), a te same liczby sterują shaderem
+nawierzchni, geometrią, trawą, lasem, minimapą i trasami AI.
+
+- **Zabudowa** — kamienice w kwartałach obrzeżnych (podwórko w środku, narożniki z oknami na obie
+  ulice, ślepe ściany szczytowe między sąsiadami, 3–6 kondygnacji, wyżej w centrum), sklepy w
+  parterach przy alejach i w śródmieściu, osiedla z wielkiej płyty (5 lub 11 pięter, ślepe szczyty,
+  balkony), hale na wschodnim skraju (blacha falista albo stara cegła z kominem), kościół z wieżą i
+  iglicą. Wymiary w metrach: kondygnacja 3,3 m, parter sklepowy 4,4 m, płyta 2,8 m, przęsło 3,3–3,9 m.
+- **Okna proceduralne** (`render/cityMaterial.ts`) w układzie każdego budynku: wnęka z cieniem
+  nadproża, szyba odbijająca niebo, ramy, słupki i ślemiona, parapety, zasłony, witryny i szyldy,
+  bramy klatek, fugi płyt, łukowe okna kościoła. Z daleka wszystko przechodzi w średnią, zanim
+  zacznie migotać. Nocą świeci ok. 38 % mieszkań (2900 K) i większość sklepów (4200 K).
+- **Nawierzchnie** (`render/cityGround.ts`), liczone analitycznie z siatki, więc ostre z bliska:
+  asfalt z wyślizganymi koleinami i łatami, osie (przerywane na ulicach, podwójne na alejach),
+  zebry przed każdym skrzyżowaniem, chodnik z płyt 50 cm i granitowy krawężnik, kostka granitowa
+  na placu. W deszczu wszystko ciemnieje i błyszczy, woda stoi w zagłębieniach.
+- **Latarnie** — maszt 8 m co 32 m po obu stronach ulicy, LED 2500 cd / 3000 K. Nocą świecą
+  klosze, a plamy światła na nawierzchni są liczone fizycznie (E = I·cos θ / d², L = ρ·E/π).
+  Czołg przewraca latarnię jak drzewo. W alejach rosną lipy, w parkach drzewa liściaste.
+- **Wydajność** — ok. 520 budynków, scalonych na materiał w kawałkach 256 m (kilkadziesiąt draw
+  calli, cienie rysują tylko pobliskie kawałki), latarnie jako dwa instancjonowane draw calle.
+  Ponad tysiąc kolizji obsługuje siatka przestrzenna (`world/buildingIndex.ts`) dla pocisków,
+  linii wzroku, czołgów, AI, piechoty i drona. Na presecie Niska nie ma balkonów i drobiazgów na
+  dachach.
+- **Rozgrywka** — wrogie czołgi pojawiają się w mieście tylko na ulicach albo w parkach i jeżdżą
+  po siatce ulic (trasa „w L” od skrzyżowania do skrzyżowania). Piechota chowa się przy domach, a
+  dron przelatuje nad dachami.
+
 ## Woda, las, budynki, ziemia
 
 - **Jeziora** — fale z widma wiatrowego liczone FFT na GPU (Tessendorf), dokładny Fresnel,

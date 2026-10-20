@@ -174,3 +174,60 @@ export const BUDGET = {
   low: { drawCalls: 1500, trianglesM: 4 },
   frameMs: 14,
 };
+
+/**
+ * The town in the north third of the map (world/cityPlan.ts). A regular grid of streets with an
+ * avenue every few lines, perimeter blocks of tenements, prefab estates, an industrial edge, parks
+ * and a square; the street-lamp and storey numbers are typical of a Central European town.
+ */
+export const CITY = {
+  /** Rectangle the blocks fill (m); the ring streets run on its edges. ~0.92 km², a third of the play area. */
+  x0M: -820,
+  x1M: 820,
+  z0M: 270,
+  z1M: 820,
+  /** Blocks across x and z (grid pitch = size / count: 102.5 m × 78.6 m). */
+  blocksX: 16,
+  blocksZ: 7,
+  /** Every n-th grid line is an avenue (counted from the west and south ring streets). */
+  avenueEveryX: 4,
+  avenueEveryZ: 3,
+  /** Half the carriageway (m): two lanes plus a parking lane on a street, four lanes on an avenue. */
+  streetHalfM: 5.5,
+  avenueHalfM: 8,
+  /** Pavement width on each side (m). */
+  streetWalkM: 4,
+  avenueWalkM: 5,
+  /** Storey heights (m): tenement floor to floor, a shop ground floor, a prefab panel storey. */
+  tenementFloorM: 3.3,
+  shopGroundM: 4.4,
+  prefabFloorM: 2.8,
+  /** Window bay (m): one window and its pier. Frontages are even numbers of bays; tenements are four bays deep (13–16 m). */
+  bayMinM: 3.3,
+  bayMaxM: 3.9,
+  /** The downtown centre; storeys fall off with distance from it. */
+  centreX: 0,
+  centreZ: 545,
+  /** Street lamps: spacing along a kerb, mast height, peak intensity straight down, colour. */
+  lampSpacingM: 32,
+  lampHeightM: 8,
+  lampIntensityCd: 2500,
+  lampColourK: 3000,
+  /** Luminance of a lit room seen through its window at night (cd/m²) and the share of rooms lit. */
+  windowLuminanceCdM2: 25,
+  windowsLitShare: 0.38,
+  /** Luminance of a lamp's LED lens (cd/m²). */
+  lampLensCdM2: 20000,
+  /** Sky illuminance (lx) below which street lamps and room lights are on. */
+  lightsOnSkyLux: 60,
+  /**
+   * Display ceilings (pre-exposed) for the windows and lenses: at night the scene's exposure puts a
+   * lit room 200× over mid-grey, a white blob; the eye adapts locally and still sees it warm. Tuned
+   * by eye against the night and moon presets. The light pools get the same treatment: under the
+   * night preset's exposure a 39 lx pool is 20 000× the scene and bloomed the street white.
+   */
+  windowDisplayCap: 1.2,
+  lensDisplayCap: 12,
+  /** Ceiling on the lamps' pre-exposed intensity for the pools (cd × exposure): pavement peaks ~0.6. */
+  poolDisplayCapCd: 340,
+} as const;

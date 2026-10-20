@@ -1,5 +1,6 @@
 import { HEIGHT_CELL, PLAY_HALF, WATER_LEVEL, WORLD_SIZE } from '../config';
 import { Simplex2 } from '../core/noise';
+import { cityFlattenWeight, type CityPlan } from './cityPlan';
 import { LAKES, ROADS, SITES } from './layout';
 import { hyp2, hyp3 } from '../core/mathx';
 
@@ -22,7 +23,10 @@ export class Heightfield {
   private readonly sy: Simplex2;
   private siteH: number[] = [];
 
-  constructor(seed: number) {
+  constructor(
+    seed: number,
+    private readonly city: CityPlan,
+  ) {
     this.sx = new Simplex2(seed);
     this.sy = new Simplex2(seed * 7 + 3);
     this.siteH = SITES.map((s) => this.large(s.x, s.z) + 0.5);
@@ -68,6 +72,10 @@ export class Heightfield {
     h += s.ridged(x / 430, z / 430, 4) * 24 * ridgeMask;
     // soft floor so only the authored lakes hold water
     h = 3 + Math.log1p(Math.exp((h - 3) * 0.5)) / 0.5;
+    // The town is levelled to a gently rolling plain (wavelength ~1.6 km, grades under ~3 %), the way a
+    // street grid is graded; the lakes are carved after it, so the shore keeps its banks.
+    const cw = cityFlattenWeight(x, z);
+    if (cw > 0) h += (25 + this.sx.fbm(x / 1600 + 7.3, z / 1600 - 1.9, 2) * 9 - h) * cw;
     for (const l of LAKES) {
       const d = hyp2(x - l.x, z - l.z) / l.r;
       if (d < 1.6) {
@@ -91,6 +99,7 @@ export class Heightfield {
   private finish(x: number, z: number, big: number): number {
     const s = this.sy;
     let small = s.fbm(x / 95, z / 95, 3) * 2.0 + s.noise(x / 26, z / 26) * 0.45;
+    small *= 1 - 0.85 * cityFlattenWeight(x, z);
     for (const st of SITES) {
       const d = hyp2(x - st.x, z - st.z);
       small *= smoothstep(st.r * 0.6, st.r * 1.2, d) * 0.85 + 0.15;
@@ -125,6 +134,9 @@ export class Heightfield {
           for (let i = i0; i <= i1; i++) {
             const x = -this.half + i * HEIGHT_CELL;
             const z = -this.half + j * HEIGHT_CELL;
+            // the town's paving and houses take over from the dirt roads; through its parks they stay as tracks
+            const ground = this.city.surfaceAt(x, z);
+            if (ground === 'street' || ground === 'walk' || ground === 'block' || ground === 'square') continue;
             // gentle meander so roads are not ruler-straight
             const wob = this.sx.noise(x / 60, z / 60) * 3.5;
             const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2));

@@ -144,6 +144,11 @@ export class Hud {
         r += road * 50;
         g += road * 35;
         b += road * 25;
+        // the town's streets and pavements, grey
+        const ground = world.city.surfaceAt(x, z);
+        if (ground === 'street' || ground === 'walk' || ground === 'square') {
+          r = g = b = ground === 'street' ? 88 : 118;
+        }
         const k = 0.55 + shade * 0.6;
         const o = (j * S + i) * 4;
         img.data[o] = r * k;

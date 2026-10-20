@@ -4,6 +4,7 @@ import { Rng } from '../core/rng';
 import { attribute, mix } from 'three/tsl';
 import { UNIFORM_COLOURS, bootGeometry, handGeometry, headGeometry, helmetGeometry, launcherGeometry, limb as clothLimb, rifleGeometry, torsoGeometry, warheadGeometry } from '../render/infantryModel';
 import { addThermalConst } from '../render/nodes';
+import { pushOutObb } from '../world/buildings';
 import type { World } from '../world/world';
 import type { Audio } from './audio';
 import { aimDirection, timeOfFlight } from './ballistics';
@@ -27,6 +28,7 @@ export interface AirTarget {
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _dir = { x: 0, y: 0, z: 1 };
+const _near: number[] = [];
 
 export class Soldier implements SoftTarget {
   alive = true;
@@ -241,7 +243,8 @@ export class Infantry {
       if (hyp2(x - from.x, z - from.z) < 280) continue;
       // cover: trees or a building nearby, road in view
       const trees = world.vegetation.query(x, z, 14, []).length;
-      const house = world.buildings.some((b) => hyp2(b.x - x, b.z - z) < 22);
+      if (world.insideBuilding(x, z, 2)) continue;
+      const house = world.insideBuilding(x, z, 12);
       const road = world.hf.roadAt(x, z) > 0.1 ? -3 : 0;
       const score = Math.min(trees, 5) + (house ? 4 : 0) + road + rng.next();
       if (score > bestScore) {
@@ -257,8 +260,13 @@ export class Infantry {
       const s = new Soldier(i === 0 || (i === 3 && rng.next() < 0.5) ? 'rpg' : 'rifle', squad, (x, how) => this.killed(x, how));
       const ang = face + (i - n / 2) * 0.9 + rng.range(-0.3, 0.3);
       const r = 3 + rng.next() * 6;
-      const x = best[0] + Math.cos(ang) * r;
-      const z = best[1] + Math.sin(ang) * r;
+      let x = best[0] + Math.cos(ang) * r;
+      let z = best[1] + Math.sin(ang) * r;
+      // a man who would stand inside a house waits at the squad's spot instead
+      if (world.insideBuilding(x, z, 0.6)) {
+        x = best[0];
+        z = best[1];
+      }
       s.pos.set(x, world.hf.heightAt(x, z), z);
       s.yaw = face + rng.range(-0.3, 0.3);
       s.timer = rng.range(0, 2);
@@ -392,6 +400,8 @@ export class Infantry {
           const sp = 4.2;
           s.pos.x += Math.sin(s.yaw) * sp * dt;
           s.pos.z += Math.cos(s.yaw) * sp * dt;
+          // walls stop a runner: slide along them
+          for (const k of world.nearBuildings(s.pos.x, s.pos.z, 1, _near)) pushOutObb(world.buildings[k]!, s.pos, 0.4);
           s.pos.y = world.hf.heightAt(s.pos.x, s.pos.z);
           s.runPhase += dt * 9;
           if (s.timer <= 0 && dist > 45) {

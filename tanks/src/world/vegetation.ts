@@ -10,6 +10,7 @@ import { addThermalConst, G } from '../render/nodes';
 import type { NoiseSet } from '../render/textures';
 import { NOISE_SIZE } from '../render/textures';
 import type { Heightfield } from './heightfield';
+import type { Spot } from './cityPlan';
 import { SITES } from './layout';
 import { broadleafGeometry, coniferGeometry, makeBarkTexture, makeLeafTexture, makeNeedleTexture } from './treeModels';
 import { hyp2 } from '../core/mathx';
@@ -78,6 +79,12 @@ function rockGeometry(rng: Rng): THREE.BufferGeometry {
   return mergeParts([g]);
 }
 
+/** Where the forests may grow, and the trees the town plants itself (avenues, parks). */
+export interface TreeRules {
+  wild(x: number, z: number): boolean;
+  planted: readonly Spot[];
+}
+
 /** Grid cell (m) on which the near trees and the impostors are refilled. */
 const LOD_CELL_M = 32;
 
@@ -99,7 +106,7 @@ export class Vegetation {
   private nearM = Infinity;
   private lodCell = Number.NaN;
 
-  constructor(hf: Heightfield, noise: NoiseSet, seed: number, lite = false) {
+  constructor(hf: Heightfield, noise: NoiseSet, seed: number, lite: boolean, rules: TreeRules) {
     const rng = new Rng(seed);
     // Foliage: alpha-clipped cards (sheet: "alpha-clip + A2C"; no MSAA here, so plain clip).
     const needles = foliageMaterial(makeNeedleTexture(seed + 1), 0.3, lite);
@@ -123,6 +130,19 @@ export class Vegetation {
     const variants = 3;
     const perVariant = this.perVariant;
     const lim = PLAY_HALF + 120;
+    const addTree = (t: Tree): void => {
+      const idx = this.trees.length;
+      this.trees.push(t);
+      perVariant[t.variant]!.push(t);
+      const key = cellKey(t.x, t.z);
+      let list = this.grid.get(key);
+      if (!list) this.grid.set(key, (list = []));
+      list.push(idx);
+    };
+    // the town's lindens and park trees: the broadleaf, a little smaller than in the wood
+    for (const p of rules.planted) {
+      addTree({ x: p.x, z: p.z, y: hf.heightAt(p.x, p.z) - 0.2, s: rng.range(0.7, 0.95), rot: p.yawRad, variant: 2, fall: 0, fallDir: 0, falling: false });
+    }
     for (let attempt = 0; attempt < 60000 && this.trees.length < 5200; attempt++) {
       const x = rng.range(-lim, lim);
       const z = rng.range(-lim, lim);
@@ -135,16 +155,9 @@ export class Vegetation {
       if (nrm.y < 0.82) continue;
       if (hf.roadAt(x, z) > 0.02) continue;
       if (SITES.some((s) => hyp2(x - s.x, z - s.z) < s.r * 0.9)) continue;
-      if (mid(x, z) > 0.8) continue;
+      if (mid(x, z) > 0.8 || !rules.wild(x, z)) continue;
       const variant = rng.next() < 0.22 ? 2 : rng.next() < 0.5 ? 0 : 1;
-      const t: Tree = { x, z, y: y - 0.2, s: rng.range(0.75, 1.3), rot: rng.next() * Math.PI * 2, variant, fall: 0, fallDir: 0, falling: false };
-      const idx = this.trees.length;
-      this.trees.push(t);
-      perVariant[t.variant]!.push(t);
-      const key = cellKey(x, z);
-      let list = this.grid.get(key);
-      if (!list) this.grid.set(key, (list = []));
-      list.push(idx);
+      addTree({ x, z, y: y - 0.2, s: rng.range(0.75, 1.3), rot: rng.next() * Math.PI * 2, variant, fall: 0, fallDir: 0, falling: false });
     }
     for (let v = 0; v < variants; v++) {
       const kind = kinds[v]!;
@@ -179,7 +192,7 @@ export class Vegetation {
       const p = 0.03 + smooth(0.12, 0.3, steep) * 0.6;
       if (rng.next() > p) continue;
       if (hf.roadAt(x, z) > 0.02 || y < WATER_LEVEL - 1) continue;
-      if (SITES.some((s) => hyp2(x - s.x, z - s.z) < s.r * 0.8)) continue;
+      if (SITES.some((s) => hyp2(x - s.x, z - s.z) < s.r * 0.8) || !rules.wild(x, z)) continue;
       const big = rng.next() < 0.12;
       const r = big ? rng.range(1.6, 3.2) : rng.range(0.25, 0.9);
       const m = new THREE.Matrix4().compose(

@@ -35,9 +35,10 @@ export class Grass {
     noise: NoiseSet,
     perChunk: number,
     radius: number,
+    cover: (x: number, z: number) => number,
   ) {
     this.heights = hf.heights;
-    this.density = bakeDensity(hf, noise);
+    this.density = bakeDensity(hf, noise, cover);
     for (let i = 0; i < MAX_PUSHERS; i++) this.last.push({ x: NaN, z: NaN });
     this.setDensity(perChunk, radius);
   }
@@ -110,7 +111,8 @@ export class Grass {
 }
 
 /** Meadow, beach (dry, pale) grass, sedge, canopy shade over the world on a 2 m grid. */
-function bakeDensity(hf: Heightfield, noise: NoiseSet): { data: Uint8Array; originX: number; originZ: number; cellM: number; size: number } {
+/** `cover` (0 … 1) thins the grass where the ground is built on or paved (the town). */
+function bakeDensity(hf: Heightfield, noise: NoiseSet, cover: (x: number, z: number) => number): { data: Uint8Array; originX: number; originZ: number; cellM: number; size: number } {
   const size = Math.round(WORLD_SIZE / DENSITY_CELL_M) + 1;
   const data = new Uint8Array(size * size * 4);
   const tn = { x: 0, y: 1, z: 0 };
@@ -133,6 +135,7 @@ function bakeDensity(hf: Heightfield, noise: NoiseSet): { data: Uint8Array; orig
       const road = hf.roadAt(x, z);
       let keep = (1 - soil) * (1 - smooth(0.2, 0.33, 1 - tn.y)) * (1 - smooth(0.02, 0.2, road)) * smooth(WATER_LEVEL + 0.8, WATER_LEVEL + 1.4, y);
       for (const s of SITES) if (hyp2(x - s.x, z - s.z) < s.r * 0.35) keep *= 0.3;
+      keep *= cover(x, z);
       const damp = smooth(WATER_LEVEL + 0.4, WATER_LEVEL + 0.9, y) * (1 - smooth(WATER_LEVEL + 1.6, WATER_LEVEL + 3, y)) * (1 - smooth(0.2, 0.33, 1 - tn.y));
       const forest = sampleWrap(noise.g, NOISE_SIZE, x / 380 + 0.3, z / 380) * 0.7 + macro * 0.3;
       const o = (j * size + i) * 4;

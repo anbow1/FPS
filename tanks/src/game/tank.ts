@@ -40,6 +40,7 @@ const _n = new THREE.Vector3();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const _tn = { x: 0, y: 1, z: 0 };
 const _trees: number[] = [];
+const _near: number[] = [];
 
 let nextId = 1;
 
@@ -303,9 +304,8 @@ export class Tank {
       const c = { x: this.pos.x + fx * off * s, z: this.pos.z + fz * off * s };
       const ox = c.x;
       const oz = c.z;
-      for (const b of world.buildings) {
-        if (Math.abs(b.x - c.x) > 30 || Math.abs(b.z - c.z) > 30) continue;
-        if (pushOutObb(b, c, r)) bumped = true;
+      for (const k of world.nearBuildings(c.x, c.z, r + 1, _near)) {
+        if (pushOutObb(world.buildings[k]!, c, r)) bumped = true;
       }
       for (const rk of world.vegetation.rocks) {
         const dx = c.x - rk.x;
@@ -330,6 +330,11 @@ export class Tank {
       for (const k of world.vegetation.query(cx, cz, r + 0.4, _trees)) {
         world.vegetation.knock(k, fx * s, fz * s);
         this.speed *= 0.8;
+      }
+      // a street lamp folds over with hardly a check (a thin steel mast)
+      for (const k of world.lamps.query(cx, cz, r + 0.3, _trees)) {
+        world.lamps.knock(k, fx * s, fz * s);
+        this.speed *= 0.95;
       }
     }
     this.velocity.set(fx * this.speed, 0, fz * this.speed);

@@ -211,7 +211,8 @@ export class Drone implements SoftTarget {
     this.pos.addScaledVector(this.vel, dt);
     // terrain, trees and ceiling
     const g2 = world.hf.heightAt(this.pos.x, this.pos.z);
-    const minY = g2 + (world.vegetation.query(this.pos.x, this.pos.z, 4, []).length ? 16 : 1.5);
+    // over trees and roofs (the town's houses run to 35 m, the church spire to 60 m)
+    const minY = Math.max(g2 + (world.vegetation.query(this.pos.x, this.pos.z, 4, []).length ? 16 : 1.5), world.roofAt(this.pos.x, this.pos.z) + 3);
     if (this.pos.y < minY) {
       this.pos.y = minY;
       this.vel.y = Math.max(0, this.vel.y);
