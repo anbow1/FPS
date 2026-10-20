@@ -4,6 +4,7 @@ import type { Action, Input } from '../core/input.ts';
 import { MODE_LABELS, type ModeId } from '../game/modes.ts';
 import { MAP_LABELS } from '../maps/index.ts';
 import type { MapId } from '../maps/types.ts';
+import { quitGame } from './quit.ts';
 
 // Main menu, pause menu, loading screen and results. Plain DOM over the canvas.
 
@@ -99,7 +100,7 @@ export class Menu {
         <p class="sub">Click Resume to recapture the mouse.</p>
         <div class="row"><label>Light</label><div class="seg" data-g="preset"></div></div>
         ${this.settingsRows()}
-        <div class="actions"><button class="primary" data-a="resume">Resume</button><button data-a="bench">Benchmark</button><button data-a="quit">Quit to menu</button></div>
+        <div class="actions"><button class="primary" data-a="resume">Resume</button><button data-a="bench">Benchmark</button><button data-a="quit">Quit to menu</button><button data-a="exit">Quit game</button></div>
         <details><summary style="cursor:pointer;margin-top:14px;color:#a9a59c">Controls</summary><div class="keys" data-g="keys"></div></details>
       </div>`;
     this.bindCommon();
@@ -108,6 +109,7 @@ export class Menu {
     this.q('[data-a="resume"]').addEventListener('click', () => this.cb.onResume());
     this.q('[data-a="bench"]').addEventListener('click', () => this.cb.onBenchmark());
     this.q('[data-a="quit"]').addEventListener('click', () => this.cb.onQuit());
+    this.q('[data-a="exit"]').addEventListener('click', () => quitGame(() => this.cb.onQuit()));
   }
 
   /** Benchmark results as a plain table, with a copy button for pasting into a report. */
@@ -145,6 +147,7 @@ export class Menu {
       </div>`;
     this.q('[data-a="again"]').addEventListener('click', () => this.cb.onStart(this.settings));
     this.q('[data-a="quit"]').addEventListener('click', () => this.cb.onQuit());
+    this.q('[data-a="exit"]').addEventListener('click', () => quitGame(() => this.cb.onQuit()));
   }
 
   private q(sel: string): HTMLElement {

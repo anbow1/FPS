@@ -43,6 +43,7 @@ the sky.
 | Gear / brakes / G-limiter | G / B / L | GEAR / BRK |
 | Sky / quality / tone map / data | K / O / T / H | — |
 | Sound on / off | M | — |
+| Pause (resume, main menu, quit game) | Esc / P | ❚❚ top left, or Back on Android |
 
 URL options: `?mode=duel|intercept|landing|free`, `&ac=wraith|talon`,
 `&vs=…`, `&ai=easy|normal|hard`, `&time=morning|noon|dusk`, `&q=low`,

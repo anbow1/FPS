@@ -41,6 +41,7 @@ import { Tones } from './ui/tones.ts';
 import { graphicsSetup, loadControls } from './ui/settings.ts';
 import { TiltSteering } from './ui/tilt.ts';
 import { FlightTouchControls } from './ui/touch.ts';
+import { menuUrl, PauseMenu } from './ui/pause.ts';
 
 // Contrail — a stealth fighter against a heavy twin in a physical sky. The
 // start menu picks the mode, the aircraft on each side, the AI's difficulty
@@ -201,7 +202,25 @@ async function main(): Promise<void> {
   };
   canvas.addEventListener('click', startFlying);
   banner.addEventListener('click', startFlying);
-  input.onLockChange = (locked) => (banner.style.display = locked ? 'none' : 'block');
+  // Once the player has flown, letting go of the controls pauses the flight (ui/pause.ts).
+  let flown = false;
+  const pause = new PauseMenu(input.touch, { resume: startFlying, menu: () => window.location.assign(menuUrl()) });
+  pause.touchButton?.addEventListener('click', () => input.exitLock());
+  // Android's Back button (and leaving the app) pauses a flight; outside one, Back leaves the app.
+  (window as unknown as { __gamePause?: () => boolean }).__gamePause = () => {
+    if (!input.locked) return false;
+    input.exitLock();
+    return true;
+  };
+  input.onLockChange = (locked) => {
+    if (locked) flown = true;
+    banner.style.display = locked || flown ? 'none' : 'block';
+    if (locked) pause.hide(true);
+    else if (flown) pause.show();
+    loop.paused = !locked && flown;
+    const ctx = tones.context;
+    if (ctx && flown) void (locked ? ctx.resume() : ctx.suspend());
+  };
   let touch: FlightTouchControls | null = null;
   if (input.touch) {
     const b = (code: string): string => code;
@@ -268,6 +287,7 @@ async function main(): Promise<void> {
         pilot.setTilt(tilt ? tilt.stick : null);
         if (rig.mode === 'orbit') rig.orbit(pilot.delta.dx, pilot.delta.dy);
         if (input.pressed('camera')) rig.next();
+        if (input.pressed('pause') && input.locked) input.exitLock();
         if (input.pressed('debug')) overlay.visible = !overlay.visible;
         if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
         if (input.pressed('timeOfDay')) {

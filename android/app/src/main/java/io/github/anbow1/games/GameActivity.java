@@ -9,6 +9,7 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -60,6 +61,8 @@ public class GameActivity extends Activity {
                 return !WebViewAssetLoader.DEFAULT_DOMAIN.equals(url.getHost());
             }
         });
+        // The games' "Quit game" buttons call AndroidApp.quit(); only the bundled game is ever loaded.
+        web.addJavascriptInterface(new AppBridge(), "AndroidApp");
         setContentView(web);
         hideSystemBars();
         if (savedInstanceState == null) web.loadUrl(ENTRY);
@@ -119,6 +122,15 @@ public class GameActivity extends Activity {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         web.saveState(outState);
+    }
+
+    /** What the page may ask of the app. */
+    private final class AppBridge {
+        /** Ends the game: closes the activity and drops it from the recent apps. */
+        @JavascriptInterface
+        public void quit() {
+            runOnUiThread(GameActivity.this::finishAndRemoveTask);
+        }
     }
 
     @Override

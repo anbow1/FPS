@@ -13,6 +13,8 @@ export class FixedLoop {
   private lastMs = -1;
   private running = false;
   private rafId = 0;
+  /** While true the simulation stands still (the pause screen); frames are still drawn, with no time passing. */
+  paused = false;
 
   /** `maxStepsPerFrame` defaults to the config value; tests on a slow software GPU raise it to keep game time moving. */
   constructor(
@@ -38,6 +40,10 @@ export class FixedLoop {
     // First frame: no elapsed time yet, so no step, but still render.
     const frameSeconds = this.lastMs < 0 ? 0 : Math.min((nowMs - this.lastMs) / 1000, 0.25 * (this.maxStepsPerFrame / PHYSICS.maxStepsPerFrame));
     this.lastMs = nowMs;
+    if (this.paused) {
+      this.callbacks.render(this.accumulatorSeconds / PHYSICS.stepSeconds, 0);
+      return;
+    }
     this.accumulatorSeconds += frameSeconds;
     let steps = 0;
     while (this.accumulatorSeconds >= PHYSICS.stepSeconds && steps < this.maxStepsPerFrame) {

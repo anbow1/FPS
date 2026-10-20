@@ -28,6 +28,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0c0e; col
 .menu button.on { background: #2c5a3c; border-color: #5fcf88; }
 .menu .go { margin-top: 14px; width: 100%; padding: 13px; font-size: 17px; background: #2f6b46; border-color: #6ee39a; }
 .menu .keys { margin-top: 12px; color: #8a9aa2; font-size: 12px; line-height: 1.5; }
+/* Pause screen (ui/pause.ts) */
+.menu.pause .menu-card { max-width: 360px; text-align: center; }
+.menu .quit { margin-top: 10px; width: 100%; padding: 11px; }
+.pause-btn { position: fixed; top: 8px; left: 8px; z-index: 6; width: 44px; height: 44px; border-radius: 8px; border: 1px solid rgba(140, 160, 170, 0.45); background: rgba(14, 18, 22, 0.55); color: #dfe6ea; font: 600 16px system-ui, sans-serif; touch-action: none; }
 .status { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); padding: 4px 12px; background: rgba(8, 10, 12, 0.55); border-radius: 4px; font: 13px ui-monospace, Menlo, Consolas, monospace; color: #cfe8d4; pointer-events: none; }
 @media (max-height: 480px) {
   .menu-card { padding: 12px 16px; }

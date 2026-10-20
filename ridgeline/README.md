@@ -36,6 +36,7 @@ and missions follow.
 | Camera (outside, front seat) | C | CAM |
 | Tilt steering on/off, set hands-off (how the phone is held just after tap to fly, or at CAL) | — (menu) | TILT, CAL |
 | Flight data / sky / quality / sound | H / K / O / M | — |
+| Pause (resume, main menu, quit game) | Esc / P | ❚❚ top left, or Back on Android |
 
 With SAS on, the flight computer flies what the controls ask for. The power
 lever has three levels: climb, hold the height, descend. Straight down at low

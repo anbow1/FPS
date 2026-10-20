@@ -10,6 +10,7 @@ import { BenchRecorder, type BenchSample, formatBench } from './render/benchReco
 import { PRESETS } from './render/lighting';
 import { Pipeline } from './render/pipeline';
 import { Hud } from './ui/hud';
+import { quitGame } from './ui/quit';
 import { isTouchDevice, TouchControls } from './ui/touch';
 import { World } from './world/world';
 import { PLAYER_SPAWN } from './world/layout';
@@ -201,6 +202,9 @@ async function boot(): Promise<void> {
     input.requestLock();
   };
   playBtn.onclick = resume;
+  // "Zakończ grę" in the pause menu: closes the Android app, or the tab (else back to the start)
+  const quitBtn = $('btn-quit');
+  quitBtn.onclick = () => quitGame(() => window.location.reload());
   canvas.addEventListener('click', () => {
     if (game.state === 'playing' && !input.locked) input.requestLock();
   });
@@ -220,6 +224,7 @@ async function boot(): Promise<void> {
     hud.show(s !== 'paused' && s !== 'menu');
     touch.show(s === 'playing' || s === 'intermission');
     if (!firstStart) playBtn.textContent = 'Wznów';
+    quitBtn.style.display = firstStart ? 'none' : '';
     if (s === 'dead') {
       setTimeout(() => {
         if (game.state !== 'dead') return;

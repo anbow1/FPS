@@ -3,6 +3,7 @@ import type { Inventory } from '../game/inventory.ts';
 import { ITEMS } from '../game/items.ts';
 import { isTouchDevice } from '../core/input.ts';
 import { escapeHtml } from './hud.ts';
+import { quitGame } from './quit.ts';
 import { ITEM_ICONS, TIME_ICONS, WEATHER_ICONS } from './icons.ts';
 
 // Title and loading screen, the pause menu (time of day, weather, graphics,
@@ -136,7 +137,12 @@ export class Menus {
         <div class="row"><label>Volume</label><input type="range" min="0" max="1" step="0.02" value="${s.volume}" data-k="volume"></div>
         <div class="row"><label>Performance</label><button class="bench">Benchmark</button></div>
         <details><summary>Controls</summary>${controlsTable()}</details>
+        <button class="quit">Quit game</button>
       </div>`;
+    this.pause.querySelector('.quit')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      quitGame(() => window.location.reload());
+    });
     this.pause.querySelector('.bench')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.cb.onBenchmark();

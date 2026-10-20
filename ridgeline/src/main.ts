@@ -36,6 +36,7 @@ import { graphicsSetup, loadControls, saveControls } from './ui/settings.ts';
 import { RotorSound } from './ui/sound.ts';
 import { TiltSteering } from './ui/tilt.ts';
 import { FlightTouchControls } from './ui/touch.ts';
+import { menuUrl, PauseMenu } from './ui/pause.ts';
 
 // Ridgeline — an attack helicopter over 20 km of ridges and valleys. The start
 // menu picks the mission, the helicopter and the sky; then the world loads:
@@ -219,7 +220,24 @@ async function main(): Promise<void> {
   };
   canvas.addEventListener('click', startFlying);
   banner.addEventListener('click', startFlying);
-  input.onLockChange = (locked) => (banner.style.display = locked ? 'none' : 'block');
+  // Once the player has flown, letting go of the controls pauses the flight (ui/pause.ts).
+  let flown = false;
+  const pause = new PauseMenu(input.touch, { resume: startFlying, menu: () => window.location.assign(menuUrl()) });
+  pause.touchButton?.addEventListener('click', () => input.exitLock());
+  // Android's Back button (and leaving the app) pauses a flight; outside one, Back leaves the app.
+  (window as unknown as { __gamePause?: () => boolean }).__gamePause = () => {
+    if (!input.locked) return false;
+    input.exitLock();
+    return true;
+  };
+  input.onLockChange = (locked) => {
+    if (locked) flown = true;
+    banner.style.display = locked || flown ? 'none' : 'block';
+    if (locked) pause.hide(true);
+    else if (flown) pause.show();
+    loop.paused = !locked && flown;
+    if (audio && flown) void (locked ? audio.resume() : audio.suspend());
+  };
   let touch: FlightTouchControls | null = null;
   if (input.touch) {
     touch = new FlightTouchControls(
@@ -349,6 +367,7 @@ async function main(): Promise<void> {
           say(arm.laser ? 'LASER ON' : 'LASER OFF', 1.5);
         }
         if (input.pressed('camera')) rig.next();
+        if (input.pressed('pause') && input.locked) input.exitLock();
         if (input.pressed('debug')) overlay.visible = !overlay.visible;
         if (input.pressed('mute')) muted = !muted;
         if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
