@@ -3,7 +3,7 @@ import { PilotControls } from './app/pilot.ts';
 import { HELICOPTERS, PHYSICS, WEAPONS } from './config.ts';
 import { Input } from './core/input.ts';
 import { FixedLoop } from './core/loop.ts';
-import { Atmosphere } from './render/atmosphere.ts';
+import { Atmosphere, SUN_RADIUS_RAD } from './render/atmosphere.ts';
 import { CameraRig } from './render/cameraRig.ts';
 import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
 import { CombatView, EMISSIVE_EXPOSURE } from './render/combatView.ts';
@@ -14,6 +14,7 @@ import { SkyLighting } from './render/lighting.ts';
 import { Rain } from './render/rain.ts';
 import { canopyFlow, canopyFlowSpeed, canopyRain, canopyTime } from './render/canopyRain.ts';
 import { scratchSun, scratchSunDir } from './render/canopyScratches.ts';
+import { flareAspect, flareDiscLum, flareDiscRadius, flareOnScreen, flareSun, flareSunUv } from './render/lensFlare.ts';
 import { Stage, type StageSettings } from './render/stage.ts';
 import { TerrainRenderer } from './render/terrainMesh.ts';
 import { TerrainShadow } from './render/terrainShadow.ts';
@@ -147,6 +148,8 @@ async function main(): Promise<void> {
   // The sun on the canopy's scratches (render/canopyScratches.ts): hidden by cloud, sampled four times a second.
   let sunSeen = 1;
   let sunSeenAgeS = 1;
+  const sunNdc = new Vector3();
+  const sunView = new Vector3();
   const flowLocal = new Vector3();
   const downLocal = new Vector3();
   pilot.invertPitch = controls.invertPitch;
@@ -501,6 +504,18 @@ async function main(): Promise<void> {
             sunSeen = sd.y < -0.02 ? 0 : lineTransmittance(clouds.data, clouds.layer, c.x, c.y, c.z, c.x + sd.x * 20_000, c.y + sd.y * 20_000, c.z + sd.z * 20_000, w.x, w.y);
           }
           scratchSunDir.value.copy(lighting.sunDir);
+          // The lens flare: the sun on screen (the GPU measures how much of it shows) and its light at the lens.
+          const cam = stage.camera;
+          cam.updateMatrixWorld();
+          sunNdc.copy(cam.position).addScaledVector(lighting.sunDir, 1000).project(cam);
+          const ahead = sunView.copy(lighting.sunDir).transformDirection(cam.matrixWorldInverse).z < 0;
+          const edge = Math.min(1 - Math.abs(sunNdc.x), 1 - Math.abs(sunNdc.y));
+          flareOnScreen.value = ahead && lighting.sunDir.y > -0.02 ? Math.min(1, Math.max(0, edge / 0.04)) : 0;
+          flareSunUv.value.set(sunNdc.x * 0.5 + 0.5, 0.5 - sunNdc.y * 0.5);
+          flareAspect.value = cam.aspect;
+          flareDiscRadius.value = Math.tan(SUN_RADIUS_RAD) / (2 * Math.tan((cam.fov * Math.PI) / 360));
+          flareDiscLum.value = Math.max(lighting.sunDiscLuminance, 1e-6);
+          flareSun.value.set(lighting.sun.color.r, lighting.sun.color.g, lighting.sun.color.b).multiplyScalar(lighting.sun.intensity);
           const sunI = lighting.sun.intensity * sunSeen;
           scratchSun.value.set(lighting.sun.color.r * sunI, lighting.sun.color.g * sunI, lighting.sun.color.b * sunI);
         }

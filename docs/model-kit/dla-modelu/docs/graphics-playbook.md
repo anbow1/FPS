@@ -1073,6 +1073,27 @@ fraction of the sun's colour and intensity, with the sun's visibility through
 the cloud field sampled four times a second. At a few thousand per square
 metre they look like a used canopy. At seven thousand they read as hail.
 
+## 6x2. The sun through the lens (Contrail/Ridgeline `render/lensFlare.ts`)
+
+A camera turned to the sun shows three things: a diffraction starburst (one
+spike per straight blade edge, fine rays from dust), ghosts (aperture-shaped
+images of the sun along the line through the frame's centre, each a
+different size and coating tint), and a wide ring ghost. Draw them in post,
+after TRAA (it smears pixel-wide spikes) and before tone mapping. Hold each
+spike's half-width to about a pixel at every distance (perpendicular distance
+r·sin(N·θ/2)/(N/2)), or it aliases far out and blurs close in. Turn the
+blades off the horizontal, or one spike lies along the horizon like a seam.
+Give each ghost a slightly different size per colour channel; the fringe
+sells it. Physically the ghosts are faint, around 0.1–0.5 % of the sun's
+illuminance spread over the ghost, so they show against a dark cockpit and
+vanish against bright sky. That is correct; do not crank them to show over
+the sky. The key is visibility. Read the scene's HDR frame over 13 taps
+inside the sun's disc and divide by the disc's known luminance (the sky's
+clamp × transmittance, computed on the CPU). Do it in a 1 × 1 `rtt`, so it
+runs once a frame, not once a pixel. A canopy bow, ridge or cloud over the
+sun then removes the flare by itself, and a thin cloud dims it. Inside that
+1 × 1 target `screenSize` is 1 × 1, so the aspect must be a uniform.
+
 ## 6z. A street people use, and walls that break (FL `render/streetProps.ts`, `render/breaches.ts`)
 
 Against a three.js city demo (statue on its plinth, kiosk with an awning,

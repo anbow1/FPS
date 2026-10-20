@@ -1,5 +1,5 @@
 import { CircleGeometry, Color, DirectionalLight, Mesh, MeshBasicNodeMaterial, PMREMGenerator, type RenderTarget, Scene, Vector3, type WebGPURenderer } from 'three/webgpu';
-import { Atmosphere, SUN_TOA_LUX } from './atmosphere.ts';
+import { Atmosphere, SUN_RADIUS_RAD, SUN_TOA_LUX } from './atmosphere.ts';
 
 // Sun, exposure and the environment probe, driven by the atmosphere (rules
 // §4.1–4.3). The three presets the brief asks for; EV100 per preset from
@@ -143,6 +143,13 @@ export class SkyLighting {
     sc.updateProjectionMatrix();
     l.shadow.bias = close ? -0.0002 : -0.0004;
     l.shadow.normalBias = close ? 0.003 : 0.05;
+  }
+
+  /** Luminance of the sky's sun disc as the scene pass draws it (atmosphere.skyRadiance: mean limb, clamp, transmittance). */
+  get sunDiscLuminance(): number {
+    const solidAngle = 2 * Math.PI * (1 - Math.cos(SUN_RADIUS_RAD));
+    const sunIll = SUN_TOA_LUX * this.exposure;
+    return Math.min((sunIll / solidAngle) * 0.85, 30_000) * (this.sun.intensity / Math.max(sunIll, 1e-9));
   }
 
   /** Per frame: sun colour from the transmittance at this altitude, the LUTs, the probe when stale. */

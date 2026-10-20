@@ -3,7 +3,8 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { convertToTexture, depth as fragmentDepth, float, length, mix, mrt, normalize, output, pass, pow, rtt, screenSize, screenUV, select, texture, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AddEquation, AgXToneMapping, CustomBlending, DepthTexture, FloatType, HalfFloatType, Layers, type Material, type Node, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, RenderPipeline, Scene, SrcAlphaFactor, SRGBColorSpace, WebGPURenderer, ZeroFactor } from 'three/webgpu';
+import { ACESFilmicToneMapping, AddEquation, AgXToneMapping, CustomBlending, DepthTexture, FloatType, HalfFloatType, Layers, type Material, type Node, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, RenderPipeline, Scene, SrcAlphaFactor, SRGBColorSpace, type TextureNode, WebGPURenderer, ZeroFactor } from 'three/webgpu';
+import { lensFlare } from './lensFlare.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 
@@ -172,7 +173,7 @@ export class Stage {
     const high = this.settings.quality === 'high';
     // Aerial perspective before anti-aliasing, on the HDR scene colour: every surface takes the haze
     // of the air between it and the eye; the sky (reversed depth 0) already has it.
-    let hazed: Node<'vec4'> = colour;
+    let hazed: TextureNode = colour;
     if (this.aerial || this.clouds) {
       const screen = uv();
       const d = depth.sample(screen).r;
@@ -218,7 +219,8 @@ export class Stage {
     const temporal = this.settings.temporalAA;
     const aa = temporal ? traa(hazed, depth, motion, this.camera) : hazed;
     const glare = bloom(aa, high ? 0.05 : 0.035, 0.35, 0);
-    let lit = aa.add(glare).rgb;
+    // The sun's flare after the anti-aliasing: TRAA would smear its pixel-wide spikes as they move.
+    let lit = aa.add(glare).rgb.add(lensFlare(hazed, uv()));
     // G effects: grey-out desaturates and closes a tunnel from the edges; red-out tints red.
     const r = length(uv().sub(vec2(0.5)).mul(vec2(1.6, 1)));
     const lum = lit.dot(vec3(0.2126, 0.7152, 0.0722));

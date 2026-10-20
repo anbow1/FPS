@@ -35,7 +35,7 @@ const GROUND_ALBEDO = 0.3;
 /** Solar illuminance at the top of the atmosphere (lux): ~128 klx, which leaves ~100 klx at noon on the ground. */
 export const SUN_TOA_LUX = 128_000;
 /** Sun's angular radius (0.53° diameter). */
-const SUN_RADIUS_RAD = (0.265 * Math.PI) / 180;
+export const SUN_RADIUS_RAD = (0.265 * Math.PI) / 180;
 /** Aerial perspective reaches this far (m); beyond it the last slice holds. */
 const AP_RANGE_M = 420_000;
 const AP_SLICES = 32;
