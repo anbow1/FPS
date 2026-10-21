@@ -1648,6 +1648,54 @@ mixed over the analytic sky by its weight. Rules learnt:
 - The frame governor switches it off through a uniform (a branch on a uniform
   is uniform control flow) right after the sun shafts, before resolution.
 
+### 7.12b A planar mirror for calm lakes (Tanks `render/planarMirror.ts`, High only)
+
+SSR cannot mirror what is not on screen, so the hills behind a lake and the sky
+over a town were missing from the reflection. On a calm lake the whole far shore
+should stand in the water upside down. The fix is to draw the scene once more
+from the camera reflected in the water plane, at half resolution, and have the
+water sample that image at its own screen position (x mirrored) shifted by the
+wave normal: `n.xz · 0.05 / (1 + 0.015·d)`.
+
+- **Not three's `reflector()` here.** Inside the MRT scene pass on the WebGL2
+  backend it rendered nothing. Its oblique near plane also assumes a standard
+  depth range, and with a reversed depth buffer it clipped the whole image.
+  `node.sample(uv)` has a further trap: the clone keeps its own default
+  texture, while the reflector only updates the original node.
+- **Render it yourself before the frame**, outside any pass, with `setMRT(null)`.
+  Reflect the eye, the look-at point and the up vector in the plane.
+- **Use the reversed-depth oblique frustum.** Replace row 3 with `row4 − a·C`, with
+  C the water plane in view space, so the near test `z_c ≤ w_c` becomes
+  `a·(C·v) ≥ 0`. Pick `a = (row4·q)/(C·q)`, with q the frustum's far corner
+  (NDC z = 0 when reversed), so the far plane still passes through q. Check the
+  mirror target's pixels: sky at the bottom, the treeline, then the clipped
+  half.
+- **Keep the second draw cheap.** Hide the water and the grass, and set
+  `shadow.autoUpdate = false` on the sun and the cascade lights: the cascades
+  fit the main camera, so the main pass's maps serve as they are. Skip the
+  mirror when no lake is near or the eye is underwater. Draw it once during
+  the loading warm-up, so its plain-target pipelines compile then. When the
+  frame governor drops reflections, stop rendering it and fall back to the sky.
+
+### 7.12c Terrain that reads like an aerial photo (Ridgeline `render/landCover.ts`)
+
+A real DEM with an orthophoto beats noise because the colour follows the relief:
+snow lies in gullies and on north faces, scree fans out under the cliffs, grass
+is damp in hollows and dry on spurs. Bake the relief and paint by it:
+
+- **Curvature in the normal map's alpha.** For the near grid use a ±40 m
+  Laplacian, computed in one pass on the main thread after the bake; tanh with
+  a gain set so the 10th/90th percentiles land near ∓0.55. A 10 m stencil
+  mostly sees the knolls, not the gullies a helicopter sees.
+- **Snow from height plus aspect plus relief.** The snow line drops about 240 m
+  on a north face and about 260 m in a gully, rises on ridges, and breaks into
+  patches with a 400 m noise. On cliffs, snow stays only on the strata ledges
+  and in gully streaks.
+- **Scree** where a hollow meets a 35–45° slope, above the fields and the
+  forest: pale and speckled, faded out before it aliases.
+- **Damp green in gullies, dry yellowed sward on ridges**, on the open slopes
+  only.
+
 ### 7.13 A wake that lasts (lagoon `render/wakeFoam.ts`)
 
 From the seaplane scene *Halcyon* (an AI-made three.js demo): what sells a

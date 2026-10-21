@@ -42,9 +42,10 @@ export interface LandSurface {
 
 /**
  * `P` world position (y = height), `nrm` the baked world normal, `cov` the cover map (forest, rock, snow,
- * water/river). Pure ALU besides the inputs, so it runs in either stage.
+ * water/river), `relief` the baked curvature (> 0 gullies and hollows, < 0 ridges, −1 … 1; the
+ * normal map's alpha). Pure ALU besides the inputs, so it runs in either stage.
  */
-export function landSurface(P: V3, nrm: V3, cov: Node<'vec4'>): LandSurface {
+export function landSurface(P: V3, nrm: V3, cov: Node<'vec4'>, relief: F): LandSurface {
   const forest = cov.r;
   const rock = cov.g;
   const snow = cov.b;
@@ -124,6 +125,12 @@ export function landSurface(P: V3, nrm: V3, cov: Node<'vec4'>): LandSurface {
   heath = mix(heath, mix(lin(0x5e4c44), lin(0x7a5a3a), macro), heather.mul(0.55));
   heath = mix(heath, lin(0x2c3820), bushes.mul(0.7));
   let albedo: V3 = mix(heath, farmland, lowland);
+  // Relief, as an aerial photo shows it: damp, lusher grass down the gullies and hollows, dry
+  // yellowed sward on the wind-blown ridges.
+  const gully = smoothstep(0.1, 0.6, relief);
+  const ridge = smoothstep(0.1, 0.6, relief.negate());
+  albedo = mix(albedo, albedo.mul(vec3(0.78, 0.9, 0.74)), gully.mul(0.6));
+  albedo = mix(albedo, mix(albedo, lin(0x8a8250), 0.35), ridge.mul(float(1).sub(lowland)).mul(0.7));
   // Forest canopy: dark greens with crown-scale variation.
   const canopy = mix(lin(0x2a3820), lin(0x3c4a2a), mx_noise_float(P.xz.div(60)).mul(0.5).add(0.5));
   const forestK = smoothstep(0.3, 0.6, forest);
@@ -145,10 +152,17 @@ export function landSurface(P: V3, nrm: V3, cov: Node<'vec4'>): LandSurface {
   rockColour = rockColour.mul(float(1).sub(crack.mul(0.35).mul(cliff)));
   // Exposed rock also where the slope is steep, not only where the baked cover says so.
   const steep = smoothstep(0.82, 0.62, nrm.y).mul(float(1).sub(water));
-  const rockMask = max(rock, steep.mul(0.85));
-  albedo = mix(albedo, rockColour, rockMask);
-  // Snow settles on the flatter ground and slides off the steep faces, whatever the cover map says.
-  const snowHere = snow.mul(smoothstep(0.55, 0.78, nrm.y));
+  // Scree: pale grey fans of broken rock where the steep ground eases into a hollow below the
+  // faces, above the forest and fields (speckled with boulders, faded before they alias).
+  const screeSpeck = smoothstep(0.6, 0.85, mx_noise_float(P.xz.div(3.5)).mul(0.5).add(0.5)).mul(float(1).sub(smoothstep(600, 1600, dist)));
+  const scree = gully.mul(float(1).sub(smoothstep(0.8, 0.93, nrm.y))).mul(smoothstep(0.62, 0.72, nrm.y)).mul(float(1).sub(lowland)).mul(float(1).sub(forestK)).mul(float(1).sub(water));
+  const screeColour = mix(lin(0x9a968e), lin(0x6f6b65), screeSpeck.mul(0.6)).mul(tone.mul(0.2).add(0.9));
+  const rockMask = max(max(rock, steep.mul(0.85)), scree.mul(0.9));
+  albedo = mix(albedo, mix(rockColour, screeColour, scree.mul(float(1).sub(rock))), rockMask);
+  // Snow settles on the flatter ground and slides off the steep faces, whatever the cover map says;
+  // on the faces it stays on the ledges, the beds' tops, in streaks down the gullies.
+  const ledges = smoothstep(0.55, 0.8, beds).mul(cliff.add(0.35).min(1)).mul(0.75).add(gully.mul(0.5)).min(1);
+  const snowHere = snow.mul(max(smoothstep(0.55, 0.78, nrm.y), ledges.mul(smoothstep(0.3, 0.55, nrm.y))));
   albedo = mix(albedo, lin(0xe8edf2), snowHere);
   albedo = albedo.mul(float(0.85).add(macro.mul(0.3))).mul(float(0.9).add(fine.mul(0.2)));
 

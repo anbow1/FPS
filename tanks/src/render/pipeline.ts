@@ -58,7 +58,7 @@ const SHAFT_TAPS = { high: 24, low: 12 } as const;
 interface GovernorStep {
   ao: boolean;
   shafts: boolean;
-  /** Screen-space reflections on the lakes (High only). */
+  /** The lakes' mirror (High only): off, the shader shows the sky and the mirror renders coarse. */
   reflections: boolean;
   scale: number;
 }

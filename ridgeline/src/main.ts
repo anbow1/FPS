@@ -162,7 +162,8 @@ async function main(): Promise<void> {
     const h = terrainData.heightAt(x, z);
     const grad = Math.hypot(terrainData.heightAt(x + 10, z) - terrainData.heightAt(x - 10, z), terrainData.heightAt(x, z + 10) - terrainData.heightAt(x, z - 10)) / 20;
     // The cover bake's "slope" is 1 − the normal's y.
-    return sourceCover(x, z, h, 1 - 1 / Math.hypot(1, grad), coverTmp).forest;
+    // The forest does not depend on aspect or relief: neutral values.
+    return sourceCover(x, z, h, 1 - 1 / Math.hypot(1, grad), 0, 0, coverTmp).forest;
   };
   const force = new GroundForce({ groundAt, riverX, forestAt });
   const combatView = new CombatView(stage.scene, atmosphere);

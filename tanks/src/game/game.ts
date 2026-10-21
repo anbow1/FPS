@@ -148,6 +148,7 @@ export class Game {
     this.water = new Water(world.hf, world.noise, this.lighting, initialDetail);
     for (const t of this.water.targets) pipeline.passTimer.name(t, 'water');
     this.scene.add(this.water.group);
+    this.water.setMirrorScene([world.grass.group], () => [this.lighting.sun, ...this.lighting.csm.lights]);
     hud.buildMinimap(world);
   }
 
@@ -185,9 +186,10 @@ export class Game {
     CITY_LIGHT.lampCd.value = on * Math.min(CITY.poolDisplayCapCd, CITY.lampIntensityCd * ex);
   }
 
-  /** particle sizes are in pixels: refresh after the render resolution changes */
+  /** The frame governor moved (render scale, reflections): particle sizes are in pixels, the lakes' mirror follows. */
   refreshPixelScale(): void {
     this.applyFog();
+    this.water.setMirrorAllowed(this.pipeline.governor.step.reflections);
   }
 
   private applyFog(): void {
@@ -285,6 +287,7 @@ export class Game {
     const restore = revealOnePerPipeline(this.scene);
     try {
       await withTimeout(r.compileAsync(this.scene, this.camera), 20000);
+      this.water.warmMirror(r, this.scene, this.camera);
     } catch (err) {
       console.error('shader pre-compilation failed; continuing, the rest compiles on first use:', err);
     } finally {
@@ -1028,7 +1031,7 @@ export class Game {
     this.infantry.render(cam.position);
     if (!this.rotor && this.audio.ready) this.rotor = this.audio.createRotor();
     if (this.rotor) this.audio.updateRotor(this.rotor, this.drone.pos, Math.min(1, this.drone.vel.length() / DRONE.maxSpeed), this.drone.alive);
-    this.water.update(this.pipeline.renderer, this.time, cam.position, dt);
+    this.water.update(this.pipeline.renderer, this.time, this.scene, cam, dt);
     this.effects.update(dt, cam.position, this.quality.wreckShadow);
     this.effects.setWind(G.uWind.value);
 

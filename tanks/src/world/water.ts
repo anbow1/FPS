@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { abs, cameraPosition, clamp, Discard, dot, exp, float, Fn, fwidth, If, length, max, min, mix, normalize, positionWorld, pow, property, reflect, refract, select, sin, smoothstep, sqrt, texture, uniform, vec2, vec3 } from 'three/tsl';
+import { abs, cameraPosition, clamp, Discard, dot, exp, float, Fn, fwidth, If, length, max, min, mix, normalize, positionWorld, pow, property, reflect, refract, screenUV, select, sin, smoothstep, sqrt, texture, uniform, vec2, vec3 } from 'three/tsl';
 import { cloudShadow } from '../render/atmosphere';
 import { HEIGHT_CELL, WATER_LEVEL, WORLD_SIZE } from '../config';
 import type { Lighting } from '../render/lighting';
@@ -7,7 +7,8 @@ import { OceanFFT } from '../render/ocean';
 import { RippleField } from '../render/rippleField';
 import { linear, PBR } from '../render/palette';
 import { G, vnoise2 } from '../render/nodes';
-import { screenReflection } from '../render/screenReflection';
+import { screenReflectionOn } from '../render/screenReflection';
+import { PlanarMirror, withHidden } from '../render/planarMirror';
 import { waveWarp } from '../render/waveWarp';
 
 type F = THREE.Node<'float'>;
@@ -35,6 +36,16 @@ export class Water {
   readonly ripples: RippleField;
   private readonly ocean: OceanFFT;
   private readonly material: THREE.MeshBasicNodeMaterial;
+  /**
+   * The mirror on High (null on Low): the scene drawn once more from below the water plane, at half
+   * resolution, so the far shore, the forest and the town stand upside down in a calm lake. It
+   * replaced screen-space reflection, which could not mirror what lies above the top of the screen
+   * (the hills behind a lake, the sky over the town).
+   */
+  private readonly mirror: PlanarMirror | null;
+  /** Drawn with the mirror hidden: the water itself and what it need not show (the grass). */
+  private mirrorHidden: THREE.Object3D[] = [];
+  private shadowLights: () => readonly { shadow?: { autoUpdate: boolean } }[] = () => [];
 
   constructor(hf: Heightfield, noise: NoiseSet, lighting: Lighting, detail: 'high' | 'low') {
     this.ocean = new OceanFFT({
@@ -73,6 +84,8 @@ export class Water {
     const world = vec2(WORLD_SIZE / 2, WORLD_SIZE + HEIGHT_CELL);
     const IOR = 1.333;
     const caustics = detail === 'high';
+    const mirror = detail === 'high' ? new PlanarMirror(WATER_LEVEL, 0.5) : null;
+    this.mirror = mirror;
 
     const fres = (ci0: F, n: number): F => {
       const ci = clamp(ci0, 0, 1);
@@ -161,11 +174,13 @@ export class Water {
       const rr = vec3(rr0.x, abs(rr0.y), rr0.z);
       const shoreK = float(1).sub(smoothstep(0.012, 0.1, rr.y));
       let refl: V3 = mix(skyCol(rr), cShore.mul(amb.mul(1.3).add(sunB.mul(0.08))), shoreK.mul(0.85));
-      // On High the real far shore, trees and tanks are mirrored where the screen holds them
-      // (screenReflection.ts); the painted treeline above stays as the fallback.
-      if (detail === 'high') {
-        const ssr = screenReflection(P, normalize(vec3(rr.x, max(rr.y, 0.004), rr.z)));
-        refl = mix(refl, ssr.colour, ssr.weight);
+      // On High the mirror image, shifted by the wave facets as a rough mirror shifts it (less far
+      // away, where a pixel covers many facets); the painted treeline above is the fallback when
+      // the frame governor turns the mirror down.
+      if (mirror) {
+        const shift = vec2(n.x, n.z).mul(0.05).div(dist.mul(0.015).add(1));
+        const image = texture(mirror.target.texture, screenUV.flipX().add(shift)).rgb;
+        refl = mix(refl, image, screenReflectionOn);
       }
 
       // ---- sun glint: Beckmann, roughness widened by slope variance
@@ -236,6 +251,28 @@ export class Water {
     }
   }
 
+  /**
+   * While the mirror draws the scene: no water and no grass in it (it would only mirror the bank's
+   * blades at great cost), and no second pass of the sun's shadow cascades (they are fitted to the
+   * main camera, so the main pass's maps serve the mirror as they are).
+   */
+  setMirrorScene(hidden: readonly THREE.Object3D[], shadowLights: () => readonly { shadow?: { autoUpdate: boolean } }[]): void {
+    this.mirrorHidden = [this.group, ...hidden];
+    this.shadowLights = shadowLights;
+  }
+
+  /** Draw the mirror once at load, with everything the warm-up revealed: its plain-target pipelines compile now. */
+  warmMirror(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
+    const mirror = this.mirror;
+    if (mirror) withHidden([this.group], () => mirror.render(renderer, scene, camera));
+  }
+
+  /** The frame governor's reflection step: a coarse mirror while it is off (the shader shows the sky then). */
+  setMirrorAllowed(on: boolean): void {
+    this.mirrorOn = on;
+  }
+  private mirrorOn = true;
+
   /** The FFT's offscreen targets (the per-pass GPU timer files them under "water"). */
   get targets(): THREE.RenderTarget[] {
     return this.ocean.targets;
@@ -246,13 +283,22 @@ export class Water {
     this.ocean.update(renderer, 0);
   }
 
-  update(renderer: THREE.WebGPURenderer, time: number, camera: THREE.Vector3, dt: number): void {
-    // no need to run the FFT when no lake is anywhere near the view
+  update(renderer: THREE.WebGPURenderer, time: number, scene: THREE.Scene, camera: THREE.PerspectiveCamera, dt: number): void {
+    // no need to run the FFT or the mirror when no lake is anywhere near the view
+    const c = camera.position;
     let near = false;
-    for (const l of LAKES) if (hyp2(camera.x - l.x, camera.z - l.z) < l.r + 900) near = true;
-    if (near) {
-      this.ocean.update(renderer, time);
-      this.ripples.update(dt, camera.x, camera.z);
+    for (const l of LAKES) if (hyp2(c.x - l.x, c.z - l.z) < l.r + 900) near = true;
+    if (!near) return;
+    this.ocean.update(renderer, time);
+    this.ripples.update(dt, c.x, c.z);
+    const mirror = this.mirror;
+    if (mirror && this.mirrorOn && c.y > WATER_LEVEL + 0.2) {
+      withHidden(this.mirrorHidden, () => {
+        const lights = this.shadowLights();
+        for (const l of lights) if (l.shadow) l.shadow.autoUpdate = false;
+        mirror.render(renderer, scene, camera);
+        for (const l of lights) if (l.shadow) l.shadow.autoUpdate = true;
+      });
     }
   }
 }

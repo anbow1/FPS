@@ -62,8 +62,8 @@ export function buildGrass(renderer: WebGPURenderer, tex: TerrainTextures, shado
   const landAt = (xz: Node<'vec2'>, y: Node<'float'>): ReturnType<typeof landSurface> => {
     const uvN = xz.div(TERRAIN.nearSizeM).add(0.5);
     const cov = texture(tex.nearCover, uvN);
-    const nrm = normalize(texture(tex.nearNormal, uvN).xyz.mul(2).sub(1));
-    return landSurface(vec3(xz.x, y, xz.y), nrm, cov);
+    const nm = texture(tex.nearNormal, uvN);
+    return landSurface(vec3(xz.x, y, xz.y), normalize(nm.xyz.mul(2).sub(1)), cov, nm.a.mul(2).sub(1));
   };
   const densityPass = bake((xz, y) => landAt(xz, y).grass);
   const surfacePass = bake((xz, y) => vec4(landAt(xz, y).albedo, y.sub(refY)));

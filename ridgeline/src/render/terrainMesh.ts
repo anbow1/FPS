@@ -112,9 +112,10 @@ export class TerrainRenderer {
     const t = clamp(max(abs(P.x), abs(P.z)).sub(TERRAIN.blendFromM).div(TERRAIN.blendToM - TERRAIN.blendFromM), 0, 1);
     const uvN = P.xz.div(TERRAIN.nearSizeM).add(0.5);
     const uvF = P.xz.div(TERRAIN.farSizeM).add(0.5);
-    const nrm = normalize(mix(texture(tex.nearNormal, uvN), texture(tex.farNormal, uvF), t).xyz.mul(2).sub(1));
+    const nm = mix(texture(tex.nearNormal, uvN), texture(tex.farNormal, uvF), t);
+    const nrm = normalize(nm.xyz.mul(2).sub(1));
     const cov = mix(texture(tex.nearCover, uvN), texture(tex.farCover, uvF), t);
-    const land = landSurface(P, nrm, cov);
+    const land = landSurface(P, nrm, cov, nm.a.mul(2).sub(1));
     const water = land.water;
     const rockMask = land.rock;
     const snowHere = land.snow;

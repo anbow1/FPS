@@ -156,13 +156,22 @@ export function sourceHeight(x: number, z: number, detail = 1): number {
   return TERRAIN.baseElevationM + (h - TERRAIN.baseElevationM) * flat;
 }
 
-/** Land cover from height, slope and noise (baked with the heights). */
-export function sourceCover(x: number, z: number, h: number, slope: number, out: LandCover): LandCover {
+/**
+ * Land cover from height, slope, aspect and relief (baked with the heights). `northness` is how far
+ * the slope faces north (−1 … 1, the horizontal normal's −z: shaded from the midday sun),
+ * `concavity` the ground's curvature (> 0 in a gully or hollow, < 0 on a ridge or knoll, −1 … 1).
+ */
+export function sourceCover(x: number, z: number, h: number, slope: number, northness: number, concavity: number, out: LandCover): LandCover {
   out.water = 0;
   const fromRiver = Math.abs(x - riverX(z));
   out.river = 1 - smooth(TERRAIN.riverHalfWidthM - 4, TERRAIN.riverHalfWidthM + 2, fromRiver);
-  out.rock = smooth(0.4, 0.75, slope) * (1 - out.river);
-  out.snow = smooth(1500, 2100, h + fbm(x / 3000, z / 3000, 2, 41) * 300) * smooth(0.75, 0.4, slope);
+  // Wind strips the ridges to rock; gullies fill with debris and soil.
+  out.rock = smooth(0.4, 0.75, slope - concavity * 0.12) * (1 - out.river);
+  // Late-summer snow: the line is ~250 m lower on a shaded north face and in the gullies the
+  // avalanches and drifts fill, higher on the sunny side and on wind-blown ridges, and it breaks
+  // into patches a few hundred metres across round the line (as in any alpine aerial photo).
+  const snowLine = h + fbm(x / 3000, z / 3000, 2, 41) * 300 + northness * 240 + concavity * 260 + fbm(x / 420, z / 420, 3, 47) * 140;
+  out.snow = smooth(1500, 2100, snowLine) * smooth(0.75, 0.4, slope - Math.max(concavity, 0) * 0.15);
   // The forest belt: the middle slopes of the ridges, broken by clearings; riverside woods along the banks.
   const forestNoise = fbm(x / 2600, z / 2600, 4, 33);
   const belt = smooth(260, 340, h) * (1 - smooth(560, 720, h));
@@ -196,8 +205,14 @@ export function bakeMapRows(grid: Float32Array, row0: number, res: number, sizeM
       normal[k] = Math.round((-dx * inv * 0.5 + 0.5) * 255);
       normal[k + 1] = Math.round((inv * 0.5 + 0.5) * 255);
       normal[k + 2] = Math.round((-dz * inv * 0.5 + 0.5) * 255);
-      normal[k + 3] = 255;
-      sourceCover(x, z, h(i, j), 1 - inv, lc);
+      // Curvature from the 8-neighbour Laplacian (m⁻¹; one row either side, as the bands carry), into
+      // −1…1: a 10 m deep gully 40 m across reads ~0.7. In the normal map's alpha (render/landCover.ts).
+      const lap = (h(i + 1, j) + h(i - 1, j) + h(i, j + 1) + h(i, j - 1) + 0.5 * (h(i + 1, j + 1) + h(i - 1, j + 1) + h(i + 1, j - 1) + h(i - 1, j - 1)) - 6 * h(i, j)) / (3 * cell * cell);
+      const concavity = Math.tanh(lap * 25 * Math.min(1, cell / 10));
+      normal[k + 3] = Math.round((concavity * 0.5 + 0.5) * 255);
+      const horiz = Math.hypot(dx, dz);
+      const northness = horiz > 1e-4 ? (dz / horiz) * Math.min(1, horiz * 3) : 0;
+      sourceCover(x, z, h(i, j), 1 - inv, northness, concavity, lc);
       cover[k] = Math.round(lc.forest * 255);
       cover[k + 1] = Math.round(lc.rock * 255);
       cover[k + 2] = Math.round(lc.snow * 255);
