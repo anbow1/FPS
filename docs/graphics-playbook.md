@@ -14,6 +14,8 @@ traps that cost the most time.
   physical sky with volumetric clouds.
 - **Ridgeline** (`ridgeline/`): an attack helicopter over 20 km of ridges, with
   a cockpit, weapons and a ground force.
+- **Paris** (`paris/`): not a game — ten seconds of a boulevard at golden hour,
+  rendered frame by frame to a video (§6z3).
 
 All use **three.js r186**, `WebGPURenderer` (falls back to WebGL2 by itself),
 **TSL** node materials, strict TypeScript, Vite. Everything is procedural: no
@@ -1178,6 +1180,61 @@ cannot afford.
 - Merge per material in 256 m chunks: a few dozen draws, and the cascades only
   draw nearby chunks. Instance the lamps (two draws); a tank folds one over.
 
+## 6z3. A street filmed: ten seconds of Paris (`paris/`)
+
+The playbook put to a test from scratch: a Haussmann boulevard at golden hour
+with traffic, walkers, café terraces, cyclists and pigeons, rendered frame by
+frame to a 1080p video. What carried over unchanged: physical light (lux,
+kelvin, pre-exposure, the Preetham sky calibrated to the sheet, one HDRI gain),
+the TSL facade and ground shaders drawn from the world position, the instanced
+skinning and the CMU captures (§6s), Field Line's lofted cars (§6c), TRAA. What
+was new, or had to be found:
+
+- **Facades as geometry where light shows it.** Window openings cut into the
+  wall with 24 cm reveals, continuous balconies on corbels, string courses and
+  a cornice with modillions, mansards with dormers and chimney pots. A low sun
+  draws every one of these as a shadow line; a shader-only window (§6z2) is
+  fine across a town, not along a street seen from 3 m. About 50 triangles a
+  window. The rest (ashlar joints, soot streaks, panes, rooms, railings) stays
+  in the shaders, and railings are a `maskNode`, so their shadow has the
+  pattern.
+- **Interior mapping for every pane** (van Dongen, as §6d) with sheer
+  curtains, drapes and a share of lit rooms; glass is black and glossy, the
+  room is emitted light weighted by 1 − Fresnel, so windows mirror the sky at
+  grazing angles down the street and show the room face-on.
+- **A shot is deterministic.** Simulation at a fixed step (100 Hz) from a
+  pre-roll before frame 0; the recorder asks the page for frame *i* in order.
+  Traffic is the IDM (Treiber 2000) per lane, a red light being a standing car
+  at the stop line; the crowd keeps right, slows behind slower walkers, goes
+  round kiosks and terraces. Choreography is in the light timing: a queue
+  waits while people cross on the zebra, then pulls away.
+- **One browser frame per rendered frame.** TRAA keeps its history once per
+  animation frame; frames rendered back to back in one task resolved to one
+  flat colour. Await `requestAnimationFrame` between frames and read the
+  canvas with `toDataURL` in the same task as the draw (a screenshot taken
+  later gets a composited, possibly stale buffer).
+- **Velocity for everything that moves**, or motion blur and TRAA smear it:
+  a skinned `positionNode` must also assign `positionPrevious` from the
+  previous frame's bones (skinning.ts keeps a second bone texture), and an
+  instance must keep its slot for the whole shot. LODs for instanced cars and
+  people are therefore decided once, by running the deterministic traffic
+  ahead and picking whoever comes within ~55 m of the camera path.
+- **Motion blur** (three's `motionBlur`) after TRAA at a 180° shutter: half the
+  frame's velocity (NDC → uv: ×0.5, y flipped). Its input must be a texture
+  node: `convertToTexture(traaNode)`.
+- **Measure the triangle budget per group** (`?hide=people,traffic`): the first
+  full frame was 21 M triangles over the camera and four cascades. Cars at
+  8 k each, a city of them, were most of it; then people (4 k each). Coarse
+  cars (2 k) and bodies (1.3 k) beyond the camera's reach, buildings merged in
+  70 m chunks (so each cascade culls them) brought it to 9 M.
+- **A cloud deck needs the far plane.** A flat altocumulus layer at 3.2 km lit
+  by the low sun gives the evening sky its colour; seen at 10° it is 18 km
+  away, so the far plane is 60 km (fine with reversed depth).
+- **Autumn**: plane bark mottled by noise thresholds, leaf cards from a canvas
+  of five-lobed leaves tinted per card from green to gold to rust, a share of
+  sunlight through the leaves toward the viewer, fallen leaves on the ground
+  as a cellular decal, thickest under the crowns and swept into the gutters.
+
 ## 6y. A cockpit you sit in (Contrail `render/cockpitModel.ts`)
 
 The old office was a dozen boxes: a hood, a flat panel, four cubes for dials,
@@ -1990,6 +2047,10 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | Most parked cars the same colour (the palette's fallback) | `hash >> n` on a hash above 2³¹ is negative in JS; `negative % len` stays negative and the array lookup is `undefined` | shift hashes with `>>>`; clamp indices with `Math.abs` |
 | A baked model's shared materials get darker each time another model is baked | the AO bake multiplies a material's `colorNode` by grime per bake | mark materials once (`WeakSet`) |
 | Road paint, bullet holes, tracks and scorch marks never show | the renderer uses a reversed depth buffer (near = 1), and three.js passes `polygonOffset` to the GPU unflipped: a negative bias pushes the decal *behind* its surface | with `reversedDepthBuffer: true`, use positive `polygonOffsetFactor` / `Units` |
+| A `CSMShadowNode` throws "Cannot read properties of undefined (reading 'oneMinus')" and nothing renders | setting `csm.camera` by hand before the first render skips its `_init`, so it has no cascade lights | leave `camera` unset; the node takes the rendering camera on first use (call `updateFrustums()` only once it has one) |
+| `motionBlur(traa(...), …)` fails with "sample is not a function" | the blur samples its input at offset uvs; a TRAA node is not a texture node | `motionBlur(convertToTexture(aa), velocityUv, samples)` |
+| Skinned figures smear under TRAA and motion blur | the velocity pass compares the skinned position with `positionPrevious`, the unskinned bind pose | assign `positionPrevious` in the `positionNode` from last frame's bone matrices |
+| Frames rendered in a loop for a recording come out as one flat colour | TRAA's history advances once per animation frame | one `requestAnimationFrame` per rendered frame; read the canvas in that task |
 
 ---
 
