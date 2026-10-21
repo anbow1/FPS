@@ -18,7 +18,11 @@ async function start(): Promise<void> {
   const height = Number(params.get('h') ?? 0) || canvas.clientHeight;
   const film = new Film(canvas, Number(params.get('shutter') ?? (record ? 0.5 : 0.35)));
   const offline = record || params.has('t');
-  await film.init(offline ? width : canvas.clientWidth, offline ? height : canvas.clientHeight, offline ? 1 : Math.min(window.devicePixelRatio, 2));
+  // `ss`: supersampling for offline frames — rendered at ss × the size, scaled down by the recorder (ffmpeg,
+  // Lanczos), which smooths the thin things TAA alone leaves stepped: railings, twigs, wires, road lines.
+  const supersample = Math.max(1, Number(params.get('ss') ?? 1));
+  if (record && params.get('format') === 'jpeg') film.frameFormat = 'image/jpeg';
+  await film.init(offline ? width : canvas.clientWidth, offline ? height : canvas.clientHeight, offline ? supersample : Math.min(window.devicePixelRatio, 2));
   status.textContent = '';
   const still = params.get('t');
   if (record || still !== null) {

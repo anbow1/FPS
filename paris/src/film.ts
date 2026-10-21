@@ -27,6 +27,8 @@ const SUBSTEPS = 4;
 const TRAFFIC_SEED = 1889;
 
 export class Film {
+  /** How frames come back: PNG for stills; the recorder asks for JPEG (supersampled frames are large). */
+  frameFormat: 'image/png' | 'image/jpeg' = 'image/png';
   readonly stage: Stage;
   private lighting!: Lighting;
   private plan!: StreetPlan;
@@ -192,7 +194,7 @@ export class Film {
   private async drawFrame(t: number): Promise<string> {
     await new Promise<void>((done) => requestAnimationFrame(() => done()));
     this.draw(t);
-    return this.stage.canvas.toDataURL('image/png');
+    return this.stage.canvas.toDataURL(this.frameFormat, 0.96);
   }
 
   /** Real-time playback, looping the clip. */

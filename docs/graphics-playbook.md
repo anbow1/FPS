@@ -1230,6 +1230,15 @@ was new, or had to be found:
 - **A cloud deck needs the far plane.** A flat altocumulus layer at 3.2 km lit
   by the low sun gives the evening sky its colour; seen at 10° it is 18 km
   away, so the far plane is 60 km (fine with reversed depth).
+- **A film camera's finish** (after mexicat/pdoom-video and lemomo-ai/lemo-opuscar):
+  render offline frames at 2× and let ffmpeg scale them down (Lanczos), which
+  smooths what TAA leaves stepped (railings, twigs, road lines); halation — a
+  high-threshold bloom (pre-exposed level > 1.6) tinted (1, 0.18, 0.04), so only
+  lanterns, brake lights and glints get the red-orange fringe; lateral
+  chromatic aberration growing with r² (~1.2 px in a 1080p corner); and the
+  grain added by ffmpeg after the downscale (`noise=c0s=5:c0f=t+u`, `-tune
+  grain`), never in the page, where a supersampled frame would average it away
+  and every frame would become incompressible.
 - **Autumn**: plane bark mottled by noise thresholds, leaf cards from a canvas
   of five-lobed leaves tinted per card from green to gold to rust, a share of
   sunlight through the leaves toward the viewer, fallen leaves on the ground

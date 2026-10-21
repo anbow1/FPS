@@ -20,18 +20,20 @@ Tryby strony:
 | --- | --- |
 | `/` | odtwarza 10 s w pętli w czasie rzeczywistym |
 | `/?t=4.2&w=1920&h=1080` | renderuje kadr z chwili 4,2 s (`window.__paris.still`, PNG) |
-| `/?record&w=1920&h=1080` | tryb nagrywania: `window.__paris.renderFrame(i)` renderuje klatkę *i* (25 kl./s) i zwraca PNG |
+| `/?record&w=1920&h=1080&ss=2&format=jpeg` | tryb nagrywania: `window.__paris.renderFrame(i)` renderuje klatkę *i* (25 kl./s, `ss`× supersampling) i zwraca PNG lub JPEG |
 | `&cam=x,y,z,lx,ly,lz` | kamera debugowa; `&hide=people,traffic`, `&nofog`, `&nopost`, `&post=scene\|aa\|vel` |
 
 Nagranie filmu (Playwright + ffmpeg):
 
 ```bash
 npm run build && npx vite preview --port 4180 &
-node scripts/record.mjs http://localhost:4180/ out 1920 1080 /ścieżka/do/ffmpeg   # → out/paris.mp4
+node scripts/record.mjs http://localhost:4180/ out 1920 1080 /ścieżka/do/ffmpeg 2   # → out/paris.mp4
 ```
 
-Każda klatka jest symulowana i renderowana po kolei (deterministycznie, ten sam ziarno → ten sam film);
-w kontenerze bez GPU (SwiftShader) 1080p kosztuje ok. 18 s na klatkę.
+Każda klatka jest symulowana i renderowana po kolei (deterministycznie, ten sam ziarno → ten sam film)
+w `ss`-krotnej rozdzielczości (domyślnie 2× — supersampling), a ffmpeg zmniejsza ją filtrem Lanczosa
+i dopiero wtedy dodaje ziarno kliszy (w stronie zostałoby uśrednione i psułoby kompresję).
+W kontenerze bez GPU (SwiftShader) 1080p bez supersamplingu kosztuje ok. 18 s na klatkę, z 2× kilka razy więcej.
 
 ## Co jest w środku
 
@@ -59,6 +61,8 @@ w kontenerze bez GPU (SwiftShader) 1080p kosztuje ok. 18 s na klatkę.
 - **Światło** (`render/lighting.ts`, `render/stage.ts`): słońce 9000 lx / 3300 K na 11° nad
   horyzontem, niebo 3600 lx, pre-exposure EV 12, niebo Preethama skalibrowane do luksów, HDRI ulicy
   (Poly Haven, CC0) dla otoczenia i odbić, mgła wysokościowa z poświatą w stronę słońca,
-  4 kaskady cieni, TRAA, rozmycie ruchu z migawką 180°, bloom, ACES, wyostrzenie, ziarno.
+  4 kaskady cieni, TRAA, rozmycie ruchu z migawką 180°, bloom, halacja (czerwono-pomarańczowa poświata
+  świateł, jak na kliszy), aberracja chromatyczna obiektywu, ACES, wyostrzenie; supersampling 2× i ziarno
+  w nagrywarce.
 
 Wszystkie pojazdy, szyldy i oznaczenia są wymyślone, bez marek.
