@@ -2,6 +2,7 @@ import { abs, atan, clamp, cos, float, floor, fract, fwidth, length, max, mix, p
 import { MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { STREET } from '../config.ts';
 import { fbm2, hash12, heightBump, linearRgb, vnoise2 } from './nodes.ts';
+import { photo, photoRotated } from './photo.ts';
 
 // The street's surfaces, all drawn from the world position (so nothing
 // repeats with a texture):
@@ -82,10 +83,18 @@ export function roadMaterial(): MeshStandardNodeMaterial {
   const lanePos = fract(abs(w.x).div(3.25)).sub(0.5).abs();
   const wheels = band(lanePos.sub(0.27), 0.08).mul(onBoulevard);
   const repair = step(0.72, fbm2(vec2(w.x.div(2.5), w.z.div(14)).add(40)));
-  let colour: V3 = vec3(...linearRgb(0x4a4a4c)).mul(float(0.72).add(grain).add(patches.mul(0.25)));
+  // The scanned road (Poly Haven asphalt_02, 3 m): its aggregate and hairline cracks as detail on the
+  // procedural tone, a second rotated tap blended by large noise so the 3 m repeat never lines up.
+  const scanA = photo('asphalt_02', p);
+  const scanB = photoRotated('asphalt_02', p);
+  const scanMix = smoothstep(0.35, 0.65, fbm2(p.div(11).add(3)));
+  const scanDetail = mix(scanA.detail, scanB.detail, scanMix);
+  const scanRough = mix(scanA.roughness, scanB.roughness, scanMix);
+  const scanHeight = mix(scanA.height, scanB.height, scanMix);
+  let colour: V3 = vec3(...linearRgb(0x4a4a4c)).mul(float(0.85).add(patches.mul(0.25))).mul(scanDetail);
   colour = mix(colour, vec3(...linearRgb(0x2e2e30)), repair.mul(0.55));
   colour = colour.mul(float(1).sub(wheels.mul(0.12)));
-  let rough: F = float(0.88).sub(wheels.mul(0.16));
+  let rough: F = mix(float(0.88), scanRough, 0.6).sub(wheels.mul(0.16));
   // Markings (white paint, worn): lane dashes 3 m in 13, the centre line dashed, the parking lane's edge.
   const { dz, half } = nearestCrossing(w.z);
   const outsideCrossing = step(half.add(0.2), abs(dz));
@@ -102,13 +111,13 @@ export function roadMaterial(): MeshStandardNodeMaterial {
   const painted = paint.mul(wear);
   colour = mix(colour, vec3(...linearRgb(0xd8d8d2)), painted);
   rough = mix(rough, float(0.62), painted);
-  // The gutter: granite setts 10 × 20 cm along the kerb, a thin stream of water running in it.
+  // The gutter (caniveau): scanned setts (Poly Haven cobblestone_05) greyed toward Paris granite, a thin
+  // stream of water running in it.
   const gutterX = abs(w.x).sub(STREET.carriageHalfM - 0.42);
   const inGutter = step(0, gutterX).mul(onBoulevard);
-  const sett = vec2(fract(w.z.div(0.2)), fract(gutterX.div(0.1)));
-  const settJoint = max(step(sett.x, 0.08), step(sett.y, 0.12));
-  const settTone = hash12(floor(vec2(w.z.div(0.2), gutterX.div(0.1)))).mul(0.25).add(0.75);
-  const granite = vec3(...linearRgb(0x6d6b68)).mul(settTone).mul(float(1).sub(settJoint.mul(0.45)));
+  const setts = photo('cobblestone_05', vec2(gutterX, w.z));
+  const settLum = setts.colour.dot(vec3(0.2126, 0.7152, 0.0722));
+  const granite = mix(vec3(settLum), setts.colour, 0.35).mul(vec3(...linearRgb(0x6d6b68)).div(0.16));
   colour = mix(colour, granite, inGutter);
   const stream = smoothstep(0.12, 0.02, abs(gutterX.sub(0.24).add(vnoise2(vec2(w.z.mul(0.7), 3)).mul(0.08)))).mul(inGutter).mul(step(0.35, fbm2(vec2(w.z.div(12), 1))));
   colour = colour.mul(float(1).sub(stream.mul(0.5)));
@@ -119,7 +128,7 @@ export function roadMaterial(): MeshStandardNodeMaterial {
   rough = mix(rough, float(0.75), lv.w);
   m.colorNode = colour;
   m.roughnessNode = rough;
-  m.normalNode = heightBump(grain.mul(0.004).sub(settJoint.mul(inGutter).mul(0.006)).add(lv.w.mul(0.002)), 1);
+  m.normalNode = heightBump(scanHeight.mul(0.006).mul(inGutter.oneMinus()).add(setts.height.mul(inGutter).mul(0.02)).add(lv.w.mul(0.002)), 1);
   return m;
 }
 
@@ -130,7 +139,12 @@ export function pavementMaterial(): MeshStandardNodeMaterial {
   // Poured asphalt (asphalte coulé): lighter, finer, with darker repairs where the trenches were.
   const grain = vnoise2(p.mul(120)).mul(0.18).add(vnoise2(p.mul(30)).mul(0.12));
   const tone = fbm2(p.div(5));
-  let colour: V3 = vec3(...linearRgb(0x77736d)).mul(float(0.78).add(grain).add(tone.mul(0.3)));
+  // Poured asphalt scanned (Poly Haven clean_asphalt, 2.1 m) as the fine detail, two taps against its repeat.
+  const scanA = photo('clean_asphalt', p);
+  const scanB = photoRotated('clean_asphalt', p);
+  const scanMix = smoothstep(0.35, 0.65, fbm2(p.div(9).add(7)));
+  const scan = mix(scanA.detail, scanB.detail, scanMix);
+  let colour: V3 = vec3(...linearRgb(0x77736d)).mul(float(0.9).add(tone.mul(0.3))).mul(mix(vec3(1), scan, 0.8));
   const trench = step(0.78, fbm2(vec2(w.x.div(1.5), w.z.div(20)).add(9)));
   colour = mix(colour, vec3(...linearRgb(0x56534f)), trench.mul(0.6));
   // Granite kerb stones on top of the boulevard's kerb: 1 m blocks, 30 cm wide.
@@ -155,7 +169,7 @@ export function pavementMaterial(): MeshStandardNodeMaterial {
   m.colorNode = colour;
   m.roughnessNode = mix(mix(float(0.82), float(0.55), grate.mul(slots.oneMinus())), float(0.75), lv.w);
   m.metalnessNode = grate.mul(slots.oneMinus()).mul(0.3);
-  m.normalNode = heightBump(grain.mul(0.002).sub(grate.mul(slots).mul(0.01)).add(lv.w.mul(0.0025)), 1);
+  m.normalNode = heightBump(mix(scanA.height, scanB.height, scanMix).mul(0.003).add(grain.mul(0.001)).sub(grate.mul(slots).mul(0.01)).add(lv.w.mul(0.0025)), 1);
   return m;
 }
 

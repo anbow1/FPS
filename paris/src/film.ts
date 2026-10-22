@@ -9,6 +9,7 @@ import { buildSkyline } from './city/skyline.ts';
 import { Lighting } from './render/lighting.ts';
 import { SCENE } from './render/nodes.ts';
 import { Stage } from './render/stage.ts';
+import { loadPhotos } from './render/photo.ts';
 import { cloudDeck } from './render/clouds.ts';
 import { boulevardRed, Crowd } from './life/crowd.ts';
 import { PeopleView } from './life/people.ts';
@@ -57,6 +58,7 @@ export class Film {
     this.stage.setSize(width, height, pixelRatio);
     const scene = this.stage.scene;
     this.lighting = new Lighting(this.stage.renderer, scene, 2048);
+    await loadPhotos();
     this.plan = buildPlan(1859);
     scene.add(buildBuildings(this.plan));
     scene.add(buildStreet(), buildTrees(this.plan.trees), buildFurniture(this.plan), buildSkyline());

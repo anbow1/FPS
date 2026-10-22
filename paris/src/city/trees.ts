@@ -2,7 +2,8 @@ import { attribute, float, fract, max, mix, normalWorld, positionLocal, position
 import { BufferAttribute, type BufferGeometry, CanvasTexture, DoubleSide, Group, InstancedMesh, Matrix4, MeshStandardNodeMaterial, Quaternion, SRGBColorSpace, Vector3 } from 'three/webgpu';
 import { Rng } from '../core/rng.ts';
 import { indexed, merge, tube } from '../render/meshkit.ts';
-import { fbm2, linearRgb, SCENE, vnoise2 } from '../render/nodes.ts';
+import { fbm2, heightBump, linearRgb, SCENE } from '../render/nodes.ts';
+import { photo } from '../render/photo.ts';
 import type { Placed } from './plan.ts';
 
 // The boulevard's London planes (Platanus × acerifolia, the Paris street tree):
@@ -171,7 +172,12 @@ function barkMaterial(): MeshStandardNodeMaterial {
   let c = mix(olive, cream, smoothstep(0.5, 0.56, n1).mul(0.75));
   c = mix(c, grey, smoothstep(0.55, 0.6, n2).mul(0.8));
   c = mix(c, brown, smoothstep(0.62, 0.66, n2.mul(0.5).add(n1.mul(0.5))).mul(0.4));
-  m.colorNode = c.mul(vnoise2(p.mul(9)).mul(0.2).add(0.85));
+  // The scanned plane bark (Poly Haven bark_platanus, 1.5 m) gives the flakes' edges and grain as detail
+  // on the mottling; tube uv runs once round (~1.8 m on a trunk) and along the length in 1.5 m units.
+  const bark = photo('bark_platanus', uv().mul(vec2(1.8, 1.5)));
+  m.colorNode = c.mul(mix(vec3(1), bark.detail, 0.7));
+  m.roughnessNode = mix(float(0.75), bark.roughness, 0.6);
+  m.normalNode = heightBump(bark.height.mul(0.006), 1);
   m.positionNode = swayed();
   return m;
 }
