@@ -1367,6 +1367,34 @@ wetness) so only the change — the dent — shows.
   (`camo` vertex weight = 1 only on the uniform, so boots and kit keep theirs).
   Pick the palettes so their *luminance* differs, not just their hue: at
   50 m and in shade only value separates a man from the bushes behind him.
+- **Real clothes and vehicles from Blender, offline** (Paris, `tools/people`,
+  `tools/vehicles`). When a human or a car must hold up at a few metres,
+  procedural lathes stop short; build them on a PC with Blender instead and
+  load the result as data. People: MPFB (MakeHuman for Blender) with the CC0
+  system assets — macros for sex, age, ethnicity, weight, height; the default
+  rig; skin, eyes, brows, lashes, hair, clothes, shoes picked *by keyword* from
+  whatever is installed (so the script survives another asset pack); every
+  piece evaluated at rest, turned into the game's frame, MakeHuman's 163 bones
+  folded into the game's 15, decimated to a budget per piece (the body
+  favoured; hair and brow *cards* are never collapsed), AO baked by Cycles with
+  the whole character present, written as positions, normals, uvs, 4 bones,
+  AO and one index range per material. The game poses each character on its
+  **own joints** (`life/rig.ts`): bind frames and limb lengths from the
+  exported joints, never the procedural rig's constants, or a tall man's
+  knees bend in his thighs. Vehicles: scale to the real length, the front to
+  −Z, wheels recentred on their axles and named, head and rear lamps split
+  out for the game to drive, symmetric decimation for LODs, AO, glTF + Draco,
+  and the licence (CC-BY needs the credit) in the JSON beside it.
+- **Photo sets over procedural where you stand on it** (Field Line round 4):
+  asphalt with real cracks, 30 cm slabs, weathered render, floorboards,
+  planks, slate, rust, a container's chipped paint, a tarred roof — each a
+  Poly Haven scan (colour, ARM as ORM, displacement as height) at 512 px, the
+  road at 1024. Tile at the scan's *measured* size, not a round number: a 1.8 m
+  photograph of 30 cm slabs tiled at 2.4 m makes 40 cm slabs. When the mesh's
+  UVs are metres (a terrain) divide them by the photo's size in the material;
+  when per-slab effects key on a grid (`slabbed`), give them the photo's own
+  slab count. Match a scan's mean colour to the look's sheet colour so
+  photographed and generated surfaces sit in one palette.
 
 ---
 

@@ -1,10 +1,12 @@
-import { attribute, float, mix, mx_noise_float, positionGeometry, step, vec3 } from 'three/tsl';
-import { Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshPhysicalNodeMaterial, type Node, Quaternion, Vector3 } from 'three/webgpu';
+import { attribute, float, mix, mx_noise_float, positionGeometry, step, texture, uv, vec3 } from 'three/tsl';
+import { type BufferGeometry, DoubleSide, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshPhysicalNodeMaterial, type Node, Quaternion, Vector3 } from 'three/webgpu';
 import { boneIndex, clipDuration, clipSpeed, MocapPose, mocapReady } from '../render/mocap.ts';
 import { linearRgb } from '../render/nodes.ts';
 import { BoneTexture, skinnedPosition } from '../render/skinning.ts';
-import { ANKLE_Y, bindFrames, solveTwoBone, boneOf, BONES, type Build, BUILDS, buildBody, frame, L_FOREARM, L_SHIN, L_THIGH, L_UPPER_ARM, PART, type Segment, SHOULDER_HALF, smooth, SPINE_M } from './body.ts';
+import { solveTwoBone, boneOf, BONES, type Build, BUILDS, buildBody, frame, PART, type Segment, smooth } from './body.ts';
 import type { Person } from './crowd.ts';
+import type { Character, CharacterLod } from './humanMesh.ts';
+import { BODY_RIG, type Rig } from './rig.ts';
 
 // The crowd drawn: one skinned, instanced mesh per build (body.ts), the bones
 // of every person written each frame into a float texture. Walking is the
@@ -14,7 +16,10 @@ import type { Person } from './crowd.ts';
 // slide, arms swinging as captured. Standing is the capture's moment with
 // both feet planted; sitting is built by hand (thighs on the seat, shins down,
 // forearms on the table). Colours come from each person's palette by the
-// vertex's `part`.
+// vertex's `part`. When characters built in Blender are present
+// (humanMesh.ts) they replace the procedural builds: each person is one of
+// them (by gender), posed on that character's own joints (rig.ts) and drawn
+// with its clothes', hair's and skin's textures.
 
 type Rgb = [number, number, number];
 const TOPS: Rgb[] = [0xa07a4c, 0x1d2433, 0x161616, 0x3a3a3c, 0xb39b72, 0x4d5038, 0x5a1f25, 0x6e6e70, 0x24382c, 0xcfc5ae, 0x4a2e1e, 0x55688a].map(linearRgb);
@@ -25,8 +30,9 @@ const ACCENTS: Rgb[] = [0x8a1f1f, 0xb08a2a, 0x8a8a8a, 0x1a1a1a, 0xd8cfb8, 0x1d2a
 
 export class PeopleView {
   readonly group = new Group();
-  private readonly meshes: { mesh: InstancedMesh; bones: BoneTexture; prev: BoneTexture; look: InstancedBufferAttribute; members: Person[] }[] = [];
-  private readonly unbind = bindFrames().map((m) => m.clone().invert());
+  private readonly meshes: { mesh: InstancedMesh; bones: BoneTexture; prev: BoneTexture; members: Person[]; rig: Rig }[] = [];
+  /** The rig of the mesh being posed. */
+  private rig: Rig = BODY_RIG;
   private readonly poseA = new MocapPose();
   private readonly poseB = new MocapPose();
   /** Instance being posed: its bone texture and row. */
@@ -36,9 +42,42 @@ export class PeopleView {
    * `near`: who comes close enough to the camera for the full body; the rest get the coarse one. Decided
    * once, so nobody changes instance slot mid-shot (the velocity buffer would see a jump).
    */
-  constructor(people: readonly Person[], near: (p: Person) => boolean) {
+  constructor(people: readonly Person[], near: (p: Person) => boolean, characters: readonly Character[] = []) {
     this.group.name = 'people';
+    if (characters.length > 0) {
+      // Each person one of the characters of their build's sex, picked by a hash of their place in the crowd.
+      const women = characters.filter((c) => c.gender < 0.5);
+      const men = characters.filter((c) => c.gender >= 0.5);
+      const cast = new Map<Character, Person[]>();
+      people.forEach((p, i) => {
+        const woman = p.build === 'coatWoman' || p.build === 'skirtWoman';
+        const pool = (woman ? women : men).length > 0 ? (woman ? women : men) : characters;
+        const c = pool[Math.floor(hash01(i) * pool.length)] as Character;
+        cast.set(c, [...(cast.get(c) ?? []), p]);
+      });
+      for (const [c, members] of cast) for (const fine of [true, false]) this.addCharacter(c, fine, members.filter((p) => near(p) === fine));
+      return;
+    }
     for (const build of BUILDS) for (const fine of [true, false]) this.addBuild(build, fine, people.filter((p) => p.build === build && near(p) === fine));
+  }
+
+  private addCharacter(c: Character, fine: boolean, members: Person[]): void {
+    if (members.length === 0) return;
+    const lod: CharacterLod = fine ? c.full : c.far;
+    const bones = new BoneTexture(BONES.length, members.length);
+    const prev = new BoneTexture(BONES.length, members.length);
+    const mats = lod.pieces.map((piece) => {
+      const m = pieceMaterial(piece);
+      m.positionNode = skinnedPosition(bones, prev);
+      return m;
+    });
+    const mesh = new InstancedMesh(lod.geometry as BufferGeometry, mats, members.length);
+    mesh.name = `people-${c.name}${fine ? '' : '-far'}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    this.group.add(mesh);
+    this.meshes.push({ mesh, bones, prev, members, rig: c.rig });
   }
 
   private addBuild(build: Build, fine: boolean, members: Person[]): void {
@@ -62,12 +101,13 @@ export class PeopleView {
     mesh.receiveShadow = true;
     mesh.frustumCulled = false; // they move every frame; bounds would go stale
     this.group.add(mesh);
-    this.meshes.push({ mesh, bones, prev, look, members });
+    this.meshes.push({ mesh, bones, prev, members, rig: BODY_RIG });
   }
 
   /** Poses everyone for this frame; `dt` advances their gait. */
   update(dt: number): void {
-    for (const { bones, prev, members } of this.meshes) {
+    for (const { bones, prev, members, rig } of this.meshes) {
+      this.rig = rig;
       prev.copyFrom(bones);
       members.forEach((p, row) => {
         this.target = { bones, row };
@@ -91,11 +131,12 @@ export class PeopleView {
 
   private actorMatrix(p: Person): void {
     _q.setFromAxisAngle(_yAxis, p.yawRad);
-    _actor.compose(_pos.set(p.x, p.y, p.z), _q, _scale.setScalar(p.scale));
+    _actor.compose(_pos.set(p.x, p.y, p.z), _q, _scale.setScalar(this.rig.ownSize ? 1 : p.scale));
   }
 
   private poseUpright(p: Person): void {
     if (!mocapReady()) return;
+    const r = this.rig;
     this.actorMatrix(p);
     const run = smooth(2.2, 3.0, p.speedMs);
     this.poseA.sample('walk', p.gait * clipDuration('walk'));
@@ -107,25 +148,25 @@ export class PeopleView {
       let low = Infinity;
       for (const side of [0, 1] as const) {
         const L = side === 0 ? 'Left' : 'Right';
-        hipJoint(hip, D('Hips'), side, _hipJoint);
+        hipJoint(r, hip, D('Hips'), side, _hipJoint);
         _dir.set(0, -1, 0).applyQuaternion(D(`${L}UpLeg`));
-        _mid.copy(_hipJoint).addScaledVector(_dir, L_THIGH);
+        _mid.copy(_hipJoint).addScaledVector(_dir, r.thigh);
         _dir.set(0, -1, 0).applyQuaternion(D(`${L}Leg`));
-        _end.copy(_mid).addScaledVector(_dir, L_SHIN);
+        _end.copy(_mid).addScaledVector(_dir, r.shin);
         low = Math.min(low, _end.y);
       }
       return low;
     };
     _hip.copy(cap.hips);
-    _hip.y += ANKLE_Y - legs(_hip);
+    _hip.y += r.ankleY - legs(_hip);
     for (const side of [0, 1] as const) {
       const L = side === 0 ? 'Left' : 'Right';
-      hipJoint(_hip, D('Hips'), side, _hipJoint);
+      hipJoint(r, _hip, D('Hips'), side, _hipJoint);
       _dir.set(0, -1, 0).applyQuaternion(D(`${L}UpLeg`));
-      _mid.copy(_hipJoint).addScaledVector(_dir, L_THIGH);
+      _mid.copy(_hipJoint).addScaledVector(_dir, r.thigh);
       this.place('thigh', side, _hipJoint, _up.copy(_dir).negate(), _front.set(0, 0, -1).applyQuaternion(D(`${L}UpLeg`)));
       _dir.set(0, -1, 0).applyQuaternion(D(`${L}Leg`));
-      _end.copy(_mid).addScaledVector(_dir, L_SHIN);
+      _end.copy(_mid).addScaledVector(_dir, r.shin);
       this.place('shin', side, _mid, _up.copy(_dir).negate(), _front.set(0, 0, -1).applyQuaternion(D(`${L}Leg`)));
       this.place('shoe', side, _end, _up.set(0, 1, 0).applyQuaternion(D(`${L}Foot`)), _front.set(0, 0, -1).applyQuaternion(D(`${L}Foot`)));
     }
@@ -134,17 +175,17 @@ export class PeopleView {
     _right.set(1, 0, 0).applyQuaternion(D('Spine1'));
     _front.crossVectors(_up, _right).normalize();
     this.place('torso', 0, _hip, _up, _front);
-    _neck.copy(_hip).addScaledVector(_up, SPINE_M + 0.1);
+    _neck.copy(_hip).addScaledVector(_up, r.neck);
     _headUp.set(0, 1, 0).applyQuaternion(D('Head'));
     _look.set(0, 0, -1).applyQuaternion(D('Head')).applyAxisAngle(_yAxis, p.headYawRad);
-    this.place('head', 0, _head.copy(_neck).addScaledVector(_headUp, 0.04), _headUp, _look);
+    this.place('head', 0, _head.copy(_neck).addScaledVector(_headUp, r.headUp), _headUp, _look);
     // Arms as captured: the T-pose arm points out to its side, so its segment's +Y points back in.
     for (const side of [0, 1] as const) {
       const L = side === 0 ? 'Left' : 'Right';
       const sx = side === 1 ? 1 : -1;
-      _shoulder.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_right, sx * SHOULDER_HALF);
+      _shoulder.copy(_hip).addScaledVector(_up, r.spine).addScaledVector(_right, sx * r.shoulderHalf);
       _at.copy(_shoulder);
-      for (const [seg, bone, len] of [['upperArm', 'Arm', L_UPPER_ARM], ['forearm', 'ForeArm', L_FOREARM], ['hand', 'Hand', 0]] as const) {
+      for (const [seg, bone, len] of [['upperArm', 'Arm', r.upperArm], ['forearm', 'ForeArm', r.forearm], ['hand', 'Hand', 0]] as const) {
         _tmp.set(-sx, 0, 0).applyQuaternion(D(`${L}${bone}`));
         this.place(seg, side, _at, _tmp, _front2.set(0, 0, -1).applyQuaternion(D(`${L}${bone}`)));
         _at.addScaledVector(_tmp, -len);
@@ -154,6 +195,7 @@ export class PeopleView {
 
   /** Sitting on a bistro chair (seat 0.46 m), feet on the ground, forearms toward the table. */
   private poseSeated(p: Person): void {
+    const r = this.rig;
     this.actorMatrix(p);
     const lean = 0.08;
     // The seat 0.46 m up; the hip joints ~8 cm above it.
@@ -161,25 +203,25 @@ export class PeopleView {
     _up.set(0, 1, lean).normalize();
     this.place('pelvis', 0, _hip, _up, _front.set(0, 0, -1));
     this.place('torso', 0, _hip, _up, _front);
-    _neck.copy(_hip).addScaledVector(_up, SPINE_M + 0.1);
+    _neck.copy(_hip).addScaledVector(_up, r.neck);
     _look.set(Math.sin(-p.headYawRad), -0.1, -Math.cos(p.headYawRad));
-    this.place('head', 0, _head.copy(_neck).add(_v.set(0, 0.04, 0)), _yAxis, _look);
+    this.place('head', 0, _head.copy(_neck).add(_v.set(0, r.headUp, 0)), _yAxis, _look);
     for (const side of [0, 1] as const) {
       const sx = side === 1 ? 1 : -1;
-      hipJoint(_hip, _q.identity(), side, _hipJoint);
-      _knee.set(sx * 0.11, _hip.y - 0.03, _hipJoint.z - L_THIGH);
-      _foot.set(sx * 0.12, ANKLE_Y, _knee.z + 0.06);
+      hipJoint(r, _hip, _q.identity(), side, _hipJoint);
+      _knee.set(sx * 0.11, _hip.y - 0.03, _hipJoint.z - r.thigh);
+      _foot.set(sx * 0.12, r.ankleY, _knee.z + 0.06);
       _dir.subVectors(_knee, _hipJoint).normalize();
       this.place('thigh', side, _hipJoint, _up2.copy(_dir).negate(), _front.set(0, 1, 0));
       _dir.subVectors(_foot, _knee).normalize();
       this.place('shin', side, _knee, _up2.copy(_dir).negate(), _front.set(0, 0, -1));
       this.place('shoe', side, _foot, _yAxis, _front.set(sx * 0.15, 0, -1));
       // Arms: the elbow by the side, the forearm forward and in, hands toward the table's edge.
-      _shoulder.set(sx * SHOULDER_HALF, 0, 0).add(_hip).addScaledVector(_up, SPINE_M - 0.06);
-      _elbow.copy(_shoulder).add(_v.set(sx * 0.04, -L_UPPER_ARM * 0.9, -0.1));
+      _shoulder.set(sx * r.shoulderHalf, 0, 0).add(_hip).addScaledVector(_up, r.spine);
+      _elbow.copy(_shoulder).add(_v.set(sx * 0.04, -r.upperArm * 0.9, -0.1));
       _dir.subVectors(_elbow, _shoulder).normalize();
       this.place('upperArm', side, _shoulder, _up2.copy(_dir).negate(), _front.set(0, 0, -1));
-      _hand.copy(_elbow).add(_v.set(-sx * 0.08, 0.05, -L_FOREARM * 0.95));
+      _hand.copy(_elbow).add(_v.set(-sx * 0.08, 0.05, -r.forearm * 0.95));
       _dir.subVectors(_hand, _elbow).normalize();
       this.place('forearm', side, _elbow, _up2.copy(_dir).negate(), _front.set(0, 1, 0));
       this.place('hand', side, _hand, _up2.copy(_dir).negate(), _front.set(0, 1, 0));
@@ -192,27 +234,28 @@ export class PeopleView {
    * on the pedals, both by two-bone IK.
    */
   private poseRiding(p: Person): void {
+    const r = this.rig;
     this.actorMatrix(p);
     _hip.set(0, 1.02, 0.2);
     _up.set(0, 1, -0.5).normalize();
     this.place('pelvis', 0, _hip, _up.clone().lerp(_yAxis, 0.5).normalize(), _front.set(0, 0, -1));
     this.place('torso', 0, _hip, _up, _front);
-    _neck.copy(_hip).addScaledVector(_up, SPINE_M + 0.1);
-    this.place('head', 0, _head.copy(_neck).add(_v.set(0, 0.04, 0)), _yAxis, _look.set(0, -0.15, -1));
+    _neck.copy(_hip).addScaledVector(_up, r.neck);
+    this.place('head', 0, _head.copy(_neck).add(_v.set(0, r.headUp, 0)), _yAxis, _look.set(0, -0.15, -1));
     for (const side of [0, 1] as const) {
       const sx = side === 1 ? 1 : -1;
       const crank = p.crankRad + (side === 1 ? 0 : Math.PI);
-      _foot.set(sx * 0.11, 0.3 + 0.17 * Math.cos(crank) + ANKLE_Y * 0.6, -0.17 * Math.sin(crank));
-      hipJoint(_hip, _q.identity(), side, _hipJoint);
-      solveTwoBone(_hipJoint, _foot, L_THIGH, L_SHIN, _pole.set(sx * 0.1, 0.2, -1), _mid, _end);
+      _foot.set(sx * 0.11, 0.3 + 0.17 * Math.cos(crank) + r.ankleY * 0.6, -0.17 * Math.sin(crank));
+      hipJoint(r, _hip, _q.identity(), side, _hipJoint);
+      solveTwoBone(_hipJoint, _foot, r.thigh, r.shin, _pole.set(sx * 0.1, 0.2, -1), _mid, _end);
       _dir.subVectors(_mid, _hipJoint).normalize();
       this.place('thigh', side, _hipJoint, _up2.copy(_dir).negate(), _pole);
       _dir.subVectors(_end, _mid).normalize();
       this.place('shin', side, _mid, _up2.copy(_dir).negate(), _pole);
       this.place('shoe', side, _end, _yAxis, _front.set(0, 0, -1));
-      _shoulder.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).add(_v.set(sx * SHOULDER_HALF, 0, 0));
+      _shoulder.copy(_hip).addScaledVector(_up, r.spine).add(_v.set(sx * r.shoulderHalf, 0, 0));
       _hand.set(sx * 0.25, 1.0, -0.47);
-      solveTwoBone(_shoulder, _hand, L_UPPER_ARM, L_FOREARM, _pole.set(sx * 0.6, -1, 0.2), _elbow, _end);
+      solveTwoBone(_shoulder, _hand, r.upperArm, r.forearm, _pole.set(sx * 0.6, -1, 0.2), _elbow, _end);
       _dir.subVectors(_elbow, _shoulder).normalize();
       this.place('upperArm', side, _shoulder, _up2.copy(_dir).negate(), _front.set(0, 0, -1));
       _dir.subVectors(_end, _elbow).normalize();
@@ -226,13 +269,44 @@ export class PeopleView {
     frame(_m, origin, up, front);
     _m.premultiply(_actor);
     const b = boneOf(seg, side);
-    this.target.bones.set(this.target.row, b, _m.multiply(this.unbind[b] as Matrix4));
+    this.target.bones.set(this.target.row, b, _m.multiply(this.rig.unbind[b] as Matrix4));
   }
 }
 
 /** The hip joint of `side` on the pelvis at `hip` turned by `pelvis`. */
-function hipJoint(hip: Vector3, pelvis: Quaternion, side: 0 | 1, out: Vector3): Vector3 {
-  return out.set(side === 1 ? 0.095 : -0.095, -0.02, 0).applyQuaternion(pelvis).add(hip);
+function hipJoint(r: Rig, hip: Vector3, pelvis: Quaternion, side: 0 | 1, out: Vector3): Vector3 {
+  return out.set(side === 1 ? r.hipHalf : -r.hipHalf, -r.hipDrop, 0).applyQuaternion(pelvis).add(hip);
+}
+
+/** 0…1 from an integer, the same every run. */
+function hash01(i: number): number {
+  const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/**
+ * One piece of a Blender-made character: its own photographed texture (skin, cloth, hair), the AO baked into
+ * its vertices on the indirect light, alpha-tested cards for hair and brows, a sheen on cloth.
+ */
+function pieceMaterial(piece: CharacterLod['pieces'][number]): MeshPhysicalNodeMaterial {
+  const m = new MeshPhysicalNodeMaterial({ name: `person-${piece.kind}`, metalness: 0, roughness: piece.roughness });
+  const albedo = piece.albedo ? texture(piece.albedo, uv()) : null;
+  m.colorNode = albedo ? albedo.rgb : vec3(...piece.colour);
+  if (piece.normal) {
+    m.normalMap = piece.normal;
+  }
+  m.aoNode = attribute('ao', 'float');
+  if (piece.clip && albedo) {
+    m.opacityNode = albedo.a;
+    m.alphaTest = 0.5;
+    m.side = DoubleSide;
+  }
+  if (piece.kind === 'clothes' || piece.kind === 'hat') {
+    m.sheenRoughness = 0.7;
+    m.sheenNode = (m.colorNode as Node<'vec3'>).mul(0.4);
+  }
+  if (piece.kind === 'eyes') m.clearcoatNode = float(1);
+  return m;
 }
 
 /**

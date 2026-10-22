@@ -13,6 +13,7 @@ import { loadPhotos } from './render/photo.ts';
 import { cloudDeck } from './render/clouds.ts';
 import { boulevardRed, Crowd } from './life/crowd.ts';
 import { PeopleView } from './life/people.ts';
+import { loadCharacters } from './life/humanMesh.ts';
 import { placeOf, Traffic, type Vehicle } from './life/traffic.ts';
 import { VehiclesView } from './life/vehicles.ts';
 import { Pigeons } from './life/pigeons.ts';
@@ -66,9 +67,13 @@ export class Film {
     this.crowd = new Crowd(this.plan, 48, -SHOT.prerollS);
     this.traffic = new Traffic(TRAFFIC_SEED);
     this.riders = this.traffic.vehicles.filter((v) => v.kind === 'bike').map((bike) => ({ bike, person: this.crowd.addRider() }));
-    // Full bodies for whoever is within ~70 m of the camera at the start (a walker covers ~14 m in the clip).
+    // Full bodies for whoever is near the camera at the start (a walker covers ~14 m in the clip).
     const camZ = this.from.z;
-    this.people = new PeopleView(this.crowd.people, (p) => p.mode === 'ride' || Math.abs(p.z - camZ) < 70);
+    // Characters built in Blender (assets/people) when there are any; `&people=builds` keeps the procedural ones.
+    const characters = new URLSearchParams(location.search).get('people') === 'builds' ? [] : await loadCharacters();
+    // A Blender character's full body is ~12k triangles against the procedural ~3k: full only within 30 m.
+    const fullM = characters.length > 0 ? 30 : 70;
+    this.people = new PeopleView(this.crowd.people, (p) => p.mode === 'ride' || Math.abs(p.z - camZ) < fullM, characters);
     this.vehicles = new VehiclesView(this.traffic.vehicles, this.plan.parked, this.nearCamera());
     // The flock by the right kerb ahead of the camera, between the lamp posts and the trees; startled at 4.2 s.
     this.pigeons = new Pigeons(10.05, -15, 4.2);
