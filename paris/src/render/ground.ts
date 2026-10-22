@@ -1,5 +1,5 @@
 import { abs, atan, clamp, cos, float, floor, fract, fwidth, length, max, mix, positionWorld, sin, smoothstep, step, uv, vec2, vec3, vec4 } from 'three/tsl';
-import { MeshStandardNodeMaterial, type Node } from 'three/webgpu';
+import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { STREET } from '../config.ts';
 import { fbm2, hash12, heightBump, linearRgb, vnoise2 } from './nodes.ts';
 import { photo, photoRotated } from './photo.ts';
@@ -72,29 +72,60 @@ function leafDensity(p: V2): F {
   return clamp(underTrees.mul(0.32).add(kerbline.mul(0.5)).add(0.03).mul(patches.mul(1.4)), 0, 0.85);
 }
 
-export function roadMaterial(): MeshStandardNodeMaterial {
-  const m = new MeshStandardNodeMaterial({ name: 'carriageway', metalness: 0 });
+export function roadMaterial(): MeshPhysicalNodeMaterial {
+  const m = new MeshPhysicalNodeMaterial({ name: 'carriageway', metalness: 0 });
   const w = positionWorld;
   const p = vec2(w.x, w.z);
   const onBoulevard = step(abs(w.x), STREET.carriageHalfM);
-  // Asphalt: aggregate speckle, large tone patches, polished wheel paths in each lane, patched trenches.
+  // Asphalt as it reads from a pavement: the aggregate (the scan, below) under broad tone (older,
+  // sun-greyed stretches and fresher dark ones), each lane's two wheel paths polished lighter and smoother,
+  // the oil-darkened strip between them, rectangular trench repairs in their own tone with a black seal
+  // round the edge, meandering cracks filled with glossy tar, and the odd cast-iron manhole.
   const grain = vnoise2(p.mul(90)).mul(0.25).add(vnoise2(p.mul(23)).mul(0.15));
-  const patches = fbm2(p.div(9));
+  const tone = smoothstep(0.3, 0.7, fbm2(p.div(26)).mul(0.6).add(fbm2(p.div(7)).mul(0.4)));
   const lanePos = fract(abs(w.x).div(3.25)).sub(0.5).abs();
-  const wheels = band(lanePos.sub(0.27), 0.08).mul(onBoulevard);
-  const repair = step(0.72, fbm2(vec2(w.x.div(2.5), w.z.div(14)).add(40)));
-  // The scanned road (Poly Haven asphalt_02, 3 m): its aggregate and hairline cracks as detail on the
-  // procedural tone, a second rotated tap blended by large noise so the 3 m repeat never lines up.
+  const lanes = onBoulevard.mul(step(abs(w.x), STREET.carriageHalfM - 2.4));
+  const wheels = band(lanePos.sub(0.27), 0.09).mul(lanes);
+  const oil = smoothstep(0.16, 0.03, lanePos).mul(lanes).mul(fbm2(vec2(w.x.mul(2), w.z.div(3))).mul(0.6).add(0.6));
+  // Trench repairs: in a 3.25 × 17 m lattice, two cells in five, a rectangle of its own size and tone.
+  const cellR = floor(vec2(w.x.div(3.25), w.z.div(17)));
+  const local = fract(vec2(w.x.div(3.25), w.z.div(17)));
+  const hr = hash12(cellR.add(31.7));
+  const x0 = hash12(cellR.add(2.1)).mul(0.3);
+  const z0 = hash12(cellR.add(5.3)).mul(0.5);
+  const x1 = x0.add(mix(float(0.35), float(0.7), hash12(cellR.add(7.9))));
+  const z1 = z0.add(mix(float(0.08), float(0.45), hash12(cellR.add(9.4))));
+  const inRect = (a: F, b: F, c: F, d: F): F => step(a, local.x).mul(step(local.x, c)).mul(step(b, local.y)).mul(step(local.y, d));
+  const repair = inRect(x0, z0, x1, z1).mul(step(hr, 0.4)).mul(onBoulevard);
+  const seal = repair.mul(float(1).sub(inRect(x0.add(0.012), z0.add(0.0025), x1.sub(0.012), z1.sub(0.0025))));
+  const repairTone = mix(vec3(...linearRgb(0x1c1c1e)), vec3(...linearRgb(0x6e6c68)), step(0.5, hash12(cellR.add(13.3))));
+  // Tar-filled cracks: thin bands along noise contours, only where the road is old.
+  const crackField = fbm2(p.div(2.2).add(vec2(5.2, 1.3)));
+  const cracks = band(crackField.sub(0.5), 0.006).mul(smoothstep(0.45, 0.7, fbm2(p.div(14).add(21)))).mul(onBoulevard).mul(repair.oneMinus());
+  // Manholes: one in some 20 m cells, 0.6 m across, in a lane's middle.
+  const cellM = floor(vec2(w.x.div(6.5), w.z.div(20)));
+  const mc = vec2(cellM.x.add(0.5).mul(6.5), cellM.y.add(hash12(cellM.add(3.3)).mul(0.6).add(0.2)).mul(20));
+  const mr = length(p.sub(mc));
+  const manhole = step(mr, 0.32).mul(step(hash12(cellM.add(8.8)), 0.35)).mul(lanes);
+  const ring = band(mr.sub(0.31), 0.012).mul(manhole);
   const scanA = photo('asphalt_02', p);
   const scanB = photoRotated('asphalt_02', p);
   const scanMix = smoothstep(0.35, 0.65, fbm2(p.div(11).add(3)));
   const scanDetail = mix(scanA.detail, scanB.detail, scanMix);
   const scanRough = mix(scanA.roughness, scanB.roughness, scanMix);
   const scanHeight = mix(scanA.height, scanB.height, scanMix);
-  let colour: V3 = vec3(...linearRgb(0x4a4a4c)).mul(float(0.85).add(patches.mul(0.25))).mul(scanDetail);
-  colour = mix(colour, vec3(...linearRgb(0x2e2e30)), repair.mul(0.55));
-  colour = colour.mul(float(1).sub(wheels.mul(0.12)));
-  let rough: F = mix(float(0.88), scanRough, 0.6).sub(wheels.mul(0.16));
+  let colour: V3 = vec3(...linearRgb(0x4a4a4c)).mul(float(0.55).add(tone.mul(0.95))).mul(scanDetail);
+  colour = colour.mul(float(1).add(wheels.mul(0.35))).mul(float(1).sub(oil.mul(0.5)));
+  colour = mix(colour, repairTone.mul(scanDetail).mul(float(0.9).add(grain.mul(0.4))), repair);
+  colour = mix(colour, vec3(0.012, 0.012, 0.013), max(seal, cracks).mul(0.85));
+  const iron = vec3(...linearRgb(0x2c2a28)).mul(step(0.5, fract(p.x.sub(mc.x).mul(14))).mul(0.25).add(0.8));
+  colour = mix(colour, iron, manhole);
+  colour = colour.mul(float(1).sub(ring.mul(0.6)));
+  // Polished paths and the oily strip catch the sky at a grazing look: that sheen is most of what tells
+  // asphalt in shade apart.
+  let rough: F = mix(float(0.9), scanRough, 0.5).sub(wheels.mul(0.32)).sub(oil.mul(0.25));
+  rough = mix(rough, float(0.35), max(seal, cracks));
+  rough = mix(rough, float(0.5), manhole);
   // Markings (white paint, worn): lane dashes 3 m in 13, the centre line dashed, the parking lane's edge.
   const { dz, half } = nearestCrossing(w.z);
   const outsideCrossing = step(half.add(0.2), abs(dz));
@@ -128,6 +159,12 @@ export function roadMaterial(): MeshStandardNodeMaterial {
   rough = mix(rough, float(0.75), lv.w);
   m.colorNode = colour;
   m.roughnessNode = rough;
+  // Coarse aggregate hides most of its own sheen: seen at a grazing angle the stones shadow and mask the
+  // gaps between them, which the environment BRDF (a smooth-surface statistic) does not know, and the
+  // whole road turned into one blue-grey reflection of the sky. Only the polished wheel paths, the oily
+  // strip, the tar seals and the paint keep their full specular.
+  const smooth = clamp(wheels.add(oil.mul(0.7)).add(max(seal, cracks)).add(painted).add(stream).add(manhole), 0, 1);
+  m.specularIntensityNode = mix(float(0.3).add(scanHeight.mul(0.25)), float(1), smooth).mul(float(1).sub(inGutter.mul(0.3)));
   m.normalNode = heightBump(scanHeight.mul(0.006).mul(inGutter.oneMinus()).add(setts.height.mul(inGutter).mul(0.02)).add(lv.w.mul(0.002)), 1);
   return m;
 }
