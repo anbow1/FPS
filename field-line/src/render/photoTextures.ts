@@ -2,12 +2,27 @@ import type { TexelSampler } from './textures.ts';
 
 // Photographed surfaces where a procedural pattern falls short: brick with its
 // chipped arrises, uneven courses and lime-streaked mortar, a dirt track's
-// grit and stones. CC0 scans from Poly Haven (assets/photo/LICENSE.md),
+// grit and stones; the road's cracked asphalt, paving slabs, weathered render,
+// floorboards and planks, slate walls, rust and a container's chipped paint.
+// CC0 scans from Poly Haven (assets/photo/LICENSE.md),
 // decoded once before the materials are built (view.ts) and read through a
 // TexelSampler, so they go through makeTextureSet like every generated set:
 // colour and ORM straight from the scan, the normals from its height.
 
-export type PhotoId = 'red_brick_03' | 'brick_wall_02' | 'concrete_floor_worn_001' | 'forest_ground_04';
+export type PhotoId =
+  | 'red_brick_03'
+  | 'brick_wall_02'
+  | 'concrete_floor_worn_001'
+  | 'forest_ground_04'
+  | 'asphalt_02'
+  | 'concrete_pavement_02'
+  | 'grey_plaster_02'
+  | 'old_wood_floor'
+  | 'weathered_planks'
+  | 'castle_wall_slates'
+  | 'rust_coarse_01'
+  | 'green_metal_rust'
+  | 'tarred_gravel';
 
 /** The real size of one photograph (m), Poly Haven's measured dimensions. */
 export const PHOTO_SIZE_M: Record<PhotoId, number> = {
@@ -15,6 +30,15 @@ export const PHOTO_SIZE_M: Record<PhotoId, number> = {
   brick_wall_02: 2,
   concrete_floor_worn_001: 3,
   forest_ground_04: 3.15,
+  asphalt_02: 3,
+  concrete_pavement_02: 1.8,
+  grey_plaster_02: 1,
+  old_wood_floor: 3,
+  weathered_planks: 2,
+  castle_wall_slates: 2.5,
+  rust_coarse_01: 2.2,
+  green_metal_rust: 1,
+  tarred_gravel: 2.2,
 };
 
 interface Pixels {
@@ -53,6 +77,51 @@ const URLS: Record<PhotoId, Record<'color' | 'orm' | 'height', string>> = {
     color: new URL('../assets/photo/forest_ground_04/color.jpg', import.meta.url).href,
     orm: new URL('../assets/photo/forest_ground_04/orm.jpg', import.meta.url).href,
     height: new URL('../assets/photo/forest_ground_04/height.jpg', import.meta.url).href,
+  },
+  asphalt_02: {
+    color: new URL('../assets/photo/asphalt_02/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/asphalt_02/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/asphalt_02/height.jpg', import.meta.url).href,
+  },
+  concrete_pavement_02: {
+    color: new URL('../assets/photo/concrete_pavement_02/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/concrete_pavement_02/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/concrete_pavement_02/height.jpg', import.meta.url).href,
+  },
+  grey_plaster_02: {
+    color: new URL('../assets/photo/grey_plaster_02/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/grey_plaster_02/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/grey_plaster_02/height.jpg', import.meta.url).href,
+  },
+  old_wood_floor: {
+    color: new URL('../assets/photo/old_wood_floor/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/old_wood_floor/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/old_wood_floor/height.jpg', import.meta.url).href,
+  },
+  weathered_planks: {
+    color: new URL('../assets/photo/weathered_planks/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/weathered_planks/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/weathered_planks/height.jpg', import.meta.url).href,
+  },
+  castle_wall_slates: {
+    color: new URL('../assets/photo/castle_wall_slates/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/castle_wall_slates/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/castle_wall_slates/height.jpg', import.meta.url).href,
+  },
+  rust_coarse_01: {
+    color: new URL('../assets/photo/rust_coarse_01/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/rust_coarse_01/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/rust_coarse_01/height.jpg', import.meta.url).href,
+  },
+  green_metal_rust: {
+    color: new URL('../assets/photo/green_metal_rust/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/green_metal_rust/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/green_metal_rust/height.jpg', import.meta.url).href,
+  },
+  tarred_gravel: {
+    color: new URL('../assets/photo/tarred_gravel/color.jpg', import.meta.url).href,
+    orm: new URL('../assets/photo/tarred_gravel/orm.jpg', import.meta.url).href,
+    height: new URL('../assets/photo/tarred_gravel/height.jpg', import.meta.url).href,
   },
 };
 

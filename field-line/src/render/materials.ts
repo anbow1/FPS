@@ -247,31 +247,37 @@ export function cloneMaterial<T extends Material>(source: T): T {
   return m;
 }
 
-/** Wet-capable material: the same texture set driven by the wetness uniform (rules §3.1). */
-function wettable(ts: TextureSet, name: string): MeshPhysicalNodeMaterial {
+/**
+ * Wet-capable material: the same texture set driven by the wetness uniform (rules §3.1). `tileM` divides
+ * the mesh's UVs, for meshes whose UVs are in metres (the city's ground) and a texture of a larger tile.
+ */
+function wettable(ts: TextureSet, name: string, tileM = 1): MeshPhysicalNodeMaterial {
   const m = new MeshPhysicalNodeMaterial({ name, metalness: 0 });
+  const tuv = uv().div(tileM);
+  const map = texture(ts.map, tuv);
+  const orm = texture(ts.ormMap, tuv);
   // Water fills the pores: a wet surface is smoother, and its full-strength grain under the clearcoat
   // sparkled in motion. The relief keeps a third of its strength when soaked.
   const relief = mix(float(1), float(0.35), wetness);
-  m.normalNode = normalMap(texture(ts.normalMap).xyz, vec2(relief, relief));
-  m.aoNode = texture(ts.ormMap).r.mul(skyVisibilityNode());
+  m.normalNode = normalMap(texture(ts.normalMap, tuv).xyz, vec2(relief, relief));
+  m.aoNode = orm.r.mul(skyVisibilityNode());
   // Sheet: dry asphalt #3A3A3C L 0.043 → wet #2A2B2E L 0.024, so ×0.56 in linear.
-  m.colorNode = texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness));
-  m.roughnessNode = mix(texture(ts.ormMap).g, float(0.35), wetness);
+  m.colorNode = map.rgb.mul(mix(float(1), float(0.56), wetness));
+  m.roughnessNode = mix(orm.g, float(0.35), wetness);
   m.clearcoatNode = wetness;
   m.clearcoatRoughnessNode = float(0.05);
-  const lamps = lampLit(texture(ts.map).rgb.mul(mix(float(1), float(0.56), wetness)));
+  const lamps = lampLit(map.rgb.mul(mix(float(1), float(0.56), wetness)));
   if (lamps) m.emissiveNode = lamps;
   return m;
 }
 
 /**
  * Paving: each slab its own shade, a few stained, and each settled a fraction of a degree off level, so
- * the 2.4 m texture tile stops repeating and wet slabs break reflections into facets as real ones do.
- * The slab grid is the texture's (4 × 4 per tile), in the box's world-metre UVs.
+ * the texture tile stops repeating and wet slabs break reflections into facets as real ones do.
+ * The slab grid is the photograph's (`cells` × `cells` per tile), in the box's tile UVs.
  */
-function slabbed(m: MeshPhysicalNodeMaterial, ts: TextureSet): MeshPhysicalNodeMaterial {
-  const cell = floor(uv().mul(4));
+function slabbed(m: MeshPhysicalNodeMaterial, ts: TextureSet, cells: number): MeshPhysicalNodeMaterial {
+  const cell = floor(uv().mul(cells));
   const h = fract(sin(dot(cell, vec2(12.9898, 78.233))).mul(43758.5453));
   const stained = step(0.9, fract(h.mul(7.13)));
   const shade = mix(float(0.94), float(1.04), h).mul(mix(float(1), float(0.88), stained));
@@ -385,7 +391,9 @@ export class MaterialLibrary {
         // Dark engineering brick in grey mortar; one photograph is 1 m.
         return facade ? photoSampler('red_brick_03', 3, 3) : photoSampler('red_brick_03');
       case 'plaster':
-        return P.plaster(0xb3aa9a);
+        // Weathered grey render with damp stains and patches; one photograph is 1 m, its mean brought to the
+        // look's warm grey.
+        return photoSampler('grey_plaster_02', 3, 3, 0xb3aa9a);
       default:
         // Procedural, not the concrete scan: its scuffs are too fine to show from the street, and a whole
         // façade in it read flat and new; the pattern's broad stains read as weather.
@@ -399,7 +407,7 @@ export class MaterialLibrary {
       case 'brickDark':
       case 'plaster':
         return {
-          material: standard(set(`wall-${look}`, 512, () => this.wallSampler(look), look === 'plaster' ? 1 : 3), look),
+          material: standard(set(`wall-${look}`, 512, () => this.wallSampler(look), look === 'plaster' ? 1.5 : 3), look),
           tileM: look === 'plaster' ? 3 : look === 'brick' ? PHOTO_SIZE_M.brick_wall_02 : PHOTO_SIZE_M.red_brick_03,
         };
       case 'concrete':
@@ -407,22 +415,24 @@ export class MaterialLibrary {
         return { material: standard(set('concrete', 512, () => photoSampler('concrete_floor_worn_001', 1, 1, 0x8f8b85), 2), look), tileM: PHOTO_SIZE_M.concrete_floor_worn_001 };
       case 'pavement':
       {
-        const ts = set('pavement', 512, () => P.pavement(0x8f8b85), 3);
-        return { material: slabbed(wettable(ts, look), ts), tileM: 2.4 };
+        // Photographed 30 cm concrete slabs, 6 × 6 to a 1.8 m photograph.
+        const ts = set('pavement', 512, () => photoSampler('concrete_pavement_02', 1, 1, 0x8f8b85), 3);
+        return { material: slabbed(wettable(ts, look), ts, 6), tileM: PHOTO_SIZE_M.concrete_pavement_02 };
       }
       case 'roofTar':
-        return { material: wettable(set('roof', 256, () => P.asphalt(0x3a3a3c, 0.9), 2), look), tileM: 2 };
+        // Bitumen felt under a scatter of gravel.
+        return { material: wettable(set('roof', 512, () => photoSampler('tarred_gravel', 1, 1, 0x3a3a3c), 2), look), tileM: PHOTO_SIZE_M.tarred_gravel };
       case 'woodFloor':
-        return { material: standard(set('floor', 512, () => P.planks(0x7a5a3e, 0.55), 2), look), tileM: 1.2 };
+        return { material: standard(set('floor', 512, () => photoSampler('old_wood_floor', 1, 1, 0x7a5a3e), 2), look), tileM: PHOTO_SIZE_M.old_wood_floor };
       case 'tiles':
         return { material: standard(set('tiles', 256, () => P.tiles(0xa9a49a), 3), look), tileM: 0.9 };
       case 'metalDark':
         // Painted steel is a non-metal (sheet: paint and phosphate are metal 0).
         return { material: standard(set('metalDark', 128, () => P.finish(0x3c3c3e, 0.62), 0.5), look), tileM: 1 };
       case 'wood':
-        return { material: standard(set('wood', 256, () => P.planks(0x6b4e36, 0.8), 2), look), tileM: 1 };
+        return { material: standard(set('wood', 512, () => photoSampler('weathered_planks', 1, 1, 0x6b4e36), 2), look), tileM: PHOTO_SIZE_M.weathered_planks };
       case 'stone':
-        return { material: standard(set('stone', 512, () => P.stoneBlocks(0x7a7672), 5), look), tileM: 2 };
+        return { material: standard(set('stone', 512, () => photoSampler('castle_wall_slates', 1, 1, 0x7a7672), 4), look), tileM: PHOTO_SIZE_M.castle_wall_slates };
       case 'sandbag':
         return { material: standard(set('sandbag', 256, () => P.fabric(0x6e6650), 2), look), tileM: 0.8 };
       case 'targetSteel':
@@ -453,7 +463,8 @@ export class MaterialLibrary {
       }
       case 'asphalt': {
         // The city's roads: the aggregate texture plus the street's wear and furniture (cityRoad.ts).
-        const m = wettable(set('asphalt', 512, () => P.asphalt(0x3a3a3c, 0.92), 1.4), name);
+        // Photographed asphalt with its aggregate, patches and cracks; one photograph is 3 m (the ground's UVs are metres).
+        const m = wettable(set('asphalt', 1024, () => photoSampler('asphalt_02', 1, 1, 0x3a3a3c), 1.4), name, PHOTO_SIZE_M.asphalt_02);
         cityRoad(m);
         return m;
       }
@@ -498,7 +509,7 @@ export class MaterialLibrary {
         return new MeshPhysicalNodeMaterial({ name, color: 0xffffff, roughness: 0.4, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03 });
       }
       case 'carWreck':
-        return standard(set('rust', 256, () => P.concrete(0x7a4326, 0.88, 151), 3), name); // sheet: fresh rust #7A4326 rough 0.88
+        return standard(set('rust', 512, () => photoSampler('rust_coarse_01', 1, 1, 0x7a4326), 3), name); // sheet: fresh rust #7A4326 rough 0.88
       case 'tyre': {
         // Double-sided: the lathed tyre and rim profiles are not wound one way round.
         const m = standard(set('tyre', 64, () => P.finish(0x2c2c2e, 0.86), 0.3), name);
@@ -527,7 +538,7 @@ export class MaterialLibrary {
       case 'steel':
         return new MeshStandardNodeMaterial({ name, color: 0xc6c6c8, roughness: 0.35, metalness: 1 }); // sheet: steel, worn edge
       case 'containerPaint':
-        return standard(set('container', 256, () => P.finish(0x4b5340, 0.7), 0.6), name); // sheet: NATO green
+        return standard(set('container', 512, () => photoSampler('green_metal_rust', 1, 1, 0x4b5340), 1), name); // sheet: NATO green, chipped and rust-streaked
       case 'hay':
         return standard(set('hay', 256, () => P.planks(0xc2b280, 0.95), 1.5), name); // sheet: sand hue for dry straw
       default:
