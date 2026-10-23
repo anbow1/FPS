@@ -39,6 +39,8 @@ from mathutils import Matrix  # noqa: E402
 
 # Patterns are matched against an asset's file name (lower case): every word of a pattern must occur in it.
 # A man's patterns never pick a "female_" asset unless they say "female".
+# Assets never picked, even as a fallback: male_casualsuit02's shirt carries MakeHuman's logo.
+EXCLUDE = {'male_casualsuit02.mhclo'}
 EYEBROWS = ['eyebrow001', 'eyebrow']
 EYELASHES = ['eyelashes01', 'eyelashes']
 EYES = ['low-poly', 'eyes']
@@ -53,7 +55,8 @@ CAST = [
      'clothes': [['female_elegantsuit', 'female suit']], 'shoes': ['shoes05', 'shoes03', 'shoes']},
     {'name': 'man_casual', 'gender': 1.0, 'age': 27, 'eth': (0.9, 0, 0.1), 'muscle': 0.65, 'weight': 0.45, 'height': 0.65,
      'skin': ['young african male', 'african male'], 'hair': ['short04', 'short01', 'short'], 'eyes': ['brown', ''],
-     'clothes': [['male_casualsuit02', 'male_casualsuit']], 'shoes': ['shoes01', 'shoes']},
+     # Not casualsuit02: its shirt carries MakeHuman's logo (no marks in the games).
+     'clothes': [['male_casualsuit03', 'male_casualsuit01']], 'shoes': ['shoes01', 'shoes']},
     {'name': 'woman_casual', 'gender': 0.0, 'age': 26, 'eth': (0, 0.9, 0.1), 'muscle': 0.4, 'weight': 0.4, 'height': 0.35,
      'skin': ['young asian female', 'asian female'], 'hair': ['ponytail01', 'ponytail', 'long'], 'eyes': ['brown', ''],
      'clothes': [['female_casualsuit02', 'female_casualsuit']], 'shoes': ['shoes03', 'shoes']},
@@ -71,7 +74,7 @@ CAST = [
      'clothes': [['female_casualsuit01', 'female_casualsuit']], 'shoes': ['shoes03', 'shoes']},
     {'name': 'man_asian', 'gender': 1.0, 'age': 36, 'eth': (0, 1, 0), 'muscle': 0.5, 'weight': 0.45, 'height': 0.45,
      'skin': ['middleage asian male', 'asian male'], 'hair': ['short02', 'short'], 'eyes': ['brown', ''],
-     'clothes': [['male_casualsuit03', 'male_casualsuit']], 'shoes': ['shoes06', 'shoes']},
+     'clothes': [['male_casualsuit01', 'male_casualsuit03']], 'shoes': ['shoes06', 'shoes']},
     {'name': 'woman_long', 'gender': 0.0, 'age': 29, 'eth': (0, 0, 1), 'muscle': 0.45, 'weight': 0.4, 'height': 0.55,
      'skin': ['young caucasian female', 'caucasian female'], 'hair': ['long01', 'long'], 'eyes': ['blue', ''],
      'clothes': [['female_elegantsuit01', 'female_casualsuit']], 'shoes': ['shoes05', 'shoes']},
@@ -140,6 +143,8 @@ def pick(index, patterns, male):
             if male and name.startswith('female') and 'female' not in words:
                 continue
             if not male and re.match(r'(^|_)male', name) and 'male' not in words:
+                continue
+            if name in EXCLUDE:
                 continue
             if all(w in name for w in words):
                 return index[name]
