@@ -134,19 +134,31 @@ def asset_index():
     return out
 
 
+def word_in(word, name):
+    """A pattern word in an asset's file name: a whole part of it or the start of one ("short" in short02,
+    "male" in young_caucasian_male but not in ..._female), or, for a word that itself holds a separator
+    (male_elegantsuit, low-poly), a plain substring."""
+    if '_' in word or '-' in word:
+        return word in name
+    return any(part.startswith(word) for part in re.split(r'[_.\-]', name))
+
+
 def pick(index, patterns, male):
     """The first asset matching the first pattern that matches anything (patterns in order of preference)."""
     names = sorted(index)
     for pattern in patterns:
         words = pattern.lower().split()
         for name in names:
+            parts = re.split(r'[_.\-]', name)
+            if male and 'female' in parts and 'female' not in words:
+                continue
             if male and name.startswith('female') and 'female' not in words:
                 continue
-            if not male and re.match(r'(^|_)male', name) and 'male' not in words:
+            if not male and ('male' in parts or name.startswith('male')) and 'male' not in words:
                 continue
             if name in EXCLUDE:
                 continue
-            if all(w in name for w in words):
+            if all(word_in(w, name) for w in words):
                 return index[name]
     return None
 
