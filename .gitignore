@@ -12,3 +12,7 @@ android/out/
 android/local.properties
 # Benchmark runs (scripts/benchView.mjs): machine-specific numbers
 bench/
+
+# MPFB / vehicle builder output on the PC (copied into assets when wanted)
+paris/tools/people/out/
+paris/tools/vehicles/out/
