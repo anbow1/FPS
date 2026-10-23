@@ -466,7 +466,7 @@ def joints_of(rig):
     return out
 
 
-def preview(obs, mats, path):
+def preview(obs, mats, path, keep_blend=False):
     """A Cycles picture of the character with its textures (Blender is Z up: stood up for the picture only)."""
     scene = bpy.context.scene
     keep = set(o.name for o in obs)
@@ -509,12 +509,35 @@ def preview(obs, mats, path):
     sun.data.energy = 3.5
     sun.rotation_euler = (math.radians(55), 0, math.radians(150))
     scene.collection.objects.link(sun)
-    scene.world.color = (0.35, 0.4, 0.45)
-    scene.render.resolution_x = 600
-    scene.render.resolution_y = 900
+    # The user's startup file sets the scene up (it is kept for MPFB's preferences): a transparent film, a
+    # resolution percentage, a render border or a dark world gave empty pictures. Set them all here.
+    world = bpy.data.worlds.get('preview_world') or bpy.data.worlds.new('preview_world')
+    world.use_nodes = True
+    bg = next((n for n in world.node_tree.nodes if n.type == 'BACKGROUND'), None) or world.node_tree.nodes.new('ShaderNodeBackground')
+    bg.inputs['Color'].default_value = (0.35, 0.4, 0.45, 1)
+    bg.inputs['Strength'].default_value = 1.0
+    out = next((n for n in world.node_tree.nodes if n.type == 'OUTPUT_WORLD'), None) or world.node_tree.nodes.new('ShaderNodeOutputWorld')
+    world.node_tree.links.new(bg.outputs['Background'], out.inputs['Surface'])
+    saved_world = scene.world
+    scene.world = world
+    r = scene.render
+    r.film_transparent = False
+    r.use_border = False
+    r.resolution_percentage = 100
+    r.resolution_x = 600
+    r.resolution_y = 900
+    r.image_settings.file_format = 'PNG'
+    r.image_settings.color_mode = 'RGB'
     scene.cycles.samples = 96
-    scene.render.filepath = path
+    for ob in obs:
+        ob.hide_viewport = False
+        ob.hide_set(False)
+    r.filepath = path
     bpy.ops.render.render(write_still=True)
+    print(f'  preview: {path}', flush=True)
+    if keep_blend:
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.splitext(path)[0] + '.blend', copy=True)
+    scene.world = saved_world
     for o in (cam, sun, aim):
         bpy.data.objects.remove(o)
     for ob in obs:
@@ -538,6 +561,8 @@ def main():
     ap.add_argument('--preview', action='store_true')
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--cpu', action='store_true')
+    # Saves each preview's scene as a .blend next to its picture, to open in Blender when a picture looks wrong.
+    ap.add_argument('--preview-blend', action='store_true')
     args = ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
     # An empty scene, the user's preferences kept: MPFB enabled and its asset folders where the user set them
     # (factory settings would forget both).
@@ -552,6 +577,9 @@ def main():
         return
     if not args.out:
         ap.error('--out is required')
+    # Absolute: Blender resolves a render's relative output path against itself, not the working folder,
+    # and the previews landed somewhere else.
+    args.out = os.path.abspath(args.out)
     if not index['clothes']:
         print('WARNING: no clothes installed. Load the MakeHuman system assets pack in MPFB (Apply assets → Load pack).')
     os.makedirs(os.path.join(args.out, 'tex'), exist_ok=True)
@@ -605,7 +633,7 @@ def main():
             print(f"  {lod}: {n} vertices, {t} triangles", flush=True)
             if args.preview and lod == 'full':
                 os.makedirs(os.path.join(args.out, 'preview'), exist_ok=True)
-                preview(obs, mats, os.path.join(args.out, 'preview', c['name'] + '.png'))
+                preview(obs, mats, os.path.join(args.out, 'preview', c['name'] + '.png'), args.preview_blend)
             for ob in obs:
                 bpy.data.objects.remove(ob)
         for ob in base:
