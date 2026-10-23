@@ -54,6 +54,18 @@ daleka ~2,2 tys.; brwi, rzęsy i oczy bez decymacji), wypala AO Cyclesem
 Wymagania: Blender 4.2+ (działa na 5.x), MPFB 2.0.x z extensions.blender.org,
 w MPFB *Apply assets → Load pack* z paczką system assets.
 
+Najprościej na Windows: pobierz cały folder `paris/tools/people` (skrypt
+potrzebuje też `build_people.py` i `mhdata.py` obok siebie) i uruchom
+`people_mpfb.bat` (lista assetów) albo `people_mpfb.bat build` (budowa).
+W `.bat` jest ścieżka do `blender.exe` — popraw ją, jeśli Blender stoi gdzie
+indziej. Ręcznie, w wierszu poleceń w tym folderze:
+
+```bat
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --python build_people_mpfb.py -- --list
+```
+
+`blender` w poniższych przykładach to właśnie ta pełna ścieżka do `blender.exe`.
+
 ```bat
 :: lista tego, co MPFB widzi (ubrania, fryzury, skóry, oczy)
 blender -b --python build_people_mpfb.py -- --list

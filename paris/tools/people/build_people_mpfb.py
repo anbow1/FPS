@@ -533,7 +533,9 @@ def main():
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--cpu', action='store_true')
     args = ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    # An empty scene, the user's preferences kept: MPFB enabled and its asset folders where the user set them
+    # (factory settings would forget both).
+    bpy.ops.wm.read_homefile(use_empty=True)
     enable_mpfb()
     index = asset_index()
     if args.list:
