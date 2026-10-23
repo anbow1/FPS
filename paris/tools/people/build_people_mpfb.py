@@ -65,22 +65,22 @@ CAST = [
      'clothes': [['female_casualsuit01', 'female_casualsuit']], 'shoes': ['shoes04', 'shoes']},
     {'name': 'man_young', 'gender': 1.0, 'age': 21, 'eth': (0.2, 0.3, 0.5), 'muscle': 0.5, 'weight': 0.3, 'height': 0.55,
      'skin': ['young caucasian male', 'male'], 'hair': ['short03', 'short'], 'eyes': ['brown', ''],
-     'clothes': [['male_casualsuit04', 'male_casualsuit']], 'shoes': ['shoes01', 'shoes']},
+     'clothes': [['male_casualsuit06', 'male_casualsuit04', 'male_casualsuit']], 'shoes': ['shoes01', 'shoes']},
     {'name': 'woman_african', 'gender': 0.0, 'age': 33, 'eth': (1, 0, 0), 'muscle': 0.55, 'weight': 0.5, 'height': 0.6,
      'skin': ['young african female', 'african female'], 'hair': ['afro01', 'afro', 'braid'], 'eyes': ['brown', ''],
-     'clothes': [['female_casualsuit04', 'female_casualsuit']], 'shoes': ['shoes03', 'shoes']},
+     'clothes': [['female_casualsuit01', 'female_casualsuit']], 'shoes': ['shoes03', 'shoes']},
     {'name': 'man_asian', 'gender': 1.0, 'age': 36, 'eth': (0, 1, 0), 'muscle': 0.5, 'weight': 0.45, 'height': 0.45,
      'skin': ['middleage asian male', 'asian male'], 'hair': ['short02', 'short'], 'eyes': ['brown', ''],
      'clothes': [['male_casualsuit03', 'male_casualsuit']], 'shoes': ['shoes06', 'shoes']},
     {'name': 'woman_long', 'gender': 0.0, 'age': 29, 'eth': (0, 0, 1), 'muscle': 0.45, 'weight': 0.4, 'height': 0.55,
      'skin': ['young caucasian female', 'caucasian female'], 'hair': ['long01', 'long'], 'eyes': ['blue', ''],
-     'clothes': [['female_casualsuit03', 'female_casualsuit']], 'shoes': ['shoes05', 'shoes']},
+     'clothes': [['female_elegantsuit01', 'female_casualsuit']], 'shoes': ['shoes05', 'shoes']},
     {'name': 'man_middle', 'gender': 1.0, 'age': 51, 'eth': (0.3, 0, 0.7), 'muscle': 0.5, 'weight': 0.7, 'height': 0.5,
      'skin': ['middleage caucasian male', 'male'], 'hair': ['short04', 'short'], 'eyes': ['brown', ''],
      'clothes': [['male_casualsuit05', 'male_casualsuit']], 'shoes': ['shoes02', 'shoes']},
     {'name': 'woman_middle', 'gender': 0.0, 'age': 47, 'eth': (0, 0.3, 0.7), 'muscle': 0.5, 'weight': 0.55, 'height': 0.5,
      'skin': ['middleage caucasian female', 'female'], 'hair': ['braid01', 'bob02', 'bob'], 'eyes': ['brown', ''],
-     'clothes': [['female_casualsuit05', 'female_casualsuit']], 'shoes': ['shoes04', 'shoes']},
+     'clothes': [['female_casualsuit02', 'female_casualsuit']], 'shoes': ['shoes04', 'shoes']},
 ]
 
 # Triangle budgets (people.ts LOD): near the camera the full one, beyond ~25 m the far one.
@@ -324,9 +324,13 @@ def bake_ao(obs):
     scene.world = scene.world or bpy.data.worlds.new('w')
     scene.world.light_settings.distance = 0.25
     scene.render.bake.target = 'VERTEX_COLORS'
+    cards = ('eyebrows', 'eyelashes')
     for ob in obs:
-        ob.hide_render = ob['kind'] in ('eyebrows', 'eyelashes')
+        ob.hide_render = ob['kind'] in cards
     for ob in obs:
+        # Cards are hidden from the render (Cycles will not bake a hidden object): they keep AO 1 (no layer).
+        if ob['kind'] in cards:
+            continue
         me = ob.data
         if 'ao' not in me.color_attributes:
             me.color_attributes.new('ao', 'FLOAT_COLOR', 'POINT')
@@ -334,7 +338,9 @@ def bake_ao(obs):
         # The bake needs a material; the piece's own are swapped back after.
         saved = list(me.materials)
         bake = bpy.data.materials.get('ao_bake') or bpy.data.materials.new('ao_bake')
-        bake.use_nodes = True
+        # Blender 5 materials always have nodes (use_nodes is deprecated); 4.x needs it switched on.
+        if bpy.app.version < (5, 0, 0):
+            bake.use_nodes = True
         me.materials.clear()
         me.materials.append(bake)
         for o in scene.objects:
