@@ -39,27 +39,42 @@ function nearestCrossing(z: F): { dz: F; half: F } {
 }
 
 /**
- * Fallen plane leaves: one in some cells of a 22 cm grid, each a lobed blade turned at random, coloured
- * from yellow-green to rust brown. Returns (colour, coverage).
+ * Fallen plane leaves (Platanus × hispanica: palmate, 12–22 cm, five pointed lobes on a stalk): one in some
+ * cells of a 30 cm grid, turned at random, most of them dried tan to brown by late October, a few still
+ * yellow, each curled (one side shaded) with its veins darker. Returns (colour, coverage).
  */
 function leaves(p: V2, density: F): Node<'vec4'> {
-  const cell = floor(p.div(0.22));
+  const cellM = 0.3;
+  const cell = floor(p.div(cellM));
   const h = hash12(cell);
   const h2 = hash12(cell.add(17.3));
+  const h3 = hash12(cell.add(41.9));
   const a = h2.mul(6.283);
-  const local = fract(p.div(0.22)).sub(0.5).mul(0.22);
+  const centre = vec2(hash12(cell.add(2.2)), hash12(cell.add(8.8))).sub(0.5).mul(cellM * 0.35);
+  const local = fract(p.div(cellM)).sub(0.5).mul(cellM).sub(centre);
   const q = vec2(local.x.mul(cos(a)).sub(local.y.mul(sin(a))), local.x.mul(sin(a)).add(local.y.mul(cos(a))));
-  // A palmate leaf: radius with five lobes.
-  const ang = atan(q.y, q.x);
+  const size = h.mul(0.035).add(0.06);
+  // Five lobes, pointed (|cos| sharpened), the leaf's base notched where the stalk joins; uneven per leaf.
+  const ang = atan(q.y, q.x).add(h3.mul(0.4));
   const r = length(q);
-  const size = h.mul(0.03).add(0.055);
-  const lobes = size.mul(sin(ang.mul(5)).mul(0.22).add(0.82));
-  const blade = float(1).sub(smoothstep(lobes.mul(0.85), lobes, r)).mul(step(h, density));
-  const c1 = vec3(...linearRgb(0xb88a2a));
-  const c2 = vec3(...linearRgb(0x8a5a26));
-  const c3 = vec3(...linearRgb(0x9c9a3c));
-  const colour = mix(mix(c1, c2, smoothstep(0.3, 0.8, h2)), c3, step(0.85, hash12(cell.add(5.1)))).mul(float(0.85).add(vnoise2(p.mul(40)).mul(0.3)));
-  return vec4(colour, blade);
+  const lobe = abs(cos(ang.mul(2.5))).pow(0.6);
+  const notch = smoothstep(0.35, 0.0, abs(ang.add(1.5708).sub(h3.mul(0.4))));
+  const outline = size.mul(lobe.mul(0.45).add(0.55)).mul(float(1).sub(notch.mul(0.35)));
+  const blade = float(1).sub(smoothstep(outline.mul(0.92), outline, r));
+  const stalk = step(abs(q.x), 0.003).mul(step(q.y, size.mul(-0.4))).mul(step(size.mul(-0.85), q.y));
+  const leaf = max(blade, stalk).mul(step(h, density));
+  // Veins: five lines from the stalk to the lobe tips.
+  const veins = smoothstep(0.08, 0.0, abs(fract(atan(q.y, q.x).div(6.283).mul(5).add(0.25)).sub(0.5))).mul(smoothstep(0.004, 0.02, r));
+  const tan = vec3(...linearRgb(0xa3804e));
+  const brown = vec3(...linearRgb(0x6e4a2a));
+  const dark = vec3(...linearRgb(0x4a3220));
+  const yellow = vec3(...linearRgb(0xc29a3e));
+  let colour: V3 = mix(mix(tan, brown, smoothstep(0.2, 0.7, h2)), dark, step(0.8, h2));
+  colour = mix(colour, yellow, step(0.88, hash12(cell.add(5.1))));
+  // Blotches of decay, the veins darker, and the curl: the side away from the light is shaded.
+  colour = colour.mul(float(0.8).add(vnoise2(p.mul(60)).mul(0.35))).mul(float(1).sub(veins.mul(0.25)));
+  const curl = q.x.div(size).mul(mix(float(-1), float(1), step(0.5, h3))).mul(0.25).add(0.9);
+  return vec4(colour.mul(curl), leaf);
 }
 
 /** Leaf density on the ground at p (xz): under the crowns, along the kerbs, a scatter elsewhere. */
@@ -69,7 +84,9 @@ function leafDensity(p: V2): F {
   const underTrees = smoothstep(5, 1, length(vec2(x.sub(STREET.treeXM), tz.sub(STREET.treeSpacingM / 2)).mul(vec2(1, 0.7))));
   const kerbline = smoothstep(0.9, 0.0, abs(x.sub(STREET.carriageHalfM - 0.25)));
   const patches = fbm2(p.div(3));
-  return clamp(underTrees.mul(0.32).add(kerbline.mul(0.5)).add(0.03).mul(patches.mul(1.4)), 0, 0.85);
+  // Drifts: wind and feet gather them, so coverage comes in patches rather than an even sprinkle.
+  const drifts = smoothstep(0.35, 0.75, fbm2(p.div(1.6).add(13)));
+  return clamp(underTrees.mul(0.55).add(kerbline.mul(0.7)).add(0.04).mul(patches.mul(1.3)).mul(drifts.mul(1.6).add(0.25)), 0, 0.9);
 }
 
 export function roadMaterial(): MeshPhysicalNodeMaterial {
@@ -85,7 +102,8 @@ export function roadMaterial(): MeshPhysicalNodeMaterial {
   const tone = smoothstep(0.3, 0.7, fbm2(p.div(26)).mul(0.6).add(fbm2(p.div(7)).mul(0.4)));
   const lanePos = fract(abs(w.x).div(3.25)).sub(0.5).abs();
   const lanes = onBoulevard.mul(step(abs(w.x), STREET.carriageHalfM - 2.4));
-  const wheels = band(lanePos.sub(0.27), 0.09).mul(lanes);
+  // Wheel paths: broad (a tyre's track wanders ±0.3 m), soft-edged, broken up along their length.
+  const wheels = smoothstep(0.14, 0.03, abs(lanePos.sub(0.27))).mul(lanes).mul(fbm2(vec2(w.x.mul(1.5), w.z.div(4))).mul(0.8).add(0.4)).clamp(0, 1);
   const oil = smoothstep(0.16, 0.03, lanePos).mul(lanes).mul(fbm2(vec2(w.x.mul(2), w.z.div(3))).mul(0.6).add(0.6));
   // Trench repairs: in a 3.25 × 17 m lattice, two cells in five, a rectangle of its own size and tone.
   const cellR = floor(vec2(w.x.div(3.25), w.z.div(17)));
@@ -115,7 +133,7 @@ export function roadMaterial(): MeshPhysicalNodeMaterial {
   const scanRough = mix(scanA.roughness, scanB.roughness, scanMix);
   const scanHeight = mix(scanA.height, scanB.height, scanMix);
   let colour: V3 = vec3(...linearRgb(0x4a4a4c)).mul(float(0.55).add(tone.mul(0.95))).mul(scanDetail);
-  colour = colour.mul(float(1).add(wheels.mul(0.35))).mul(float(1).sub(oil.mul(0.5)));
+  colour = colour.mul(float(1).add(wheels.mul(0.1))).mul(float(1).sub(oil.mul(0.45)));
   colour = mix(colour, repairTone.mul(scanDetail).mul(float(0.9).add(grain.mul(0.4))), repair);
   colour = mix(colour, vec3(0.012, 0.012, 0.013), max(seal, cracks).mul(0.85));
   const iron = vec3(...linearRgb(0x2c2a28)).mul(step(0.5, fract(p.x.sub(mc.x).mul(14))).mul(0.25).add(0.8));
@@ -123,7 +141,7 @@ export function roadMaterial(): MeshPhysicalNodeMaterial {
   colour = colour.mul(float(1).sub(ring.mul(0.6)));
   // Polished paths and the oily strip catch the sky at a grazing look: that sheen is most of what tells
   // asphalt in shade apart.
-  let rough: F = mix(float(0.9), scanRough, 0.5).sub(wheels.mul(0.32)).sub(oil.mul(0.25));
+  let rough: F = mix(float(0.9), scanRough, 0.5).sub(wheels.mul(0.12)).sub(oil.mul(0.2));
   rough = mix(rough, float(0.35), max(seal, cracks));
   rough = mix(rough, float(0.5), manhole);
   // Markings (white paint, worn): lane dashes 3 m in 13, the centre line dashed, the parking lane's edge.
@@ -163,14 +181,14 @@ export function roadMaterial(): MeshPhysicalNodeMaterial {
   // gaps between them, which the environment BRDF (a smooth-surface statistic) does not know, and the
   // whole road turned into one blue-grey reflection of the sky. Only the polished wheel paths, the oily
   // strip, the tar seals and the paint keep their full specular.
-  const smooth = clamp(wheels.add(oil.mul(0.7)).add(max(seal, cracks)).add(painted).add(stream).add(manhole), 0, 1);
+  const smooth = clamp(wheels.mul(0.35).add(oil.mul(0.6)).add(max(seal, cracks)).add(painted).add(stream).add(manhole), 0, 1);
   m.specularIntensityNode = mix(float(0.3).add(scanHeight.mul(0.25)), float(1), smooth).mul(float(1).sub(inGutter.mul(0.3)));
   m.normalNode = heightBump(scanHeight.mul(0.006).mul(inGutter.oneMinus()).add(setts.height.mul(inGutter).mul(0.02)).add(lv.w.mul(0.002)), 1);
   return m;
 }
 
-export function pavementMaterial(): MeshStandardNodeMaterial {
-  const m = new MeshStandardNodeMaterial({ name: 'pavement', metalness: 0 });
+export function pavementMaterial(): MeshPhysicalNodeMaterial {
+  const m = new MeshPhysicalNodeMaterial({ name: 'pavement', metalness: 0 });
   const w = positionWorld;
   const p = vec2(w.x, w.z);
   // Poured asphalt (asphalte coulé): lighter, finer, with darker repairs where the trenches were.
@@ -181,9 +199,18 @@ export function pavementMaterial(): MeshStandardNodeMaterial {
   const scanB = photoRotated('clean_asphalt', p);
   const scanMix = smoothstep(0.35, 0.65, fbm2(p.div(9).add(7)));
   const scan = mix(scanA.detail, scanB.detail, scanMix);
-  let colour: V3 = vec3(...linearRgb(0x77736d)).mul(float(0.9).add(tone.mul(0.3))).mul(mix(vec3(1), scan, 0.8));
+  let colour: V3 = vec3(...linearRgb(0x77736d)).mul(float(0.82).add(tone.mul(0.4))).mul(scan);
   const trench = step(0.78, fbm2(vec2(w.x.div(1.5), w.z.div(20)).add(9)));
   colour = mix(colour, vec3(...linearRgb(0x56534f)), trench.mul(0.6));
+  // A city pavement's use: dark blotches where something was spilt or a puddle dried, a scatter of
+  // trodden-in chewing gum (pale-grey to black dots, 1–2 cm, thickest by the café terraces and the kerb).
+  const blotch = smoothstep(0.62, 0.78, fbm2(p.div(1.3).add(27))).mul(smoothstep(0.4, 0.7, fbm2(p.div(7).add(3))));
+  colour = colour.mul(float(1).sub(blotch.mul(0.28)));
+  const gumCell = floor(p.div(0.11));
+  const gumAt = vec2(hash12(gumCell.add(1.3)), hash12(gumCell.add(6.1))).sub(0.5).mul(0.07);
+  const gumR = length(fract(p.div(0.11)).sub(0.5).mul(0.11).sub(gumAt));
+  const gum = step(gumR, hash12(gumCell.add(9.7)).mul(0.006).add(0.004)).mul(step(hash12(gumCell), 0.045));
+  colour = mix(colour, mix(vec3(...linearRgb(0x3a3936)), vec3(...linearRgb(0x8a8984)), hash12(gumCell.add(2.9))), gum.mul(0.85));
   // Granite kerb stones on top of the boulevard's kerb: 1 m blocks, 30 cm wide.
   const kerbTop = step(abs(w.x), STREET.carriageHalfM + STREET.kerbStoneM);
   const blockJoint = band(fract(w.z.div(1.0)).sub(0.5).abs().sub(0.5), 0.004);
@@ -206,6 +233,9 @@ export function pavementMaterial(): MeshStandardNodeMaterial {
   m.colorNode = colour;
   m.roughnessNode = mix(mix(float(0.82), float(0.55), grate.mul(slots.oneMinus())), float(0.75), lv.w);
   m.metalnessNode = grate.mul(slots.oneMinus()).mul(0.3);
+  // As on the road: the poured asphalt's grit masks most of its grazing sheen (or every stain drowns in the
+  // sky's reflection); the granite and the iron keep theirs.
+  m.specularIntensityNode = mix(float(0.4), float(1), max(kerbTop, grate));
   m.normalNode = heightBump(mix(scanA.height, scanB.height, scanMix).mul(0.003).add(grain.mul(0.001)).sub(grate.mul(slots).mul(0.01)).add(lv.w.mul(0.0025)), 1);
   return m;
 }

@@ -1,6 +1,7 @@
 import { abs, attribute, float, floor, fract, fwidth, length, max, min, mix, positionWorld, smoothstep, step, uv, vec2, vec3 } from 'three/tsl';
 import { DoubleSide, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { fbm2, hash12, heightBump, linearRgb, vnoise2 } from './nodes.ts';
+import { PHOTO, photo } from './photo.ts';
 
 // Materials of the buildings' solid parts, from the PBR sheet's values for
 // the real thing:
@@ -62,13 +63,20 @@ export function stoneMaterial(): MeshStandardNodeMaterial {
   const streak = smoothstep(0.52, 0.82, fbm2(vec2(w.x.add(w.z).mul(2.2), w.y.mul(0.18))));
   const soot = streak.mul(0.32).mul(mix(float(1), float(0.55), tone));
   base = base.mul(float(1).add(blockTint).add(patches)).mul(float(1).sub(soot));
+  // The stone's own face, scanned (Poly Haven old_sandstone_02, 1.53 m): pores, tool marks, stains and worn
+  // arrises as a brightness factor only (the scan is a yellower sandstone; Paris's cream stays the colour),
+  // offset per block so neighbouring stones do not repeat one another.
+  const face = photo('old_sandstone_02', p.add(hash12(cell.add(3.7)).mul(vec2(7.1, 3.3))));
+  const lumOf = (c: V3): F => c.dot(vec3(0.2126, 0.7152, 0.0722));
+  const faceDetail = lumOf(face.colour).div(lumOf(vec3(...PHOTO.old_sandstone_02.mean)));
+  base = base.mul(mix(float(1), faceDetail.clamp(0.4, 1.6), mix(float(0.7), float(0.25), smoothstep(0.004, 0.03, fw))));
   // A joint is darker (shadowed lime and dirt), deeper in the rusticated grooves.
   const jointDark = mix(float(0.78), float(0.42), rustic);
   m.colorNode = base.mul(mix(float(1), jointDark, joint)).mul(mix(float(0.55), float(1), ao));
   m.aoNode = ao;
-  m.roughnessNode = float(0.86).sub(soot.mul(0.1));
+  m.roughnessNode = mix(float(0.86), face.roughness, 0.4).sub(soot.mul(0.1));
   // Relief: the grooves sunk, the faces with a fine pitted texture.
-  const pits = vnoise2(p.mul(38)).mul(0.0012);
+  const pits = vnoise2(p.mul(38)).mul(0.0006).add(face.height.mul(0.003));
   m.normalNode = heightBump(joint.mul(mix(float(-0.004), float(-0.02), rustic)).add(pits), 1);
   return m;
 }

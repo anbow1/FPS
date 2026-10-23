@@ -1,7 +1,8 @@
-import { abs, attribute, cameraPosition, cross, dot, float, floor, fract, max, min, mix, normalize, normalWorld, positionWorld, pow, select, sin, smoothstep, step, uv, vec2, vec3 } from 'three/tsl';
+import { abs, attribute, cameraPosition, cross, dot, float, floor, fract, max, min, mix, normalize, normalWorld, positionWorld, pow, select, sin, smoothstep, step, texture, uv, vec2, vec3 } from 'three/tsl';
 import { MeshStandardNodeMaterial, type Node } from 'three/webgpu';
 import { hash12, linearRgb, SCENE, vnoise2 } from './nodes.ts';
 import { PAINTS, pick } from './architecture.ts';
+import { CAFE_ROWS, LETTERING_ROWS, letteringTexture } from './lettering.ts';
 
 // Glass with rooms behind it (interior mapping, van Dongen 2008) and the
 // joinery drawn over it, for the French windows, the dormers and the shops.
@@ -151,11 +152,16 @@ export function shopMaterial(): MeshStandardNodeMaterial {
   const doorFrame = max(bar(fx.sub(doorX), 0.05), bar(fx.sub(doorX.add(1.0)), 0.05)).mul(step(fy, fasciaY));
   const mullion = bar(fx.sub(mix(doorX.sub(0.0), doorX.add(1.0), doorLeft).add(w.sub(1.15).mul(0.5).mul(mix(float(-1), float(1), doorLeft)))), 0.03).mul(step(fy, fasciaY));
   const frame = max(max(max(fascia, pilaster), max(riser.mul(inDoor.oneMinus()), transom)), max(doorFrame, mullion));
-  // Lettering on the fascia: strokes on a 3 × 5 grid per glyph, gilt.
-  const gx = fx.sub(w.mul(0.15)).div(0.21);
-  const inText = step(0, gx).mul(step(gx, w.mul(0.7).div(0.21))).mul(step(fasciaY.add(0.22), fy)).mul(step(fy, h.sub(0.2)));
-  const cell = vec2(floor(gx.mul(3)), floor(fy.sub(fasciaY.add(0.22)).div(0.072)));
-  const ink = step(hash12(cell.add(seed.mul(57))), 0.5).mul(step(0.18, fract(gx))).mul(inText);
+  // Lettering on the fascia: the shop's trade in gilt capitals (lettering.ts) across the band, ~0.33 m high.
+  const bandLow = fasciaY.add(0.12);
+  const bandH = h.sub(0.12).sub(bandLow);
+  const inBand = step(bandLow, fy).mul(step(fy, h.sub(0.12))).mul(step(0.25, fx)).mul(step(fx, w.sub(0.25)));
+  const cafeSign = step(0.5, kind).mul(step(kind, 1.5));
+  const pickRow = hash12(vec2(seed.mul(13.1), 4.2));
+  const row = mix(floor(pickRow.mul(LETTERING_ROWS - CAFE_ROWS)).add(CAFE_ROWS), floor(pickRow.mul(CAFE_ROWS)), cafeSign);
+  const lu = fx.sub(0.25).div(w.sub(0.5));
+  const lv = row.add(float(1).sub(fy.sub(bandLow).div(bandH))).div(LETTERING_ROWS);
+  const ink = texture(letteringTexture(), vec2(lu.clamp(0, 1), lv)).a.mul(inBand).mul(step(kind, 1.5));
   const gilt = vec3(...linearRgb(0xc9a45a));
   // The shop inside: deep, brightly lit, shelves of goods along the back wall; a café's warmer and darker.
   const { vx, vy, vz } = roomRay();

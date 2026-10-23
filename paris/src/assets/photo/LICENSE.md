@@ -12,3 +12,4 @@ height in G).
 | `cobblestone_05/` | https://polyhaven.com/a/cobblestone_05 | Rob Tuytel | 2.4 m | the gutters' setts |
 | `clean_asphalt/` | https://polyhaven.com/a/clean_asphalt | Dimitrios Savva | 2.1 m | the pavements |
 | `bark_platanus/` | https://polyhaven.com/a/bark_platanus | Dimitrios Savva | 1.5 m | the plane trees' bark |
+| `old_sandstone_02/` | https://polyhaven.com/a/old_sandstone_02 | Rob Tuytel | 1.53 m | the limestone's face (brightness only) |

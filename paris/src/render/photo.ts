@@ -7,9 +7,10 @@ import { type Node, SRGBColorSpace, type Texture, TextureLoader, RepeatWrapping,
 // colour map and a `surface` map packing roughness (R) and height (G), 1k,
 // sampled in world metres at the scan's measured size. The materials keep
 // their own physical colours: a scan's colour divided by its mean is a
-// detail factor around 1, so a darker or warmer street keeps its tone.
+// detail factor around 1, so a darker or warmer street keeps its tone. A dressed
+// sandstone face lends the limestone its pores, tool marks and stains.
 
-export type PhotoId = 'asphalt_02' | 'cobblestone_05' | 'clean_asphalt' | 'bark_platanus';
+export type PhotoId = 'asphalt_02' | 'cobblestone_05' | 'clean_asphalt' | 'bark_platanus' | 'old_sandstone_02';
 
 interface PhotoSpec {
   /** Real size of the scan, m (Poly Haven's measured dimensions). */
@@ -23,6 +24,7 @@ export const PHOTO: Record<PhotoId, PhotoSpec> = {
   cobblestone_05: { sizeM: 2.4, mean: [0.195, 0.1641, 0.109] },
   clean_asphalt: { sizeM: 2.1, mean: [0.0587, 0.0609, 0.0627] },
   bark_platanus: { sizeM: 1.5, mean: [0.0933, 0.0636, 0.045] },
+  old_sandstone_02: { sizeM: 1.53, mean: [0.2498, 0.1399, 0.0489] },
 };
 
 const URLS: Record<PhotoId, { color: string; surface: string }> = {
@@ -30,6 +32,7 @@ const URLS: Record<PhotoId, { color: string; surface: string }> = {
   cobblestone_05: { color: new URL('../assets/photo/cobblestone_05/color.jpg', import.meta.url).href, surface: new URL('../assets/photo/cobblestone_05/surface.jpg', import.meta.url).href },
   clean_asphalt: { color: new URL('../assets/photo/clean_asphalt/color.jpg', import.meta.url).href, surface: new URL('../assets/photo/clean_asphalt/surface.jpg', import.meta.url).href },
   bark_platanus: { color: new URL('../assets/photo/bark_platanus/color.jpg', import.meta.url).href, surface: new URL('../assets/photo/bark_platanus/surface.jpg', import.meta.url).href },
+  old_sandstone_02: { color: new URL('../assets/photo/old_sandstone_02/color.jpg', import.meta.url).href, surface: new URL('../assets/photo/old_sandstone_02/surface.jpg', import.meta.url).href },
 };
 
 const loaded = new Map<PhotoId, { color: Texture; surface: Texture }>();
