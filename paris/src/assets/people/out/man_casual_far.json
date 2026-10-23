@@ -1,0 +1,215 @@
+{
+ "format": 2,
+ "joints": {
+  "hip": [
+   0.0,
+   1.0803,
+   0.06846
+  ],
+  "neck": [
+   0.0,
+   1.7282,
+   -0.01603
+  ],
+  "head": [
+   0.0,
+   1.83782,
+   -0.04883
+  ],
+  "headTop": [
+   0.0,
+   2.00277,
+   -0.04665
+  ],
+  "hip.L": [
+   -0.12176,
+   1.08624,
+   0.00346
+  ],
+  "knee.L": [
+   -0.16816,
+   0.59243,
+   -0.03395
+  ],
+  "ankle.L": [
+   -0.22868,
+   0.0871,
+   -0.01332
+  ],
+  "toe.L": [
+   -0.23061,
+   0.04746,
+   -0.08509
+  ],
+  "shoulder.L": [
+   -0.20733,
+   1.61382,
+   -0.02296
+  ],
+  "elbow.L": [
+   -0.40333,
+   1.38934,
+   -0.02474
+  ],
+  "wrist.L": [
+   -0.55912,
+   1.23778,
+   -0.25185
+  ],
+  "fingers.L": [
+   -0.61208,
+   1.17587,
+   -0.34949
+  ],
+  "hip.R": [
+   0.12176,
+   1.08624,
+   0.00346
+  ],
+  "knee.R": [
+   0.16816,
+   0.59243,
+   -0.03395
+  ],
+  "ankle.R": [
+   0.22868,
+   0.0871,
+   -0.01332
+  ],
+  "toe.R": [
+   0.23061,
+   0.04746,
+   -0.08509
+  ],
+  "shoulder.R": [
+   0.20733,
+   1.61382,
+   -0.02296
+  ],
+  "elbow.R": [
+   0.40333,
+   1.38934,
+   -0.02474
+  ],
+  "wrist.R": [
+   0.55912,
+   1.23778,
+   -0.25185
+  ],
+  "fingers.R": [
+   0.61208,
+   1.17587,
+   -0.34949
+  ]
+ },
+ "cast": {
+  "name": "man_casual",
+  "gender": 1.0,
+  "age": 27,
+  "eth": [
+   0.9,
+   0,
+   0.1
+  ],
+  "muscle": 0.65,
+  "weight": 0.45,
+  "height": 0.65,
+  "skin": [
+   "young african male",
+   "african male"
+  ],
+  "hair": [
+   "short04",
+   "short01",
+   "short"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "male_casualsuit02",
+    "male_casualsuit"
+   ]
+  ],
+  "shoes": [
+   "shoes01",
+   "shoes"
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 4551,
+   "kind": "skin",
+   "albedo": "tex/young_darkskinned_female_diffuse_512.jpg",
+   "normal": null,
+   "colour": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 4551,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 5067,
+   "count": 600,
+   "kind": "hair",
+   "albedo": "tex/short04_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 5667,
+   "count": 741,
+   "kind": "clothes",
+   "albedo": "tex/male_casualsuit02_diffuse_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 6408,
+   "count": 597,
+   "kind": "shoes",
+   "albedo": "tex/shoes01_diffuse_128.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  }
+ ],
+ "vertices": 1748,
+ "triangles": 2335
+}

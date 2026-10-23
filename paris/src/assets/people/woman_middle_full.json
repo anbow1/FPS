@@ -1,0 +1,243 @@
+{
+ "format": 2,
+ "joints": {
+  "hip": [
+   0.0,
+   0.8169,
+   0.05811
+  ],
+  "neck": [
+   0.0,
+   1.32537,
+   -0.01452
+  ],
+  "head": [
+   0.0,
+   1.42674,
+   -0.05288
+  ],
+  "headTop": [
+   0.0,
+   1.56946,
+   -0.04637
+  ],
+  "hip.L": [
+   -0.09383,
+   0.80414,
+   -0.01842
+  ],
+  "knee.L": [
+   -0.13058,
+   0.44014,
+   -0.0472
+  ],
+  "ankle.L": [
+   -0.17179,
+   0.06844,
+   -0.02748
+  ],
+  "toe.L": [
+   -0.16942,
+   0.03933,
+   -0.08523
+  ],
+  "shoulder.L": [
+   -0.15237,
+   1.24323,
+   -0.03404
+  ],
+  "elbow.L": [
+   -0.30682,
+   1.07926,
+   -0.04196
+  ],
+  "wrist.L": [
+   -0.41608,
+   0.96417,
+   -0.1794
+  ],
+  "fingers.L": [
+   -0.45587,
+   0.91656,
+   -0.24756
+  ],
+  "hip.R": [
+   0.09383,
+   0.80414,
+   -0.01842
+  ],
+  "knee.R": [
+   0.13058,
+   0.44014,
+   -0.0472
+  ],
+  "ankle.R": [
+   0.17179,
+   0.06844,
+   -0.02748
+  ],
+  "toe.R": [
+   0.16942,
+   0.03933,
+   -0.08523
+  ],
+  "shoulder.R": [
+   0.15237,
+   1.24323,
+   -0.03404
+  ],
+  "elbow.R": [
+   0.30682,
+   1.07926,
+   -0.04196
+  ],
+  "wrist.R": [
+   0.41608,
+   0.96417,
+   -0.1794
+  ],
+  "fingers.R": [
+   0.45587,
+   0.91656,
+   -0.24756
+  ]
+ },
+ "cast": {
+  "name": "woman_middle",
+  "gender": 0.0,
+  "age": 47,
+  "eth": [
+   0,
+   0.3,
+   0.7
+  ],
+  "muscle": 0.5,
+  "weight": 0.55,
+  "height": 0.5,
+  "skin": [
+   "middleage caucasian female",
+   "female"
+  ],
+  "hair": [
+   "braid01",
+   "bob02",
+   "bob"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "female_casualsuit02",
+    "female_casualsuit"
+   ]
+  ],
+  "shoes": [
+   "shoes04",
+   "shoes"
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 22917,
+   "kind": "skin",
+   "albedo": "tex/middleage_lightskinned_female_diffuse_2048.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 22917,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 23433,
+   "count": 576,
+   "kind": "eyebrows",
+   "albedo": "tex/eyebrow001_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.6,
+   "alpha": "clip"
+  },
+  {
+   "start": 24009,
+   "count": 1104,
+   "kind": "eyelashes",
+   "albedo": "tex/eyelashes01_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.6,
+   "alpha": "clip"
+  },
+  {
+   "start": 25113,
+   "count": 4191,
+   "kind": "hair",
+   "albedo": "tex/braid01_diffuse_1024.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 29304,
+   "count": 4161,
+   "kind": "clothes",
+   "albedo": "tex/female_casualsuit02_diffuse_1024.jpg",
+   "normal": "tex/female_casualsuit02_normal_1024.jpg",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 33465,
+   "count": 2517,
+   "kind": "shoes",
+   "albedo": "tex/shoes04_diffuse_512.jpg",
+   "normal": "tex/shoes04_normal_512.jpg",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  }
+ ],
+ "vertices": 7780,
+ "triangles": 11994
+}

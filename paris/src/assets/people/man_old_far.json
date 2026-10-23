@@ -1,0 +1,233 @@
+{
+ "format": 2,
+ "joints": {
+  "hip": [
+   0.0,
+   0.93052,
+   0.06887
+  ],
+  "neck": [
+   0.0,
+   1.48797,
+   -0.01128
+  ],
+  "head": [
+   0.0,
+   1.57556,
+   -0.03973
+  ],
+  "headTop": [
+   0.0,
+   1.73148,
+   -0.04436
+  ],
+  "hip.L": [
+   -0.11426,
+   0.9186,
+   0.00276
+  ],
+  "knee.L": [
+   -0.15269,
+   0.53441,
+   -0.02812
+  ],
+  "ankle.L": [
+   -0.18063,
+   0.0857,
+   -0.0042
+  ],
+  "toe.L": [
+   -0.18042,
+   0.05296,
+   -0.07069
+  ],
+  "shoulder.L": [
+   -0.18089,
+   1.38504,
+   -0.01252
+  ],
+  "elbow.L": [
+   -0.34212,
+   1.20783,
+   -0.02127
+  ],
+  "wrist.L": [
+   -0.4617,
+   1.09497,
+   -0.18901
+  ],
+  "fingers.L": [
+   -0.50617,
+   1.04706,
+   -0.26781
+  ],
+  "hip.R": [
+   0.11426,
+   0.9186,
+   0.00276
+  ],
+  "knee.R": [
+   0.15269,
+   0.53441,
+   -0.02812
+  ],
+  "ankle.R": [
+   0.18063,
+   0.0857,
+   -0.0042
+  ],
+  "toe.R": [
+   0.18042,
+   0.05296,
+   -0.07069
+  ],
+  "shoulder.R": [
+   0.18089,
+   1.38504,
+   -0.01252
+  ],
+  "elbow.R": [
+   0.34212,
+   1.20783,
+   -0.02127
+  ],
+  "wrist.R": [
+   0.4617,
+   1.09497,
+   -0.18901
+  ],
+  "fingers.R": [
+   0.50617,
+   1.04706,
+   -0.26781
+  ]
+ },
+ "cast": {
+  "name": "man_old",
+  "gender": 1.0,
+  "age": 68,
+  "eth": [
+   0,
+   0,
+   1
+  ],
+  "muscle": 0.4,
+  "weight": 0.65,
+  "height": 0.45,
+  "skin": [
+   "old caucasian male",
+   "caucasian male"
+  ],
+  "hair": [
+   "short01",
+   "short"
+  ],
+  "eyes": [
+   "grey",
+   "blue",
+   ""
+  ],
+  "clothes": [
+   [
+    "male_worksuit",
+    "male_casualsuit01",
+    "male_casualsuit"
+   ]
+  ],
+  "shoes": [
+   "shoes02",
+   "shoes"
+  ],
+  "hat": [
+   "fedora"
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 3903,
+   "kind": "skin",
+   "albedo": "tex/old_lightskinned_female_diffuse_512.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 3903,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/grey_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 4419,
+   "count": 600,
+   "kind": "hair",
+   "albedo": "tex/short01_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 5019,
+   "count": 1011,
+   "kind": "clothes",
+   "albedo": "tex/male_worksuit01_diffuse_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 6030,
+   "count": 597,
+   "kind": "shoes",
+   "albedo": "tex/shoes02_diffuse_128.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  },
+  {
+   "start": 6627,
+   "count": 594,
+   "kind": "hat",
+   "albedo": "tex/fedora_diffuse_128.jpg",
+   "normal": null,
+   "colour": [
+    0.96862745098,
+    0.96862745098,
+    0.96862745098
+   ],
+   "roughness": 0.75,
+   "alpha": null
+  }
+ ],
+ "vertices": 1825,
+ "triangles": 2407
+}
