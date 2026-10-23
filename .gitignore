@@ -16,3 +16,5 @@ bench/
 # MPFB / vehicle builder output on the PC (copied into assets when wanted)
 paris/tools/people/out/
 paris/tools/vehicles/out/
+__pycache__/
+*.pyc
