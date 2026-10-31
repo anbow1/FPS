@@ -1,5 +1,5 @@
 import { attribute, float, mix, mx_noise_float, positionGeometry, step, texture, uv, vec3 } from 'three/tsl';
-import { type BufferGeometry, DoubleSide, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshPhysicalNodeMaterial, type Node, Quaternion, Vector3 } from 'three/webgpu';
+import { BufferGeometry, DoubleSide, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshPhysicalNodeMaterial, type Node, Quaternion, Vector3 } from 'three/webgpu';
 import { boneIndex, clipDuration, clipSpeed, MocapPose, mocapReady } from '../render/mocap.ts';
 import { linearRgb } from '../render/nodes.ts';
 import { BoneTexture, skinnedPosition } from '../render/skinning.ts';
@@ -66,17 +66,29 @@ export class PeopleView {
     const lod: CharacterLod = fine ? c.full : c.far;
     const bones = new BoneTexture(BONES.length, members.length);
     const prev = new BoneTexture(BONES.length, members.length);
-    const mats = lod.pieces.map((piece) => {
+    // One instanced mesh per piece (skin, clothes, hair…), all on the same vertex buffers and bone textures,
+    // each drawing its own index range. A single mesh with a material array (geometry groups) lost uniform
+    // buffers under WebGPU when instanced and shadow-casting (three r186: "used in submit while destroyed").
+    let first: InstancedMesh | null = null;
+    lod.pieces.forEach((piece) => {
+      const g = new BufferGeometry();
+      for (const [name, attr] of Object.entries(lod.geometry.attributes)) g.setAttribute(name, attr);
+      g.setIndex(lod.geometry.index);
+      g.setDrawRange(piece.start, piece.count);
+      g.boundingSphere = lod.geometry.boundingSphere;
       const m = pieceMaterial(piece);
       m.positionNode = skinnedPosition(bones, prev);
-      return m;
+      const mesh = new InstancedMesh(g, m, members.length);
+      mesh.name = `people-${c.name}-${piece.kind}${fine ? '' : '-far'}`;
+      // Brows and lashes are cards a few millimetres off the skin: their shadow is noise, not a shadow.
+      mesh.castShadow = piece.kind !== 'eyebrows' && piece.kind !== 'eyelashes' && piece.kind !== 'eyes';
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      first ??= mesh;
     });
-    const mesh = new InstancedMesh(lod.geometry as BufferGeometry, mats, members.length);
-    mesh.name = `people-${c.name}${fine ? '' : '-far'}`;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
-    this.group.add(mesh);
+    const mesh = first as InstancedMesh | null;
+    if (!mesh) return;
     this.meshes.push({ mesh, bones, prev, members, rig: c.rig });
   }
 

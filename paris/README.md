@@ -7,6 +7,10 @@ ogródkach kawiarni, rowerzyści, gołębie, platany gubiące liście, a na koń
 w wieczornej mgiełce. Zbudowany według `docs/graphics-playbook.md` jako sprawdzian playbooka
 w praktyce.
 
+Na Windows najprościej: dwuklik na `start.bat` (doinstaluje zależności i otworzy przeglądarkę).
+Samego pliku `index.html` nie da się otworzyć z dysku: przeglądarka blokuje moduły i tekstury z `file://`,
+potrzebny jest serwer (Vite). Po `git pull` z nowymi zależnościami trzeba ponownie `npm install`.
+
 ```bash
 npm install
 npm run dev                  # http://localhost:5173 — scena w czasie rzeczywistym (pętla 10 s)
