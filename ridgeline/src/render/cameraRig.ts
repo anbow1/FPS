@@ -10,11 +10,11 @@ import { type PerspectiveCamera, Quaternion, Vector3 } from 'three/webgpu';
 
 export type CameraMode = 'chase' | 'cockpit' | 'gunner' | 'orbit';
 /**
- * What the camera key steps through: outside and the front (gunner's) seat, where the sight is. The pilot's
- * seat and the orbit stay for screenshots and tests (debug hooks), out of play: four views to cycle through
- * mid-fight was three too many.
+ * What the camera key steps through: outside, the pilot's (rear) seat with the instrument panel, its flight
+ * page and the radar, and the front (gunner's) seat, where the sight is. The orbit stays for screenshots
+ * and tests (debug hooks), out of play.
  */
-export const CAMERA_MODES: readonly CameraMode[] = ['chase', 'gunner'];
+export const CAMERA_MODES: readonly CameraMode[] = ['chase', 'cockpit', 'gunner'];
 
 const DEG = Math.PI / 180;
 
@@ -69,7 +69,7 @@ export class CameraRig {
       // The gunner looks a little down, towards the ground the sensor works on.
       if (this.mode === 'gunner') cam.rotateX(-8 * DEG);
       // The pilot's default view looks a little down, so the displays are in the picture.
-      else cam.rotateX(-7 * DEG);
+      else cam.rotateX(-12 * DEG);
       cam.fov = this.mode === 'gunner' ? 60 : 75;
       cam.near = 0.05;
     } else if (this.mode === 'chase') {

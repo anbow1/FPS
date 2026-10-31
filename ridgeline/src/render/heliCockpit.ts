@@ -16,10 +16,15 @@ import { plain } from './jetMaterials.ts';
 // The displays are a 2-D canvas uploaded as a texture ~10 times a second:
 //   left   engine and flight page: torque and rotor-speed tapes, turbine
 //          temperature and fuel, an attitude ball;
-//   right  tactical situation display: a shaded-relief map of the battle area
-//          (baked once from the height grid), heading-up, with the river, the
-//          base, the ground targets the sensor has seen (amber diamonds) and the
+//   right  the fire-control radar's ground page (FCR, as a Longbow's): a 90°
+//          wedge ahead, range arcs to 6 km, the beam sweeping across it and the
+//          vehicles it holds, a symbol per kind; or (page key) the tactical
+//          situation display: a shaded-relief map of the battle area (baked once
+//          from the height grid), heading-up, with the river, the base, the
+//          ground targets the sensor has seen (amber diamonds) and the
 //          helicopter at the centre.
+// The gunner in the front seat has the same two pages on a pair of displays
+// either side of the sight.
 // Shown at a fixed output brightness, as an eye adapted to the cockpit sees
 // them (the scene's single exposure would make them unreadable at noon).
 
@@ -28,6 +33,12 @@ const H = 256;
 const REDRAW_S = 0.1;
 const DISPLAY_LEVEL = 1.25;
 const MAP_PX = 512;
+/** The radar's ground range (m) and half the wedge (rad); the beam crosses the wedge and back every 2.4 s. */
+const FCR_RANGE_M = 6000;
+const FCR_HALF_RAD = Math.PI / 4;
+const FCR_SWEEP_S = 2.4;
+
+export type ContactKind = 'tank' | 'apc' | 'truck';
 
 export interface MapSource {
   sizeM: number;
@@ -44,7 +55,10 @@ export class HeliCockpit {
   private readonly relief = document.createElement('canvas');
   private sinceS = REDRAW_S;
   /** Ground contacts for the map page (world x, z), set by the game. */
-  contacts: { x: number; z: number }[] = [];
+  contacts: { x: number; z: number; kind: ContactKind }[] = [];
+  /** The pilot's right display: the radar or the map. */
+  page: 'fcr' | 'tsd' = 'fcr';
+  private timeS = 0;
   private readonly v = new Vec3();
 
   constructor(
@@ -154,6 +168,26 @@ export class HeliCockpit {
     add(box(-0.12, -0.22, -0.22, 0.12, -0.0, -0.1).translate(0, gy - 0.14, gz - 0.55), bezel);
     add(box(-0.45, -0.3, -0.1, 0.45, 0.0, 0.0).translate(0, gy - 0.25, gz - 0.85), black);
     add(box(-0.47, -0.02, -0.6, 0.47, 0.03, 0.4).translate(0, gy - 0.45, gz - 0.5), shell);
+    // The gunner's two displays on that panel, either side of the sight: the radar / map page on the left,
+    // the flight page on the right (the same canvas as the pilot's, halves swapped).
+    for (const [x, u0, u1] of [
+      [-0.31, 0.5, 1],
+      [0.31, 0, 0.5],
+    ] as const) {
+      const g = new PlaneGeometry(0.17, 0.17);
+      const uv = g.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setX(i, u0 + uv.getX(i) * (u1 - u0));
+      const m = new Mesh(g, screen);
+      m.position.set(x, gy - 0.4, gz - 0.837);
+      this.root.add(m);
+      add(new BoxGeometry(0.2, 0.2, 0.012).translate(x, gy - 0.4, gz - 0.849), bezel);
+    }
+  }
+
+  /** The pilot's right display steps to its other page (radar ↔ map). */
+  nextPage(): void {
+    this.page = this.page === 'fcr' ? 'tsd' : 'fcr';
+    this.sinceS = REDRAW_S;
   }
 
   /** Shaded relief of the battle area for the map display, baked once from the heights. */
@@ -199,6 +233,7 @@ export class HeliCockpit {
   update(h: Helicopter, frameS: number, visible: boolean): void {
     this.root.visible = visible;
     if (!visible) return;
+    this.timeS += frameS;
     this.sinceS += frameS;
     if (this.sinceS < REDRAW_S) return;
     this.sinceS = 0;
@@ -212,7 +247,103 @@ export class HeliCockpit {
     c.fillStyle = '#020403';
     c.fillRect(0, 0, W, H);
     this.enginePage(c, h);
-    this.mapPage(c, h);
+    if (this.page === 'fcr') this.radarPage(c, h);
+    else this.mapPage(c, h);
+  }
+
+  /** The fire-control radar's ground page: the wedge, range arcs, the sweeping beam, the vehicles it holds. */
+  private radarPage(c: CanvasRenderingContext2D, h: Helicopter): void {
+    const x0 = 256;
+    const green = 'rgba(110, 255, 150, 0.95)';
+    const dim = 'rgba(110, 255, 150, 0.35)';
+    const ax = x0 + 128;
+    const ay = 236;
+    const R = 200;
+    const fwd = h.orientation.rotate(this.v.set(0, 0, -1));
+    const heading = Math.atan2(fwd.x, -fwd.z);
+    const fl = Math.hypot(fwd.x, fwd.z) || 1;
+    const fx = fwd.x / fl;
+    const fz = fwd.z / fl;
+    c.save();
+    c.beginPath();
+    c.rect(x0, 0, 256, 256);
+    c.clip();
+    // Wedge edges and range arcs (1.5, 3, 4.5, 6 km); angles on the canvas measured from straight up.
+    const at = (a: number, r: number): [number, number] => [ax + Math.sin(a) * r, ay - Math.cos(a) * r];
+    c.strokeStyle = dim;
+    c.lineWidth = 1;
+    for (const k of [0.25, 0.5, 0.75, 1]) {
+      c.beginPath();
+      c.arc(ax, ay, R * k, -Math.PI / 2 - FCR_HALF_RAD, -Math.PI / 2 + FCR_HALF_RAD);
+      c.stroke();
+    }
+    for (const a of [-FCR_HALF_RAD, FCR_HALF_RAD]) {
+      const [x, y] = at(a, R);
+      c.beginPath();
+      c.moveTo(ax, ay);
+      c.lineTo(x, y);
+      c.stroke();
+    }
+    // The beam: across the wedge and back, a fading fan behind it.
+    const phase = (this.timeS % FCR_SWEEP_S) / FCR_SWEEP_S;
+    const tri = phase < 0.5 ? phase * 2 : 2 - phase * 2;
+    const beam = -FCR_HALF_RAD + tri * 2 * FCR_HALF_RAD;
+    const trail = phase < 0.5 ? -1 : 1;
+    for (let k = 0; k < 8; k++) {
+      const a = beam + trail * k * 0.03;
+      if (Math.abs(a) > FCR_HALF_RAD) break;
+      const [x, y] = at(a, R);
+      c.strokeStyle = `rgba(110, 255, 150, ${0.7 * (1 - k / 8)})`;
+      c.lineWidth = k === 0 ? 2 : 1;
+      c.beginPath();
+      c.moveTo(ax, ay);
+      c.lineTo(x, y);
+      c.stroke();
+    }
+    // Vehicles in the wedge, a symbol per kind: tracked armour a box with a gun, APCs a box, trucks a circle.
+    let held = 0;
+    c.strokeStyle = 'rgb(255, 196, 70)';
+    c.lineWidth = 2;
+    for (const t of this.contacts) {
+      const dx = t.x - h.position.x;
+      const dz = t.z - h.position.z;
+      const along = dx * fx + dz * fz;
+      const across = dx * -fz + dz * fx;
+      const range = Math.hypot(along, across);
+      const bearing = Math.atan2(across, along);
+      if (along <= 0 || range > FCR_RANGE_M || Math.abs(bearing) > FCR_HALF_RAD) continue;
+      held++;
+      const [x, y] = at(bearing, (range / FCR_RANGE_M) * R);
+      c.beginPath();
+      if (t.kind === 'truck') c.arc(x, y, 5, 0, Math.PI * 2);
+      else c.rect(x - 5, y - 4, 10, 8);
+      if (t.kind === 'tank') {
+        c.moveTo(x, y - 4);
+        c.lineTo(x, y - 10);
+      }
+      c.stroke();
+    }
+    c.restore();
+    // Own ship at the apex; the page's legends.
+    c.fillStyle = green;
+    c.beginPath();
+    c.moveTo(ax, ay - 6);
+    c.lineTo(ax - 6, ay + 6);
+    c.lineTo(ax + 6, ay + 6);
+    c.closePath();
+    c.fill();
+    c.font = '600 14px ui-monospace, Menlo, Consolas, monospace';
+    c.textAlign = 'left';
+    c.fillText('FCR  GTM', x0 + 6, 16);
+    c.textAlign = 'right';
+    c.fillText(`TGT ${held}`, x0 + 250, 16);
+    c.textAlign = 'center';
+    c.fillText(`${String(Math.round(((heading * 180) / Math.PI + 360) % 360)).padStart(3, '0')}`, ax, 16);
+    c.textAlign = 'left';
+    c.fillStyle = dim;
+    c.fillText('6 KM', ax + R * 0.72, ay - R * 0.72);
+    c.fillStyle = green;
+    c.fillText('N  MAP', x0 + 6, 248);
   }
 
   private enginePage(c: CanvasRenderingContext2D, h: Helicopter): void {

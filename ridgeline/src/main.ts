@@ -253,6 +253,7 @@ async function main(): Promise<void> {
         { code: 'KeyL', label: 'LSR', col: 3.3, row: 1.55, mode: 'tap', id: 'laser' },
         { code: 'KeyC', label: 'CAM', col: 0, row: 2.2, mode: 'tap' },
         { code: 'KeyI', label: 'ENG', col: 1, row: 2.2, mode: 'tap' },
+        { code: 'KeyN', label: 'MFD', col: 0, row: 3.2, mode: 'tap' },
         ...(tilt
           ? [
               { code: '', label: 'TILT', col: 2.3, row: 2.55, mode: 'tap' as const, id: 'tilt', action: (): void => setTilt(!tilt.enabled) },
@@ -329,7 +330,7 @@ async function main(): Promise<void> {
   const refreshSeen = (): void => {
     from.set(heli.position.x, heli.position.y + 1, heli.position.z);
     seen = force.targets.filter((t) => t.alive && t.position.distanceTo(heli.position) < 6000 && clearLine(from, GroundForce.centre(t, centre), groundAt));
-    cockpit.contacts = seen.map((t) => ({ x: t.position.x, z: t.position.z }));
+    cockpit.contacts = seen.map((t) => ({ x: t.position.x, z: t.position.z, kind: t.kind }));
   };
   let lastRoundS = -1;
   const KILL_NAMES = { tank: 'TANK', apc: 'APC', truck: 'TRUCK' } as const;
@@ -371,6 +372,7 @@ async function main(): Promise<void> {
         if (input.pressed('pause') && input.locked) input.exitLock();
         if (input.pressed('debug')) overlay.visible = !overlay.visible;
         if (input.pressed('mute')) muted = !muted;
+        if (input.pressed('page')) cockpit.nextPage();
         if (input.pressed('toneMap')) stage.applySettings({ ...settings, toneMap: (settings.toneMap = settings.toneMap === 'aces' ? 'agx' : 'aces') });
         if (input.pressed('timeOfDay')) {
           lighting.setPreset(lighting.preset.id === 'morning' ? 'noon' : lighting.preset.id === 'noon' ? 'dusk' : lighting.preset.id === 'dusk' ? 'rain' : 'morning');

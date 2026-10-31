@@ -33,7 +33,8 @@ and missions follow.
 | Stability augmentation | Z | SAS |
 | Engines (autorotation practice) | I | ENG |
 | Wheel brakes | B | — |
-| Camera (outside, front seat) | C | CAM |
+| Camera (outside, pilot's seat with the instruments and radar, gunner's seat) | C | CAM |
+| Pilot's right display: radar (FCR) / map (TSD) | N | MFD |
 | Tilt steering on/off, set hands-off (how the phone is held just after tap to fly, or at CAL) | — (menu) | TILT, CAL |
 | Flight data / sky / quality / sound | H / K / O / M | — |
 | Pause (resume, main menu, quit game) | Esc / P | ❚❚ top left, or Back on Android |
