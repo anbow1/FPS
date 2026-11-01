@@ -35,6 +35,7 @@ export const SURFACE_OF_LOOK: Record<BoxLook, SurfaceKind> = {
   brickDark: 'brick',
   concrete: 'concrete',
   plaster: 'brick', // plaster over block work
+  paint: 'brick', // painted plaster on masonry (interiors)
   woodFloor: 'wood',
   tiles: 'concrete',
   glass: 'glass',

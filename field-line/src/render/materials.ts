@@ -424,6 +424,10 @@ export class MaterialLibrary {
         return { material: wettable(set('roof', 512, () => photoSampler('tarred_gravel', 1, 1, 0x3a3a3c), 2), look), tileM: PHOTO_SIZE_M.tarred_gravel };
       case 'woodFloor':
         return { material: standard(set('floor', 512, () => photoSampler('old_wood_floor', 1, 1, 0x7a5a3e), 2), look), tileM: PHOTO_SIZE_M.old_wood_floor };
+      case 'paint':
+        // Painted plaster on an inside wall (Paris rooms): a warm off-white, albedo ~0.65, nearly smooth,
+        // with the faint unevenness and grime of an old wall. The 'plaster' look is weathered render outside.
+        return { material: standard(set('paint', 256, () => P.plaster(0xd9d2c3), 1), look), tileM: 2.5 };
       case 'tiles':
         return { material: standard(set('tiles', 256, () => P.tiles(0xa9a49a), 3), look), tileM: 0.9 };
       case 'metalDark':

@@ -92,12 +92,12 @@ export function parisInterior(b: MapBuilder, lot: Lot, shiftZ: number): void {
       }
     }
     // u runs one way or the other along the world axis; the wall's openings count from its start.
-    wallU('plaster', frontD, 0, W, st.y0, st.h, openings);
+    wallU('paint', frontD, 0, W, st.y0, st.h, openings);
   }
   // Party walls and the back wall, the full height of the three storeys.
-  wallD('plaster', WALL_M / 2, FRONT_IN_M + WALL_M, D - WALL_M, 0, ceilingY);
-  wallD('plaster', W - WALL_M / 2, FRONT_IN_M + WALL_M, D - WALL_M, 0, ceilingY);
-  wallU('plaster', D - WALL_M / 2, 0, W, 0, ceilingY, []);
+  wallD('paint', WALL_M / 2, FRONT_IN_M + WALL_M, D - WALL_M, 0, ceilingY);
+  wallD('paint', W - WALL_M / 2, FRONT_IN_M + WALL_M, D - WALL_M, 0, ceilingY);
+  wallU('paint', D - WALL_M / 2, 0, W, 0, ceilingY, []);
 
   // --- Floors: tiles in the shop, parquet upstairs; slabs with the stair holes; the ceiling.
   const u0 = WALL_M;
@@ -106,30 +106,35 @@ export function parisInterior(b: MapBuilder, lot: Lot, shiftZ: number): void {
   const d1 = D - WALL_M;
   box('tiles', u0, u1, d0, d1, 0, ground.y0 + 0.01);
   const { laneA, laneB, aEnd, bEnd } = stairLayout(lot);
+  // A slab is its floor finish over a painted ceiling below (one look per box, so two boxes).
+  const FINISH_M = 0.03;
+  const piece = (look: BoxLook, ua: number, ub: number, da: number, db: number, y: number): void => {
+    box('paint', ua, ub, da, db, y - SLAB_M, SLAB_M - FINISH_M);
+    box(look, ua, ub, da, db, y - FINISH_M, FINISH_M);
+  };
   const slab = (y: number, hole: { ua: number; ub: number; da: number; db: number } | null, look: BoxLook): void => {
-    const ys = y - SLAB_M;
     if (!hole) {
-      box(look, u0, u1, d0, d1, ys, SLAB_M);
+      piece(look, u0, u1, d0, d1, y);
       return;
     }
-    box(look, u0, hole.ua, d0, d1, ys, SLAB_M);
-    box(look, hole.ub, u1, d0, d1, ys, SLAB_M);
-    box(look, hole.ua, hole.ub, d0, hole.da, ys, SLAB_M);
-    box(look, hole.ua, hole.ub, hole.db, d1, ys, SLAB_M);
+    piece(look, u0, hole.ua, d0, d1, y);
+    piece(look, hole.ub, u1, d0, d1, y);
+    piece(look, hole.ua, hole.ub, d0, hole.da, y);
+    piece(look, hole.ua, hole.ub, hole.db, d1, y);
   };
   const holeA = { ua: laneA - STAIR_W / 2, ub: laneA + STAIR_W / 2, da: STAIR_START_M - 0.1, db: aEnd + 0.05 };
   const holeB = { ua: laneB - STAIR_W / 2, ub: laneB + STAIR_W / 2, da: bEnd - 0.05, db: aEnd + 0.1 };
   slab(entresol.y0, holeA, 'woodFloor');
   slab(noble.y0, holeB, 'woodFloor');
-  slab(ceilingY, null, 'plaster');
+  slab(ceilingY, null, 'paint');
   // The stairwell is closed, as a Haussmann stair is: a spine wall between the flights from the
   // shop floor to a rail's height above the noble floor, and a wall round the second flight on
   // the room side. Open sides would be ledges, and the navigation mesh (game/navMesh.ts) drops
   // a stair whose side falls away: walls let the AI use it, and nobody falls into the well.
   const spineU = laneA - STAIR_W / 2;
-  box('plaster', spineU - STAIR_WALL_M / 2, spineU + STAIR_WALL_M / 2, STAIR_START_M, aEnd, 0, noble.y0 + 1.0);
+  box('paint', spineU - STAIR_WALL_M / 2, spineU + STAIR_WALL_M / 2, STAIR_START_M, aEnd, 0, noble.y0 + 1.0);
   const outerU = laneB - STAIR_W / 2;
-  box('plaster', outerU - STAIR_WALL_M, outerU, bEnd, aEnd, entresol.y0 - SLAB_M, noble.y0 + 1.0 - (entresol.y0 - SLAB_M));
+  box('paint', outerU - STAIR_WALL_M, outerU, bEnd, aEnd, entresol.y0 - SLAB_M, noble.y0 + 1.0 - (entresol.y0 - SLAB_M));
   // Rails at the holes' open ends: before the first flight's foot upstairs, behind the second's top.
   const rail = (ua: number, ub: number, da: number, db: number, y: number): void => box('metalDark', ua, ub, da, db, y, 0.95, { blocksVision: false });
   rail(holeA.ua, holeA.ub, holeA.da - 0.05, holeA.da, entresol.y0);
@@ -164,12 +169,11 @@ export function parisInterior(b: MapBuilder, lot: Lot, shiftZ: number): void {
   // above), twice the glazing the default fraction is tuned for, though on one wall only: a stop more.
   b.interiors.push({ min: new Vec3(Math.min(ax, bx), 0, Math.min(az, bz)), max: new Vec3(Math.max(ax, bx), ceilingY - SLAB_M, Math.max(az, bz)), skyFraction: 0.12 });
 
-  // --- A little furniture: a counter in the shop, a few crates in its back room, tables upstairs.
-  const prop = (kind: 'crate' | 'cafeSet' | 'bench', u: number, d: number, y: number, yaw: number): void => void b.prop(kind, X(u, d), Z(u, d), yaw, { baseY: y });
+  // --- A little furniture: a counter across the shop, stock in crates behind it and upstairs.
+  const prop = (u: number, d: number, y: number, yaw: number, scale = 1): void => void b.prop('crate', X(u, d), Z(u, d), yaw, { baseY: y, scale });
   box('wood', u0 + 1.0, laneB - STAIR_W, D - 3.2, D - 2.6, ground.y0, 1.0);
-  prop('crate', u0 + 0.9, D - 1.2, ground.y0, 0.2);
-  prop('crate', u0 + 2.0, D - 1.0, ground.y0, 1.1);
-  if (lot.ground === 'cafe') for (const f of [0.25, 0.5]) prop('cafeSet', W * f, 3.0, ground.y0, f * 3);
-  prop('cafeSet', W * 0.3, 4.5, noble.y0, 0.4);
-  prop('crate', u0 + 1.2, D - 1.6, entresol.y0, 0.6);
+  prop(u0 + 0.9, D - 1.2, ground.y0, 0.2);
+  prop(u0 + 2.0, D - 1.0, ground.y0, 1.1, 1.2);
+  prop(u0 + 1.2, D - 1.6, entresol.y0, 0.6);
+  prop(u0 + 1.0, 3.0, noble.y0, 0.3, 0.8);
 }

@@ -14,6 +14,7 @@ export type BoxLook =
   | 'brickDark'
   | 'concrete'
   | 'plaster'
+  | 'paint'
   | 'woodFloor'
   | 'tiles'
   | 'glass'
