@@ -23,8 +23,14 @@ import { WATER_LEVEL_M, WAVES } from '../config.ts';
 const FOAM_LIFE_S = 3.5;
 /** Foam drifts at a few per cent of the wind (the surface current plus the bubbles' windage). */
 const DRIFT_PER_WIND = 0.03;
-/** Of the area under foam at any moment, the share that is an active, folding crest. */
-const ACTIVE_SHARE = 0.3;
+/**
+ * Of the area under foam at any moment, the share that is an active, folding crest. Tuned on a
+ * readback at 12 m/s: the crests run at their phase speed and leave trails, so solid foam (> 0.5)
+ * covered 2.5× Monahan's W with 0.3; 0.12 brings it to W.
+ */
+const ACTIVE_SHARE = 0.12;
+/** Past the window the water finds crests itself, without memory, over a coarser step (m). */
+export const FAR_STEP_M = 1.0;
 
 /** Whitecap coverage (0–1) for a 10 m wind of `windMps`. */
 export function whitecapCoverage(windMps: number): number {
@@ -61,6 +67,10 @@ export class Whitecaps {
   private readonly readers: THREE.TextureNode[] = [];
   private readonly readOrigin = uniform(new THREE.Vector2());
   readonly meanCoverage = uniform(0);
+  /** For the water's own crest test beyond the window: threshold and curvature scale at FAR_STEP_M. */
+  readonly farThreshold = uniform(9);
+  readonly farLapScale = uniform(1);
+  private readonly farLapRms: number;
 
   constructor(ocean: OceanFFT, depthMap: THREE.Texture, depthDomain: { x0: number; z0: number; sizeM: number }, quality: 'high' | 'low') {
     this.n = quality === 'high' ? 256 : 128;
@@ -72,6 +82,7 @@ export class Whitecaps {
     };
     this.targets = [new THREE.RenderTarget(this.n, this.n, fmt), new THREE.RenderTarget(this.n, this.n, fmt)];
     this.lapRms = ocean.laplacianRms(this.cellM);
+    this.farLapRms = ocean.laplacianRms(FAR_STEP_M);
     const L = WAVES.openSea.patchM;
     const pass = (prev: THREE.RenderTarget, name: string): THREE.QuadMesh => {
       const uv = screenCoordinate.xy.div(this.n);
@@ -114,6 +125,9 @@ export class Whitecaps {
     this.meanCoverage.value = coverage;
     this.uThreshold.value = coverage > 1e-6 ? normalTail(coverage * ACTIVE_SHARE) : 9;
     this.uLapScale.value = Math.max(this.lapRms * Math.sqrt(waveScale), 1e-4);
+    // Without memory the crest itself must cover what the trails would: the whole W.
+    this.farThreshold.value = coverage > 1e-6 ? normalTail(coverage) : 9;
+    this.farLapScale.value = Math.max(this.farLapRms * Math.sqrt(waveScale), 1e-4);
     this.uDecay.value = Math.exp(-dt / FOAM_LIFE_S);
     this.uDrift.value.set(wind.x * DRIFT_PER_WIND * dt, wind.y * DRIFT_PER_WIND * dt);
     const ox = Math.round(focusX / this.cellM) * this.cellM;

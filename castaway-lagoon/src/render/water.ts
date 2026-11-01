@@ -7,7 +7,7 @@ import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
 import { heightGrid, SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
 import { beachWidth, heightAt, shoreDistance } from '../game/terrain.ts';
 import { screenReflectionHit } from './screenReflection.ts';
-import { Whitecaps } from './whitecaps.ts';
+import { FAR_STEP_M, Whitecaps } from './whitecaps.ts';
 import { skyRadiance } from './sky.ts';
 import { causticFoamMap } from './textures.ts';
 import { U } from './uniforms.ts';
@@ -327,11 +327,15 @@ function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: Oc
   // Its own lace offset and a finer scale, so a trail never repeats the surf's pattern.
   const wakeLace = laceCover(p.xz.mul(1.4).add(vec2(11.3, 4.7)), wakeFoam(p.xz).mul(0.85), float(5.3));
   // Wind whitecaps on the open sea (whitecaps.ts), torn into lace as they age; past the foam
-  // window only their mean cover is left, which at that range is all a pixel could hold anyway.
+  // window the water finds the folding crests itself, each frame anew (no trails that far out).
   const caps = whitecaps.sample(p.xz);
-  const capLace = laceCover(p.xz.mul(0.85).add(vec2(5.1, 17.3)), caps.foam.mul(0.9), float(8.1));
-  const farCaps = float(1).sub(caps.inside).mul(whitecaps.meanCoverage).mul(open).mul(0.6);
-  const foam = clamp(max(max(max(surf, edgeLace), wakeLace), capLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))).add(farCaps), 0, 1);
+  // Beyond the window: the same crest test on the FFT here, over FAR_STEP_M, the crests only.
+  const farSlope = (dx: number, dz: number) => texture(ocean.surface.texture, q.add(vec2(dx, dz)).div(L)).yz;
+  const farLap = farSlope(FAR_STEP_M, 0).x.sub(farSlope(-FAR_STEP_M, 0).x).add(farSlope(0, FAR_STEP_M).y.sub(farSlope(0, -FAR_STEP_M).y)).div(2 * FAR_STEP_M);
+  const farSharp = farLap.negate().div(whitecaps.farLapScale);
+  const farBorn = smoothstep(whitecaps.farThreshold.sub(0.35), whitecaps.farThreshold.add(0.35), farSharp).mul(open).mul(float(1).sub(caps.inside));
+  const capLace = laceCover(p.xz.mul(0.85).add(vec2(5.1, 17.3)), max(caps.foam, farBorn).mul(0.9), float(8.1));
+  const foam = clamp(max(max(max(surf, edgeLace), wakeLace), capLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))), 0, 1);
 
   const foamLight = U.sunIrradiance.mul(max(dot(N, U.sunDir), 0)).add(U.skyIrradiance).div(Math.PI).mul(0.8);
 
