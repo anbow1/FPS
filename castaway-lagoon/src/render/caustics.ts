@@ -1,10 +1,11 @@
-import { dFdx, dFdy, float, fwidth, length, max, mix, positionLocal, refract, smoothstep, texture, varying, vec2, vec3, vec4 } from 'three/tsl';
+import { dFdx, dFdy, float, length, max, mix, positionLocal, refract, texture, varying, vec2, vec3, vec4 } from 'three/tsl';
 import {
   Color,
   CustomBlending,
   DoubleSide,
   HalfFloatType,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshBasicNodeMaterial,
   type Node,
@@ -81,13 +82,16 @@ export class Caustics {
     // On High the tile is 512 px (2 cm texels), fine enough for the network to stay sharp a
     // metre from a diver's mask and for the dispersion fringes to show.
     const px = quality === 'high' ? 512 : 128;
-    this.target = new RenderTarget(px, px, { type: HalfFloatType, depthBuffer: false });
+    this.target = new RenderTarget(px, px, { type: HalfFloatType, depthBuffer: false, generateMipmaps: true });
     const tex = this.target.texture;
     tex.wrapS = RepeatWrapping;
     tex.wrapT = RepeatWrapping;
     tex.magFilter = LinearFilter;
-    tex.minFilter = LinearFilter;
-    tex.generateMipmaps = false;
+    // Mipmapped (regenerated after each pass): where a pixel spans many of the network's ~10–30 cm
+    // cells (mid-distance shallows seen from the beach) the light averages to its mean, as an eye
+    // sees it, instead of a point sample landing on one random flare and the floor glittering.
+    tex.minFilter = LinearMipmapLinearFilter;
+    tex.anisotropy = 8;
     const cells = Math.ceil((quality === 'high' ? 192 : 64) * (1 + 2 * MARGIN));
     // Tile coordinates −MARGIN … 1 + MARGIN.
     const grid = new PlaneGeometry(1 + 2 * MARGIN, 1 + 2 * MARGIN, cells, cells).translate(0.5, 0.5, 0);
@@ -153,10 +157,5 @@ export function causticAt(caustics: Caustics, p: Node<'vec3'>, depth: Node<'floa
     const c = texture(caustics.target.texture, entry.div(CAUSTIC_TILE_M));
     return mix(c.r, c.g, k);
   };
-  // The network's cells are ~10–30 cm: where a pixel spans several of them (mid-distance shallows seen from
-  // the beach) a single point sample is one random flare or none, and the floor turned to glittering
-  // noise. There the light averages out to its mean (≈ 1), as an eye or a camera sees it.
-  const footprintM = length(fwidth(p.xz));
-  const resolved = float(1).sub(smoothstep(0.02, 0.09, footprintM));
-  return mix(vec3(1), vec3(at(WATER_IOR_RGB[0]), at(WATER_IOR_RGB[1]), at(WATER_IOR_RGB[2])), resolved);
+  return vec3(at(WATER_IOR_RGB[0]), at(WATER_IOR_RGB[1]), at(WATER_IOR_RGB[2]));
 }

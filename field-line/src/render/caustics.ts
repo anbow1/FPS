@@ -1,10 +1,11 @@
-import { dFdx, dFdy, float, fwidth, length, max, mix, positionLocal, refract, smoothstep, texture, varying, vec2, vec3, vec4 } from 'three/tsl';
+import { dFdx, dFdy, float, length, max, mix, positionLocal, refract, texture, varying, vec2, vec3, vec4 } from 'three/tsl';
 import {
   Color,
   CustomBlending,
   DoubleSide,
   HalfFloatType,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshBasicNodeMaterial,
   type Node,
@@ -65,13 +66,16 @@ export class Caustics {
 
   constructor(quality: 'high' | 'low') {
     const px = quality === 'high' ? 256 : 128;
-    this.target = new RenderTarget(px, px, { type: HalfFloatType, depthBuffer: false });
+    this.target = new RenderTarget(px, px, { type: HalfFloatType, depthBuffer: false, generateMipmaps: true });
     const tex = this.target.texture;
     tex.wrapS = RepeatWrapping;
     tex.wrapT = RepeatWrapping;
     tex.magFilter = LinearFilter;
-    tex.minFilter = LinearFilter;
-    tex.generateMipmaps = false;
+    // Mipmapped (regenerated after each pass): where a pixel spans many of the network's ~10–30 cm
+    // cells (mid-distance shallows seen from the beach) the light averages to its mean, as an eye
+    // sees it, instead of a point sample landing on one random flare and the floor glittering.
+    tex.minFilter = LinearMipmapLinearFilter;
+    tex.anisotropy = 8;
     const cells = Math.ceil((quality === 'high' ? 128 : 64) * (1 + 2 * MARGIN));
     const grid = new PlaneGeometry(1 + 2 * MARGIN, 1 + 2 * MARGIN, cells, cells).translate(0.5, 0.5, 0);
     PLANES_M.forEach((depthM, i) => {
@@ -123,8 +127,5 @@ export function causticAt(caustics: Caustics, p: Node<'vec3'>, depth: Node<'floa
   const entry = p.xz.sub(refractedShift(vec2(0, 0)).mul(depth));
   const c = texture(caustics.target.texture, entry.div(CAUSTIC_TILE_M));
   const k = depth.sub(PLANES_M[0]).div(PLANES_M[1] - PLANES_M[0]).clamp(0, 1);
-  // Where a pixel spans several of the network's cells (the lake bed from the bank) one point sample is a
-  // random flare or none and the bed glitters with noise: there the light averages to its mean (≈ 1).
-  const resolved = float(1).sub(smoothstep(0.02, 0.09, length(fwidth(p.xz))));
-  return mix(float(1), mix(c.r, c.g, k), resolved);
+  return mix(c.r, c.g, k);
 }
