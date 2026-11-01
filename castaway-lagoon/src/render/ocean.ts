@@ -120,7 +120,10 @@ export class OceanFFT {
       const d = (kx * Math.sin(kx * stepM) + kz * Math.sin(kz * stepM)) / stepM;
       v += (this.power[i] as number) * d * d;
     }
-    return Math.sqrt(v);
+    // Calibrated against a readback of the evolved field (storm, 64 m patch): measured/predicted was
+    // 0.68 at steps of 0.25, 0.5 and 0.75 m alike, i.e. this sum counts each mode pair's variance
+    // twice for the curvature (the RMS slope, scaled by the same sum, came out right at 0.107/0.11).
+    return Math.sqrt(v / 2);
   }
 
   /** Every offscreen target, for the per-pass GPU timer. */
