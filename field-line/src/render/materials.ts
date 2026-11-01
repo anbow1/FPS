@@ -427,7 +427,8 @@ export class MaterialLibrary {
       case 'paint':
         // Painted plaster on an inside wall (Paris rooms): a warm off-white, albedo ~0.65, nearly smooth,
         // with the faint unevenness and grime of an old wall. The 'plaster' look is weathered render outside.
-        return { material: standard(set('paint', 256, () => P.plaster(0xd9d2c3), 1), look), tileM: 2.5 };
+        // A tenth of the render's relief: paint fills the plaster's grain, and full relief glittered in the sun.
+        return { material: standard(set('paint', 256, () => P.plaster(0xd9d2c3), 0.1), look), tileM: 4 };
       case 'tiles':
         return { material: standard(set('tiles', 256, () => P.tiles(0xa9a49a), 3), look), tileM: 0.9 };
       case 'metalDark':
