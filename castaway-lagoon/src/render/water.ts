@@ -6,7 +6,7 @@ import { hexToLinear } from './colour.ts';
 import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
 import { heightGrid, SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
 import { beachWidth, heightAt, shoreDistance } from '../game/terrain.ts';
-import { screenReflection } from './screenReflection.ts';
+import { screenReflectionHit } from './screenReflection.ts';
 import { skyRadiance } from './sky.ts';
 import { causticFoamMap } from './textures.ts';
 import { U } from './uniforms.ts';
@@ -282,8 +282,16 @@ function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: Oc
   let reflection: Node<'vec3'> = skyReflection;
   let sunSeen: Node<'float'> = float(1);
   if (quality === 'high') {
-    const ssr = screenReflection(p, Rup);
-    reflection = mix(skyReflection, ssr.colour, ssr.weight);
+    const ssr = screenReflectionHit(p, Rup);
+    // The mirrored jungle is read through a few taps spread by the waves' unresolved slope
+    // variance (the LEAN term above), mostly along the screen's vertical as rippled water
+    // streaks reflections. One tap per pixel showed every leaf's sub-pixel noise, reshuffled
+    // by the per-pixel normals, as green and white grain across the lagoon.
+    const spread = clamp(sqrt(slopeVar).mul(0.12), 0.002, 0.03);
+    const taps: [number, number][] = [[0, -1.5], [0, -0.5], [0, 0.5], [0, 1.5], [-0.6, 0], [0.6, 0]];
+    let mirrored: Node<'vec3'> = vec3(0);
+    for (const [dx, dy] of taps) mirrored = mirrored.add(viewportSharedTexture(ssr.uv.add(vec2(dx, dy).mul(spread)).clamp(0, 1)).rgb);
+    reflection = mix(skyReflection, mirrored.div(taps.length), ssr.weight);
     // A palm or the boat mirrored in front of the sun hides its glint there.
     sunSeen = float(1).sub(ssr.weight);
   }
