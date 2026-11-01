@@ -33,6 +33,8 @@ export class PeopleView {
   readonly group = new Group();
   private readonly meshes: { mesh: InstancedMesh; bones: BoneTexture; prev: BoneTexture; members: Person[]; rig: Rig; poser: FullPoser | null }[] = [];
   private readonly fullMatrices = FULL_BONES.map(() => new Matrix4());
+  /** Time for the stationary loops (talking, waiting, sitting). */
+  private clockS = 0;
   /** The rig of the mesh being posed. */
   private rig: Rig = BODY_RIG;
   private readonly poseA = new MocapPose();
@@ -121,6 +123,7 @@ export class PeopleView {
 
   /** Poses everyone for this frame; `dt` advances their gait. */
   update(dt: number): void {
+    this.clockS += dt;
     for (const { bones, prev, members, rig, poser } of this.meshes) {
       this.rig = rig;
       prev.copyFrom(bones);
@@ -144,14 +147,25 @@ export class PeopleView {
   /** A person on the 21-bone skeleton (fullPose.ts): the capture, the chair or the bicycle. */
   private poseFull(poser: FullPoser, p: Person, dt: number): void {
     const out = this.fullMatrices;
-    if (p.mode === 'sit') poser.seated(p.headYawRad, out);
-    else if (p.mode === 'ride') poser.riding(p.crankRad, out);
-    else {
+    // Each person's own moment of the stationary loops, so a café's tables and a group at the lights do
+    // not move in step.
+    const t = this.clockS + ((p.skin * 13.7 + p.look[3] * 0.37) % 1) * 20;
+    // Sitting is posed by hand: the capture's sitters (CMU) perch on stools, elbows on their knees, which at
+    // a café table read as hunched.
+    if (p.mode === 'ride') poser.riding(p.crankRad, out);
+    else if (p.mode === 'sit') poser.seated(p.headYawRad, out);
+    else if (!mocapReady()) return;
+    else if (p.mode === 'stand') {
+      // Standing in a group, talking: the capture's gestures.
+      poser.walk(this.poseA.sample('talk', t).solve(), p.headYawRad, out);
+    } else {
       p.gait = advanceGait(p.gait, p.speedMs, dt);
-      if (!mocapReady()) return;
       const run = smooth(2.2, 3.0, p.speedMs);
       this.poseA.sample('walk', p.gait * clipDuration('walk'));
       if (run > 0) this.poseA.blend(this.poseB.sample('run', p.gait * clipDuration('run')), run);
+      // Slowing to a stop (at the lights, behind someone): into the standing loop, weight shifting.
+      const still = 1 - smooth(0.15, 0.6, p.speedMs);
+      if (still > 0) this.poseA.blend(this.poseB.sample('idle', t), still);
       poser.walk(this.poseA.solve(), p.headYawRad, out);
     }
     this.actorMatrix(p);

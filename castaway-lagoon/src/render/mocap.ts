@@ -96,7 +96,7 @@ export function clipDuration(id: ClipId): number {
 
 /** Ground speed of one cycle of a gait clip, m/s. */
 export function clipSpeed(id: ClipId): number {
-  return clips.get(id)?.speed ?? 1;
+  return Math.max(0, clips.get(id)?.speed ?? 1);
 }
 
 export function boneIndex(name: string): number {
@@ -121,7 +121,8 @@ export class MocapPose {
     const c = clips.get(id);
     if (!c || !skeleton) return this;
     const n = skeleton.names.length;
-    const loop = c.speed > 0;
+    // speed > 0: a gait cycle; −1: a stationary loop (standing, talking); 0: a one-shot.
+    const loop = c.speed !== 0;
     let f = t * c.fps;
     if (loop) f = ((f % c.frames) + c.frames) % c.frames;
     else f = Math.min(Math.max(0, f), c.frames - 1);

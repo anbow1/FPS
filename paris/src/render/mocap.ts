@@ -7,18 +7,19 @@ import { Quaternion, Vector3 } from 'three/webgpu';
 // turns a body part from the T-pose to the captured pose, whatever the body's
 // own proportions (life/people.ts applies it to its own segments and lengths).
 //
+// Baked by tools/mocap/bake_clip.py.
 // clip.bin: u32 'MOC1', u16 bones, u16 frames, f32 fps, f32 speed (m/s of the
-// stripped travel; 0 for one-shots), f32 hips[3·frames] (m), i16 quat[4·bones·frames]
+// stripped travel; 0 for one-shots, −1 for stationary loops), f32 hips[3·frames] (m), i16 quat[4·bones·frames]
 // (local rotations ×32767, in skeleton.json's bone order).
 // The capture faces +Z with its left on +X; the game's actors face −Z with their
 // right on +X: a half turn about Y between the two (toActor).
 
-export type ClipId = 'walk' | 'run';
+export type ClipId = 'walk' | 'run' | 'idle' | 'talk';
 
 interface Clip {
   frames: number;
   fps: number;
-  /** Ground speed of a cycle, m/s (0 for a one-shot). */
+  /** Ground speed of a cycle, m/s (0 for a one-shot, −1 for a stationary loop). */
   speed: number;
   hips: Float32Array;
   quats: Float32Array;
@@ -37,6 +38,8 @@ interface Skeleton {
 const URLS: Record<ClipId, string> = {
   walk: new URL('../assets/mocap/walk.bin', import.meta.url).href,
   run: new URL('../assets/mocap/run.bin', import.meta.url).href,
+  idle: new URL('../assets/mocap/idle.bin', import.meta.url).href,
+  talk: new URL('../assets/mocap/talk.bin', import.meta.url).href,
 };
 const SKELETON_URL = new URL('../assets/mocap/skeleton.json', import.meta.url).href;
 
@@ -103,7 +106,7 @@ export function clipDuration(id: ClipId): number {
 
 /** Ground speed of one cycle of a gait clip, m/s. */
 export function clipSpeed(id: ClipId): number {
-  return clips.get(id)?.speed ?? 1;
+  return Math.max(0, clips.get(id)?.speed ?? 1);
 }
 
 /** The unit direction from joint `from` to joint `to` in the capture's T-pose, actor frame. */
@@ -137,7 +140,8 @@ export class MocapPose {
     const c = clips.get(id);
     if (!c || !skeleton) return this;
     const n = skeleton.names.length;
-    const loop = c.speed > 0;
+    // speed > 0: a gait cycle; −1: a stationary loop (standing, talking); 0: a one-shot.
+    const loop = c.speed !== 0;
     let f = t * c.fps;
     if (loop) f = ((f % c.frames) + c.frames) % c.frames;
     else f = Math.min(Math.max(0, f), c.frames - 1);

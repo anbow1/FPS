@@ -8,7 +8,7 @@ MotionBuilder-friendly BVH conversion by Bruce Hahne (cgspeed.com), from the
 copy at https://github.com/una-dinosauria/cmu-mocap. CMU: "This data is free
 for use in research and commercial projects worldwide."
 
-Baked offline for Field Line and copied here: every clip retargeted onto the skeleton of trial
+Baked by `tools/mocap/bake_clip.py` (repository root): every clip retargeted onto the skeleton of trial
 07_01 by world rotations relative to the T-pose all the files share, resampled
 at 30 fps, rotations stored as 16-bit quaternions (format in
 `render/mocap.ts`); gait cycles cut where the poses at the ends match best,
@@ -19,4 +19,6 @@ left foot furthest forward.
 | ------------- | ------ | --------------------- | --------------------------- |
 | `walk.bin`    | 07_01  | walk                  | people walking            |
 | `run.bin`     | 09_01  | run                   | people running            |
+| `idle.bin`    | 40_10  | wait for bus          | people standing, stopping   |
+| `talk.bin`    | 18_08  | conversation, gestures | people talking in groups   |
 | `skeleton.json` | 07_01 | the T-pose skeleton  | the target of every clip    |
