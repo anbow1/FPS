@@ -7,6 +7,8 @@ import { Player } from '../src/game/player.ts';
 import { MapBuilder } from '../src/maps/builder.ts';
 import { enterableBuilding } from '../src/maps/buildings.ts';
 import { buildMap } from '../src/maps/index.ts';
+import { boulevardPlan, PARIS_SHIFT_Z } from '../src/maps/boulevard.ts';
+import { storeysOf } from '../src/paris/city/facade.ts';
 import { makeHeightfield } from '../src/maps/terrain.ts';
 import type { MapId } from '../src/maps/types.ts';
 import { idleIntent, STEP_S } from './helpers.ts';
@@ -87,5 +89,44 @@ describe('enterable building', () => {
     for (let i = 0; i < 60 * 6; i++) player.update(intent.player, world, STEP_S, events);
     expect(player.body.position.y).toBeGreaterThan(2.9);
     expect(player.body.position.y).toBeLessThan(3.2);
+  });
+});
+
+describe('Paris house with rooms (boulevard)', () => {
+  it('a player goes in by the shop door, up both flights and out onto the noble balcony', () => {
+    const map = buildMap('boulevard');
+    const world = new CollisionWorld(map.terrain);
+    for (const box of map.boxes) world.addBox(box);
+    const lot = boulevardPlan().lots.find((l) => l.enterable);
+    if (!lot) throw new Error('no enterable lot');
+    const W = lot.widthM;
+    const bay = W / lot.bays;
+    // Lot frame → map: u along the front, d in from the façade.
+    const at = (u: number, d: number): [number, number] => [lot.ox + lot.tx * u - lot.nx * d, lot.oz + lot.tz * u - lot.nz * d + PARIS_SHIFT_Z];
+    const laneA = W - 0.3 - 0.6;
+    const laneB = laneA - 1.2;
+    const aEnd = 2 + Math.round(4.4 / 0.17) * 0.28;
+    const bEnd = aEnd - Math.round(3.0 / 0.17) * 0.28;
+    const door = (Math.floor(lot.bays / 2) + 0.5) * bay;
+    const french = (Math.floor(lot.bays / 2) + 0.5) * bay;
+    const route: [number, number][] = [at(door, -2.5), at(door, 1.2), at(laneA, 1.4), at(laneA, aEnd + 0.9), at(laneB, aEnd + 0.9), at(laneB, aEnd - 0.1), at(laneB, bEnd - 1.0), at(french, 1.2), at(french, -0.35)];
+    const [sx, sz] = route[0] as [number, number];
+    const player = new Player(new Vec3(sx, 0.2, sz), 0);
+    const events = new EventQueue();
+    const intent = idleIntent();
+    intent.player.moveForward = 1;
+    for (const [tx, tz] of route.slice(1)) {
+      for (let i = 0; i < 60 * 12; i++) {
+        const p = player.body.position;
+        if (Math.hypot(tx - p.x, tz - p.z) < 0.25) break;
+        // Yaw 0 looks down −Z: face the waypoint.
+        player.yawRad = Math.atan2(-(tx - p.x), -(tz - p.z));
+        player.update(intent.player, world, STEP_S, events);
+      }
+      const p = player.body.position;
+      expect(Math.hypot(tx - p.x, tz - p.z), `stuck short of (${tx.toFixed(1)}, ${tz.toFixed(1)}) at (${p.x.toFixed(1)}, ${p.y.toFixed(2)}, ${p.z.toFixed(1)})`).toBeLessThan(0.4);
+    }
+    const noble = storeysOf(lot)[2];
+    expect(player.body.position.y).toBeCloseTo(noble?.y0 ?? 0, 0);
   });
 });

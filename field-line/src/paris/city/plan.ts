@@ -42,6 +42,8 @@ export interface Lot {
   /** Its ends (u = 0, u = width) that meet a corner, where the neighbour's front turns away: no party wall shows there. */
   cornerStart: boolean;
   cornerEnd: boolean;
+  /** Field Line only: the lot has real rooms behind its front (maps/parisInterior.ts). */
+  enterable?: boolean;
 }
 
 export interface Placed {

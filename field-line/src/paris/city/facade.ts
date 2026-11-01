@@ -57,7 +57,7 @@ export function storeysOf(lot: Lot): Storey[] {
 }
 
 /** Window opening per storey: width, height and sill above the floor (m). */
-function openingOf(kind: Storey['kind'], bay: number): { w: number; h: number; sill: number } {
+export function openingOf(kind: Storey['kind'], bay: number): { w: number; h: number; sill: number } {
   const w = Math.min(BUILDING.windowWidthM, bay - 0.9);
   switch (kind) {
     case 'entresol':
@@ -152,6 +152,8 @@ export class FacadeWriter {
   }
 
   private window(cu: number, op: { w: number; h: number; sill: number }, st: Storey, d: number, i: number): void {
+    // An enterable lot's lower storeys have real rooms and glass behind (maps/parisInterior.ts): no painted room.
+    const open = this.lot.enterable === true && (st.kind === 'entresol' || st.kind === 'noble');
     const g = this.b.glass;
     const u0 = cu - op.w / 2;
     const u1 = cu + op.w / 2;
@@ -160,7 +162,7 @@ export class FacadeWriter {
     const seed = hash2(Math.round(u0 * 10 + this.lot.ox * 7), Math.round(v0 * 10 + this.lot.oz * 3), 11);
     g.set('win', op.w, op.h, seed, st.kind === 'entresol' ? WINDOW_KIND.entresol : WINDOW_KIND.french);
     g.set('ao', 1);
-    g.quad(this.p(u0, v0, -d), this.p(u1, v0, -d), this.p(u1, v1, -d), this.p(u0, v1, -d), [[0, 0], [1, 0], [1, 1], [0, 1]], this.out);
+    if (!open) g.quad(this.p(u0, v0, -d), this.p(u1, v0, -d), this.p(u1, v1, -d), this.p(u0, v1, -d), [[0, 0], [1, 0], [1, 1], [0, 1]], this.out);
     const s = this.b.stone;
     s.set('rustic', 0);
     if (st.kind !== 'entresol') {
@@ -201,6 +203,8 @@ export class FacadeWriter {
       this.wallRect(u0, u1, v1 - 0.4, v1, -d);
       return;
     }
+    // An enterable lot (maps/parisInterior.ts) has a real shop behind its front: open door, real glass.
+    if (l.enterable) return;
     const sh = this.b.shop;
     const kind = doorBay ? SHOP_KIND.door : l.ground === 'cafe' ? SHOP_KIND.cafe : SHOP_KIND.shop;
     sh.set('shop', op.w, op.h, hash2(i, Math.round(l.oz * 3 + l.ox), 9), kind);

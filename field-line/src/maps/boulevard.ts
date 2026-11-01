@@ -3,6 +3,7 @@ import { BUILDING, STREET } from '../paris/config.ts';
 import { buildPlan, inCrossing, type Lot, type StreetPlan } from '../paris/city/plan.ts';
 import { crossRoadHalf } from '../paris/city/street.ts';
 import { MapBuilder } from './builder.ts';
+import { parisInterior, ROOM_DEPTH_M } from './parisInterior.ts';
 import { makeHeightfield } from './terrain.ts';
 import type { MapData, Pickup } from './types.ts';
 
@@ -13,9 +14,11 @@ import type { MapData, Pickup } from './types.ts';
 //
 // Paris works in its own frame (camera at z = 0 looking down −z); the map shifts it by
 // PARIS_SHIFT_Z so the playable square is centred on the origin, as every map here is.
-// The façades are faces only, so each block behind them is one solid collider, and the open
-// ends (the cross streets' far ends, the boulevard's near end) are closed by extra lots that
-// face back into the street: from inside the map every way out is a building.
+// The façades are faces only, so the blocks behind them are solid colliders (a box per house
+// along the boulevard, one for the rest of the block), except for three houses with real rooms
+// behind their fronts (parisInterior.ts). The open ends (the cross streets' far ends, the
+// boulevard's near end) are closed by extra lots that face back into the street: from inside
+// the map every way out is a building.
 
 /** Paris z + this = map z. */
 export const PARIS_SHIFT_Z = 120;
@@ -24,14 +27,32 @@ const HALF_M = 180;
 const CROSS_REACH_M = 110;
 /** A block's collider height: the cornice (~20 m) and the mansard above it. */
 const BLOCK_HEIGHT_M = 26;
+/** The strip behind the boulevard's fronts that is built house by house (deeper than a house's rooms). */
+const FRONT_STRIP_M = 14;
 const SEED = 1859;
 
 /** The plan with the closing lots added (render/parisStreet.ts draws the same list). */
 export function boulevardPlan(): StreetPlan {
   const plan = buildPlan(SEED);
   plan.lots.push(...closingLots());
+  // Three houses with rooms behind their fronts (parisInterior.ts), spread down the playable
+  // stretch on alternating sides: one by the first crossing, two between the crossings.
+  for (const [side, z] of ENTERABLE_AT) {
+    const lot = plan.lots.find((l) => l.boulevard && l.side === side && z > l.zMin && z < l.zMax && l.widthM >= 13);
+    if (!lot) throw new Error(`boulevard: no lot at side ${side}, z ${z} for a house with rooms`);
+    lot.enterable = true;
+    // A shop or café front (the bank's stone and grilles have no door to go in by).
+    if (lot.ground === 'bank' || lot.ground === 'door') lot.ground = 'shop';
+  }
   return plan;
 }
+
+/** Paris-frame (side, z) points whose lots get rooms. */
+const ENTERABLE_AT: readonly [-1 | 1, number][] = [
+  [-1, -30],
+  [1, -110],
+  [-1, -175],
+];
 
 /** Lots that close the cross streets' far ends and the boulevard's near end, facing into the street. */
 function closingLots(): Lot[] {
@@ -92,10 +113,25 @@ export function buildBoulevard(): MapData {
     top = zMap(c.zM - c.widthM / 2);
   }
   fronts.push([zEdgeFar - 20, top]);
+  // Each block: a strip of FRONT_STRIP_M behind the boulevard's fronts, one box per house (a
+  // house with rooms has them instead), and one box for the rest of the block behind.
   for (const side of [-1, 1] as const) {
     for (const [z0, z1] of fronts) {
-      const depth = CROSS_REACH_M + 12;
-      b.boxOnBase('invisible', side * (F + depth / 2), 0, (z0 + z1) / 2, depth, BLOCK_HEIGHT_M, z1 - z0, 0, { surface: 'rock' });
+      const depth = CROSS_REACH_M + 12 - FRONT_STRIP_M;
+      b.boxOnBase('invisible', side * (F + FRONT_STRIP_M + depth / 2), 0, (z0 + z1) / 2, depth, BLOCK_HEIGHT_M, z1 - z0, 0, { surface: 'rock' });
+    }
+    for (const lot of plan.lots) {
+      if (!lot.boulevard || lot.side !== side) continue;
+      const za = zMap(lot.zMin);
+      const zb = zMap(lot.zMax);
+      if (zb < zEdgeFar - 20 || za > HALF_M + 10) continue;
+      if (lot.enterable) {
+        parisInterior(b, lot, PARIS_SHIFT_Z);
+        // Behind its rooms, up to the block's box.
+        b.boxOnBase('invisible', side * (F + (ROOM_DEPTH_M + FRONT_STRIP_M) / 2), 0, (za + zb) / 2, FRONT_STRIP_M - ROOM_DEPTH_M, BLOCK_HEIGHT_M, zb - za, 0, { surface: 'rock' });
+        continue;
+      }
+      b.boxOnBase('invisible', side * (F + FRONT_STRIP_M / 2), 0, (za + zb) / 2, FRONT_STRIP_M, BLOCK_HEIGHT_M, zb - za, 0, { surface: 'rock' });
     }
     // Behind each cross street's closing lot.
     for (const c of crossings) b.boxOnBase('invisible', side * (F + CROSS_REACH_M + 6), 0, zMap(c.zM), 12, BLOCK_HEIGHT_M, c.widthM + 2, 0, { surface: 'rock' });
