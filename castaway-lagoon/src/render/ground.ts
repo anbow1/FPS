@@ -350,6 +350,12 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   let rough: Node<'float'> = mix(mix(mix(orm.g, float(0.9), extra.z), float(0.2), wet.mul(0.85)), float(0.03), puddle);
   rough = mix(rough, float(0.14), film);
   rough = mix(rough, float(0.75), foamy);
+  // Submerged, the floor is not a glossy wet surface: rock under water reflects with the
+  // water/rock index ratio (F0 ≈ 0.004, a tenth of in air), so its sun specular is nearly gone.
+  // Left glossy (the wetness above), the normal maps' sub-pixel facets sparkled as single
+  // white pixels across every patch of weed and rock seen through the lagoon.
+  const submerged = float(1).sub(smoothstep(WATER_LEVEL_M - 0.4, WATER_LEVEL_M - 0.05, p.y));
+  rough = mix(rough, float(0.95), submerged);
   nTex = mix(nTex, vec3(0.5, 0.5, 1), max(max(puddle, film), wet.mul(0.4)));
   // Rain rings on the puddles (the same rings as on the lagoon, waterFx.ts), near the camera only.
   const rings = rainRings(p.xz).mul(puddle).mul(smoothstep(25, 6, length(cameraPosition.sub(p))));
