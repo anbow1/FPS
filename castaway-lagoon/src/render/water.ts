@@ -7,6 +7,7 @@ import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
 import { heightGrid, SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
 import { beachWidth, heightAt, shoreDistance } from '../game/terrain.ts';
 import { screenReflectionHit } from './screenReflection.ts';
+import { Whitecaps } from './whitecaps.ts';
 import { skyRadiance } from './sky.ts';
 import { causticFoamMap } from './textures.ts';
 import { U } from './uniforms.ts';
@@ -33,7 +34,7 @@ const FINE_PATCH_M = 7.7;
 /** The canopy's mean top above the ground (the trees are 12–24 m tall, crowns rounded). */
 const CANOPY_M = 15;
 
-export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: DataTexture; ocean: OceanFFT; fine: OceanFFT | null } {
+export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: DataTexture; ocean: OceanFFT; fine: OceanFFT | null; whitecaps: Whitecaps } {
   const depthMap = bakeDepthMap();
   const skylineMap = bakeSkylineMap();
   const sea = WAVES.openSea;
@@ -52,11 +53,12 @@ export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: Dat
     quality === 'high'
       ? new OceanFFT({ n: 128, size: FINE_PATCH_M, peakWavelength: 1.6, targetSlope: 0.07, wind: [Math.cos(dir + 0.3), Math.sin(dir + 0.3)] })
       : null;
-  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, skylineMap, ocean, fine, quality));
+  const whitecaps = new Whitecaps(ocean, depthMap, DEPTH_MAP, quality);
+  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, skylineMap, ocean, fine, whitecaps, quality));
   mesh.frustumCulled = false;
   mesh.name = 'water';
   mesh.renderOrder = 10;
-  return { mesh, depthMap, ocean, fine };
+  return { mesh, depthMap, ocean, fine, whitecaps };
 }
 
 /** Floor height below sea level, half float, 1.2 m per texel (the heights are shared with the wave field). */
@@ -132,7 +134,7 @@ export function placeWater(mesh: Mesh, eye: Vector3): void {
   mesh.position.set(Math.round(eye.x / 0.35) * 0.35, WATER_LEVEL_M, Math.round(eye.z / 0.35) * 0.35);
 }
 
-function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: OceanFFT, fine: OceanFFT | null, quality: 'high' | 'low'): MeshBasicNodeMaterial {
+function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: OceanFFT, fine: OceanFFT | null, whitecaps: Whitecaps, quality: 'high' | 'low'): MeshBasicNodeMaterial {
   // Double-sided: a swimmer sees the surface from below (Snell's window).
   const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true, side: DoubleSide });
   const cf = causticFoamMap();
@@ -324,7 +326,12 @@ function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: Oc
   // The boat's wake and old splashes (wakeFoam.ts): foam that lasts, torn into lace as it thins.
   // Its own lace offset and a finer scale, so a trail never repeats the surf's pattern.
   const wakeLace = laceCover(p.xz.mul(1.4).add(vec2(11.3, 4.7)), wakeFoam(p.xz).mul(0.85), float(5.3));
-  const foam = clamp(max(max(surf, edgeLace), wakeLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))), 0, 1);
+  // Wind whitecaps on the open sea (whitecaps.ts), torn into lace as they age; past the foam
+  // window only their mean cover is left, which at that range is all a pixel could hold anyway.
+  const caps = whitecaps.sample(p.xz);
+  const capLace = laceCover(p.xz.mul(0.85).add(vec2(5.1, 17.3)), caps.foam.mul(0.9), float(8.1));
+  const farCaps = float(1).sub(caps.inside).mul(whitecaps.meanCoverage).mul(open).mul(0.6);
+  const foam = clamp(max(max(max(surf, edgeLace), wakeLace), capLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))).add(farCaps), 0, 1);
 
   const foamLight = U.sunIrradiance.mul(max(dot(N, U.sunDir), 0)).add(U.skyIrradiance).div(Math.PI).mul(0.8);
 

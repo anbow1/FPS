@@ -180,7 +180,7 @@ export class LagoonView {
     stage.scene.add(this.prints.mesh, buildWrack());
     this.foam = createWakeFoam(stage.quality);
     this.water = buildWater(stage.quality);
-    for (const t of [...this.water.ocean.targets, ...(this.water.fine?.targets ?? [])]) stage.passTimer.name(t, 'water');
+    for (const t of [...this.water.ocean.targets, ...(this.water.fine?.targets ?? []), ...this.water.whitecaps.targetsForTimer]) stage.passTimer.name(t, 'water');
     // one FFT at load, so its pipelines and targets exist before the first frame
     this.water.ocean.update(stage.renderer, 0);
     this.water.fine?.update(stage.renderer, 0);
@@ -300,6 +300,7 @@ export class LagoonView {
     this.caustics.render(this.stage.renderer);
     this.water.ocean.update(this.stage.renderer, U.time.value);
     this.water.fine?.update(this.stage.renderer, U.time.value);
+    this.water.whitecaps.update(this.stage.renderer, dt, this.stage.camera.position.x, this.stage.camera.position.z, U.wind.value, U.waveScale.value);
     this.cpu.lap('water');
     this.stage.render();
     this.cpu.lap('submit');

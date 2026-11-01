@@ -36,6 +36,9 @@ export class OceanFFT {
   private readonly fftQuads: { quad: THREE.QuadMesh; dst: THREE.RenderTarget }[] = [];
   private readonly resolveQuad: THREE.QuadMesh;
   private readonly uT = uniform(0);
+  /** Each mode's |h(k)|² (after scaling) and wavenumber, kept for the statistics below. */
+  private readonly power: Float32Array;
+  private readonly kxz: Float32Array;
 
   constructor(p: OceanParams) {
     this.size = p.size;
@@ -49,7 +52,10 @@ export class OceanFFT {
       minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,
     });
     this.surface.texture.anisotropy = 8;
-    this.h0 = buildH0(p);
+    const h0 = buildH0(p);
+    this.h0 = h0.texture;
+    this.power = h0.power;
+    this.kxz = h0.kxz;
     const quad = (node: THREE.Node<'vec4'>, name: string) => {
       // The pass writes raw data through fragmentNode, past the material's colour and output stages:
       // through colorNode the channels came out clamped at 0 (half of every wave field is negative)
@@ -102,6 +108,21 @@ export class OceanFFT {
     this.resolveQuad = quad(vec4(s.x, s.y, s.z, s.y.mul(s.y).add(s.z.mul(s.z))), 'ocean-resolve');
   }
 
+  /**
+   * RMS of the slope's divergence (the height's Laplacian, 1/m) as a central difference of
+   * `stepM` measures it: the scale against which a crest counts as sharp (whitecaps.ts).
+   */
+  laplacianRms(stepM: number): number {
+    let v = 0;
+    for (let i = 0; i < this.power.length; i++) {
+      const kx = this.kxz[i * 2] as number;
+      const kz = this.kxz[i * 2 + 1] as number;
+      const d = (kx * Math.sin(kx * stepM) + kz * Math.sin(kz * stepM)) / stepM;
+      v += (this.power[i] as number) * d * d;
+    }
+    return Math.sqrt(v);
+  }
+
   /** Every offscreen target, for the per-pass GPU timer. */
   get targets(): THREE.RenderTarget[] {
     return [this.a, this.b, this.surface];
@@ -131,7 +152,7 @@ export class OceanFFT {
 }
 
 /** Initial spectrum h0(k) and conj(h0(-k)), scaled so the surface has the requested RMS slope. */
-function buildH0(p: OceanParams): THREE.DataTexture {
+function buildH0(p: OceanParams): { texture: THREE.DataTexture; power: Float32Array; kxz: Float32Array } {
   const N = p.n;
   const L = p.size;
   // mulberry32 with a fixed seed: the same sea on every run
@@ -153,6 +174,7 @@ function buildH0(p: OceanParams): THREE.DataTexture {
   const wd = [p.wind[0] / wl, p.wind[1] / wl];
   const re = new Float32Array(N * N);
   const im = new Float32Array(N * N);
+  const kxz = new Float32Array(N * N * 2);
   let s2 = 0;
   for (let m = 0; m < N; m++) {
     for (let n = 0; n < N; n++) {
@@ -161,6 +183,8 @@ function buildH0(p: OceanParams): THREE.DataTexture {
       const kx = (2 * Math.PI * nx) / L;
       const kz = (2 * Math.PI * nz) / L;
       const k = Math.hypot(kx, kz);
+      kxz[(m * N + n) * 2] = kx;
+      kxz[(m * N + n) * 2 + 1] = kz;
       let P = 0;
       if (k > 1e-6) {
         const lk = Math.log(k / kp);
@@ -178,6 +202,9 @@ function buildH0(p: OceanParams): THREE.DataTexture {
     }
   }
   const sc = p.targetSlope / Math.sqrt(s2);
+  // Each mode and its mirror both carry |h0|²: the same sum the RMS slope was scaled by.
+  const power = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) power[i] = 2 * ((re[i] as number) ** 2 + (im[i] as number) ** 2) * sc * sc;
   const data = new Float32Array(N * N * 4);
   for (let m = 0; m < N; m++) {
     for (let n = 0; n < N; n++) {
@@ -192,5 +219,5 @@ function buildH0(p: OceanParams): THREE.DataTexture {
   const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.FloatType);
   t.minFilter = t.magFilter = THREE.NearestFilter;
   t.needsUpdate = true;
-  return t;
+  return { texture: t, power, kxz };
 }
