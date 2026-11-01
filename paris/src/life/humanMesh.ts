@@ -1,4 +1,5 @@
 import { BufferAttribute, BufferGeometry, LinearSRGBColorSpace, SRGBColorSpace, type Texture, TextureLoader } from 'three/webgpu';
+import { FULL_BONES, FullPoser } from './fullPose.ts';
 import { type Joints, type Rig, rigFromJoints } from './rig.ts';
 
 // Characters made in Blender from MPFB and the MakeHuman assets
@@ -38,12 +39,16 @@ export interface Character {
   /** 1 = male (MakeHuman's gender macro). */
   gender: number;
   rig: Rig;
+  /** The 21-bone posing, for characters built with the full skeleton (null: the 15-bone rig of rig.ts). */
+  poser: FullPoser | null;
   full: CharacterLod;
   far: CharacterLod;
 }
 
 interface CharacterJson {
   format: number;
+  /** The skeleton's bone names, in the order the .bin's bone indices count (absent: the 15-bone rig). */
+  bones?: string[];
   joints: Joints;
   cast: { name: string; gender: number };
   groups: { start: number; count: number; kind: PieceKind; albedo: string | null; normal: string | null; colour: [number, number, number]; roughness: number; alpha: string | null }[];
@@ -104,7 +109,9 @@ export async function loadCharacters(): Promise<Character[]> {
   return Promise.all(
     names.map(async (name) => {
       const [full, far] = await Promise.all([lod(`${name}_full`), lod(`${name}_far`)]);
-      return { name, gender: full.json.cast.gender, rig: rigFromJoints(full.json.joints), full: full.lod, far: far.lod };
+      const bones = full.json.bones;
+      if (bones && (bones.length !== FULL_BONES.length || bones.some((b, i) => b !== FULL_BONES[i]))) throw new Error(`character '${name}': unknown skeleton ${bones.join(',')}`);
+      return { name, gender: full.json.cast.gender, rig: rigFromJoints(full.json.joints), poser: bones ? new FullPoser(full.json.joints) : null, full: full.lod, far: far.lod };
     }),
   );
 }

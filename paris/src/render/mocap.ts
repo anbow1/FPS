@@ -30,6 +30,8 @@ interface Skeleton {
   offset: Float32Array;
   /** World rotation of each bone in the T-pose, inverted. */
   unTpose: Quaternion[];
+  /** Each joint's position in the T-pose, actor frame (root at the origin). */
+  tpose: Vector3[];
 }
 
 const URLS: Record<ClipId, string> = {
@@ -75,7 +77,15 @@ export async function loadMocap(): Promise<void> {
     const p = parent[i] as number;
     world.push(p < 0 ? q.clone() : (world[p] as Quaternion).clone().multiply(q));
   });
-  const sk = { names: json.bones.map((b) => b.name), parent, offset, unTpose: world.map((q) => q.clone().invert()) };
+  // Joint positions in the T-pose: each the parent's plus its offset turned by the parent's world rotation;
+  // then a half turn about Y into the actor's frame.
+  const tpose: Vector3[] = [];
+  json.bones.forEach((b, i) => {
+    const p = parent[i] as number;
+    tpose.push(p < 0 ? new Vector3() : new Vector3(...b.offset).applyQuaternion(world[p] as Quaternion).add(tpose[p] as Vector3));
+  });
+  for (const v of tpose) v.set(-v.x, v.y, -v.z);
+  const sk = { names: json.bones.map((b) => b.name), parent, offset, unTpose: world.map((q) => q.clone().invert()), tpose };
   const entries = await Promise.all((Object.keys(URLS) as ClipId[]).map(async (id) => [id, parseClip(await (await fetch(URLS[id])).arrayBuffer(), n)] as const));
   for (const [id, c] of entries) clips.set(id, c);
   skeleton = sk;
@@ -94,6 +104,15 @@ export function clipDuration(id: ClipId): number {
 /** Ground speed of one cycle of a gait clip, m/s. */
 export function clipSpeed(id: ClipId): number {
   return clips.get(id)?.speed ?? 1;
+}
+
+/** The unit direction from joint `from` to joint `to` in the capture's T-pose, actor frame. */
+export function tposeDirection(from: string, to: string): Vector3 {
+  if (!skeleton) throw new Error('tposeDirection() before loadMocap()');
+  const a = skeleton.tpose[skeleton.names.indexOf(from)];
+  const b = skeleton.tpose[skeleton.names.indexOf(to)];
+  if (!a || !b) throw new Error(`no mocap joint '${!a ? from : to}'`);
+  return b.clone().sub(a).normalize();
 }
 
 export function boneIndex(name: string): number {

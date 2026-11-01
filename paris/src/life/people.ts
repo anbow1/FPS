@@ -6,6 +6,7 @@ import { BoneTexture, skinnedPosition } from '../render/skinning.ts';
 import { solveTwoBone, boneOf, BONES, type Build, BUILDS, buildBody, frame, PART, type Segment, smooth } from './body.ts';
 import type { Person } from './crowd.ts';
 import type { Character, CharacterLod } from './humanMesh.ts';
+import { FULL_BONES, type FullPoser } from './fullPose.ts';
 import { BODY_RIG, type Rig } from './rig.ts';
 
 // The crowd drawn: one skinned, instanced mesh per build (body.ts), the bones
@@ -30,7 +31,8 @@ const ACCENTS: Rgb[] = [0x8a1f1f, 0xb08a2a, 0x8a8a8a, 0x1a1a1a, 0xd8cfb8, 0x1d2a
 
 export class PeopleView {
   readonly group = new Group();
-  private readonly meshes: { mesh: InstancedMesh; bones: BoneTexture; prev: BoneTexture; members: Person[]; rig: Rig }[] = [];
+  private readonly meshes: { mesh: InstancedMesh; bones: BoneTexture; prev: BoneTexture; members: Person[]; rig: Rig; poser: FullPoser | null }[] = [];
+  private readonly fullMatrices = FULL_BONES.map(() => new Matrix4());
   /** The rig of the mesh being posed. */
   private rig: Rig = BODY_RIG;
   private readonly poseA = new MocapPose();
@@ -64,8 +66,9 @@ export class PeopleView {
   private addCharacter(c: Character, fine: boolean, members: Person[]): void {
     if (members.length === 0) return;
     const lod: CharacterLod = fine ? c.full : c.far;
-    const bones = new BoneTexture(BONES.length, members.length);
-    const prev = new BoneTexture(BONES.length, members.length);
+    const boneCount = c.poser ? FULL_BONES.length : BONES.length;
+    const bones = new BoneTexture(boneCount, members.length);
+    const prev = new BoneTexture(boneCount, members.length);
     // One instanced mesh per piece (skin, clothes, hair…), all on the same vertex buffers and bone textures,
     // each drawing its own index range. A single mesh with a material array (geometry groups) lost uniform
     // buffers under WebGPU when instanced and shadow-casting (three r186: "used in submit while destroyed").
@@ -89,7 +92,7 @@ export class PeopleView {
     });
     const mesh = first as InstancedMesh | null;
     if (!mesh) return;
-    this.meshes.push({ mesh, bones, prev, members, rig: c.rig });
+    this.meshes.push({ mesh, bones, prev, members, rig: c.rig, poser: c.poser });
   }
 
   private addBuild(build: Build, fine: boolean, members: Person[]): void {
@@ -113,16 +116,20 @@ export class PeopleView {
     mesh.receiveShadow = true;
     mesh.frustumCulled = false; // they move every frame; bounds would go stale
     this.group.add(mesh);
-    this.meshes.push({ mesh, bones, prev, members, rig: BODY_RIG });
+    this.meshes.push({ mesh, bones, prev, members, rig: BODY_RIG, poser: null });
   }
 
   /** Poses everyone for this frame; `dt` advances their gait. */
   update(dt: number): void {
-    for (const { bones, prev, members, rig } of this.meshes) {
+    for (const { bones, prev, members, rig, poser } of this.meshes) {
       this.rig = rig;
       prev.copyFrom(bones);
       members.forEach((p, row) => {
         this.target = { bones, row };
+        if (poser) {
+          this.poseFull(poser, p, dt);
+          return;
+        }
         if (p.mode === 'sit') this.poseSeated(p);
         else if (p.mode === 'ride') this.poseRiding(p);
         else {
@@ -132,6 +139,23 @@ export class PeopleView {
       });
       bones.commit();
     }
+  }
+
+  /** A person on the 21-bone skeleton (fullPose.ts): the capture, the chair or the bicycle. */
+  private poseFull(poser: FullPoser, p: Person, dt: number): void {
+    const out = this.fullMatrices;
+    if (p.mode === 'sit') poser.seated(p.headYawRad, out);
+    else if (p.mode === 'ride') poser.riding(p.crankRad, out);
+    else {
+      p.gait = advanceGait(p.gait, p.speedMs, dt);
+      if (!mocapReady()) return;
+      const run = smooth(2.2, 3.0, p.speedMs);
+      this.poseA.sample('walk', p.gait * clipDuration('walk'));
+      if (run > 0) this.poseA.blend(this.poseB.sample('run', p.gait * clipDuration('run')), run);
+      poser.walk(this.poseA.solve(), p.headYawRad, out);
+    }
+    this.actorMatrix(p);
+    out.forEach((m, b) => this.target.bones.set(this.target.row, b, _m.multiplyMatrices(_actor, m)));
   }
 
   /** Copies the current bones into the previous ones: call after a jump in time (no motion between them). */

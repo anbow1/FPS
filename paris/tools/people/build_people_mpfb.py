@@ -18,7 +18,7 @@ For each character in CAST:
   4. ambient occlusion baked by Cycles (OptiX on an RTX card) into the vertices,
      with the whole character present so a collar darkens the neck under it;
   5. written as <name>_<lod>.bin + .json (format 2: positions, normals, uvs,
-     4 bones and weights of the game's 15, AO; one index range per material)
+     4 bones and weights of the game's 21 (RIG_BONES), AO; one index range per material)
      and the textures, downscaled, into <out>/tex (shared between characters).
 --preview renders each character with its textures into <out>/preview/<name>.png.
 """
@@ -31,11 +31,48 @@ import re
 import struct
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from build_people import GAME_BONES, game_bone  # noqa: E402
+import bpy
+from mathutils import Matrix
 
-import bpy  # noqa: E402
-from mathutils import Matrix  # noqa: E402
+# The game's skeleton for these characters (life/rig.ts reads the names from the .json): MakeHuman's 163
+# bones folded into 21, every one of which the motion capture (CMU) drives: the lumbar spine and the chest
+# apart, the neck, the collar bones, the toes. L = the actor's left.
+RIG_BONES = ['pelvis', 'spine', 'chest', 'neck', 'head',
+             'clavicle.L', 'upperArm.L', 'forearm.L', 'hand.L', 'clavicle.R', 'upperArm.R', 'forearm.R', 'hand.R',
+             'thigh.L', 'shin.L', 'foot.L', 'toe.L', 'thigh.R', 'shin.R', 'foot.R', 'toe.R']
+
+
+def rig_bone(mh):
+    """The game bone a MakeHuman (default rig) bone folds into."""
+    side = 'L' if mh.endswith('.L') else 'R' if mh.endswith('.R') else ''
+    base = mh.split('.')[0]
+    if base in ('root', 'pelvis'):
+        return 'pelvis'
+    if base in ('spine05', 'spine04'):
+        return 'spine'
+    if base in ('spine03', 'spine02', 'spine01', 'breast'):
+        return 'chest'
+    if base.startswith('neck'):
+        return 'neck'
+    if base == 'clavicle' or base.startswith('shoulder'):
+        return 'clavicle.' + side
+    if base.startswith('upperarm'):
+        return 'upperArm.' + side
+    if base.startswith('lowerarm'):
+        return 'forearm.' + side
+    if base == 'wrist' or base.startswith(('metacarpal', 'finger')):
+        return 'hand.' + side
+    if base.startswith('upperleg'):
+        return 'thigh.' + side
+    if base.startswith('lowerleg'):
+        return 'shin.' + side
+    if base == 'foot':
+        return 'foot.' + side
+    if base.startswith('toe'):
+        return 'toe.' + side
+    # The face's and the eyes' bones, the jaw, the tongue: all ride on the head.
+    return 'head'
+
 
 # Patterns are matched against an asset's file name (lower case): every word of a pattern must occur in it.
 # A man's patterns never pick a "female_" asset unless they say "female".
@@ -267,11 +304,11 @@ def game_piece(src, kind, rig_bones):
     src_names = [g.name for g in src.vertex_groups]
     for name in src_names:
         ob.vertex_groups.new(name=name)
-    game = [ob.vertex_groups.new(name='g_' + b) for b in GAME_BONES]
+    game = [ob.vertex_groups.new(name='g_' + b) for b in RIG_BONES]
     folded = {}
     for i, name in enumerate(src_names):
         if name in rig_bones:
-            folded[i] = GAME_BONES.index(game_bone(name))
+            folded[i] = RIG_BONES.index(rig_bone(name))
     for v in me.vertices:
         acc = {}
         for g in v.groups:
@@ -421,10 +458,10 @@ def write_character(obs, mats, path_base, joints, cast, lod, out_dir, tex_cache)
                     # glTF-style uv: v down (the game's textures are not flipped).
                     uvs += [u, 1 - v]
                     if vi not in weights_of:
-                        ws = sorted(((GAME_BONES.index(names[g.group]), g.weight) for g in me.vertices[vi].groups
+                        ws = sorted(((RIG_BONES.index(names[g.group]), g.weight) for g in me.vertices[vi].groups
                                      if g.group in names and g.weight > 0), key=lambda bw: -bw[1])[:4]
                         if not ws:
-                            ws = [(GAME_BONES.index('head' if ob['kind'] in ('eyes', 'eyebrows', 'eyelashes', 'hair', 'hat') else 'pelvis'), 1.0)]
+                            ws = [(RIG_BONES.index('head' if ob['kind'] in ('eyes', 'eyebrows', 'eyelashes', 'hair', 'hat') else 'pelvis'), 1.0)]
                         s = sum(w for _, w in ws)
                         ws = [(b, w / s) for b, w in ws] + [(0, 0.0)] * (4 - len(ws))
                         q = [round(w * 255) for _, w in ws]
@@ -458,20 +495,23 @@ def write_character(obs, mats, path_base, joints, cast, lod, out_dir, tex_cache)
         f.write(b'\0' * ((-(16 + 32 * n + 9 * n)) % 4))
         f.write(struct.pack(f'<{len(idx)}I', *idx))
     with open(path_base + '.json', 'w') as f:
-        json.dump({'format': 2, 'joints': joints, 'cast': cast, 'groups': groups, 'vertices': n, 'triangles': len(idx) // 3}, f, indent=1)
+        json.dump({'format': 2, 'bones': RIG_BONES, 'joints': joints, 'cast': cast, 'groups': groups, 'vertices': n, 'triangles': len(idx) // 3}, f, indent=1)
     return n, len(idx) // 3
 
 
 def joints_of(rig):
-    """The joints the game's posing needs (same names as build_people.py), from the rig at rest, game frame."""
+    """The joints the game's posing needs, from the rig at rest, game frame: each bone's root, and the ends of
+    the last ones (head top, toe tip, finger base)."""
     m = TO_GAME @ rig.matrix_world
 
     def j(bone, tail=False):
         b = rig.data.bones[bone]
         p = m @ (b.tail_local if tail else b.head_local)
         return [round(p.x, 5), round(p.y, 5), round(p.z, 5)]
-    out = {'hip': j('root'), 'neck': j('neck01'), 'head': j('head'), 'headTop': j('head', True)}
+    out = {'hip': j('root'), 'chest': j('spine03'), 'neck': j('neck01'), 'head': j('head'), 'headTop': j('head', True)}
     for side in ('L', 'R'):
+        out[f'clavicle.{side}'] = j(f'clavicle.{side}')
+        out[f'toeTip.{side}'] = j(f'toe3-3.{side}', True)
         out[f'hip.{side}'] = j(f'upperleg01.{side}')
         out[f'knee.{side}'] = j(f'lowerleg01.{side}')
         out[f'ankle.{side}'] = j(f'foot.{side}')
