@@ -9,7 +9,8 @@ import { EventQueue } from './events.ts';
 import { type ExplosionTarget, Grenades } from './grenades.ts';
 import { Items } from './items.ts';
 import { Mode, type ModeId } from './modes.ts';
-import { NavGrid } from './nav.ts';
+import { NavGrid, type Navigation } from './nav.ts';
+import { NavMesh } from './navMesh.ts';
 import { Player, type PlayerIntent } from './player.ts';
 import { Projectiles, type ShootableActor } from './projectiles.ts';
 import { type AiContext, Soldier } from './soldier.ts';
@@ -47,7 +48,7 @@ export class Game {
   readonly events = new EventQueue();
   readonly rng: Rng;
   readonly world: CollisionWorld;
-  readonly nav: NavGrid;
+  readonly nav: Navigation;
   readonly player: Player;
   readonly weapons: WeaponSystem;
   readonly projectiles = new Projectiles();
@@ -84,7 +85,9 @@ export class Game {
         if (t) this.rangeTargetBoxIds.set(collider.id, t.distanceM);
       }
     }
-    this.nav = new NavGrid(this.world, map.halfSizeM, map.halfSizeM > 300 ? 2 : 1);
+    // The city maps have floors over floors (enterable buildings): a navigation mesh, so the AI
+    // takes the stairs. The open maps keep the ground grid (cheaper on 800 m of terrain).
+    this.nav = map.id === 'city' || map.id === 'boulevard' ? new NavMesh(this.world, map.halfSizeM) : new NavGrid(this.world, map.halfSizeM, map.halfSizeM > 300 ? 2 : 1);
     const spawn = map.playerSpawn.pos.clone();
     spawn.y = Math.max(spawn.y, this.world.terrainHeight(spawn.x, spawn.z));
     this.player = new Player(spawn, map.playerSpawn.yawRad);

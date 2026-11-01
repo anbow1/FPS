@@ -13,5 +13,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Loads Recast's module before any test builds a city map's navigation mesh.
+    setupFiles: ['tests/setup.ts'],
   },
 });

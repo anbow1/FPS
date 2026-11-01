@@ -23,8 +23,20 @@ const WALL_M = 0.3;
 /** The inner face of the front wall: behind the façade's deepest reveal (0.24 m). */
 const FRONT_IN_M = 0.25;
 const SLAB_M = 0.2;
-const STAIR_W = 1.2;
+/** A flight's width: Haussmann main stairs run 1.3–1.5 m. */
+export const STAIR_W = 1.4;
 const STAIR_START_M = 2.0;
+/** The thin wall between the two flights (the stair's spine) and round the second one. */
+const STAIR_WALL_M = 0.12;
+
+/** Where the stair runs in a lot: the two lanes' centre u and the flights' ends (d). */
+export function stairLayout(lot: Lot): { laneA: number; laneB: number; start: number; aEnd: number; bEnd: number } {
+  const [ground, entresol] = storeysOf(lot);
+  const runOf = (rise: number): number => Math.round(rise / 0.17) * 0.28;
+  const laneA = lot.widthM - WALL_M - STAIR_W / 2;
+  const aEnd = STAIR_START_M + runOf(ground?.h ?? 0);
+  return { laneA, laneB: laneA - STAIR_W, start: STAIR_START_M, aEnd, bEnd: aEnd - runOf(entresol?.h ?? 0) };
+}
 
 /**
  * Builds the rooms of `lot` into `b`. Lot coordinates: u along the front from its start, d in from
@@ -93,11 +105,7 @@ export function parisInterior(b: MapBuilder, lot: Lot, shiftZ: number): void {
   const d0 = FRONT_IN_M + WALL_M;
   const d1 = D - WALL_M;
   box('tiles', u0, u1, d0, d1, 0, ground.y0 + 0.01);
-  const laneA = W - WALL_M - STAIR_W / 2;
-  const laneB = laneA - STAIR_W;
-  const runOf = (rise: number): number => Math.round(rise / 0.17) * 0.28;
-  const aEnd = STAIR_START_M + runOf(ground.h);
-  const bEnd = aEnd - runOf(entresol.h);
+  const { laneA, laneB, aEnd, bEnd } = stairLayout(lot);
   const slab = (y: number, hole: { ua: number; ub: number; da: number; db: number } | null, look: BoxLook): void => {
     const ys = y - SLAB_M;
     if (!hole) {
@@ -114,12 +122,17 @@ export function parisInterior(b: MapBuilder, lot: Lot, shiftZ: number): void {
   slab(entresol.y0, holeA, 'woodFloor');
   slab(noble.y0, holeB, 'woodFloor');
   slab(ceilingY, null, 'plaster');
-  // Rails round the holes, on every side one could step off.
+  // The stairwell is closed, as a Haussmann stair is: a spine wall between the flights from the
+  // shop floor to a rail's height above the noble floor, and a wall round the second flight on
+  // the room side. Open sides would be ledges, and the navigation mesh (game/navMesh.ts) drops
+  // a stair whose side falls away: walls let the AI use it, and nobody falls into the well.
+  const spineU = laneA - STAIR_W / 2;
+  box('plaster', spineU - STAIR_WALL_M / 2, spineU + STAIR_WALL_M / 2, STAIR_START_M, aEnd, 0, noble.y0 + 1.0);
+  const outerU = laneB - STAIR_W / 2;
+  box('plaster', outerU - STAIR_WALL_M, outerU, bEnd, aEnd, entresol.y0 - SLAB_M, noble.y0 + 1.0 - (entresol.y0 - SLAB_M));
+  // Rails at the holes' open ends: before the first flight's foot upstairs, behind the second's top.
   const rail = (ua: number, ub: number, da: number, db: number, y: number): void => box('metalDark', ua, ub, da, db, y, 0.95, { blocksVision: false });
-  rail(holeA.ua - 0.05, holeA.ua, holeA.da, holeA.db, entresol.y0);
   rail(holeA.ua, holeA.ub, holeA.da - 0.05, holeA.da, entresol.y0);
-  rail(holeB.ua - 0.05, holeB.ua, holeB.da, holeB.db, noble.y0);
-  rail(holeB.ub, holeB.ub + 0.05, holeB.da, holeB.db, noble.y0);
   rail(holeB.ua, holeB.ub, holeB.db, holeB.db + 0.05, noble.y0);
 
   // --- The stair: up and away from the street, then back toward it.

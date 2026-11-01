@@ -1,8 +1,9 @@
 # Field Line — single-player military FPS
 
-TypeScript + three.js (`WebGPURenderer`, WebGL2 fallback). Three maps — a
-shooting range, a 400 × 400 m city block and an 800 × 800 m forest ridge — and
-three modes: Range, Skirmish and Extraction. The brief is `BRIEF.md`; the
+TypeScript + three.js (`WebGPURenderer`, WebGL2 fallback). Four maps — a
+shooting range, a 400 × 400 m city block, an 800 × 800 m forest ridge and a
+Paris boulevard (the Paris scene's street and Haussmann façades, three houses
+with rooms you can enter) — and three modes: Range, Skirmish and Extraction. The brief is `BRIEF.md`; the
 rules are `../AGENT.md` and `../games-ts-threejs.md`; the reference sheets are
 in `../references/`.
 
@@ -43,8 +44,12 @@ WebGL2 by itself.
 src/config.ts        every tunable, SI units, with its source
 src/core/            fixed-step loop, rebindable input, vectors, seeded RNG, noise
 src/game/            logic only — no THREE: player, weapons, G7 ballistics, bullets,
-                     grenades, items, collision, nav grid, cover, soldier AI, squads, modes
-src/maps/            deterministic generators: range, city (enterable buildings), forest
+                     grenades, items, collision, navigation (ground grid on the open
+                     maps, a Recast navigation mesh with storeys on the city maps),
+                     cover, soldier AI, squads, modes
+src/maps/            deterministic generators: range, city (enterable buildings), forest,
+                     boulevard (Paris plan + houses with rooms, parisInterior.ts)
+src/paris/           the Paris scene's street plan, façades and materials (copied from ../paris)
 src/render/          stage and post chain, lighting and exposure, materials, world,
                      props, foliage, actors, viewmodel and optics, effects
 src/audio/           Web Audio: layered shots, speed of sound, ducking

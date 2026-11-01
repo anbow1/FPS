@@ -1,8 +1,9 @@
 import { Vec3 } from '../core/vec.ts';
 import type { BoxCollider, CollisionWorld } from './collision.ts';
 
-// Ground-level navigation grid + A*. AI walks outdoors and through ground
-// floors; stairs and rooftops belong to the player (documented limitation).
+// Ground-level navigation grid + A*, for the open maps (range, forest). AI walks
+// outdoors and through ground floors. The city maps use a navigation mesh with
+// storeys instead (navMesh.ts), on which the AI takes the stairs.
 
 const BODY_LOW_M = 0.45; // anything below this is a step
 const BODY_HIGH_M = 1.7;
@@ -14,7 +15,24 @@ const MAX_SLOPE_RISE_PER_CELL = 0.9; // tuned by hand: blocks cliffs, allows the
 // before; with this ration and a 6000-expansion cap, p99 3.2 ms and max 6.1 ms.
 const SEARCHES_PER_STEP = 1;
 
-export class NavGrid {
+/** What the AI asks of navigation: the ground grid here, or the navigation mesh (navMesh.ts). */
+export interface Navigation {
+  /** Waypoints carry their floor's height (a mesh with storeys); the grid's are flat (y = 0). */
+  readonly layered: boolean;
+  /** Resets the per-step search ration. */
+  beginStep(): void;
+  /** Claims this step's search budget. False means: ask again next step. */
+  reserveSearch(): boolean;
+  /** Walkable at ground level at (x, z). */
+  walkable(x: number, z: number): boolean;
+  /** The nearest walkable point at ground level, or null. */
+  nearestWalkable(x: number, z: number, out: Vec3): Vec3 | null;
+  /** Waypoints from `from` to `to` (without the start), or null. */
+  findPath(from: Vec3, to: Vec3, maxExpansions?: number): Vec3[] | null;
+}
+
+export class NavGrid implements Navigation {
+  readonly layered = false;
   readonly cells: Uint8Array; // 1 = walkable
   readonly size: number;
   private readonly gScore: Float32Array;

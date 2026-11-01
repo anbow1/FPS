@@ -1,6 +1,6 @@
 import { Vec3 } from '../core/vec.ts';
 import type { BoxCollider, CollisionWorld } from './collision.ts';
-import type { NavGrid } from './nav.ts';
+import type { Navigation } from './nav.ts';
 
 // Cover search. Any solid box between 0.8 m and 4 m tall is cover: cars,
 // walls, barriers, rocks, trunks. We stand on the far side from the threat,
@@ -35,7 +35,7 @@ export interface CoverQuery {
   reserved: readonly Vec3[]; // squadmates' spots, keep 2.5 m apart
 }
 
-export function findCover(world: CollisionWorld, nav: NavGrid, q: CoverQuery): CoverSpot | null {
+export function findCover(world: CollisionWorld, nav: Navigation, q: CoverQuery): CoverSpot | null {
   const boxes = world.queryBoxes(q.from.x - q.radiusM, q.from.z - q.radiusM, q.from.x + q.radiusM, q.from.z + q.radiusM, _near);
   _threatChest.copy(q.threat);
   _threatChest.y += 1.3;

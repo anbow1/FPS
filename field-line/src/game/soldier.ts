@@ -8,7 +8,7 @@ import { type CoverSpot, findCover } from './cover.ts';
 import type { EventQueue } from './events.ts';
 import type { Grenades } from './grenades.ts';
 import { type CapsuleBody, moveCapsule } from './movement.ts';
-import type { NavGrid } from './nav.ts';
+import type { Navigation } from './nav.ts';
 import type { Player } from './player.ts';
 import type { Projectiles } from './projectiles.ts';
 
@@ -27,7 +27,7 @@ const TURN_RATE_RAD_S = 4.5;
 
 export interface AiContext {
   world: CollisionWorld;
-  nav: NavGrid;
+  nav: Navigation;
   player: Player;
   projectiles: Projectiles;
   grenades: Grenades;
@@ -439,7 +439,8 @@ export class Soldier {
         const dx = wp.x - this.body.position.x;
         const dz = wp.z - this.body.position.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.7 && this.path && this.pathIndex < this.path.length - 1) this.pathIndex++;
+        // Reached in plan and on the same floor (a navigation-mesh path has waypoints above one another).
+        if (d < 0.7 && (!ctx.nav.layered || Math.abs(wp.y - this.body.position.y) < 1.5) && this.path && this.pathIndex < this.path.length - 1) this.pathIndex++;
         const speed = this.stance === 'crouch' ? 1.6 : this.running ? AI.runSpeedMs : AI.walkSpeedMs;
         if (d > 1e-3) {
           desiredX = (dx / d) * speed;

@@ -9,6 +9,7 @@ import { enterableBuilding } from '../src/maps/buildings.ts';
 import { buildMap } from '../src/maps/index.ts';
 import { boulevardPlan, PARIS_SHIFT_Z } from '../src/maps/boulevard.ts';
 import { storeysOf } from '../src/paris/city/facade.ts';
+import { stairLayout } from '../src/maps/parisInterior.ts';
 import { makeHeightfield } from '../src/maps/terrain.ts';
 import type { MapId } from '../src/maps/types.ts';
 import { idleIntent, STEP_S } from './helpers.ts';
@@ -103,10 +104,7 @@ describe('Paris house with rooms (boulevard)', () => {
     const bay = W / lot.bays;
     // Lot frame → map: u along the front, d in from the façade.
     const at = (u: number, d: number): [number, number] => [lot.ox + lot.tx * u - lot.nx * d, lot.oz + lot.tz * u - lot.nz * d + PARIS_SHIFT_Z];
-    const laneA = W - 0.3 - 0.6;
-    const laneB = laneA - 1.2;
-    const aEnd = 2 + Math.round(4.4 / 0.17) * 0.28;
-    const bEnd = aEnd - Math.round(3.0 / 0.17) * 0.28;
+    const { laneA, laneB, aEnd, bEnd } = stairLayout(lot);
     const door = (Math.floor(lot.bays / 2) + 0.5) * bay;
     const french = (Math.floor(lot.bays / 2) + 0.5) * bay;
     const route: [number, number][] = [at(door, -2.5), at(door, 1.2), at(laneA, 1.4), at(laneA, aEnd + 0.9), at(laneB, aEnd + 0.9), at(laneB, aEnd - 0.1), at(laneB, bEnd - 1.0), at(french, 1.2), at(french, -0.35)];

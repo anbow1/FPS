@@ -13,6 +13,8 @@
     "bench": "vite-node scripts/bench.ts"
   },
   "dependencies": {
+    "@recast-navigation/core": "0.43.1",
+    "@recast-navigation/generators": "0.43.1",
     "three": "^0.186.0"
   },
   "devDependencies": {

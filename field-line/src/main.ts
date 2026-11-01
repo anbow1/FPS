@@ -1,3 +1,4 @@
+import { initNavMesh } from './game/navMesh.ts';
 import { benchSpots, type BenchSpot, placePlayer } from './app/bench.ts';
 import { Controls } from './app/controls.ts';
 import { loadSettings, type Settings, saveSettings } from './app/settings.ts';
@@ -158,6 +159,8 @@ class App {
     this.menu.showLoading('Generating map', 0.02);
     await nextFrame();
     const map = buildMap(s.mapId);
+    // Recast's module for the city maps' navigation mesh (game/navMesh.ts), loaded once.
+    await initNavMesh();
     const game = new Game(map, s.modeId, Date.now() & 0xffff);
     this.game = game;
     this.view = await GameView.create(this.canvas, map, this.viewSettings(s), async (label, f) => {

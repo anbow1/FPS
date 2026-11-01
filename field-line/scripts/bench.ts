@@ -1,3 +1,4 @@
+import { initNavMesh } from '../src/game/navMesh.ts';
 import { PHYSICS } from '../src/config.ts';
 import type { GameIntent } from '../src/game/game.ts';
 import { Game } from '../src/game/game.ts';
@@ -27,7 +28,8 @@ function idle(): GameIntent {
   };
 }
 
-for (const id of ['city', 'forest'] as MapId[]) {
+await initNavMesh();
+for (const id of ['city', 'boulevard', 'forest'] as MapId[]) {
   const t0 = performance.now();
   const game = new Game(buildMap(id), 'skirmish', 99);
   const buildMs = performance.now() - t0;
