@@ -67,7 +67,7 @@ export class Whitecaps {
     this.cellM = quality === 'high' ? 0.5 : 0.75;
     this.sizeM = this.n * this.cellM;
     const fmt = {
-      type: THREE.HalfFloatType, format: THREE.RedFormat, depthBuffer: false, generateMipmaps: false,
+      type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false, generateMipmaps: false,
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
     };
     this.targets = [new THREE.RenderTarget(this.n, this.n, fmt), new THREE.RenderTarget(this.n, this.n, fmt)];
