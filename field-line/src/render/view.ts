@@ -1,4 +1,4 @@
-import { buildParisStreet, syncParisLight } from './parisStreet.ts';
+import { buildParisStreet, syncParisLight, tickParis } from './parisStreet.ts';
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadScanModels } from './scanModels.ts';
 import { loadHandMesh } from './handMesh.ts';
@@ -334,6 +334,7 @@ export class GameView {
     this.lighting.update(cam);
     this.clouds.update(frameSeconds);
     this.lighting.mistTime.value = game.timeSeconds;
+    if (this.map.id === 'boulevard') tickParis(game.timeSeconds);
     // The weapon light's beam shows in the haze, in rain, and in the dust of a closed room.
     const scatter = this.lighting.preset.fogDensityPerM + 0.0012 + wetness.value * rainRate.value * 0.02 + (skyK < 1 ? 0.004 : 0);
     this.weaponLight.update(cam, p.weaponLight && p.alive, this.lighting.preExposure, scatter, game.timeSeconds);

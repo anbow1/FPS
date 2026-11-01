@@ -167,9 +167,11 @@ export function buildBoulevard(): MapData {
     const z = zMap(p.z);
     return Math.abs(z) < HALF_M - 2 ? { x: p.x, z } : null;
   };
+  // The plane trees are drawn by the Paris scene's own model (render/parisStreet.ts); here only
+  // their trunks (~45 cm at breast height, Paris alignments) stand as colliders, up to the fork.
   for (const t of plan.trees) {
     const q = at(t);
-    if (q) b.prop('streetTree', q.x, q.z, (t.seed % 628) / 100, { baseY: kerb, scale: 1.15 });
+    if (q) b.boxOnBase('invisible', q.x, kerb, q.z, 0.42, 3.6, 0.42, (t.seed % 628) / 100, { surface: 'wood' });
   }
   for (const l of plan.lamps) {
     const q = at(l);

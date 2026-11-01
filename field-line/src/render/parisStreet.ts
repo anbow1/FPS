@@ -2,6 +2,7 @@ import { Group } from 'three/webgpu';
 import { boulevardPlan, PARIS_SHIFT_Z } from '../maps/boulevard.ts';
 import { buildBuildings } from '../paris/city/buildings.ts';
 import { buildStreet } from '../paris/city/street.ts';
+import { buildTrees } from '../paris/city/trees.ts';
 import { SCENE } from '../paris/render/nodes.ts';
 import { loadPhotos } from '../paris/render/photo.ts';
 import type { LightingPreset } from '../config.ts';
@@ -13,7 +14,9 @@ export async function buildParisStreet(): Promise<Group> {
   await loadPhotos();
   const group = new Group();
   group.name = 'paris';
-  group.add(buildStreet(), buildBuildings(boulevardPlan()));
+  const plan = boulevardPlan();
+  // The plane trees too (their trunks are the map's colliders, maps/boulevard.ts).
+  group.add(buildStreet(), buildBuildings(plan), buildTrees(plan.trees));
   group.position.z = PARIS_SHIFT_Z;
   group.updateMatrixWorld(true);
   return group;
@@ -33,4 +36,9 @@ export function syncParisLight(preset: LightingPreset, preExposure: number): voi
   const ce = Math.cos(preset.sunElevationRad);
   // As render/lighting.ts places the sun.
   SCENE.sunDir.value.set(ce * Math.sin(preset.sunAzimuthRad), Math.sin(preset.sunElevationRad), ce * Math.cos(preset.sunAzimuthRad));
+}
+
+/** The breeze in the plane trees' crowns runs on the game's clock. */
+export function tickParis(timeSeconds: number): void {
+  SCENE.time.value = timeSeconds;
 }
