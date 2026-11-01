@@ -1,3 +1,4 @@
+import { buildParisStreet, syncParisLight } from './parisStreet.ts';
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadScanModels } from './scanModels.ts';
 import { loadHandMesh } from './handMesh.ts';
@@ -137,7 +138,9 @@ export class GameView {
       });
       stage.scene.add(buildLakeWater(lake, field, ground, this.settings.quality, this.ripples));
     }
-    stage.scene.add(buildTerrainMesh(map, lib, this.lakeFx), buildFarRing(map));
+    // On the boulevard the Paris street is the ground (parisStreet.ts): a terrain mesh at road level would fight it.
+    if (map.id !== 'boulevard') stage.scene.add(buildTerrainMesh(map, lib, this.lakeFx));
+    stage.scene.add(buildFarRing(map));
     await progress('Building the world', 0.35);
     this.world = buildStaticWorld(map, lib);
     this.props = buildProps(map.props, lib);
@@ -145,6 +148,8 @@ export class GameView {
     const furniture = buildStreetFurniture(map, lib);
     if (furniture) stage.scene.add(furniture);
     // The city in the rain: standing water, rings and reflections on the street, and the rain itself.
+    // The boulevard: the Paris scene's street and façades over the map's colliders (parisStreet.ts).
+    if (map.id === 'boulevard') stage.scene.add(await buildParisStreet());
     if (map.id === 'city') {
       // The city beyond the map: a skyline of towers to the horizon (skyline.ts).
       stage.scene.add(buildSkyline());
@@ -206,6 +211,7 @@ export class GameView {
   }
 
   private syncPreExposure(): void {
+    if (this.map.id === 'boulevard') syncParisLight(this.lighting.preset, this.lighting.preExposure);
     this.effects.preExposure = this.lighting.preExposure;
     this.worldFx.preExposure = this.lighting.preExposure;
   }
@@ -464,5 +470,5 @@ async function precompile(job: Promise<unknown>): Promise<void> {
 
 /** The city's streets in the urban scans, the forest and the range in the woodland ones. */
 function hdriSetting(mapId: string): HdriSetting {
-  return mapId === 'city' ? 'urban' : 'nature';
+  return mapId === 'city' || mapId === 'boulevard' ? 'urban' : 'nature';
 }

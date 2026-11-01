@@ -6,7 +6,7 @@ import type { Lake } from './lake.ts';
 // Pure map data. Built once by a map generator, then read by the collision
 // world (logic) and by the render layer (visuals). No THREE in here.
 
-export type MapId = 'range' | 'city' | 'forest';
+export type MapId = 'range' | 'city' | 'forest' | 'boulevard';
 
 /** Render look for a box. Several looks can share a surface kind. */
 export type BoxLook =

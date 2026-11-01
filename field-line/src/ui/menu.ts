@@ -12,6 +12,7 @@ const MODES_FOR: Record<MapId, ModeId[]> = {
   range: ['range'],
   city: ['skirmish', 'extraction'],
   forest: ['skirmish', 'extraction'],
+  boulevard: ['skirmish', 'extraction'],
 };
 
 const ACTION_LABELS: Partial<Record<Action, string>> = {

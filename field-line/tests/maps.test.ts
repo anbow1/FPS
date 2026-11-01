@@ -11,7 +11,7 @@ import { makeHeightfield } from '../src/maps/terrain.ts';
 import type { MapId } from '../src/maps/types.ts';
 import { idleIntent, STEP_S } from './helpers.ts';
 
-const MAP_IDS: MapId[] = ['range', 'city', 'forest'];
+const MAP_IDS: MapId[] = ['range', 'city', 'forest', 'boulevard'];
 
 describe('map generators', () => {
   it.each(MAP_IDS)('%s builds the same map twice (deterministic)', (id) => {
@@ -29,6 +29,18 @@ describe('map generators', () => {
     const p = map.playerSpawn.pos;
     const blocked = world.lineBlocked(new Vec3(p.x, p.y + 0.5, p.z), new Vec3(p.x, p.y + 1.7, p.z), false);
     expect(blocked).toBe(false);
+  });
+
+  it('boulevard: every squad spawn, patrol point and pickup stands in the open', () => {
+    const map = buildMap('boulevard');
+    const world = new CollisionWorld(map.terrain);
+    for (const box of map.boxes) world.addBox(box);
+    const points = [...map.squadSpawns.flatMap((s) => [s.pos, ...s.patrol]), ...map.pickups.map((p) => p.pos), ...map.reinforcementSpawns, map.extraction.hold, map.extraction.exit];
+    for (const p of points) {
+      const blocked = world.lineBlocked(new Vec3(p.x, p.y + 0.5, p.z), new Vec3(p.x, p.y + 1.7, p.z), false);
+      expect(blocked, `(${p.x.toFixed(1)}, ${p.z.toFixed(1)})`).toBe(false);
+      expect(Math.abs(p.x) < map.halfSizeM && Math.abs(p.z) < map.halfSizeM).toBe(true);
+    }
   });
 
   it('city is 400 × 400 m with four enterable buildings and lit interiors', () => {

@@ -69,7 +69,7 @@ export class Audio {
 
   setAmbience(mapId: string, windMs: number): void {
     this.wind.gain.value = Math.min(0.12, windMs * (mapId === 'forest' ? 0.02 : 0.01));
-    this.outdoorTail = mapId === 'city' ? 1.6 : mapId === 'forest' ? 0.9 : 1.1;
+    this.outdoorTail = mapId === 'city' || mapId === 'boulevard' ? 1.6 : mapId === 'forest' ? 0.9 : 1.1;
   }
 
   private makeNoise(seconds: number): AudioBuffer {

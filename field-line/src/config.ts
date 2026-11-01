@@ -519,8 +519,10 @@ export const LAKE_WAVES = {
   deepColour: 0x0d1f18,
 } as const;
 
-export const WORLD_WIND: Record<'city' | 'forest' | 'range', { speedMs: number; directionRad: number }> = {
+export const WORLD_WIND: Record<'city' | 'forest' | 'range' | 'boulevard', { speedMs: number; directionRad: number }> = {
   city: { speedMs: 2.5, directionRad: 0.6 },
   forest: { speedMs: 5.0, directionRad: 1.9 },
   range: { speedMs: 3.0, directionRad: Math.PI / 2 },
+  // Down a long street the wind channels along it (the boulevard runs along z).
+  boulevard: { speedMs: 3.0, directionRad: 0.1 },
 };

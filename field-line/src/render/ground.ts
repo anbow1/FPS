@@ -69,7 +69,7 @@ export function buildFarRing(map: MapData): Mesh {
       const rr = radius * (sq * (1 - k) + k);
       const x = Math.cos(a) * rr;
       const z = Math.sin(a) * rr;
-      const hills = map.id === 'city' ? 0 : fbm2(x / 500, z / 500, 4, 77) * 60 + 30 * t;
+      const hills = map.id === 'city' || map.id === 'boulevard' ? 0 : fbm2(x / 500, z / 500, 4, 77) * 60 + 30 * t;
       const h = edgeHeight(x, z) * (1 - k) + hills * k;
       positions.push(x, h - (r === 0 ? 0.05 : 0), z);
       uvs.push(x, z);
@@ -92,7 +92,7 @@ export function buildFarRing(map: MapData): Mesh {
   g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  const material = map.id === 'city' ? new MeshStandardNodeMaterial({ color: 0x3a3a3c, roughness: 0.92 }) : map.id === 'forest' ? farForestMaterial(inner) : splatMaterial(null);
+  const material = map.id === 'city' || map.id === 'boulevard' ? new MeshStandardNodeMaterial({ color: 0x3a3a3c, roughness: 0.92 }) : map.id === 'forest' ? farForestMaterial(inner) : splatMaterial(null);
   const mesh = new Mesh(g, material);
   mesh.receiveShadow = false;
   mesh.name = 'farRing';
