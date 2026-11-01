@@ -1,4 +1,4 @@
-import { cameraPosition, clamp, cos, dot, frontFacing, fwidth, select, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
+import { cameraPosition, clamp, cos, dot, frontFacing, select, exp, step, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow, modelPosition, reflect, screenUV, sin, smoothstep, sqrt, texture, varying, vec2, vec3, viewportSharedTexture } from 'three/tsl';
 import { BufferAttribute, BufferGeometry, DataTexture, DataUtils, DoubleSide, HalfFloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, type Node, RedFormat, type Vector3 } from 'three/webgpu';
 import { OceanFFT } from './ocean.ts';
 import { waveWarp } from './waveWarp.ts';
@@ -28,8 +28,9 @@ import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
 //   wind sea    a GPU FFT (ocean.ts) for the detail normals of deep water.
 
 const DEPTH_MAP = { ...SHORE_DOMAIN, px: SHORE.res } as const;
+const FINE_PATCH_M = 7.7;
 
-export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: DataTexture; ocean: OceanFFT } {
+export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: DataTexture; ocean: OceanFFT; fine: OceanFFT | null } {
   const depthMap = bakeDepthMap();
   const sea = WAVES.openSea;
   const dir = (sea.directionDeg * Math.PI) / 180;
@@ -40,11 +41,18 @@ export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: Dat
     targetSlope: sea.rmsSlope,
     wind: [Math.cos(dir), Math.sin(dir)],
   });
-  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, ocean, quality));
+  // A second, fine cascade (High): the short wind chop, 7.7 m tiles of ~1.6 m waves, whose facets make
+  // the sharp sparkles near the eye that the 64 m patch is too coarse to hold (web-ocean's smallest
+  // cascades). The tile size shares no small common multiple with the coarse patch.
+  const fine =
+    quality === 'high'
+      ? new OceanFFT({ n: 128, size: FINE_PATCH_M, peakWavelength: 1.6, targetSlope: 0.07, wind: [Math.cos(dir + 0.3), Math.sin(dir + 0.3)] })
+      : null;
+  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, ocean, fine, quality));
   mesh.frustumCulled = false;
   mesh.name = 'water';
   mesh.renderOrder = 10;
-  return { mesh, depthMap, ocean };
+  return { mesh, depthMap, ocean, fine };
 }
 
 /** Floor height below sea level, half float, 1.2 m per texel (the heights are shared with the wave field). */
@@ -98,7 +106,7 @@ export function placeWater(mesh: Mesh, eye: Vector3): void {
   mesh.position.set(Math.round(eye.x / 0.35) * 0.35, WATER_LEVEL_M, Math.round(eye.z / 0.35) * 0.35);
 }
 
-function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' | 'low'): MeshBasicNodeMaterial {
+function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, fine: OceanFFT | null, quality: 'high' | 'low'): MeshBasicNodeMaterial {
   // Double-sided: a swimmer sees the surface from below (Snell's window).
   const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true, side: DoubleSide });
   const cf = causticFoamMap();
@@ -174,13 +182,32 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' |
   // no period even across the whole open sea; the slope goes back through the warp's Jacobian.
   const warp = waveWarp(p.xz, L * 4, L * 0.7, 17);
   const q = warp.lookup;
-  const fftA = texture(ocean.surface.texture, q.div(L)).yz;
+  const fftSample = texture(ocean.surface.texture, q.div(L));
+  const fftA = fftSample.yz;
   const fftB = texture(ocean.surface.texture, vec2(q.x.mul(0.8).add(q.y.mul(0.6)), q.y.mul(0.8).sub(q.x.mul(0.6))).div(L * 0.41).add(0.37)).yz;
   const fft = warp.slope(fftA.add(vec2(fftB.x.mul(0.8).sub(fftB.y.mul(0.6)), fftB.x.mul(0.6).add(fftB.y.mul(0.8))).mul(0.12))).mul(sqrt(U.waveScale));
   const open = smoothstep(2.5, WAVES.openSea.fullDepthM, depth);
+  // LEAN mapping (Olano & Baker 2010; web-ocean, MIT): the FFT's mip chain holds the mean slope (y, z)
+  // and the mean squared slope (w) over each texel's footprint, so their difference is the slope
+  // variance a pixel cannot resolve: it widens the sun's reflection with distance instead of leaving
+  // single pixels to flicker. The ripple tiles fade with distance (below), and what they lose goes to
+  // the variance too; a floor stands for the capillaries finer than either.
+  let fftVar: Node<'float'> = max(fftSample.w.sub(fftA.dot(fftA)), 0).mul(U.waveScale).mul(open);
+  // The fine cascade on all water a metre or more deep (the chop reaches into the lagoon), its resolved
+  // slope fading out by ~60 m where its texels shrink below a pixel; its unresolved part joins the variance.
+  let fineSlope: Node<'vec2'> = vec2(0);
+  if (fine) {
+    const f = texture(fine.surface.texture, p.xz.div(FINE_PATCH_M));
+    const chop = smoothstep(0.3, 1.5, depth).mul(sqrt(U.waveScale)).mul(float(0.6).add(windLen.mul(0.08)).min(1.4));
+    fineSlope = f.yz.mul(chop);
+    fftVar = fftVar.add(max(f.w.sub(f.yz.dot(f.yz)), 0).mul(chop.mul(chop)));
+  }
+  const rippleFade = float(1).div(dist.mul(0.012).add(1));
+  const rippleVar = float(0.022).mul(float(0.35).add(windLen.mul(0.05)).div(0.6).pow(2)).mul(float(1).sub(rippleFade.mul(rippleFade)));
+  const slopeVar = fftVar.add(rippleVar).add(float(0.0005).add(windLen.mul(0.00008)));
   const slope = detail.mul(float(1).sub(open.mul(0.5))).add(rain);
   // The ripple field and the FFT give height gradients: the normal leans against them.
-  const grad = splash.xy.add(fft.mul(open));
+  const grad = splash.xy.add(fft.mul(open)).add(fineSlope);
   const N = normalize(vNormal.add(vec3(slope.x.sub(grad.x), 0, slope.y.negate().sub(grad.y))));
 
   const NdotV = clamp(dot(N, V), 0.001, 1);
@@ -191,19 +218,48 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' |
   // than one ripple and broader where it covers many (after ClearWater6.1 by SamG-Coder, MIT).
   // The amplitude scales with the exponent, so the lobe keeps its energy: far water shows a soft
   // sun path instead of single pixels flickering on and off.
-  const footprintM = max(length(fwidth(p.xz)), 1e-4);
-  const glintPower = mix(float(90), float(900), float(1).div(footprintM.mul(footprintM).mul(800).add(1)));
-  const sunCos = max(dot(Rup, U.sunDir), 0);
-  const glint = pow(sunCos, glintPower).mul(glintPower.mul(8 / 900)).add(pow(sunCos, 120).mul(0.35));
-  const skyReflection = skyRadiance(Rup, float(1))
-    .add(U.sunIrradiance.mul(glint).mul(float(1).sub(U.cloudCover.mul(0.9))))
-    .add(U.moonRadiance.mul(pow(max(dot(Rup, U.moonDir), 0), 300).mul(0.02)));
+  // The sun on the water: a Beckmann distribution of facet slopes with the variance above (m² = the total
+  // slope variance), Smith masking, and Fresnel at the facet. Near the eye the normal is resolved and the
+  // lobe narrow, so the FFT's own facets glitter; far off the lobe widens into the sun's path.
+  const Hs = normalize(V.add(U.sunDir));
+  const cosH = clamp(dot(N, Hs), 0.001, 1);
+  const cosH2 = cosH.mul(cosH);
+  const tan2H = float(1).sub(cosH2).div(cosH2);
+  const D = exp(tan2H.div(slopeVar).negate()).div(slopeVar.mul(Math.PI).mul(cosH2.mul(cosH2)));
+  const smithG1 = (c: Node<'float'>): Node<'float'> => {
+    const cc = clamp(c, 0.001, 1);
+    const a = cc.div(sqrt(slopeVar.mul(float(1).sub(cc.mul(cc)))).max(1e-4));
+    return a.lessThan(1.6).select(a.mul(3.535).add(a.mul(a).mul(2.181)).div(float(1).add(a.mul(2.276)).add(a.mul(a).mul(2.577))), float(1));
+  };
+  const NdotL = dot(N, U.sunDir);
+  // The island's hills put the water in their shadow: a horizon march along the sun over the
+  // height map (heights are absolute), 10 steps growing to ~560 m. Without it the glint burns
+  // on a lagoon whose sun has already set behind the ridge.
+  const sunXZ = U.sunDir.xz.div(length(U.sunDir.xz).max(1e-3));
+  const sunTan = U.sunDir.y.div(length(U.sunDir.xz).max(1e-3));
+  let sunLit: Node<'float'> = float(1);
+  for (let k = 0, t = 3; k < 10; k++, t *= 1.6) {
+    const q = p.xz.add(sunXZ.mul(t));
+    const uq = q.sub(vec2(DEPTH_MAP.x0, DEPTH_MAP.z0)).div(DEPTH_MAP.sizeM);
+    const hq = texture(depthMap, clamp(uq, 0, 1)).level(float(0)).r;
+    const inQ = uq.x.greaterThan(0).and(uq.x.lessThan(1)).and(uq.y.greaterThan(0)).and(uq.y.lessThan(1));
+    const above = inQ.select(hq.sub(float(WATER_LEVEL_M).add(sunTan.mul(t))), float(-1));
+    // A soft edge a few metres wide (the sun's disc and the 1.2 m texels).
+    sunLit = sunLit.mul(float(1).sub(smoothstep(-0.5, t * 0.02 + 1, above)));
+  }
+  const fH = float(0.02).add(float(0.98).mul(pow(float(1).sub(clamp(dot(V, Hs), 0, 1)), float(5))));
+  const sunGlint = U.sunIrradiance.mul(fH.mul(D).mul(smithG1(NdotV)).mul(smithG1(NdotL)).div(NdotV.mul(4)))
+    .mul(step(0, NdotL)).mul(sunLit).mul(float(1).sub(U.cloudCover.mul(0.9)));
+  const skyReflection = skyRadiance(Rup, float(1)).add(U.moonRadiance.mul(pow(max(dot(Rup, U.moonDir), 0), 300).mul(0.02)));
   // On High the palms, rocks, boat and hills are mirrored too, where the screen holds them
   // (screenReflection.ts); the sky, sun and moon stay analytic behind them.
   let reflection: Node<'vec3'> = skyReflection;
+  let sunSeen: Node<'float'> = float(1);
   if (quality === 'high') {
     const ssr = screenReflection(p, Rup);
     reflection = mix(skyReflection, ssr.colour, ssr.weight);
+    // A palm or the boat mirrored in front of the sun hides its glint there.
+    sunSeen = float(1).sub(ssr.weight);
   }
 
   // Refraction: the floor seen through the surface, distorted less where it is shallow.
@@ -220,7 +276,7 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' |
   const scatterTint = mix(vec3(sc.r, sc.g, sc.b), vec3(deep.r, deep.g, deep.b), smoothstep(2, 14, depth));
   const scatter = scatterTint.mul(ambient).mul(0.55).mul(float(1).sub(T.g));
   // Light through the backs of crests.
-  const sss = vec3(sc.r, sc.g, sc.b).mul(U.sunIrradiance).mul(pow(max(dot(V, U.sunDir.negate().add(vec3(0, 0.3, 0)).normalize()), 0), 4)).mul(max(vCrest, 0)).mul(0.04);
+  const sss = vec3(sc.r, sc.g, sc.b).mul(U.sunIrradiance).mul(pow(max(dot(V, U.sunDir.negate().add(vec3(0, 0.3, 0)).normalize()), 0), 4)).mul(max(vCrest, 0)).mul(0.04).mul(sunLit);
   // Stirred-up sand makes the surf zone milkier.
   const underwater = mix(behind.mul(T).add(scatter).add(sss), vec3(0.55, 0.56, 0.5).mul(ambient), vBreak.mul(0.35));
 
@@ -238,7 +294,8 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, quality: 'high' |
 
   const foamLight = U.sunIrradiance.mul(max(dot(N, U.sunDir), 0)).add(U.skyIrradiance).div(Math.PI).mul(0.8);
 
-  const surface = mix(underwater, reflection, fresnel);
+  // The sky by the view's Fresnel; the sun by its own facets' (sunGlint carries its Fresnel).
+  const surface = mix(underwater, reflection, fresnel).add(sunGlint.mul(sunSeen));
   // Right at the waterline the film is thin: fade the surface into the wet sand behind it.
   const edge = smoothstep(0.0, 0.05, depth);
   const above = mix(behind, mix(surface, foamLight, foam), edge);

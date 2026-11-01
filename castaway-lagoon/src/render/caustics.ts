@@ -1,4 +1,4 @@
-import { dFdx, dFdy, float, length, max, mix, positionLocal, refract, texture, varying, vec2, vec3, vec4 } from 'three/tsl';
+import { dFdx, dFdy, float, fwidth, length, max, mix, positionLocal, refract, smoothstep, texture, varying, vec2, vec3, vec4 } from 'three/tsl';
 import {
   Color,
   CustomBlending,
@@ -153,5 +153,10 @@ export function causticAt(caustics: Caustics, p: Node<'vec3'>, depth: Node<'floa
     const c = texture(caustics.target.texture, entry.div(CAUSTIC_TILE_M));
     return mix(c.r, c.g, k);
   };
-  return vec3(at(WATER_IOR_RGB[0]), at(WATER_IOR_RGB[1]), at(WATER_IOR_RGB[2]));
+  // The network's cells are ~10–30 cm: where a pixel spans several of them (mid-distance shallows seen from
+  // the beach) a single point sample is one random flare or none, and the floor turned to glittering
+  // noise. There the light averages out to its mean (≈ 1), as an eye or a camera sees it.
+  const footprintM = length(fwidth(p.xz));
+  const resolved = float(1).sub(smoothstep(0.02, 0.09, footprintM));
+  return mix(vec3(1), vec3(at(WATER_IOR_RGB[0]), at(WATER_IOR_RGB[1]), at(WATER_IOR_RGB[2])), resolved);
 }
