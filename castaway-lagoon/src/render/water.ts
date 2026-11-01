@@ -334,7 +334,8 @@ function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: Oc
   const farLap = farSlope(FAR_STEP_M, 0).x.sub(farSlope(-FAR_STEP_M, 0).x).add(farSlope(0, FAR_STEP_M).y.sub(farSlope(0, -FAR_STEP_M).y)).div(2 * FAR_STEP_M);
   const farSharp = farLap.negate().div(whitecaps.farLapScale);
   const farBorn = smoothstep(whitecaps.farThreshold.sub(0.35), whitecaps.farThreshold.add(0.35), farSharp).mul(open).mul(float(1).sub(caps.inside));
-  const capLace = laceCover(p.xz.mul(0.85).add(vec2(5.1, 17.3)), max(caps.foam, farBorn).mul(0.9), float(8.1));
+  // Far crests are a pixel or two: soft, their brightness by how hard the crest folds, not lace.
+  const capLace = max(laceCover(p.xz.mul(0.85).add(vec2(5.1, 17.3)), caps.foam.mul(0.9), float(8.1)), farBorn.mul(foamTex.mul(0.5).add(0.45)));
   const foam = clamp(max(max(max(surf, edgeLace), wakeLace), capLace).add(crestFoam.add(smoothstep(0.35, 1.0, splash.z)).mul(foamTex.mul(1.6))), 0, 1);
 
   const foamLight = U.sunIrradiance.mul(max(dot(N, U.sunDir), 0)).add(U.skyIrradiance).div(Math.PI).mul(0.8);
