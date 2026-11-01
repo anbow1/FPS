@@ -4,7 +4,8 @@ import { OceanFFT } from './ocean.ts';
 import { waveWarp } from './waveWarp.ts';
 import { hexToLinear } from './colour.ts';
 import { SHORE, WATER_LEVEL_M, WAVES } from '../config.ts';
-import { SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
+import { heightGrid, SHORE_DOMAIN, seabedHeights } from './shoreField.ts';
+import { beachWidth, heightAt, shoreDistance } from '../game/terrain.ts';
 import { screenReflection } from './screenReflection.ts';
 import { skyRadiance } from './sky.ts';
 import { causticFoamMap } from './textures.ts';
@@ -29,9 +30,12 @@ import { CAUSTIC_TILE_M, rippleSlope } from './caustics.ts';
 
 const DEPTH_MAP = { ...SHORE_DOMAIN, px: SHORE.res } as const;
 const FINE_PATCH_M = 7.7;
+/** The canopy's mean top above the ground (the trees are 12–24 m tall, crowns rounded). */
+const CANOPY_M = 15;
 
 export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: DataTexture; ocean: OceanFFT; fine: OceanFFT | null } {
   const depthMap = bakeDepthMap();
+  const skylineMap = bakeSkylineMap();
   const sea = WAVES.openSea;
   const dir = (sea.directionDeg * Math.PI) / 180;
   const ocean = new OceanFFT({
@@ -48,7 +52,7 @@ export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: Dat
     quality === 'high'
       ? new OceanFFT({ n: 128, size: FINE_PATCH_M, peakWavelength: 1.6, targetSlope: 0.07, wind: [Math.cos(dir + 0.3), Math.sin(dir + 0.3)] })
       : null;
-  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, ocean, fine, quality));
+  const mesh = new Mesh(radialGrid(), waterMaterial(depthMap, skylineMap, ocean, fine, quality));
   mesh.frustumCulled = false;
   mesh.name = 'water';
   mesh.renderOrder = 10;
@@ -59,6 +63,28 @@ export function buildWater(quality: 'high' | 'low'): { mesh: Mesh; depthMap: Dat
 function bakeDepthMap(): DataTexture {
   const n = DEPTH_MAP.px;
   const heights = seabedHeights();
+  const data = new Uint16Array(n * n);
+  for (let k = 0; k < n * n; k++) data[k] = DataUtils.toHalfFloat(heights[k] as number);
+  const t = new DataTexture(data, n, n, RedFormat, HalfFloatType);
+  t.magFilter = LinearFilter;
+  t.minFilter = LinearFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+}
+
+/**
+ * What hides the sun from the water: the ground plus the jungle's canopy (trees stand
+ * 12–24 m behind the beaches, jungle.ts), a quarter of the depth map's resolution. The
+ * sun at golden hour sets behind the trees long before it sets behind the hills.
+ */
+function bakeSkylineMap(): DataTexture {
+  const n = DEPTH_MAP.px >> 2;
+  const heights = heightGrid((x, z) => {
+    const y = heightAt(x, z);
+    const inland = y > 1.5 && (shoreDistance(x, z) >= beachWidth(x, z) + 4 || y >= 8);
+    return inland ? y + CANOPY_M : y;
+  }, n);
   const data = new Uint16Array(n * n);
   for (let k = 0; k < n * n; k++) data[k] = DataUtils.toHalfFloat(heights[k] as number);
   const t = new DataTexture(data, n, n, RedFormat, HalfFloatType);
@@ -106,7 +132,7 @@ export function placeWater(mesh: Mesh, eye: Vector3): void {
   mesh.position.set(Math.round(eye.x / 0.35) * 0.35, WATER_LEVEL_M, Math.round(eye.z / 0.35) * 0.35);
 }
 
-function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, fine: OceanFFT | null, quality: 'high' | 'low'): MeshBasicNodeMaterial {
+function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: OceanFFT, fine: OceanFFT | null, quality: 'high' | 'low'): MeshBasicNodeMaterial {
   // Double-sided: a swimmer sees the surface from below (Snell's window).
   const m = new MeshBasicNodeMaterial({ name: 'water', transparent: true, depthWrite: true, side: DoubleSide });
   const cf = causticFoamMap();
@@ -232,16 +258,16 @@ function waterMaterial(depthMap: DataTexture, ocean: OceanFFT, fine: OceanFFT | 
     return a.lessThan(1.6).select(a.mul(3.535).add(a.mul(a).mul(2.181)).div(float(1).add(a.mul(2.276)).add(a.mul(a).mul(2.577))), float(1));
   };
   const NdotL = dot(N, U.sunDir);
-  // The island's hills put the water in their shadow: a horizon march along the sun over the
-  // height map (heights are absolute), 10 steps growing to ~560 m. Without it the glint burns
-  // on a lagoon whose sun has already set behind the ridge.
+  // The island's hills and jungle put the water in their shadow: a horizon march along the sun
+  // over the skyline map (absolute heights), 10 steps growing to ~560 m. Without it the glint
+  // burns on a lagoon whose sun has already set behind the ridge.
   const sunXZ = U.sunDir.xz.div(length(U.sunDir.xz).max(1e-3));
   const sunTan = U.sunDir.y.div(length(U.sunDir.xz).max(1e-3));
   let sunLit: Node<'float'> = float(1);
   for (let k = 0, t = 3; k < 10; k++, t *= 1.6) {
     const q = p.xz.add(sunXZ.mul(t));
     const uq = q.sub(vec2(DEPTH_MAP.x0, DEPTH_MAP.z0)).div(DEPTH_MAP.sizeM);
-    const hq = texture(depthMap, clamp(uq, 0, 1)).level(float(0)).r;
+    const hq = texture(skylineMap, clamp(uq, 0, 1)).level(float(0)).r;
     const inQ = uq.x.greaterThan(0).and(uq.x.lessThan(1)).and(uq.y.greaterThan(0)).and(uq.y.lessThan(1));
     const above = inQ.select(hq.sub(float(WATER_LEVEL_M).add(sunTan.mul(t))), float(-1));
     // A soft edge a few metres wide (the sun's disc and the 1.2 m texels).
