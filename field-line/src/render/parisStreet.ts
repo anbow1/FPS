@@ -1,6 +1,7 @@
 import { Group } from 'three/webgpu';
 import { boulevardPlan, PARIS_SHIFT_Z } from '../maps/boulevard.ts';
 import { buildBuildings } from '../paris/city/buildings.ts';
+import { buildFurniture } from '../paris/city/furniture.ts';
 import { buildStreet } from '../paris/city/street.ts';
 import { buildTrees } from '../paris/city/trees.ts';
 import { SCENE } from '../paris/render/nodes.ts';
@@ -16,7 +17,7 @@ export async function buildParisStreet(): Promise<Group> {
   group.name = 'paris';
   const plan = boulevardPlan();
   // The plane trees too (their trunks are the map's colliders, maps/boulevard.ts).
-  group.add(buildStreet(), buildBuildings(plan), buildTrees(plan.trees));
+  group.add(buildStreet(), buildBuildings(plan), buildTrees(plan.trees), buildFurniture(plan));
   group.position.z = PARIS_SHIFT_Z;
   group.updateMatrixWorld(true);
   return group;
@@ -31,7 +32,8 @@ export function syncParisLight(preset: LightingPreset, preExposure: number): voi
   SCENE.interiorLux.value = daylight * 0.025 * preExposure;
   SCENE.roomLampNits.value = (daylight < 2000 ? 60 : 0) * preExposure;
   SCENE.shopNits.value = 260 * preExposure;
-  SCENE.lanternNits.value = 3500 * preExposure;
+  // The candelabra's lanterns are lit from dusk to dawn (sun below ~12°: golden hour and night).
+  SCENE.lanternNits.value = (preset.sunElevationRad < 0.21 ? 3500 : 0) * preExposure;
   SCENE.leafSunNits.value = (preset.sunIlluminanceLux * 0.2 * preExposure) / Math.PI;
   const ce = Math.cos(preset.sunElevationRad);
   // As render/lighting.ts places the sun.

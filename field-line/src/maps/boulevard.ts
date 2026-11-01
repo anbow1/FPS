@@ -1,5 +1,6 @@
 import { Vec3 } from '../core/vec.ts';
 import { BUILDING, STREET } from '../paris/config.ts';
+import { terraceLayout } from '../paris/city/furniture.ts';
 import { buildPlan, inCrossing, type Lot, type StreetPlan } from '../paris/city/plan.ts';
 import { crossRoadHalf } from '../paris/city/street.ts';
 import { MapBuilder } from './builder.ts';
@@ -173,29 +174,24 @@ export function buildBoulevard(): MapData {
     const q = at(t);
     if (q) b.boxOnBase('invisible', q.x, kerb, q.z, 0.42, 3.6, 0.42, (t.seed % 628) / 100, { surface: 'wood' });
   }
-  for (const l of plan.lamps) {
-    const q = at(l);
-    if (q) b.prop('lampPost', q.x, q.z, l.x < 0 ? Math.PI / 2 : -Math.PI / 2, { baseY: kerb });
-  }
-  for (const k of plan.kiosks) {
-    const q = at(k);
-    if (q) b.prop('kiosk', q.x, q.z, k.x < 0 ? Math.PI / 2 : -Math.PI / 2, { baseY: kerb });
-  }
-  for (const be of plan.benches) {
-    const q = at(be);
-    if (q) b.prop('bench', q.x, q.z, be.x < 0 ? Math.PI / 2 : -Math.PI / 2, { baseY: kerb });
-  }
+  // The Paris scene's own street furniture is drawn (paris/city/furniture.ts, render/parisStreet.ts):
+  // candelabra, advertising columns, kiosks, benches. Here only their colliders, sized to the models.
+  const solid = (list: readonly { x: number; z: number }[], sx: number, sy: number, sz: number, surface: 'sheetMetal' | 'wood', blocksVision: boolean): void => {
+    for (const p of list) {
+      const q = at(p);
+      if (q) b.boxOnBase('invisible', q.x, kerb, q.z, sx, sy, sz, 0, { surface, blocksVision });
+    }
+  };
+  solid(plan.lamps, 0.4, 4.0, 0.4, 'sheetMetal', false);
+  solid(plan.columns, 1.3, 3.1, 1.3, 'sheetMetal', true);
+  solid(plan.kiosks, 2.5, 3.2, 2.5, 'sheetMetal', true);
+  solid(plan.benches, 0.6, 0.5, 1.8, 'wood', false);
   for (const p of plan.parked) {
     const q = at(p);
     if (q) b.prop('car', q.x, q.z, p.x < 0 ? 0 : Math.PI, { colourIndex: p.seed % 251 });
   }
-  // Café terraces: tables in two rows before the café, between the façade and the trees.
-  for (const cafe of plan.cafes) {
-    for (let z = cafe.zMin + 1.2; z < cafe.zMax - 1; z += 2.6) {
-      const q = at({ x: cafe.side * (F - 1.6), z });
-      if (q) b.prop('cafeSet', q.x, q.z, (z * 7) % 3, { baseY: kerb });
-    }
-  }
+  // Café terraces: the Paris rows of marble tables (paris/city/furniture.ts); their colliders, waist high.
+  solid(terraceLayout(plan.cafes).tables, 0.6, 0.75, 0.6, 'sheetMetal', false);
 
   // --- The fight: a checkpoint across the boulevard, wrecks and barricades for cover.
   const block = (x: number, z: number, yaw: number): void => void b.prop('roadBarrier', x, z, yaw);
@@ -219,7 +215,7 @@ export function buildBoulevard(): MapData {
   }
 
   const pickups: Pickup[] = [
-    { kind: 'medKit', pos: new Vec3(-12, kerb, zMap(-20)) },
+    { kind: 'medKit', pos: new Vec3(-10, kerb, zMap(-25)) },
     { kind: 'ammoPack', pos: new Vec3(12, kerb, zMap(-110)) },
     { kind: 'grenade', pos: new Vec3(-60, kerb, zMap(STREET.crossings[0].zM) + 6) },
     { kind: 'medKit', pos: new Vec3(70, kerb, zMap(STREET.crossings[1].zM) - 5) },
