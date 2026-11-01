@@ -22,7 +22,7 @@ import { RippleField } from './rippleField.ts';
 import { waterDepth } from '../maps/lake.ts';
 import { W } from './waterUniforms.ts';
 import { sampleHeight } from '../maps/terrain.ts';
-import { INTERIOR_SKY_FRACTION, insideInterior, setInteriorVolumes } from './interior.ts';
+import { interiorSkyFraction, setInteriorVolumes } from './interior.ts';
 import { Lighting } from './lighting.ts';
 import { bakeCloudField, CLOUD_QUALITY, VolumeClouds } from './volumeClouds.ts';
 import { Breaches } from './breaches.ts';
@@ -319,8 +319,8 @@ export class GameView {
     cam.updateMatrixWorld();
 
     // Ambient on the rig follows whether the eye is indoors.
-    const inside = insideInterior(this.map.interiors, cam.position.x, cam.position.y, cam.position.z);
-    this.interiorK = damp(this.interiorK, inside ? INTERIOR_SKY_FRACTION : 1, 4, frameSeconds);
+    const skyK = interiorSkyFraction(this.map.interiors, cam.position.x, cam.position.y, cam.position.z);
+    this.interiorK = damp(this.interiorK, skyK, 4, frameSeconds);
     this.viewModel.setEnvironment(this.stage.scene.environment, this.interiorK);
     const pixelAngle = ((cam.fov * Math.PI) / 180) / Math.max(1, this.stage.renderer.domElement.height);
     this.viewModel.update(game, frameSeconds, pendingYawRad, pendingPitchRad, pixelAngle);
@@ -335,7 +335,7 @@ export class GameView {
     this.clouds.update(frameSeconds);
     this.lighting.mistTime.value = game.timeSeconds;
     // The weapon light's beam shows in the haze, in rain, and in the dust of a closed room.
-    const scatter = this.lighting.preset.fogDensityPerM + 0.0012 + wetness.value * rainRate.value * 0.02 + (inside ? 0.004 : 0);
+    const scatter = this.lighting.preset.fogDensityPerM + 0.0012 + wetness.value * rainRate.value * 0.02 + (skyK < 1 ? 0.004 : 0);
     this.weaponLight.update(cam, p.weaponLight && p.alive, this.lighting.preExposure, scatter, game.timeSeconds);
     wetTime.value = game.timeSeconds;
     this.cityLights?.update(cam, this.lighting.preExposure);

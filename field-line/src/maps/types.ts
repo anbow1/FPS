@@ -82,6 +82,8 @@ export interface TreeInstance {
 export interface InteriorVolume {
   min: Vec3;
   max: Vec3;
+  /** Share of the outdoor sky ambient its windows let in (render/interior.ts; default 0.06). */
+  skyFraction?: number;
 }
 
 export interface Bulb {

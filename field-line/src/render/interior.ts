@@ -1,4 +1,4 @@
-import { float, mix, positionWorld, uniform } from 'three/tsl';
+import { float, positionWorld, uniform } from 'three/tsl';
 import { Vector3 } from 'three/webgpu';
 import type { InteriorVolume } from '../maps/types.ts';
 
@@ -19,6 +19,7 @@ export const INTERIOR_SKY_FRACTION = 0.06;
 const EDGE_M = 0.08; // inner wall faces sit on the volume edge; outer faces are 0.3 m out
 
 const mins = Array.from({ length: MAX_VOLUMES }, () => uniform(new Vector3(1e6, 1e6, 1e6)));
+const fractions = Array.from({ length: MAX_VOLUMES }, () => uniform(INTERIOR_SKY_FRACTION));
 const maxs = Array.from({ length: MAX_VOLUMES }, () => uniform(new Vector3(-1e6, -1e6, -1e6)));
 
 export function setInteriorVolumes(volumes: readonly InteriorVolume[]): void {
@@ -27,6 +28,7 @@ export function setInteriorVolumes(volumes: readonly InteriorVolume[]): void {
     const v = volumes[i];
     const lo = (mins[i] as (typeof mins)[number]).value;
     const hi = (maxs[i] as (typeof maxs)[number]).value;
+    (fractions[i] as (typeof fractions)[number]).value = v?.skyFraction ?? INTERIOR_SKY_FRACTION;
     if (v) {
       lo.set(v.min.x - EDGE_M, v.min.y - EDGE_M, v.min.z - EDGE_M);
       hi.set(v.max.x + EDGE_M, v.max.y + EDGE_M, v.max.z + EDGE_M);
@@ -37,19 +39,19 @@ export function setInteriorVolumes(volumes: readonly InteriorVolume[]): void {
   }
 }
 
-/** 1 outdoors, INTERIOR_SKY_FRACTION inside any interior volume. Multiplies the AO term. */
+/** 1 outdoors, the volume's sky fraction inside an interior volume. Multiplies the AO term. */
 export function skyVisibilityNode() {
   const p = positionWorld;
-  const flags = mins.map((lo, i) => {
+  const shares = mins.map((lo, i) => {
     const hi = maxs[i] as (typeof maxs)[number];
     const inBox = p.x.greaterThan(lo.x).and(p.x.lessThan(hi.x)).and(p.y.greaterThan(lo.y)).and(p.y.lessThan(hi.y)).and(p.z.greaterThan(lo.z)).and(p.z.lessThan(hi.z));
-    return inBox.select(float(1), float(0));
+    return inBox.select(fractions[i] as (typeof fractions)[number], float(1));
   });
-  const inside = flags.reduce((acc, f) => acc.max(f));
-  return mix(float(1), float(INTERIOR_SKY_FRACTION), inside);
+  return shares.reduce((acc, f) => acc.min(f));
 }
 
-/** CPU twin of the node, for the viewmodel and the exposure meter's expectations. */
-export function insideInterior(volumes: readonly InteriorVolume[], x: number, y: number, z: number): boolean {
-  return volumes.some((v) => x > v.min.x && x < v.max.x && y > v.min.y - 0.2 && y < v.max.y && z > v.min.z && z < v.max.z);
+/** The sky fraction at a point (1 outdoors): the CPU twin of skyVisibilityNode. */
+export function interiorSkyFraction(volumes: readonly InteriorVolume[], x: number, y: number, z: number): number {
+  const v = volumes.find((v) => x > v.min.x && x < v.max.x && y > v.min.y - 0.2 && y < v.max.y && z > v.min.z && z < v.max.z);
+  return v ? (v.skyFraction ?? INTERIOR_SKY_FRACTION) : 1;
 }

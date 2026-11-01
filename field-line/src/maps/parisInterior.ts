@@ -160,7 +160,9 @@ export function parisInterior(b: MapBuilder, lot: Lot, shiftZ: number): void {
   const az = Z(u0, d0);
   const bx = X(u1, d1);
   const bz = Z(u1, d1);
-  b.interiors.push({ min: new Vec3(Math.min(ax, bx), 0, Math.min(az, bz)), max: new Vec3(Math.max(ax, bx), ceilingY - SLAB_M, Math.max(az, bz)) });
+  // A Paris front is half glass (the shopfront ~55 % of the ground storey, French windows ~40 %
+  // above), twice the glazing the default fraction is tuned for, though on one wall only: a stop more.
+  b.interiors.push({ min: new Vec3(Math.min(ax, bx), 0, Math.min(az, bz)), max: new Vec3(Math.max(ax, bx), ceilingY - SLAB_M, Math.max(az, bz)), skyFraction: 0.12 });
 
   // --- A little furniture: a counter in the shop, a few crates in its back room, tables upstairs.
   const prop = (kind: 'crate' | 'cafeSet' | 'bench', u: number, d: number, y: number, yaw: number): void => void b.prop(kind, X(u, d), Z(u, d), yaw, { baseY: y });
