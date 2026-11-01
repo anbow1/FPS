@@ -91,7 +91,7 @@ export class Whitecaps {
       const inD = uvD.x.greaterThan(0).and(uvD.x.lessThan(1)).and(uvD.y.greaterThan(0)).and(uvD.y.lessThan(1));
       const depth = float(WATER_LEVEL_M).sub(inD.select(texture(depthMap, uvD).level(float(0)).r, float(-40)));
       const open = smoothstep(2.5, WAVES.openSea.fullDepthM, depth);
-      const born = smoothstep(this.uThreshold, this.uThreshold.add(0.7), sharp).mul(open);
+      const born = smoothstep(this.uThreshold.sub(0.35), this.uThreshold.add(0.35), sharp).mul(open);
       const m = new THREE.MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, transparent: true, blending: THREE.NoBlending });
       m.name = name;
       // Raw data through fragmentNode, as ocean.ts does: no tone mapping or clamping on the way out.
