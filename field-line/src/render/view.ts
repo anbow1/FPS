@@ -5,7 +5,7 @@ import { loadHandMesh } from './handMesh.ts';
 import { loadMocap } from './mocap.ts';
 import { type HdriSetting, loadHdri } from './hdri.ts';
 import { Object3D, Vector3 } from 'three/webgpu';
-import { EXPOSURE, LAKE_WAVES, type LightingPresetId, WORLD_WIND } from '../config.ts';
+import { CITY_LIGHTS, EXPOSURE, LAKE_WAVES, type LightingPresetId, WORLD_WIND } from '../config.ts';
 import { damp } from '../core/vec.ts';
 import type { GameEvent } from '../game/events.ts';
 import type { Game } from '../game/game.ts';
@@ -213,13 +213,15 @@ export class GameView {
   }
 
   /**
-   * The exposure the eye settles at here: the preset's, except where a map is lit far brighter than the
-   * preset assumes. The night preset meters a street at ~8 lux; the boulevard's candelabra give ~25 on
-   * average (render/parisStreet.ts), 1.6 stops more, beyond the eye's 1-stop allowance above the preset.
+   * The exposure the eye settles at here: the preset's, except on a lamp-lit street at night. The night
+   * preset's EV is for a moonlit, overcast field (~8 lux the brightest); exposed so, a street under its
+   * lamps (20–60 lux) came out as an orange noon. A night street is exposed as a photographer would
+   * (EV tables: lit night streets ~5–8), its lamp-lit paving a little under mid-grey, the sky near black.
    */
   private sceneEv(): number {
     const p = this.lighting.preset;
-    return p.ev100 + (this.map.id === 'boulevard' && p.id === 'night' ? Math.log2(25 / 8) : 0);
+    const litStreet = p.id === 'night' && (this.map.id === 'city' || this.map.id === 'boulevard');
+    return litStreet ? CITY_LIGHTS.streetEv100 : p.ev100;
   }
 
   private syncPreExposure(): void {

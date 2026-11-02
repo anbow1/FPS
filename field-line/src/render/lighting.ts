@@ -194,7 +194,8 @@ export class Lighting {
     revealSun.value.set(this.sunDir.x, this.sunDir.y, this.sunDir.z, cloudy ? 0 : p.sunIlluminanceLux / (p.sunIlluminanceLux + p.skyIlluminanceLux));
     u.rayleigh.value = p.id === 'golden' ? 2.2 : cloudy ? 0.8 : 1.4;
     u.mieCoefficient.value = cloudy ? 0.02 : 0.005;
-    u.mieDirectionalG.value = 0.8;
+    // At night the moon is behind the deck: a broad brightening of the clouds, not a halo round a disc.
+    u.mieDirectionalG.value = p.id === 'night' ? 0.4 : 0.8;
     // Full overcast is a uniform haze (high turbidity and Mie), not a cloud layer, which renders as dark
     // lenses at full cover. Broken cloud is volumeClouds.ts's; SkyMesh's own clouds stay off.
     u.cloudCoverage.value = 0;

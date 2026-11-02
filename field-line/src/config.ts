@@ -463,12 +463,15 @@ export const EXPOSURE = {
  * window ~150 cd/m² (lighting sheet order of magnitude).
  */
 export const CITY_LIGHTS = {
+  /** EV100 the eye settles at on a lamp-lit street at night (render/view.ts sceneEv). */
+  streetEv100: 5.5,
   lampCd: 2500,
   lampK: 4000,
   lensLuminance: 9000,
-  windowLuminance: 3.5,
+  // The sheet's values: 3.5 and 5 cd/m² had been tuned down against a night exposed four stops too bright.
+  windowLuminance: 35,
   windowK: 2900,
-  shopLuminance: 5,
+  shopLuminance: 120,
   shopK: 4200,
   /** Share of upper-floor windows lit. */
   litShare: 0.3,
