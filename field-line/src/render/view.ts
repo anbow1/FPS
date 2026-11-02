@@ -5,7 +5,7 @@ import { loadHandMesh } from './handMesh.ts';
 import { loadMocap } from './mocap.ts';
 import { type HdriSetting, loadHdri } from './hdri.ts';
 import { Object3D, Vector3 } from 'three/webgpu';
-import { LAKE_WAVES, type LightingPresetId, WORLD_WIND } from '../config.ts';
+import { EXPOSURE, LAKE_WAVES, type LightingPresetId, WORLD_WIND } from '../config.ts';
 import { damp } from '../core/vec.ts';
 import type { GameEvent } from '../game/events.ts';
 import type { Game } from '../game/game.ts';
@@ -380,7 +380,8 @@ export class GameView {
     this.stage.render();
     this.cpu.lap('submit');
     this.scopeReady = true;
-    this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.sceneEv(), frameSeconds);
+    const night = this.lighting.preset.id === 'night';
+    this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.sceneEv(), frameSeconds, night ? EXPOSURE.minEvBelowPresetNight : EXPOSURE.minEvBelowPreset);
     this.stage.setExposure(Lighting.exposureMultiplier(this.lighting.preset.ev100, this.exposure.adaptedEv));
   }
 

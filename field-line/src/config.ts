@@ -444,6 +444,9 @@ export const EXPOSURE = {
   // EV100 clamp per map, relative to the preset EV — an interior can drop
   // ~6 stops below the street, never above it.
   minEvBelowPreset: 7,
+  // At night the eye's range is the street's: dark-adapted it sees a lit street as dim, not as day. The
+  // 7 stops are for a room by day; at night they turned a lamp-lit street into an orange noon.
+  minEvBelowPresetNight: 2,
   maxEvAbovePreset: 1,
   // Named tuning factor on top of the physical exposure: ACES in three.js
   // expects a slightly brighter input than a grey card to land mid-grey.
