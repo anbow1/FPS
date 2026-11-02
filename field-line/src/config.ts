@@ -468,10 +468,11 @@ export const CITY_LIGHTS = {
   lampCd: 2500,
   lampK: 4000,
   lensLuminance: 9000,
-  // The sheet's values: 3.5 and 5 cd/m² had been tuned down against a night exposed four stops too bright.
-  windowLuminance: 35,
+  // Under the sheet's 20–60 and ~150: the night eye settles near EV 3.5, where those were seven stops over
+  // mid-grey and every shop a white slab; these keep the rooms and the goods behind the glass readable.
+  windowLuminance: 12,
   windowK: 2900,
-  shopLuminance: 120,
+  shopLuminance: 25,
   shopK: 4200,
   /** Share of upper-floor windows lit. */
   litShare: 0.3,
