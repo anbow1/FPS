@@ -468,11 +468,12 @@ export const CITY_LIGHTS = {
   lampCd: 2500,
   lampK: 4000,
   lensLuminance: 9000,
-  // Under the sheet's 20–60 and ~150: the night eye settles near EV 3.5, where those were seven stops over
-  // mid-grey and every shop a white slab; these keep the rooms and the goods behind the glass readable.
-  windowLuminance: 12,
+  // Under the sheet's 20–60 and ~150: the night eye settles near EV 3.5 (mid-grey ~0.6 cd/m²), where those
+  // were five to seven stops over and every shop a white slab. ~3 stops over keeps the goods readable;
+  // bloom and the dark street around them still make them the brightest thing in view.
+  windowLuminance: 5,
   windowK: 2900,
-  shopLuminance: 25,
+  shopLuminance: 7,
   shopK: 4200,
   /** Share of upper-floor windows lit. */
   litShare: 0.3,

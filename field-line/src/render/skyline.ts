@@ -91,13 +91,13 @@ export function buildSkyline(): InstancedMesh {
   // Each pane set a fraction of a degree off, so a curtain wall reflects many skies, not one grey sheet.
   const tilt = vec3(hash2(cell.add(faceKey), 2).sub(0.5), hash2(cell.add(faceKey), 3).sub(0.5).mul(0.5), hash2(cell.add(faceKey), 4).sub(0.5)).mul(0.08).mul(pane);
   mat.normalNode = normalize(cameraViewMatrix.mul(vec4(n0.add(tilt), 0)).xyz);
-  // Night: a share of the windows lit, warm or cool office light seen through the glass (~10 cd/m²
-  // pre-exposed, a room's light seen from a kilometre, a little under the near windows' 12), averaged
+  // Night: a share of the windows lit, warm or cool office light seen through the glass (~4 cd/m²
+  // pre-exposed, a room's light seen from a kilometre, a little under the near windows' 5), averaged
   // with the grid once a window is under a pixel.
   const share = mix(float(0.32), float(0.45), isGlass);
   const lit = mix(step(paneHash, share), share, blur).mul(pane);
   const warm = mix(vec3(1, 0.78, 0.52), vec3(0.85, 0.92, 1), mix(step(0.6, hash2(cell.add(faceKey), 5)), float(0.4), blur));
-  mat.emissiveNode = warm.mul(lit).mul(cityNight).mul(lightPreExposure).mul(10);
+  mat.emissiveNode = warm.mul(lit).mul(cityNight).mul(lightPreExposure).mul(4);
 
   const mesh = new InstancedMesh(geo, mat, towers.length);
   mesh.name = 'skyline';
