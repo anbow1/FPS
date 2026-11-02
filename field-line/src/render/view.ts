@@ -220,8 +220,9 @@ export class GameView {
    */
   private sceneEv(): number {
     const p = this.lighting.preset;
-    const litStreet = p.id === 'night' && (this.map.id === 'city' || this.map.id === 'boulevard');
-    return litStreet ? CITY_LIGHTS.streetEv100 : p.ev100;
+    const id = this.map.id;
+    if (p.id !== 'night' || (id !== 'city' && id !== 'boulevard')) return p.ev100;
+    return CITY_LIGHTS.streetEv100[id];
   }
 
   private syncPreExposure(): void {
