@@ -1,4 +1,4 @@
-import { buildParisStreet, syncParisLight, tickParis } from './parisStreet.ts';
+import { buildParisStreet, parisLamps, syncParisLight, tickParis } from './parisStreet.ts';
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadScanModels } from './scanModels.ts';
 import { loadHandMesh } from './handMesh.ts';
@@ -114,7 +114,7 @@ export class GameView {
     await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh()]);
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';
-    CITY.lamps = map.id === 'city';
+    CITY.lamps = map.id === 'city' || map.id === 'boulevard';
     const lib = new MaterialLibrary();
     setInteriorVolumes(map.interiors);
     // The forest lake: its wave field is solved over the carved bed once here; the terrain
@@ -176,6 +176,8 @@ export class GameView {
     await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y, await loadHdri(hdriSetting(map.id), this.settings.preset));
     this.exposure = new AutoExposure(stage.renderer, this.lighting.preset.ev100);
     if (map.id === 'city') this.cityLights = new CityLights(map, stage.scene, this.settings.quality);
+    // The boulevard by night: its candelabra's lanterns, warm and soft (parisStreet.ts).
+    if (map.id === 'boulevard') this.cityLights = new CityLights(map, stage.scene, this.settings.quality, parisLamps(map.halfSizeM));
     const w = WORLD_WIND[map.id];
     windVector.value.set(Math.sin(w.directionRad) * w.speedMs, 0, Math.cos(w.directionRad) * w.speedMs);
     this.applyWeather();

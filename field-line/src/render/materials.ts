@@ -150,7 +150,7 @@ export const CITY = { lamps: false };
  * The street lamps' light on a surface of albedo `colour`: Lambert, E·ρ/π, evaluated only at night (a branch
  * on a uniform: free by day, no recompile when night falls). Nothing on maps without lamps.
  */
-function lampLit(colour: Node<'vec3'>): Node<'vec3'> | null {
+export function lampLit(colour: Node<'vec3'>): Node<'vec3'> | null {
   if (!CITY.lamps) return null;
   return Fn(() => {
     // Zero, but built from normalWorld so that shared variable is declared and set here, before the

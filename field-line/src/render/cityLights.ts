@@ -29,6 +29,21 @@ export const cityNight = uniform(0);
 /** The lighting preset's pre-exposure, for emission authored in physical units. */
 export const lightPreExposure = uniform(1);
 
+/** The lamps' intensity (cd) and colour on this map: City's cut-off luminaires, or the boulevard's lanterns. */
+const lampCd = uniform(CITY_LIGHTS.lampCd);
+const lampColourU = uniform(new Vector3(1, 1, 1));
+{
+  const c = lightColour(CITY_LIGHTS.lampK);
+  lampColourU.value.set(c.r, c.g, c.b);
+}
+
+/** A map's own lamps: where the light comes from, how strong (cd) and how warm (K). */
+export interface LampSet {
+  heads: Vector3[];
+  cd: number;
+  kelvin: number;
+}
+
 const MAP_CELL_M = 0.5;
 const REACH_M = 34;
 const MAX_NEAR = 6;
@@ -49,15 +64,15 @@ export function lampProfile(cosNadir: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** Irradiance (lux) on a horizontal surface at (x, y, z) from one lamp. */
-export function lampIrradiance(lamp: Vector3, x: number, y: number, z: number): number {
+/** Irradiance (lux) on a horizontal surface at (x, y, z) from one lamp of `cd` candela. */
+export function lampIrradiance(lamp: Vector3, x: number, y: number, z: number, cd: number = CITY_LIGHTS.lampCd): number {
   const dx = lamp.x - x;
   const dy = lamp.y - y;
   const dz = lamp.z - z;
   if (dy <= 0) return 0;
   const d2 = dx * dx + dy * dy + dz * dz;
   const cos = dy / Math.sqrt(d2);
-  return (CITY_LIGHTS.lampCd * lampProfile(cos) * cos) / d2;
+  return (cd * lampProfile(cos) * cos) / d2;
 }
 
 // The far lamps' light map: bound at load (a 1-texel placeholder until then, so every material can be built first).
@@ -85,14 +100,13 @@ export function lampLightNode(): Node<'vec3'> {
     const d2 = d.dot(d);
     const cos = d.y.div(d2.sqrt());
     const profile = smoothstep(0.17, 0.5, cos);
-    e = e.sub(profile.mul(cos).mul(CITY_LIGHTS.lampCd).div(d2.max(1e-3)));
+    e = e.sub(profile.mul(cos).mul(lampCd).div(d2.max(1e-3)));
   }
   const up = max(normalWorld.y, 0);
   const facing = mix(float(0.5), float(1), up).mul(float(1).sub(smoothstep(0.3, 1, normalWorld.y.negate())));
-  const colour = lightColour(CITY_LIGHTS.lampK);
   // Light falls off up a wall well before the lamp's height.
   const height = float(1).sub(smoothstep(4, 9, abs(p.y)));
-  return vec3(colour.r, colour.g, colour.b)
+  return lampColourU
     .mul(max(e, 0))
     .mul(facing)
     .mul(height)
@@ -109,10 +123,9 @@ export function lampLightNode(): Node<'vec3'> {
 export function lampAirLightNode(): Node<'vec3'> {
   const p = positionWorld;
   const e = lampMap.sample(vec2(p.x.add(mapHalfM), p.z.add(mapHalfM)).div(mapHalfM.mul(2))).r;
-  const c = lightColour(CITY_LIGHTS.lampK);
   // Brightest in the cone below the lamp, fading above it.
   const below = float(1).sub(smoothstep(5.5, 7.5, p.y));
-  return vec3(c.r, c.g, c.b).mul(e).mul(below).mul(lightPreExposure).mul(cityNight);
+  return lampColourU.mul(e).mul(below).mul(lightPreExposure).mul(cityNight);
 }
 
 /** Emission of the lamp lenses (pre-exposed). */
@@ -127,13 +140,18 @@ export class CityLights {
   private readonly order: number[];
   private readonly scene: Scene;
   private on = false;
+  private readonly cd: number;
 
-  constructor(map: MapData, scene: Scene, quality: 'high' | 'low') {
+  /** `lamps`: the map's own lamps (default: its lamp posts, City's luminaires). */
+  constructor(map: MapData, scene: Scene, quality: 'high' | 'low', lamps?: LampSet) {
     this.scene = scene;
-    this.heads = lampHeads(map);
+    this.heads = lamps?.heads ?? lampHeads(map);
+    this.cd = lamps?.cd ?? CITY_LIGHTS.lampCd;
+    lampCd.value = this.cd;
+    const c = lightColour(lamps?.kelvin ?? CITY_LIGHTS.lampK);
+    lampColourU.value.set(c.r, c.g, c.b);
     this.order = this.heads.map((_, i) => i);
     this.bake(map);
-    const c = lightColour(CITY_LIGHTS.lampK);
     const n = Math.min(MAX_NEAR, quality === 'high' ? CITY_LIGHTS.nearLampsHigh : CITY_LIGHTS.nearLampsLow);
     for (let i = 0; i < n; i++) {
       // Cone to ~80° from the nadir, full strength inside ~60°: the bake's profile (penumbra = 1 − 60/80).
@@ -157,7 +175,7 @@ export class CityLights {
         for (let i = Math.max(0, ci - reach); i <= Math.min(res - 1, ci + reach); i++) {
           const x = -half + (i + 0.5) * MAP_CELL_M;
           const z = -half + (j + 0.5) * MAP_CELL_M;
-          e[j * res + i] = (e[j * res + i] as number) + lampIrradiance(l, x, 0, z);
+          e[j * res + i] = (e[j * res + i] as number) + lampIrradiance(l, x, 0, z, this.cd);
         }
       }
     }
@@ -200,7 +218,7 @@ export class CityLights {
       if (head) {
         s.position.copy(head);
         s.target.position.set(head.x, head.y - 5, head.z);
-        s.intensity = CITY_LIGHTS.lampCd * preExposure;
+        s.intensity = this.cd * preExposure;
       } else s.intensity = 0;
     }
   }
