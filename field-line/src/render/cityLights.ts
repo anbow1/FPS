@@ -32,6 +32,8 @@ export const lightPreExposure = uniform(1);
 /** The lamps' intensity (cd) and colour on this map: City's cut-off luminaires, or the boulevard's lanterns. */
 const lampCd = uniform(CITY_LIGHTS.lampCd);
 const lampColourU = uniform(new Vector3(1, 1, 1));
+/** Mean height of the lamp heads (m): City's luminaires hang at ~6.4 m, the boulevard's lanterns at ~4.3. */
+const lampY = uniform(6.4);
 {
   const c = lightColour(CITY_LIGHTS.lampK);
   lampColourU.value.set(c.r, c.g, c.b);
@@ -103,9 +105,14 @@ export function lampLightNode(): Node<'vec3'> {
     e = e.sub(profile.mul(cos).mul(lampCd).div(d2.max(1e-3)));
   }
   const up = max(normalWorld.y, 0);
-  const facing = mix(float(0.5), float(1), up).mul(float(1).sub(smoothstep(0.3, 1, normalWorld.y.negate())));
-  // Light falls off up a wall well before the lamp's height.
-  const height = float(1).sub(smoothstep(4, 9, abs(p.y)));
+  // Above the heads nothing lights a surface's top: the plane trees' crowns over the lanterns lit up
+  // from above as if the lamps hung over them.
+  const over = smoothstep(lampY.sub(0.5), lampY.add(0.5), p.y);
+  const facing = mix(float(0.5), float(1), up)
+    .mul(float(1).sub(over.mul(up)))
+    .mul(float(1).sub(smoothstep(0.3, 1, normalWorld.y.negate())));
+  // Light falls off up a wall from just under the heads to a few metres above them.
+  const height = float(1).sub(smoothstep(lampY.sub(2.4), lampY.add(2.6), abs(p.y)));
   return lampColourU
     .mul(max(e, 0))
     .mul(facing)
@@ -148,6 +155,7 @@ export class CityLights {
     this.heads = lamps?.heads ?? lampHeads(map);
     this.cd = lamps?.cd ?? CITY_LIGHTS.lampCd;
     lampCd.value = this.cd;
+    lampY.value = this.heads.length > 0 ? this.heads.reduce((a, h) => a + h.y, 0) / this.heads.length : 6.4;
     const c = lightColour(lamps?.kelvin ?? CITY_LIGHTS.lampK);
     lampColourU.value.set(c.r, c.g, c.b);
     this.order = this.heads.map((_, i) => i);
