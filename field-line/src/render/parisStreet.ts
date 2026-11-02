@@ -7,7 +7,7 @@ import { buildStreet } from '../paris/city/street.ts';
 import { buildTrees } from '../paris/city/trees.ts';
 import { SCENE } from '../paris/render/nodes.ts';
 import { loadPhotos } from '../paris/render/photo.ts';
-import type { LightingPreset } from '../config.ts';
+import { CITY_LIGHTS, type LightingPreset } from '../config.ts';
 import { STREET } from '../paris/config.ts';
 import type { LampSet } from './cityLights.ts';
 import { lampLit } from './materials.ts';
@@ -71,8 +71,12 @@ const LANTERN_CD = 600;
 export function syncParisLight(preset: LightingPreset, preExposure: number): void {
   const daylight = preset.skyIlluminanceLux + preset.sunIlluminanceLux * 0.2;
   SCENE.interiorLux.value = daylight * 0.025 * preExposure;
-  SCENE.roomLampNits.value = (daylight < 2000 ? 60 : 0) * preExposure;
-  SCENE.shopNits.value = 260 * preExposure;
+  // By night the windows and shops shine at Field Line's night sheet (CITY_LIGHTS, as City's do): the
+  // Paris scene's 60 and 260 cd/m² were set for its golden hour, and against a night exposure they
+  // blew out every front and filled the street's haze with their bloom.
+  const night = daylight < 50;
+  SCENE.roomLampNits.value = (night ? CITY_LIGHTS.windowLuminance : daylight < 2000 ? 60 : 0) * preExposure;
+  SCENE.shopNits.value = (night ? CITY_LIGHTS.shopLuminance : 260) * preExposure;
   // The candelabra's lanterns are lit from dusk to dawn (sun below ~12°: golden hour and night).
   SCENE.lanternNits.value = (preset.sunElevationRad < 0.21 ? 3500 : 0) * preExposure;
   SCENE.leafSunNits.value = (preset.sunIlluminanceLux * 0.2 * preExposure) / Math.PI;
