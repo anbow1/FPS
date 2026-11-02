@@ -174,7 +174,7 @@ export class GameView {
     this.lighting.clouds = this.clouds;
     stage.setClouds(this.clouds);
     await this.lighting.apply(this.settings.preset, map.playerSpawn.pos.y, await loadHdri(hdriSetting(map.id), this.settings.preset));
-    this.exposure = new AutoExposure(stage.renderer, this.lighting.preset.ev100);
+    this.exposure = new AutoExposure(stage.renderer, this.sceneEv());
     if (map.id === 'city') this.cityLights = new CityLights(map, stage.scene, this.settings.quality);
     // The boulevard by night: its candelabra's lanterns, warm and soft (parisStreet.ts).
     if (map.id === 'boulevard') this.cityLights = new CityLights(map, stage.scene, this.settings.quality, parisLamps(map.halfSizeM));
@@ -212,6 +212,16 @@ export class GameView {
     await progress('Ready', 1);
   }
 
+  /**
+   * The exposure the eye settles at here: the preset's, except where a map is lit far brighter than the
+   * preset assumes. The night preset meters a street at ~8 lux; the boulevard's candelabra give ~25 on
+   * average (render/parisStreet.ts), 1.6 stops more, beyond the eye's 1-stop allowance above the preset.
+   */
+  private sceneEv(): number {
+    const p = this.lighting.preset;
+    return p.ev100 + (this.map.id === 'boulevard' && p.id === 'night' ? Math.log2(25 / 8) : 0);
+  }
+
   private syncPreExposure(): void {
     if (this.map.id === 'boulevard') syncParisLight(this.lighting.preset, this.lighting.preExposure);
     this.effects.preExposure = this.lighting.preExposure;
@@ -234,7 +244,7 @@ export class GameView {
     this.stage.applySettings(s);
     if (presetChanged) {
       await this.lighting.apply(s.preset, this.map.playerSpawn.pos.y, await loadHdri(hdriSetting(this.map.id), s.preset));
-      this.exposure.reset(this.lighting.preset.ev100);
+      this.exposure.reset(this.sceneEv());
       this.viewModel.setEnvironment(this.stage.scene.environment, this.interiorK);
       this.syncPreExposure();
     }
@@ -370,7 +380,7 @@ export class GameView {
     this.stage.render();
     this.cpu.lap('submit');
     this.scopeReady = true;
-    this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.preset.ev100, frameSeconds);
+    this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.sceneEv(), frameSeconds);
     this.stage.setExposure(Lighting.exposureMultiplier(this.lighting.preset.ev100, this.exposure.adaptedEv));
   }
 
