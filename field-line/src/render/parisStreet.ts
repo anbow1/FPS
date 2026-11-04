@@ -10,6 +10,7 @@ import { loadPhotos } from '../paris/render/photo.ts';
 import { CITY_LIGHTS, type LightingPreset } from '../config.ts';
 import { STREET } from '../paris/config.ts';
 import type { LampSet } from './cityLights.ts';
+import { presetSunDir } from './lighting.ts';
 import { lampLit } from './materials.ts';
 
 // The boulevard map's look: the Paris scene's own street and Haussmann façades (paris/), in
@@ -80,9 +81,7 @@ export function syncParisLight(preset: LightingPreset, preExposure: number): voi
   // The candelabra's lanterns are lit from dusk to dawn (sun below ~12°: golden hour and night).
   SCENE.lanternNits.value = (preset.sunElevationRad < 0.21 ? 3500 : 0) * preExposure;
   SCENE.leafSunNits.value = (preset.sunIlluminanceLux * 0.2 * preExposure) / Math.PI;
-  const ce = Math.cos(preset.sunElevationRad);
-  // As render/lighting.ts places the sun.
-  SCENE.sunDir.value.set(ce * Math.sin(preset.sunAzimuthRad), Math.sin(preset.sunElevationRad), ce * Math.cos(preset.sunAzimuthRad));
+  presetSunDir(preset, SCENE.sunDir.value);
 }
 
 /** The breeze in the plane trees' crowns runs on the game's clock. */

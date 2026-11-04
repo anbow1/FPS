@@ -23,6 +23,16 @@ const CALIBRATION_FOV_DEG = 150; // an upward view out to 75° from the zenith
 const CSM_MAX_FAR_M = { high: 450, low: 220 } as const;
 const GROUND_ALBEDO = 0.2;
 
+/**
+ * Unit vector toward the preset's sun. Azimuth is a compass bearing, as the HUD's: clockwise from north
+ * (−Z) through east (+X). Taken as +Z for north, the noon sun stood in the northern sky over a European
+ * city (photo critic loop).
+ */
+export function presetSunDir(p: LightingPreset, out: Vector3 = new Vector3()): Vector3 {
+  const ce = Math.cos(p.sunElevationRad);
+  return out.set(ce * Math.sin(p.sunAzimuthRad), Math.sin(p.sunElevationRad), -ce * Math.cos(p.sunAzimuthRad));
+}
+
 export class Lighting {
   readonly sun = new DirectionalLight(0xffffff, 1);
   readonly sky = new SkyMesh();
@@ -180,7 +190,7 @@ export class Lighting {
     const sunK = lightColour(p.sunColourK);
     const skyK = lightColour(p.skyColourK);
 
-    this.sunDir.set(Math.cos(p.sunElevationRad) * Math.sin(p.sunAzimuthRad), Math.sin(p.sunElevationRad), Math.cos(p.sunElevationRad) * Math.cos(p.sunAzimuthRad));
+    presetSunDir(p, this.sunDir);
     this.sun.color.setRGB(sunK.r, sunK.g, sunK.b);
     this.sun.intensity = p.sunIlluminanceLux * this.preExposure;
     this.sun.position.copy(this.sunDir).multiplyScalar(500);

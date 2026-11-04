@@ -53,7 +53,7 @@ export class AutoExposure {
    * values back to physical luminance (cd/m²).
    */
   /** `maxBelowEv`: how far the eye may open up below the preset (EXPOSURE.minEvBelowPreset; less at night). */
-  update(source: Texture | null, preExposure: number, presetEv: number, dtSeconds: number, maxBelowEv: number = EXPOSURE.minEvBelowPreset): void {
+  update(source: Texture | null, preExposure: number, presetEv: number, dtSeconds: number, maxBelowEv: number = EXPOSURE.minEvBelowPreset, maxAboveEv: number = EXPOSURE.maxEvAbovePreset): void {
     if (source && !this.pending && this.frame++ % METER_EVERY_FRAMES === 0) {
       this.bind(source);
       const prev = this.renderer.getRenderTarget();
@@ -74,7 +74,7 @@ export class AutoExposure {
         });
     }
     if (this.meteredEv === null) return;
-    this.adaptedEv = adaptEv(this.adaptedEv, this.meteredEv, presetEv, dtSeconds, maxBelowEv);
+    this.adaptedEv = adaptEv(this.adaptedEv, this.meteredEv, presetEv, dtSeconds, maxBelowEv, maxAboveEv);
   }
 }
 
@@ -83,9 +83,9 @@ export class AutoExposure {
  * Brighter scenes (EV rising) adapt fast, darker ones slowly; each time
  * constant is the time to cover ~95 % of the gap (1 − e^−3).
  */
-export function adaptEv(currentEv: number, meteredEv: number, presetEv: number, dtSeconds: number, maxBelowEv: number = EXPOSURE.minEvBelowPreset): number {
+export function adaptEv(currentEv: number, meteredEv: number, presetEv: number, dtSeconds: number, maxBelowEv: number = EXPOSURE.minEvBelowPreset, maxAboveEv: number = EXPOSURE.maxEvAbovePreset): number {
   const lo = presetEv - maxBelowEv;
-  const hi = presetEv + EXPOSURE.maxEvAbovePreset;
+  const hi = presetEv + maxAboveEv;
   const target = Math.min(hi, Math.max(lo, meteredEv));
   const tau = target > currentEv ? EXPOSURE.adaptBrightenSeconds : EXPOSURE.adaptDarkenSeconds;
   return currentEv + (target - currentEv) * (1 - Math.exp((-3 * dtSeconds) / tau));

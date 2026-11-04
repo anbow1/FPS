@@ -447,7 +447,11 @@ export const EXPOSURE = {
   // At night the eye's range is the street's: dark-adapted it sees a lit street as dim, not as day. The
   // 7 stops are for a room by day; at night they turned a lamp-lit street into an orange noon.
   minEvBelowPresetNight: 2,
-  maxEvAbovePreset: 1,
+  // By day the preset EV is an incident reading (a grey card under this sky). Metering a bright square
+  // and stopping down a full stop past it left sunlit paving mid-grey and every shadow crushed by the
+  // tone curve's toe (photo critic loop); at night the eye still stops down for a lit shop window.
+  maxEvAbovePreset: 0.25,
+  maxEvAbovePresetNight: 1,
   // Named tuning factor on top of the physical exposure: ACES in three.js
   // expects a slightly brighter input than a grey card to land mid-grey.
   compensationEv: 0.6,

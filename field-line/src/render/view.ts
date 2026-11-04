@@ -384,7 +384,7 @@ export class GameView {
     this.cpu.lap('submit');
     this.scopeReady = true;
     const night = this.lighting.preset.id === 'night';
-    this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.sceneEv(), frameSeconds, night ? EXPOSURE.minEvBelowPresetNight : EXPOSURE.minEvBelowPreset);
+    this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.sceneEv(), frameSeconds, night ? EXPOSURE.minEvBelowPresetNight : EXPOSURE.minEvBelowPreset, night ? EXPOSURE.maxEvAbovePresetNight : EXPOSURE.maxEvAbovePreset);
     this.stage.setExposure(Lighting.exposureMultiplier(this.lighting.preset.ev100, this.exposure.adaptedEv));
   }
 
