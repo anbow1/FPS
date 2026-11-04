@@ -388,8 +388,10 @@ export class MaterialLibrary {
         // across a street, so its mean is brought to a warm red brick's.
         return facade ? photoSampler('brick_wall_02', 2, 2, 0x9c6b56) : photoSampler('brick_wall_02', 1, 1, 0x9c6b56);
       case 'brickDark':
-        // Dark engineering brick in grey mortar; one photograph is 1 m.
-        return facade ? photoSampler('red_brick_03', 3, 3) : photoSampler('red_brick_03');
+        // Dark red brick in grey mortar; one photograph is 1 m. The scan's mean albedo is 0.10, an engineering
+        // brick's: whole blocks of it, windows included, went black in shade at noon. Brought to ~0.16, a dark
+        // red brick's (photo critic loop).
+        return facade ? photoSampler('red_brick_03', 3, 3, 0x8e6252) : photoSampler('red_brick_03', 1, 1, 0x8e6252);
       case 'plaster':
         // Weathered grey render with damp stains and patches; one photograph is 1 m, its mean brought to the
         // look's warm grey.
