@@ -11,6 +11,9 @@ import { type Caustics, causticAt } from './caustics.ts';
 import { U } from './uniforms.ts';
 import { rainRings } from './waterFx.ts';
 
+/** The sand scan's albedo brought to a dry tropical beach's (see where the layers are sampled). */
+const SAND_ALBEDO_GAIN = 1.6;
+
 // The ground: a dense near mesh over the playable bay (1.25 m cells, with a
 // skirt to hide the seam) and a coarse far mesh out to the volcano. One
 // height-blended splat material (sand, grass, leaf litter, rock) driven by
@@ -306,7 +309,11 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
   const triW = tri.div(tri.x.add(tri.y).add(tri.z));
   const rs = float(1 / PHOTO_SIZE_M.rock_face_03);
   const rockColour = at(layers.map, p.zy.mul(rs), LAYER.rock).mul(triW.x).add(at(layers.map, p.xz.mul(rs), LAYER.rock).mul(triW.y)).add(at(layers.map, p.xy.mul(rs), LAYER.rock).mul(triW.z));
-  let albedo: Node<'vec3'> = blend(at(layers.map, uvS, LAYER.sand), at(layers.map, uvG, LAYER.grass), at(layers.map, uvL, LAYER.litter), rockColour).rgb;
+  // The scan's sand is a temperate beach's (mean albedo 0.23); dry tropical sand, quartz with coral
+  // grit, is 0.35–0.45, and at 0.23 noon read as overcast (photo critic loop). Brought to ~0.37.
+  const sandAt = at(layers.map, uvS, LAYER.sand);
+  const sand = vec4(sandAt.rgb.mul(SAND_ALBEDO_GAIN), sandAt.a);
+  let albedo: Node<'vec3'> = blend(sand, at(layers.map, uvG, LAYER.grass), at(layers.map, uvL, LAYER.litter), rockColour).rgb;
   const orm = blend(ormS, ormG, ormL, ormR);
   let nTex: Node<'vec3'> = blend(at(layers.normalMap, uvS, LAYER.sand), at(layers.normalMap, uvG, LAYER.grass), at(layers.normalMap, uvL, LAYER.litter), at(layers.normalMap, uvR, LAYER.rock)).xyz;
 
