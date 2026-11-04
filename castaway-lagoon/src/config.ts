@@ -272,7 +272,7 @@ export const LAGOON_EXPOSURE = {
   // By day the anchor is an incident reading (a grey card under this sky), which already exposes a
   // bright beach right; metering the sand and sky and stopping down further turned noon grey, the
   // sand mid-tone and the clouds no brighter than it (photo critic loop).
-  maxEvAboveAnchorDay: 0.7,
+  maxEvAboveAnchorDay: 0.25,
   compensationEv: 0.6, // ACES in three.js wants a slightly brighter input than a grey card
   histogramWidth: 64,
   histogramHeight: 36,
