@@ -1,10 +1,38 @@
 {
  "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
  "joints": {
   "hip": [
    0.0,
    0.84583,
    0.06881
+  ],
+  "chest": [
+   0.0,
+   1.0038,
+   0.02748
   ],
   "neck": [
    0.0,
@@ -20,6 +48,16 @@
    0.0,
    1.61996,
    -0.02965
+  ],
+  "clavicle.L": [
+   -0.02097,
+   1.30381,
+   -0.01142
+  ],
+  "toeTip.L": [
+   -0.18899,
+   0.0287,
+   -0.17397
   ],
   "hip.L": [
    -0.10252,
@@ -60,6 +98,16 @@
    -0.49018,
    0.9397,
    -0.25536
+  ],
+  "clavicle.R": [
+   0.02097,
+   1.30381,
+   -0.01142
+  ],
+  "toeTip.R": [
+   0.18899,
+   0.0287,
+   -0.17397
   ],
   "hip.R": [
    0.10252,
@@ -128,8 +176,8 @@
   ],
   "clothes": [
    [
-    "male_casualsuit03",
-    "male_casualsuit"
+    "male_casualsuit01",
+    "male_casualsuit03"
    ]
   ],
   "shoes": [
@@ -140,20 +188,20 @@
  "groups": [
   {
    "start": 0,
-   "count": 23424,
+   "count": 17508,
    "kind": "skin",
-   "albedo": "tex/middleage_lightskinned_female_diffuse2_2048.jpg",
+   "albedo": "tex/middleage_lightskinned_male_diffuse2_2048.jpg",
    "normal": null,
    "colour": [
     1.0,
-    1.0,
-    1.0
+    0.95,
+    0.85
    ],
    "roughness": 0.5,
    "alpha": null
   },
   {
-   "start": 23424,
+   "start": 17508,
    "count": 516,
    "kind": "eyes",
    "albedo": "tex/brown_eye_256.jpg",
@@ -167,7 +215,7 @@
    "alpha": null
   },
   {
-   "start": 23940,
+   "start": 18024,
    "count": 576,
    "kind": "eyebrows",
    "albedo": "tex/eyebrow001_256.png",
@@ -181,7 +229,7 @@
    "alpha": "clip"
   },
   {
-   "start": 24516,
+   "start": 18600,
    "count": 1104,
    "kind": "eyelashes",
    "albedo": "tex/eyelashes01_256.png",
@@ -195,8 +243,8 @@
    "alpha": "clip"
   },
   {
-   "start": 25620,
-   "count": 3090,
+   "start": 19704,
+   "count": 2358,
    "kind": "hair",
    "albedo": "tex/short02_diffuse_1024.png",
    "normal": null,
@@ -209,11 +257,11 @@
    "alpha": "clip"
   },
   {
-   "start": 28710,
-   "count": 4443,
+   "start": 22062,
+   "count": 11766,
    "kind": "clothes",
-   "albedo": "tex/male_casualsuit03_diffuse_1024.jpg",
-   "normal": "tex/male_casualsuit03_normal_1024.jpg",
+   "albedo": "tex/male_casualsuit01_diffuse_1024.jpg",
+   "normal": "tex/male_casualsuit01_normal_1024.jpg",
    "colour": [
     1.0,
     1.0,
@@ -223,8 +271,8 @@
    "alpha": null
   },
   {
-   "start": 33153,
-   "count": 2832,
+   "start": 33828,
+   "count": 2163,
    "kind": "shoes",
    "albedo": "tex/shoes06_diffuse_512.jpg",
    "normal": null,
@@ -237,6 +285,6 @@
    "alpha": null
   }
  ],
- "vertices": 7051,
- "triangles": 11995
+ "vertices": 6991,
+ "triangles": 11997
 }

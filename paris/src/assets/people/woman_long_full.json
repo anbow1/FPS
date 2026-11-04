@@ -1,10 +1,38 @@
 {
  "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
  "joints": {
   "hip": [
    0.0,
    0.87639,
    0.06353
+  ],
+  "chest": [
+   0.0,
+   1.01467,
+   -0.00034
   ],
   "neck": [
    0.0,
@@ -20,6 +48,16 @@
    0.0,
    1.66627,
    -0.03691
+  ],
+  "clavicle.L": [
+   -0.02342,
+   1.34285,
+   -0.02523
+  ],
+  "toeTip.L": [
+   -0.18803,
+   0.02424,
+   -0.196
   ],
   "hip.L": [
    -0.09905,
@@ -60,6 +98,16 @@
    -0.47826,
    0.97477,
    -0.24105
+  ],
+  "clavicle.R": [
+   0.02342,
+   1.34285,
+   -0.02523
+  ],
+  "toeTip.R": [
+   0.18803,
+   0.02424,
+   -0.196
   ],
   "hip.R": [
    0.09905,

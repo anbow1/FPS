@@ -1,10 +1,38 @@
 {
  "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
  "joints": {
   "hip": [
    0.0,
    0.95604,
    0.06456
+  ],
+  "chest": [
+   0.0,
+   1.1251,
+   0.01724
   ],
   "neck": [
    0.0,
@@ -20,6 +48,16 @@
    0.0,
    1.77909,
    -0.04506
+  ],
+  "clavicle.L": [
+   -0.02342,
+   1.45306,
+   -0.02826
+  ],
+  "toeTip.L": [
+   -0.20665,
+   0.03236,
+   -0.20178
   ],
   "hip.L": [
    -0.11446,
@@ -60,6 +98,16 @@
    -0.5292,
    1.0647,
    -0.28786
+  ],
+  "clavicle.R": [
+   0.02342,
+   1.45306,
+   -0.02826
+  ],
+  "toeTip.R": [
+   0.20665,
+   0.03236,
+   -0.20178
   ],
   "hip.R": [
    0.11446,
@@ -142,12 +190,12 @@
    "start": 0,
    "count": 4344,
    "kind": "skin",
-   "albedo": "tex/middleage_lightskinned_female_diffuse_512.jpg",
+   "albedo": "tex/middleage_lightskinned_male_diffuse_512.jpg",
    "normal": null,
    "colour": [
     1.0,
-    1.0,
-    1.0
+    0.95,
+    0.85
    ],
    "roughness": 0.5,
    "alpha": null

@@ -1,10 +1,38 @@
 {
  "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
  "joints": {
   "hip": [
    0.0,
    0.82028,
    0.05983
+  ],
+  "chest": [
+   0.0,
+   0.95631,
+   -0.0028
   ],
   "neck": [
    0.0,
@@ -20,6 +48,16 @@
    0.0,
    1.58472,
    -0.05434
+  ],
+  "clavicle.L": [
+   -0.02299,
+   1.26399,
+   -0.04273
+  ],
+  "toeTip.L": [
+   -0.18955,
+   0.00892,
+   -0.18679
   ],
   "hip.L": [
    -0.09827,
@@ -60,6 +98,16 @@
    -0.46625,
    0.92681,
    -0.27002
+  ],
+  "clavicle.R": [
+   0.02299,
+   1.26399,
+   -0.04273
+  ],
+  "toeTip.R": [
+   0.18955,
+   0.00892,
+   -0.18679
   ],
   "hip.R": [
    0.09827,
@@ -157,7 +205,7 @@
    "start": 21270,
    "count": 516,
    "kind": "eyes",
-   "albedo": "tex/bluegreen_eye_256.jpg",
+   "albedo": "tex/green_eye_256.jpg",
    "normal": null,
    "colour": [
     1.0,

@@ -1,10 +1,38 @@
 {
  "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
  "joints": {
   "hip": [
    0.0,
    0.84583,
    0.06881
+  ],
+  "chest": [
+   0.0,
+   1.0038,
+   0.02748
   ],
   "neck": [
    0.0,
@@ -20,6 +48,16 @@
    0.0,
    1.61996,
    -0.02965
+  ],
+  "clavicle.L": [
+   -0.02097,
+   1.30381,
+   -0.01142
+  ],
+  "toeTip.L": [
+   -0.18899,
+   0.0287,
+   -0.17397
   ],
   "hip.L": [
    -0.10252,
@@ -60,6 +98,16 @@
    -0.49018,
    0.9397,
    -0.25536
+  ],
+  "clavicle.R": [
+   0.02097,
+   1.30381,
+   -0.01142
+  ],
+  "toeTip.R": [
+   0.18899,
+   0.0287,
+   -0.17397
   ],
   "hip.R": [
    0.10252,
@@ -128,8 +176,8 @@
   ],
   "clothes": [
    [
-    "male_casualsuit03",
-    "male_casualsuit"
+    "male_casualsuit01",
+    "male_casualsuit03"
    ]
   ],
   "shoes": [
@@ -140,20 +188,20 @@
  "groups": [
   {
    "start": 0,
-   "count": 4215,
+   "count": 3147,
    "kind": "skin",
-   "albedo": "tex/middleage_lightskinned_female_diffuse2_512.jpg",
+   "albedo": "tex/middleage_lightskinned_male_diffuse2_512.jpg",
    "normal": null,
    "colour": [
     1.0,
-    1.0,
-    1.0
+    0.95,
+    0.85
    ],
    "roughness": 0.5,
    "alpha": null
   },
   {
-   "start": 4215,
+   "start": 3147,
    "count": 516,
    "kind": "eyes",
    "albedo": "tex/brown_eye_64.jpg",
@@ -167,7 +215,7 @@
    "alpha": null
   },
   {
-   "start": 4731,
+   "start": 3663,
    "count": 600,
    "kind": "hair",
    "albedo": "tex/short02_diffuse_256.png",
@@ -181,10 +229,10 @@
    "alpha": "clip"
   },
   {
-   "start": 5331,
-   "count": 798,
+   "start": 4263,
+   "count": 2118,
    "kind": "clothes",
-   "albedo": "tex/male_casualsuit03_diffuse_256.jpg",
+   "albedo": "tex/male_casualsuit01_diffuse_256.jpg",
    "normal": null,
    "colour": [
     1.0,
@@ -195,7 +243,7 @@
    "alpha": null
   },
   {
-   "start": 6129,
+   "start": 6381,
    "count": 600,
    "kind": "shoes",
    "albedo": "tex/shoes06_diffuse_128.jpg",
@@ -209,6 +257,6 @@
    "alpha": null
   }
  ],
- "vertices": 1577,
- "triangles": 2243
+ "vertices": 1594,
+ "triangles": 2327
 }

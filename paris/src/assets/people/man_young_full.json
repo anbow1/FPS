@@ -1,10 +1,38 @@
 {
  "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
  "joints": {
   "hip": [
    0.0,
    0.88406,
    0.06405
+  ],
+  "chest": [
+   0.0,
+   1.04758,
+   0.01719
   ],
   "neck": [
    0.0,
@@ -20,6 +48,16 @@
    0.0,
    1.68008,
    -0.0434
+  ],
+  "clavicle.L": [
+   -0.02201,
+   1.3649,
+   -0.02608
+  ],
+  "toeTip.L": [
+   -0.20359,
+   0.01753,
+   -0.19337
   ],
   "hip.L": [
    -0.10405,
@@ -60,6 +98,16 @@
    -0.50965,
    0.97946,
    -0.2781
+  ],
+  "clavicle.R": [
+   0.02201,
+   1.3649,
+   -0.02608
+  ],
+  "toeTip.R": [
+   0.20359,
+   0.01753,
+   -0.19337
   ],
   "hip.R": [
    0.10405,
@@ -143,7 +191,7 @@
    "start": 0,
    "count": 23319,
    "kind": "skin",
-   "albedo": "tex/young_lightskinned_female_diffuse_2048.jpg",
+   "albedo": "tex/young_lightskinned_male_diffuse_2048.jpg",
    "normal": null,
    "colour": [
     1.0,
