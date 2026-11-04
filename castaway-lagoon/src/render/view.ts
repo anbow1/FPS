@@ -145,6 +145,8 @@ export class LagoonView {
       const high = stage.quality === 'high';
       this.grass = new GrassField(ground, density, {
         tileM: 4,
+        // As the ground's baked canopy occlusion (up to 0.45 under the crowns).
+        shadeOcclusion: 0.45,
         bladesPerTile: high ? 700 : 300,
         radiusM: high ? 40 : 24,
         wind: U.wind,

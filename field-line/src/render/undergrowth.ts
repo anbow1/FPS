@@ -187,6 +187,8 @@ export class Undergrowth {
       }),
       {
         tileM: 4,
+        // As the ground's baked canopy occlusion (up to 0.45 under the crowns).
+        shadeOcclusion: 0.45,
         bladesPerTile: GRASS_FIELD.blades[quality],
         radiusM: GRASS_FIELD.radiusM[quality],
         wind: vec2(windVector.x, windVector.z),
