@@ -8,7 +8,8 @@ import { boulevardPlan, PARIS_SHIFT_Z } from '../src/maps/boulevard.ts';
 import { buildMap } from '../src/maps/index.ts';
 import { storeysOf } from '../src/paris/city/facade.ts';
 
-describe('navigation mesh (city maps)', () => {
+// Each test bakes a whole map's navmesh (~2.5 s alone); on a loaded machine that passed the default 5 s.
+describe('navigation mesh (city maps)', { timeout: 30_000 }, () => {
   it('leads from the boulevard up the stairs of a house onto its étage noble', () => {
     const map = buildMap('boulevard');
     const world = new CollisionWorld(map.terrain);
