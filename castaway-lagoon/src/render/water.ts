@@ -313,8 +313,8 @@ function waterMaterial(depthMap: DataTexture, skylineMap: DataTexture, ocean: Oc
   const scatter = scatterTint.mul(ambient).mul(0.55).mul(float(1).sub(T.g));
   // Light through the backs of crests.
   const sss = vec3(sc.r, sc.g, sc.b).mul(U.sunIrradiance).mul(pow(max(dot(V, U.sunDir.negate().add(vec3(0, 0.3, 0)).normalize()), 0), 4)).mul(max(vCrest, 0)).mul(0.04).mul(sunLit);
-  // Stirred-up sand makes the surf zone milkier.
-  const underwater = mix(behind.mul(T).add(scatter).add(sss), vec3(0.55, 0.56, 0.5).mul(ambient), vBreak.mul(0.35));
+  // Stirred-up sand makes the surf zone milkier: sand-coloured and thin, not a grey sheet over it.
+  const underwater = mix(behind.mul(T).add(scatter).add(sss), vec3(0.5, 0.45, 0.36).mul(ambient), vBreak.mul(0.18));
 
   // Foam: whitewater and the lace it leaves behind breaking waves (shoreWaves.ts), a thin lacy
   // edge where the water meets the sand, wind whitecaps on the chop in a storm, and splashes.

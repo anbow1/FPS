@@ -305,6 +305,7 @@ export class LagoonView {
     this.stage.render();
     this.cpu.lap('submit');
     // The eye aims for the anchor, so night stays about two stops under a grey card.
+    this.exposure.limits.aboveStops = LAGOON_EXPOSURE.maxEvAboveAnchorDay + (LAGOON_EXPOSURE.maxEvAboveAnchor - LAGOON_EXPOSURE.maxEvAboveAnchorDay) * d.night;
     this.exposure.update(this.stage.hdrTexture, this.lighting.preExposure, this.lighting.anchorEv, dt, -DAYLIGHT.nightExposureBiasEv * d.night);
     this.stage.setExposure(2 ** (this.lighting.anchorEv - this.exposure.adaptedEv + LAGOON_EXPOSURE.compensationEv));
   }

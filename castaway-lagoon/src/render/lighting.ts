@@ -114,7 +114,8 @@ export class LagoonLighting {
     U.night.value = d.night;
     U.starBrightness.value = d.night * (1 - cover) * zL * 30;
     U.cloudCover.value = cover;
-    const litK = ((sunE * Math.max(sinEl, 0.06) * 0.35 + d.skyLux * 0.55 + moonE * 0.3) / Math.PI) * pre;
+    // Sunlit cumulus (single-scattering albedo ~0.999) is the brightest thing in a noon frame, 2–3× the sand.
+    const litK = ((sunE * Math.max(sinEl, 0.06) * 0.8 + d.skyLux * 0.55 + moonE * 0.3) / Math.PI) * pre;
     const shadeK = ((d.skyLux * 0.5 + sunE * 0.02 * (1 - cover)) / Math.PI) * pre;
     const litCol = mixRgb(sunK, { r: 1, g: 1, b: 1 }, 0.35);
     U.cloudLit.value.set(litCol.r * litK, litCol.g * litK, litCol.b * litK);

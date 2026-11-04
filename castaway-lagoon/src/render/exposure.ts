@@ -34,7 +34,8 @@ export class AutoExposure {
   constructor(
     private readonly renderer: WebGPURenderer,
     presetEv: number,
-    private readonly limits: EvLimits = DEFAULT_LIMITS,
+    /** Mutable: the view narrows the stop-down by day. */
+    readonly limits: EvLimits = { ...DEFAULT_LIMITS },
   ) {
     this.adaptedEv = presetEv;
     this.target = new RenderTarget(EXPOSURE.histogramWidth, EXPOSURE.histogramHeight, { type: FloatType, depthBuffer: false });

@@ -213,14 +213,16 @@ export interface WeatherSpec {
   skyFactor: number; // share of clear-sky diffuse illuminance (overcast skies are dimmer and flatter)
   rainRate: number; // 0..1 visual/audio intensity
   windMs: number;
-  fogDensityPerM: number; // ground-level extinction for aerial perspective
+  // Ground-level extinction for aerial perspective. Clear humid tropical air sees 15–20 km
+  // (Koschmieder 3.9 / β); at 0.0011 (3.5 km) the volcano a kilometre out was a flat sky-coloured cone.
+  fogDensityPerM: number;
 }
 
 // Transmittances from overcast illuminance ratios on the lighting sheet
 // (overcast 8000 lx vs clear 100 000 lx); rain shafts and storms are darker still.
 export const WEATHER: Record<WeatherId, WeatherSpec> = {
-  clear: { label: 'Clear', cloudCover: 0.22, sunTransmittance: 1, skyFactor: 1, rainRate: 0, windMs: 3, fogDensityPerM: 0.0011 },
-  cloudy: { label: 'Cloudy', cloudCover: 0.72, sunTransmittance: 0.3, skyFactor: 0.75, rainRate: 0, windMs: 5.5, fogDensityPerM: 0.0018 },
+  clear: { label: 'Clear', cloudCover: 0.22, sunTransmittance: 1, skyFactor: 1, rainRate: 0, windMs: 3, fogDensityPerM: 0.00025 },
+  cloudy: { label: 'Cloudy', cloudCover: 0.72, sunTransmittance: 0.3, skyFactor: 0.75, rainRate: 0, windMs: 5.5, fogDensityPerM: 0.0006 },
   rain: { label: 'Tropical rain', cloudCover: 0.93, sunTransmittance: 0.06, skyFactor: 0.5, rainRate: 0.5, windMs: 7, fogDensityPerM: 0.005 },
   storm: { label: 'Heavy rain', cloudCover: 1, sunTransmittance: 0.015, skyFactor: 0.32, rainRate: 1, windMs: 12, fogDensityPerM: 0.011 },
 };
@@ -267,6 +269,10 @@ export const LAGOON_EXPOSURE = {
   adaptBrightenSeconds: 0.5,
   minEvBelowAnchor: 3.5, // step into the shelter: about three stops of opening up
   maxEvAboveAnchor: 6, // at night the eye stops down hard for the camp fire and the lantern
+  // By day the anchor is an incident reading (a grey card under this sky), which already exposes a
+  // bright beach right; metering the sand and sky and stopping down further turned noon grey, the
+  // sand mid-tone and the clouds no brighter than it (photo critic loop).
+  maxEvAboveAnchorDay: 0.7,
   compensationEv: 0.6, // ACES in three.js wants a slightly brighter input than a grey card
   histogramWidth: 64,
   histogramHeight: 36,
