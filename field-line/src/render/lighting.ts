@@ -6,7 +6,7 @@ import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '
 import { lightColour, preExposureFor } from './colour.ts';
 import type { VolumeClouds } from './volumeClouds.ts';
 import { revealSun } from './facadeReveal.ts';
-import { environmentTexture, equirectU, type Hdri } from './hdri.ts';
+import { environmentTexture, equirectU, groundIrradiance, type Hdri } from './hdri.ts';
 
 // Sun, sky, environment and height fog for one lighting preset from
 // lighting-reference.png. Every intensity is authored in physical units (lux)
@@ -261,7 +261,17 @@ export class Lighting {
       const [ir, ig, ib] = hdri.skyIrradiance;
       const k = (p.skyIlluminanceLux * this.preExposure) / (0.2126 * ir + 0.7152 * ig + 0.0722 * ib);
       const gain: [number, number, number] = [k, k, k];
-      const equirect = environmentTexture(hdri, gain, cloudy ? null : equirectU(this.sunDir.x, this.sunDir.z));
+      // The photographed street's ground is its own: a shaded carriageway in the noon scan, half the sky's
+      // irradiance, where a sunlit square gives ~1.8 times it. By day in town the lower hemisphere takes
+      // the scene's bounce (albedo × sun and sky), so shaded façades get the light off the paving that a
+      // real one does (photo critic loop: north faces at noon rendered near black). Forest scans keep
+      // their own floor: it lies in the canopy's shade, as the map's does.
+      let groundGain = 1;
+      if (hdri.setting === 'urban' && p.id !== 'night') {
+        const target = GROUND_ALBEDO * groundE;
+        groundGain = Math.min(4, Math.max(0.5, target / Math.max(1e-9, k * groundIrradiance(hdri))));
+      }
+      const equirect = environmentTexture(hdri, gain, cloudy ? null : equirectU(this.sunDir.x, this.sunDir.z), groundGain);
       rt = this.pmrem.fromEquirectangular(equirect);
       equirect.dispose();
     } else {

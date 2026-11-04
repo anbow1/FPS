@@ -44,6 +44,7 @@ export interface Hdri {
   data: Float32Array;
   sunU: number | null;
   skyIrradiance: readonly [number, number, number];
+  setting: HdriSetting;
 }
 
 const cache = new Map<string, Hdri>();
@@ -63,7 +64,7 @@ export async function loadHdri(setting: HdriSetting, preset: LightingPresetId): 
   const data = new Float32Array(src.length);
   const row = width * 4;
   for (let y = 0; y < height; y++) data.set(src.subarray((height - 1 - y) * row, (height - y) * row), y * row);
-  const hdri = { width, height, data, sunU: f.sunU, skyIrradiance: f.skyIrradiance };
+  const hdri = { width, height, data, sunU: f.sunU, skyIrradiance: f.skyIrradiance, setting };
   cache.set(key, hdri);
   return hdri;
 }
@@ -72,17 +73,21 @@ export async function loadHdri(setting: HdriSetting, preset: LightingPresetId): 
  * The environment texture to filter: scaled per channel by `gain` (to the preset's sky illuminance and
  * colour), and turned about the vertical so the scan's sun stands where the scene's does.
  */
-export function environmentTexture(h: Hdri, gain: readonly [number, number, number], sunU: number | null): DataTexture {
+export function environmentTexture(h: Hdri, gain: readonly [number, number, number], sunU: number | null, groundGain = 1): DataTexture {
   const { width: w, height: hh } = h;
   const shift = h.sunU !== null && sunU !== null ? Math.round((sunU - h.sunU) * w) : 0;
   const out = new Uint16Array(w * hh * 4);
   for (let y = 0; y < hh; y++) {
+    // Below the horizon (row 0 is the nadir) the ground's own scale, blended over the last 3°.
+    const elevation = ((y + 0.5) / hh) * Math.PI - Math.PI / 2;
+    const below = Math.min(1, Math.max(0, -elevation / (3 * (Math.PI / 180))));
+    const k = 1 + (groundGain - 1) * below;
     for (let x = 0; x < w; x++) {
       const s = (y * w + ((((x - shift) % w) + w) % w)) * 4;
       const d = (y * w + x) * 4;
-      out[d] = DataUtils.toHalfFloat((h.data[s] as number) * gain[0]);
-      out[d + 1] = DataUtils.toHalfFloat((h.data[s + 1] as number) * gain[1]);
-      out[d + 2] = DataUtils.toHalfFloat((h.data[s + 2] as number) * gain[2]);
+      out[d] = DataUtils.toHalfFloat((h.data[s] as number) * gain[0] * k);
+      out[d + 1] = DataUtils.toHalfFloat((h.data[s + 1] as number) * gain[1] * k);
+      out[d + 2] = DataUtils.toHalfFloat((h.data[s + 2] as number) * gain[2] * k);
       out[d + 3] = DataUtils.toHalfFloat(1);
     }
   }
@@ -93,6 +98,29 @@ export function environmentTexture(h: Hdri, gain: readonly [number, number, numb
   t.generateMipmaps = false;
   t.needsUpdate = true;
   return t;
+}
+
+/**
+ * Irradiance (luminance, file units) on a downward-facing surface from the scan's lower hemisphere: the
+ * bounce off the photographed ground.
+ */
+export function groundIrradiance(h: Hdri): number {
+  const { width: w, height: hh } = h;
+  const dTheta = Math.PI / hh;
+  const dPhi = (2 * Math.PI) / w;
+  let e = 0;
+  for (let y = 0; y < hh / 2; y++) {
+    const elevation = ((y + 0.5) / hh) * Math.PI - Math.PI / 2;
+    const cosDown = -Math.sin(elevation);
+    const dOmega = Math.cos(elevation) * dTheta * dPhi;
+    let row = 0;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      row += 0.2126 * (h.data[i] as number) + 0.7152 * (h.data[i + 1] as number) + 0.0722 * (h.data[i + 2] as number);
+    }
+    e += row * cosDown * dOmega;
+  }
+  return e;
 }
 
 /** Equirect u of a world direction, as three's lookup computes it: atan2(z, x) / 2π + 0.5. */
