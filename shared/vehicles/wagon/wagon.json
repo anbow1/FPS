@@ -1,0 +1,46 @@
+{
+ "source": "Generic passenger car pack",
+ "wheels": {
+  "FL": {
+   "centre": [
+    -0.7512,
+    0.3265,
+    -1.4323
+   ],
+   "radius": 0.3265
+  },
+  "FR": {
+   "centre": [
+    0.7512,
+    0.3265,
+    -1.4323
+   ],
+   "radius": 0.3265
+  },
+  "RL": {
+   "centre": [
+    -0.7512,
+    0.3265,
+    1.392
+   ],
+   "radius": 0.3265
+  },
+  "RR": {
+   "centre": [
+    0.7512,
+    0.3265,
+    1.392
+   ],
+   "radius": 0.3265
+  }
+ },
+ "size": [
+  2.091,
+  1.326,
+  4.7
+ ],
+ "wheelbase": 2.824,
+ "author": "Comrade1280 (https://sketchfab.com/comrade1280)",
+ "url": "https://sketchfab.com/3d-models/generic-passenger-car-pack-20f9af9b8a404d5cb022ac6fe87f21f5",
+ "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)"
+}

@@ -53,6 +53,9 @@ def args_of():
     ap.add_argument('--tex', type=int, default=2048)
     ap.add_argument('--preview', action='store_true')
     ap.add_argument('--cpu', action='store_true')
+    # A pack of several cars in one file: the body to keep (a word or words in its object names); the
+    # wheels kept are those standing under it.
+    ap.add_argument('--pick', default='')
     return ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
 
 
@@ -72,6 +75,55 @@ def import_model(path):
                 bpy.context.scene.collection.objects.link(ob)
     else:
         raise SystemExit(f'unsupported format {ext}')
+
+
+def pick_one(name):
+    """Keep one vehicle of a pack: the objects whose names carry `name`, and the parts (wheels) whose
+    centres stand inside that body's footprint; the rest of the pack is removed."""
+    words = name.lower()
+    body = [o for o in meshes() if words in o.name.lower() or words in o.get('src', '').lower()]
+    if not body:
+        raise SystemExit(f'--pick: no object named like {name!r}')
+    lo, hi = bounds(body)
+    keep = set(o.name for o in body)
+    for o in meshes():
+        if o.name in keep:
+            continue
+        plo, phi = bounds([o])
+        c = (plo + phi) / 2
+        # Inside the body's footprint (a wheel's centre is under its arch), whatever the pack's up axis.
+        inside = sum(lo[i] - 0.02 * (hi[i] - lo[i]) <= c[i] <= hi[i] + 0.02 * (hi[i] - lo[i]) for i in range(3))
+        if inside == 3:
+            keep.add(o.name)
+    for o in list(meshes()):
+        if o.name not in keep:
+            bpy.data.objects.remove(o)
+    print(f'--pick {name!r}: kept {len(keep)} objects')
+
+
+def align_wheelbase(up, wheel_words):
+    """Packs set their cars down at any heading. Turn the vehicle about the up axis so the line through its
+    wheels' centres (the wheelbase, longer than the track) lies along Blender's Y; --forward then says
+    which end is the front."""
+    if up != 'z':
+        return
+    wheels = [o for o in meshes() if has_word(o.name, wheel_words) or has_word(o.get('src', ''), wheel_words)]
+    if len(wheels) < 4:
+        print('align: fewer than four wheels found; heading left as imported')
+        return
+    cs = [(lambda lo, hi: ((lo.x + hi.x) / 2, (lo.y + hi.y) / 2))(*bounds([w])) for w in wheels]
+    mx = sum(c[0] for c in cs) / len(cs)
+    my = sum(c[1] for c in cs) / len(cs)
+    sxx = sum((c[0] - mx) ** 2 for c in cs)
+    syy = sum((c[1] - my) ** 2 for c in cs)
+    sxy = sum((c[0] - mx) * (c[1] - my) for c in cs)
+    # Principal axis of the four centres: the wheelbase.
+    angle = 0.5 * math.atan2(2 * sxy, sxx - syy)
+    turn = math.pi / 2 - angle
+    rot = Matrix.Rotation(turn, 4, 'Z')
+    for ob in meshes():
+        ob.data.transform(rot)
+    print(f'align: turned {math.degrees(turn):.1f}° to put the wheelbase along Y')
 
 
 def meshes():
@@ -317,6 +369,9 @@ def main():
     print('Cycles device:', use_gpu(a.cpu))
     import_model(a.model)
     flatten_hierarchy()
+    if a.pick:
+        pick_one(a.pick)
+        align_wheelbase(a.up, [w.strip().lower() for w in a.wheels.split(',')])
     orient_and_scale(a.forward, a.up, a.length)
     wheel_words = [w.strip().lower() for w in a.wheels.split(',')]
     light_words = [w.strip().lower() for w in a.lights.split(',')]
@@ -335,9 +390,16 @@ def main():
     rest = [o for o in meshes() if o.name not in wheel_names]
     lo, hi = bounds(rest)
     mid_z = (lo.z + hi.z) / 2
-    lights = [o for o in rest if is_light(o, light_words)]
-    head = join([o for o in lights if bounds([o])[0].z < mid_z], 'lights_head')
-    rear = join([o for o in lights if bounds([o])[0].z >= mid_z], 'lights_rear')
+    # One object can hold every lamp of the car (head and tail lights in one mesh): split it into its
+    # pieces, so each lamp goes to the front or the back by where it is.
+    lights = []
+    for o in [o for o in rest if is_light(o, light_words)]:
+        lights += split_loose(o)
+    # Both sides sorted before either is joined: joining removes the pieces it merges.
+    front_l = [o for o in lights if bounds([o])[0].z < mid_z]
+    back_l = [o for o in lights if bounds([o])[0].z >= mid_z]
+    head = join(front_l, 'lights_head')
+    rear = join(back_l, 'lights_rear')
     body = join([o for o in rest if o not in lights], 'body')
     info['size'] = [round(hi.x - lo.x, 3), round(hi.y - lo.y, 3), round(hi.z - lo.z, 3)]
     if wheels:
@@ -367,6 +429,9 @@ def main():
         for cp, name in zip(copies, names):
             cp.name = name
         export(f'{a.out}_lod{i}.glb', copies)
+        # Each farther level is seen at half the size: its textures halve too (the images are shared, and
+        # the levels export near to far). At full size every level carried the near one's textures.
+        downscale_textures(max(128, a.tex >> (i + 1)))
         tris = sum(sum(len(p.vertices) - 2 for p in c.data.polygons) for c in copies)
         print(f'lod{i}: {tris} triangles → {a.out}_lod{i}.glb')
         if a.preview and i == 0:
