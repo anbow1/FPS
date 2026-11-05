@@ -1,4 +1,4 @@
-import { attribute, clamp, dot, float, Fn, max, mix, normalWorld, normalWorldGeometry, property, smoothstep, step, uniform, varying, vec3 } from 'three/tsl';
+import { attribute, clamp, dot, float, Fn, max, mix, normalWorld, normalWorldGeometry, property, smoothstep, step, texture, uniform, uv, varying, vec3 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
 import { fbm3, G, smoothstepDown, thermalOutput } from './nodes';
 import { linear, PBR, type PbrKey } from './palette';
@@ -45,7 +45,11 @@ const c3 = (c: THREE.Color) => vec3(c.r, c.g, c.b);
  * grime variation, a burnt/rust look for wrecks, and a heat map for the thermal sight.
  * Needs a `tankPos` vertex attribute (rest-pose position in the vehicle frame).
  */
-export function vehicleMaterial(key: PbrKey, u: VehicleUniforms, opts: { camo?: boolean; params?: THREE.MeshStandardMaterialParameters } = {}): THREE.MeshStandardNodeMaterial {
+/**
+ * `map`: a photographed or painted model's own colour (render/../game/importedTank.ts) in place of the
+ * palette paint and camouflage; the dust, grime, burn and heat stay.
+ */
+export function vehicleMaterial(key: PbrKey, u: VehicleUniforms, opts: { camo?: boolean; params?: THREE.MeshStandardMaterialParameters; map?: THREE.Texture } = {}): THREE.MeshStandardNodeMaterial {
   const p = PBR[key];
   const mat = new THREE.MeshStandardNodeMaterial({ color: p.color, roughness: p.rough, metalness: p.metal, ...opts.params });
   mat.name = `vehicle-${key}${opts.camo ? '-camo' : ''}`;
@@ -57,8 +61,8 @@ export function vehicleMaterial(key: PbrKey, u: VehicleUniforms, opts: { camo?: 
   const base = mat.color.clone();
   mat.colorNode = Fn(() => {
     grime.assign(fbm3(tp.mul(3.3)));
-    let paint: THREE.Node<'vec3'> = c3(base);
-    if (opts.camo) {
+    let paint: THREE.Node<'vec3'> = opts.map ? texture(opts.map, uv()).rgb : c3(base);
+    if (opts.camo && !opts.map) {
       const n1 = fbm3(tp.mul(vec3(0.42, 0.7, 0.42)));
       const n2 = fbm3(tp.mul(vec3(0.5, 0.8, 0.5)).add(19));
       paint = mix(mix(u.uColA, u.uColB, smoothstep(0.515, 0.535, n1)), u.uColC, smoothstep(0.575, 0.595, n2));

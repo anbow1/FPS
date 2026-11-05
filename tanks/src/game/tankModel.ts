@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { bakeAmbientOcclusion } from '../render/aoBake';
+import { importedTank } from './importedTank';
 import { box, convexHull2, cyl, latheX, mergeParts, prismX, prismY, sphereCap } from '../render/geom';
 import { makeTrackTexture } from '../render/textures';
 import { makeVehicleUniforms, vehicleMaterial, type VehicleUniforms } from '../render/vehicleMaterial';
@@ -261,6 +262,9 @@ function layoutFor(style: TankStyle): Layout {
 }
 
 export function buildTank(style: TankStyle, seed: number): TankModel {
+  // A downloaded model when one is loaded for this style (importedTank.ts); this procedural one otherwise.
+  const imported = importedTank(style, seed);
+  if (imported) return imported;
   const west = style === 'west';
   const uniforms = makeVehicleUniforms(
     seed,
