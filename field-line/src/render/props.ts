@@ -6,6 +6,7 @@ import {
   Color,
   CylinderGeometry,
   Group,
+  InstancedBufferAttribute,
   InstancedMesh,
   LatheGeometry,
   type Material,
@@ -27,6 +28,8 @@ import { type ScanId, scanModel } from './scanModels.ts';
 import { swayingMaterial } from './foliage.ts';
 import { buildCar, type CarGeometry, type CarPart, type CarVariant } from './carModel.ts';
 import { streetPropParts } from './streetProps.ts';
+import { carModel, type VehicleModel } from './vehicleModels.ts';
+import { carModelOf, type CarModelId } from '../maps/vehicles.ts';
 
 // Props: one InstancedMesh per (kind, material part), sized from real objects
 // (scale sheet: light 4x4 4.60 m, a hatchback 4.2 m; ISO container 6.06 m).
@@ -161,6 +164,72 @@ class CarLod {
   }
 }
 
+/**
+ * A shared car model (render/vehicleModels.ts) for every car of that model: near and far part sets, the
+ * instances moved between them as the camera moves, as CarLod does; the paint's colour per car goes in
+ * a per-instance attribute, since three's instance colour would tint the glass and tyres too.
+ */
+class VehicleLod {
+  private readonly near: InstancedMesh[] = [];
+  private readonly far: InstancedMesh[] = [];
+  private readonly last = new Vector3(Infinity, 0, 0);
+
+  constructor(
+    private readonly cars: readonly MapProp[],
+    model: VehicleModel,
+    group: Group,
+  ) {
+    for (const [parts, into, name] of [
+      [model.near, this.near, 'near'],
+      [model.far, this.far, 'far'],
+    ] as const) {
+      for (const part of parts) {
+        const geometry = part.geometry.clone();
+        if (part.recolour) geometry.setAttribute('paintTint', new InstancedBufferAttribute(new Float32Array(cars.length * 3), 3));
+        const mesh = new InstancedMesh(geometry, part.material, cars.length);
+        mesh.name = `prop-car-${name}-${part.part}`;
+        mesh.castShadow = part.castShadow;
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+        mesh.count = 0;
+        into.push(mesh);
+        group.add(mesh);
+      }
+    }
+  }
+
+  update(camera: Vector3): void {
+    if (this.last.distanceToSquared(camera) < CAR_RESORT_M * CAR_RESORT_M) return;
+    this.last.copy(camera);
+    let nNear = 0;
+    let nFar = 0;
+    for (const p of this.cars) {
+      const isNear = Math.hypot(p.pos.x - camera.x, p.pos.z - camera.z) < CAR_NEAR_M;
+      const slot = isNear ? nNear++ : nFar++;
+      _q.setFromAxisAngle(_up, p.yawRad);
+      _m.compose(_pos.set(p.pos.x, p.pos.y, p.pos.z), _q, _scale.setScalar(p.scale));
+      // Paint colours are sRGB hex; the shader recolours in linear light.
+      _colour.setHex(carColour(p.colourIndex));
+      for (const mesh of isNear ? this.near : this.far) {
+        mesh.setMatrixAt(slot, _m);
+        const tint = mesh.geometry.getAttribute('paintTint');
+        if (tint) tint.setXYZ(slot, _colour.r, _colour.g, _colour.b);
+      }
+    }
+    for (const [list, n] of [
+      [this.near, nNear],
+      [this.far, nFar],
+    ] as const) {
+      for (const mesh of list) {
+        mesh.count = n;
+        mesh.instanceMatrix.needsUpdate = true;
+        const tint = mesh.geometry.getAttribute('paintTint');
+        if (tint) tint.needsUpdate = true;
+      }
+    }
+  }
+}
+
 const _m = new Matrix4();
 const _q = new Quaternion();
 const _up = new Vector3(0, 1, 0);
@@ -174,8 +243,8 @@ function variantOf(p: MapProp): string {
   if (p.kind === 'rock') return `0${(p.seed % 6) + 1}`;
   if (p.kind === 'stump') return `0${(p.seed % 2) + 1}`;
   if (p.kind !== 'car') return '';
-  const h = Math.abs(Math.round(p.pos.x * 7.3 + p.pos.z * 13.1)) % 5;
-  return h < 3 ? 'hatch' : 'saloon';
+  // The shared model it is (maps/vehicles.ts, which the colliders use too).
+  return carModelOf(p);
 }
 
 function partsFor(kind: PropKind, variant: string, lib: MaterialLibrary): Part[] {
@@ -325,14 +394,16 @@ export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): Pro
   const q = new Quaternion();
   const up = new Vector3(0, 1, 0);
   const colour = new Color();
-  const lods: CarLod[] = [];
+  const lods: { update(camera: Vector3): void }[] = [];
   for (const { kind, variant, list } of byKind.values()) {
     if (kind === 'rangeSign') {
       for (const p of list) group.add(rangeSign(p, lib));
       continue;
     }
     if (kind === 'car') {
-      const lod = new CarLod(list, variant === 'saloon' ? 'saloon' : 'hatch', lib, group);
+      const model = carModel(variant as CarModelId);
+      // Without the shared models (not loaded, or failed) the procedural car stands in.
+      const lod = model ? new VehicleLod(list, model, group) : new CarLod(list, variant === 'sedan' || variant === 'wagon' ? 'saloon' : 'hatch', lib, group);
       // Everything in the far model until the first camera update: the warm-up compiles both.
       lod.update(new Vector3(Infinity, 0, Infinity));
       lods.push(lod);

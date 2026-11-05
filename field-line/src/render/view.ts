@@ -29,6 +29,7 @@ import { Breaches } from './breaches.ts';
 import { CITY, FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
 import { CityLights } from './cityLights.ts';
 import { buildProps, type PropsView } from './props.ts';
+import { loadCarModels } from './vehicleModels.ts';
 import { CpuTimer } from './perf.ts';
 import { Stage, type StageSettings } from './stage.ts';
 import { Undergrowth } from './undergrowth.ts';
@@ -143,6 +144,8 @@ export class GameView {
     stage.scene.add(buildFarRing(map));
     await progress('Building the world', 0.35);
     this.world = buildStaticWorld(map, lib);
+    // The shared car models (shared/vehicles), only on maps that park cars.
+    if (map.props.some((p) => p.kind === 'car')) await loadCarModels();
     this.props = buildProps(map.props, lib);
     stage.scene.add(this.world.group, this.props.group);
     const furniture = buildStreetFurniture(map, lib);

@@ -6,6 +6,10 @@ export default defineConfig({
     // Addons import 'three'; point it at the WebGPU build so there is one copy of the core.
     alias: [{ find: /^three$/, replacement: 'three/webgpu' }],
   },
+  server: {
+    // The car models live in the repo's shared/vehicles, beside the games, not inside this one.
+    fs: { allow: ['..'] },
+  },
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 2500,

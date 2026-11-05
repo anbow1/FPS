@@ -1,3 +1,4 @@
+import { carModelInfo, carModelOf } from './vehicles.ts';
 import type { SurfaceKind } from '../config.ts';
 import { Rng } from '../core/rng.ts';
 import { Vec3 } from '../core/vec.ts';
@@ -208,11 +209,19 @@ export class MapBuilder {
       this.boxOnBase('invisible', wx, p.pos.y + baseY, wz, sx, sy, sz, p.yawRad, { surface, blocksVision });
     };
     switch (p.kind) {
-      case 'car':
+      case 'car': {
+        // The shared model this car is (maps/vehicles.ts): its lower body to the waistline, and the cabin
+        // above it, a little narrower and about half the length, set back from the bonnet.
+        const [w, h, l] = carModelInfo(carModelOf(p)).size;
+        const waist = h * 0.55;
+        inv('sheetMetal', 0, 0, 0.22, w * 0.94, waist - 0.22, l * 0.98);
+        inv('sheetMetal', 0, l * 0.06, waist, w * 0.84, h - waist, l * 0.5);
+        break;
+      }
       case 'carWreck':
-        // Generic hatchback, L 4.2 × W 1.8 × H 1.45 m: body and cabin.
+        // The procedural hatchback burnt out, L 4.2 × W 1.8 × H 1.45 m: body and cabin.
         inv('sheetMetal', 0, 0, 0.25, 1.8, 0.75, 4.2);
-        inv('sheetMetal', 0, 0.25, 1.0, 1.6, p.kind === 'carWreck' ? 0.35 : 0.45, 2.2);
+        inv('sheetMetal', 0, 0.25, 1.0, 1.6, 0.35, 2.2);
         break;
       case 'container':
         inv('sheetMetal', 0, 0, 0, 2.44, 2.59, 6.06); // ISO 20 ft box
