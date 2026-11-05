@@ -255,7 +255,9 @@ export class Lighting {
     this.exposure = ex;
     const el = (p.sunElevDeg * Math.PI) / 180;
     const az = (p.sunAzDeg * Math.PI) / 180;
-    this.sunDir.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).normalize();
+    // Azimuth is a compass bearing, clockwise from north. The minimap draws north up, which is −Z; taken
+    // as +Z, the noon sun stood in the northern sky over a temperate country (photo critic loop).
+    this.sunDir.set(Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az)).normalize();
     G.uSunDir.value.copy(this.sunDir).setY(Math.max(this.sunDir.y, 0.05)).normalize();
     G.uDay.value = Math.min(1, (p.sunLux + p.skyLux) / 20000);
 
