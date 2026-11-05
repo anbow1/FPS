@@ -52,14 +52,14 @@ def box(ob):
 
 
 def find_barrel(parts, front_z, size):
-    """The longest piece much longer than it is wide, along Z, reaching the vehicle's front (a gun laid
-    forward overhangs the hull) and above the running gear: the barrel. Track runs are as slender but
-    lie low and end at the idlers."""
+    """The longest piece much longer than it is wide, along Z, its muzzle in the vehicle's front third
+    (a tank's gun overhangs the hull; an IFV's cannon may stop short of its nose) and above the running
+    gear: the barrel. Track runs are as slender but lie low."""
     best, best_len = None, 0.0
     for p in parts:
         lo, hi, c, d = box(p)
         slender = d.z > 6 * max(d.x, d.y) and d.z > 0.12 * size.z
-        if slender and lo.z < front_z + 0.04 * size.z and c.y > 0.9 and d.z > best_len:
+        if slender and lo.z < front_z + 0.33 * size.z and c.y > 0.9 and d.z > best_len:
             best, best_len = p, d.z
     return best
 
