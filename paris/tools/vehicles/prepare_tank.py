@@ -43,6 +43,8 @@ def args_of():
     ap.add_argument('--cpu', action='store_true')
     # Overrides when the automatic split misreads a model (metres, game frame).
     ap.add_argument('--turret-floor', type=float, default=None, help='height of the turret ring')
+    ap.add_argument('--turret-margin', type=float, default=0.06,
+                    help='how far outside the shell the centre of a piece may lie (a mantlet, a launcher on its side)')
     return ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
 
 
@@ -68,12 +70,14 @@ def find_barrel(parts, front_z, size):
 
 
 def find_shell(parts, deck_y, size):
-    """The biggest broad piece whose floor is at or above the hull deck: the turret's shell."""
+    """The biggest broad piece whose floor is at or above the hull deck and that is no longer than a
+    turret is (at most 0.6 of the vehicle, gun included; a low hull's deck plate runs most of it) and
+    rises well above the deck (the glacis does not): the turret's shell."""
     best, best_area = None, 0.0
     for p in parts:
         lo, hi, c, d = box(p)
         area = d.x * d.z
-        if lo.y > deck_y - 0.15 and d.x > 0.35 * size.x and d.z > 0.2 * size.z and area > best_area:
+        if lo.y > deck_y - 0.15 and hi.y > deck_y + 0.35 and d.x > 0.35 * size.x and 0.2 * size.z < d.z < 0.6 * size.z and area > best_area:
             best, best_area = p, area
     return best
 
@@ -129,7 +133,7 @@ def main():
         raise SystemExit('no turret shell found above the deck; pass --turret-floor')
     slo, shi, sc, sd = box(shell)
     floor_y = a.turret_floor if a.turret_floor is not None else slo.y
-    margin = 0.06
+    margin = a.turret_margin
     turret = [p for p in parts if p not in gun and (p is shell or (
         slo.x - margin <= box(p)[2].x <= shi.x + margin and slo.z - margin <= box(p)[2].z <= shi.z + margin and box(p)[0].y >= floor_y - 0.03))]
     hull = [p for p in parts if p not in gun and p not in turret]
