@@ -224,11 +224,28 @@ def has_word(name, words):
 
 def split_loose(ob):
     """One object per loose part (wheels sold welded into one mesh)."""
+    # Separating scrambles custom normals (a quarter of a tank's corners came out facing into it, the
+    # sun then lighting the wrong side): carry them through as a plain corner attribute and set them again.
+    me = ob.data
+    keep = me.has_custom_normals
+    if keep:
+        attr = me.attributes.new('_nrm', 'FLOAT_VECTOR', 'CORNER')
+        for i, n in enumerate(me.corner_normals):
+            attr.data[i].vector = n.vector
     bpy.ops.object.select_all(action='DESELECT')
     ob.select_set(True)
     bpy.context.view_layer.objects.active = ob
     bpy.ops.mesh.separate(type='LOOSE')
-    return [o for o in bpy.context.selected_objects]
+    parts = [o for o in bpy.context.selected_objects]
+    if keep:
+        for o in parts:
+            m = o.data
+            a = m.attributes.get('_nrm')
+            if a is None:
+                continue
+            m.normals_split_custom_set([d.vector.copy() for d in a.data])
+            m.attributes.remove(m.attributes['_nrm'])
+    return parts
 
 
 def find_wheels(words):
