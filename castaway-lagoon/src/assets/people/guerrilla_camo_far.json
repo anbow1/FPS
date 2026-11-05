@@ -1,0 +1,322 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   0.89335,
+   0.06472
+  ],
+  "chest": [
+   0.0,
+   1.05824,
+   0.02178
+  ],
+  "neck": [
+   0.0,
+   1.44918,
+   -0.00896
+  ],
+  "head": [
+   0.0,
+   1.54219,
+   -0.04488
+  ],
+  "headTop": [
+   0.0,
+   1.69815,
+   -0.03775
+  ],
+  "clavicle.L": [
+   -0.02223,
+   1.3758,
+   -0.01971
+  ],
+  "toeTip.L": [
+   -0.20416,
+   0.0256,
+   -0.19191
+  ],
+  "hip.L": [
+   -0.10739,
+   0.8969,
+   0.00925
+  ],
+  "knee.L": [
+   -0.14851,
+   0.50452,
+   -0.02395
+  ],
+  "ankle.L": [
+   -0.18977,
+   0.08012,
+   -0.01015
+  ],
+  "toe.L": [
+   -0.1907,
+   0.04691,
+   -0.06973
+  ],
+  "shoulder.L": [
+   -0.18169,
+   1.34663,
+   -0.01394
+  ],
+  "elbow.L": [
+   -0.34249,
+   1.16399,
+   -0.014
+  ],
+  "wrist.L": [
+   -0.47108,
+   1.04183,
+   -0.1962
+  ],
+  "fingers.L": [
+   -0.51727,
+   0.99037,
+   -0.27937
+  ],
+  "clavicle.R": [
+   0.02223,
+   1.3758,
+   -0.01971
+  ],
+  "toeTip.R": [
+   0.20416,
+   0.0256,
+   -0.19191
+  ],
+  "hip.R": [
+   0.10739,
+   0.8969,
+   0.00925
+  ],
+  "knee.R": [
+   0.14851,
+   0.50452,
+   -0.02395
+  ],
+  "ankle.R": [
+   0.18977,
+   0.08012,
+   -0.01015
+  ],
+  "toe.R": [
+   0.1907,
+   0.04691,
+   -0.06973
+  ],
+  "shoulder.R": [
+   0.18169,
+   1.34663,
+   -0.01394
+  ],
+  "elbow.R": [
+   0.34249,
+   1.16399,
+   -0.014
+  ],
+  "wrist.R": [
+   0.47108,
+   1.04183,
+   -0.1962
+  ],
+  "fingers.R": [
+   0.51727,
+   0.99037,
+   -0.27937
+  ]
+ },
+ "cast": {
+  "name": "guerrilla_camo",
+  "gender": 1.0,
+  "age": 34,
+  "eth": [
+   0.3,
+   0.5,
+   0.2
+  ],
+  "muscle": 0.6,
+  "weight": 0.45,
+  "height": 0.45,
+  "skin": [
+   "middleage asian male",
+   "asian male"
+  ],
+  "hair": [
+   "short02",
+   "short"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "camo tee"
+   ],
+   [
+    "cargo pants"
+   ]
+  ],
+  "shoes": [
+   "male boots",
+   "boots"
+  ],
+  "hat": [
+   "patrol cap",
+   "cap"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "short02.mhclo"
+   },
+   {
+    "file": "drednicolson_short-tail_camo_tee.mhclo"
+   },
+   {
+    "file": "cortu_cargo_pants.mhclo"
+   },
+   {
+    "file": "culturalibre_male_boots.mhclo"
+   },
+   {
+    "file": "mindfront_patrol_cap.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 2715,
+   "kind": "skin",
+   "albedo": "tex/middleage_lightskinned_male_diffuse2_512.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    0.95,
+    0.85
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 2715,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 3231,
+   "count": 600,
+   "kind": "hair",
+   "albedo": "tex/short02_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 3831,
+   "count": 597,
+   "kind": "clothes",
+   "albedo": "tex/short_tail_camo_tee_diff_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 4428,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/cargo_pants_diff_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 5028,
+   "count": 2652,
+   "kind": "shoes",
+   "albedo": "tex/boot_128.jpg",
+   "normal": null,
+   "colour": [
+    0.65,
+    0.65,
+    0.65
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  },
+  {
+   "start": 7680,
+   "count": 597,
+   "kind": "hat",
+   "albedo": "tex/patrol_cap_128.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.75,
+   "alpha": null
+  }
+ ],
+ "vertices": 2041,
+ "triangles": 2759
+}

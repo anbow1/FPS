@@ -1,0 +1,303 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   0.9215,
+   0.0659
+  ],
+  "chest": [
+   0.0,
+   1.08718,
+   0.02062
+  ],
+  "neck": [
+   0.0,
+   1.48196,
+   -0.00957
+  ],
+  "head": [
+   0.0,
+   1.57285,
+   -0.04124
+  ],
+  "headTop": [
+   0.0,
+   1.72991,
+   -0.04022
+  ],
+  "clavicle.L": [
+   -0.02276,
+   1.40651,
+   -0.02351
+  ],
+  "toeTip.L": [
+   -0.19979,
+   0.02478,
+   -0.19189
+  ],
+  "hip.L": [
+   -0.11181,
+   0.91672,
+   0.00706
+  ],
+  "knee.L": [
+   -0.15145,
+   0.51886,
+   -0.02577
+  ],
+  "ankle.L": [
+   -0.18552,
+   0.07977,
+   -0.00655
+  ],
+  "toe.L": [
+   -0.18594,
+   0.04675,
+   -0.06985
+  ],
+  "shoulder.L": [
+   -0.1821,
+   1.37866,
+   -0.01266
+  ],
+  "elbow.L": [
+   -0.34467,
+   1.19719,
+   -0.01737
+  ],
+  "wrist.L": [
+   -0.47026,
+   1.07805,
+   -0.19508
+  ],
+  "fingers.L": [
+   -0.51568,
+   1.02817,
+   -0.27625
+  ],
+  "clavicle.R": [
+   0.02276,
+   1.40651,
+   -0.02351
+  ],
+  "toeTip.R": [
+   0.19979,
+   0.02478,
+   -0.19189
+  ],
+  "hip.R": [
+   0.11181,
+   0.91672,
+   0.00706
+  ],
+  "knee.R": [
+   0.15145,
+   0.51886,
+   -0.02577
+  ],
+  "ankle.R": [
+   0.18552,
+   0.07977,
+   -0.00655
+  ],
+  "toe.R": [
+   0.18594,
+   0.04675,
+   -0.06985
+  ],
+  "shoulder.R": [
+   0.1821,
+   1.37866,
+   -0.01266
+  ],
+  "elbow.R": [
+   0.34467,
+   1.19719,
+   -0.01737
+  ],
+  "wrist.R": [
+   0.47026,
+   1.07805,
+   -0.19508
+  ],
+  "fingers.R": [
+   0.51568,
+   1.02817,
+   -0.27625
+  ]
+ },
+ "cast": {
+  "name": "guerrilla_coveralls",
+  "gender": 1.0,
+  "age": 52,
+  "eth": [
+   0.2,
+   0.3,
+   0.5
+  ],
+  "muscle": 0.5,
+  "weight": 0.6,
+  "height": 0.5,
+  "skin": [
+   "middleage caucasian male",
+   "male"
+  ],
+  "hair": [
+   "short04",
+   "short"
+  ],
+  "eyes": [
+   "grey",
+   ""
+  ],
+  "clothes": [
+   [
+    "coveralls",
+    "male_worksuit"
+   ]
+  ],
+  "shoes": [
+   "male boots",
+   "boots"
+  ],
+  "hat": [
+   "flat cap",
+   "cap"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "short04.mhclo"
+   },
+   {
+    "file": "elvs_male_coveralls_1.mhclo"
+   },
+   {
+    "file": "culturalibre_male_boots.mhclo"
+   },
+   {
+    "file": "elvs_male_flat_cap1.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 1575,
+   "kind": "skin",
+   "albedo": "tex/middleage_lightskinned_male_diffuse_512.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    0.95,
+    0.85
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 1575,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/grey_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 2091,
+   "count": 600,
+   "kind": "hair",
+   "albedo": "tex/short04_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 2691,
+   "count": 2256,
+   "kind": "clothes",
+   "albedo": "tex/overallstexture1_256.jpg",
+   "normal": null,
+   "colour": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 4947,
+   "count": 2004,
+   "kind": "shoes",
+   "albedo": "tex/boot_128.jpg",
+   "normal": null,
+   "colour": [
+    0.65,
+    0.65,
+    0.65
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  },
+  {
+   "start": 6951,
+   "count": 597,
+   "kind": "hat",
+   "albedo": "tex/blackwhitecloth_128.jpg",
+   "normal": null,
+   "colour": [
+    0.1493,
+    0.1437,
+    0.1479
+   ],
+   "roughness": 0.75,
+   "alpha": null
+  }
+ ],
+ "vertices": 2244,
+ "triangles": 2516
+}

@@ -1,0 +1,302 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   1.00597,
+   0.06363
+  ],
+  "chest": [
+   0.0,
+   1.18364,
+   0.01529
+  ],
+  "neck": [
+   0.0,
+   1.61525,
+   -0.01524
+  ],
+  "head": [
+   0.0,
+   1.71824,
+   -0.04907
+  ],
+  "headTop": [
+   0.0,
+   1.87584,
+   -0.04736
+  ],
+  "clavicle.L": [
+   -0.02432,
+   1.53747,
+   -0.03322
+  ],
+  "toeTip.L": [
+   -0.23183,
+   0.02868,
+   -0.21845
+  ],
+  "hip.L": [
+   -0.1145,
+   1.01362,
+   0.00288
+  ],
+  "knee.L": [
+   -0.15745,
+   0.56063,
+   -0.0347
+  ],
+  "ankle.L": [
+   -0.21517,
+   0.08824,
+   -0.01463
+  ],
+  "toe.L": [
+   -0.21697,
+   0.05155,
+   -0.081
+  ],
+  "shoulder.L": [
+   -0.1956,
+   1.50589,
+   -0.02169
+  ],
+  "elbow.L": [
+   -0.3762,
+   1.29911,
+   -0.02211
+  ],
+  "wrist.L": [
+   -0.52139,
+   1.15843,
+   -0.23228
+  ],
+  "fingers.L": [
+   -0.57135,
+   1.10113,
+   -0.32357
+  ],
+  "clavicle.R": [
+   0.02432,
+   1.53747,
+   -0.03322
+  ],
+  "toeTip.R": [
+   0.23183,
+   0.02868,
+   -0.21845
+  ],
+  "hip.R": [
+   0.1145,
+   1.01362,
+   0.00288
+  ],
+  "knee.R": [
+   0.15745,
+   0.56063,
+   -0.0347
+  ],
+  "ankle.R": [
+   0.21517,
+   0.08824,
+   -0.01463
+  ],
+  "toe.R": [
+   0.21697,
+   0.05155,
+   -0.081
+  ],
+  "shoulder.R": [
+   0.1956,
+   1.50589,
+   -0.02169
+  ],
+  "elbow.R": [
+   0.3762,
+   1.29911,
+   -0.02211
+  ],
+  "wrist.R": [
+   0.52139,
+   1.15843,
+   -0.23228
+  ],
+  "fingers.R": [
+   0.57135,
+   1.10113,
+   -0.32357
+  ]
+ },
+ "cast": {
+  "name": "guerrilla_tank",
+  "gender": 1.0,
+  "age": 23,
+  "eth": [
+   0.8,
+   0,
+   0.2
+  ],
+  "muscle": 0.7,
+  "weight": 0.35,
+  "height": 0.6,
+  "skin": [
+   "young african male",
+   "african male"
+  ],
+  "hair": [
+   "short04",
+   "short"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "tankshirt",
+    "muscle shirt"
+   ],
+   [
+    "cargo pants"
+   ]
+  ],
+  "shoes": [
+   "male boots",
+   "boots"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "short04.mhclo"
+   },
+   {
+    "file": "elvs_male_tankshirt1.mhclo"
+   },
+   {
+    "file": "cortu_cargo_pants.mhclo"
+   },
+   {
+    "file": "culturalibre_male_boots.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 2805,
+   "kind": "skin",
+   "albedo": "tex/young_darkskinned_male_diffuse_512.jpg",
+   "normal": null,
+   "colour": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 2805,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 3321,
+   "count": 597,
+   "kind": "hair",
+   "albedo": "tex/short04_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 3918,
+   "count": 597,
+   "kind": "clothes",
+   "albedo": "tex/toptex1_256.jpg",
+   "normal": null,
+   "colour": [
+    0.8,
+    0.03204,
+    0.06279
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 4515,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/cargo_pants_diff_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 5115,
+   "count": 2652,
+   "kind": "shoes",
+   "albedo": "tex/boot_128.jpg",
+   "normal": null,
+   "colour": [
+    0.65,
+    0.65,
+    0.65
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  }
+ ],
+ "vertices": 2002,
+ "triangles": 2589
+}

@@ -1,0 +1,343 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   0.99356,
+   0.0635
+  ],
+  "chest": [
+   0.0,
+   1.17034,
+   0.01539
+  ],
+  "neck": [
+   0.0,
+   1.59524,
+   -0.01518
+  ],
+  "head": [
+   0.0,
+   1.69518,
+   -0.04728
+  ],
+  "headTop": [
+   0.0,
+   1.85375,
+   -0.04707
+  ],
+  "clavicle.L": [
+   -0.02392,
+   1.51817,
+   -0.02924
+  ],
+  "toeTip.L": [
+   -0.21767,
+   0.02712,
+   -0.21573
+  ],
+  "hip.L": [
+   -0.11313,
+   1.00062,
+   0.00324
+  ],
+  "knee.L": [
+   -0.15677,
+   0.5359,
+   -0.033
+  ],
+  "ankle.L": [
+   -0.20324,
+   0.08673,
+   -0.01572
+  ],
+  "toe.L": [
+   -0.2039,
+   0.05005,
+   -0.08065
+  ],
+  "shoulder.L": [
+   -0.19325,
+   1.4878,
+   -0.02166
+  ],
+  "elbow.L": [
+   -0.37192,
+   1.28304,
+   -0.0219
+  ],
+  "wrist.L": [
+   -0.50969,
+   1.15142,
+   -0.21728
+  ],
+  "fingers.L": [
+   -0.56001,
+   1.09581,
+   -0.30764
+  ],
+  "clavicle.R": [
+   0.02392,
+   1.51817,
+   -0.02924
+  ],
+  "toeTip.R": [
+   0.21767,
+   0.02712,
+   -0.21573
+  ],
+  "hip.R": [
+   0.11313,
+   1.00062,
+   0.00324
+  ],
+  "knee.R": [
+   0.15677,
+   0.5359,
+   -0.033
+  ],
+  "ankle.R": [
+   0.20324,
+   0.08673,
+   -0.01572
+  ],
+  "toe.R": [
+   0.2039,
+   0.05005,
+   -0.08065
+  ],
+  "shoulder.R": [
+   0.19325,
+   1.4878,
+   -0.02166
+  ],
+  "elbow.R": [
+   0.37192,
+   1.28304,
+   -0.0219
+  ],
+  "wrist.R": [
+   0.50969,
+   1.15142,
+   -0.21728
+  ],
+  "fingers.R": [
+   0.56001,
+   1.09581,
+   -0.30764
+  ]
+ },
+ "cast": {
+  "name": "soldier_rifleman",
+  "gender": 1.0,
+  "age": 24,
+  "eth": [
+   0,
+   0,
+   1
+  ],
+  "muscle": 0.65,
+  "weight": 0.45,
+  "height": 0.6,
+  "skin": [
+   "young caucasian male",
+   "caucasian male"
+  ],
+  "hair": [
+   "short01",
+   "short"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "camo tee"
+   ],
+   [
+    "cargo pants",
+    "male trousers"
+   ],
+   [
+    "tactical vest"
+   ]
+  ],
+  "shoes": [
+   "male boots",
+   "boots"
+  ],
+  "hat": [
+   "m1 helmet",
+   "helmet"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "short01.mhclo"
+   },
+   {
+    "file": "drednicolson_short-tail_camo_tee.mhclo"
+   },
+   {
+    "file": "cortu_cargo_pants.mhclo"
+   },
+   {
+    "file": "mindfront_tactical_vest_male.mhclo"
+   },
+   {
+    "file": "culturalibre_male_boots.mhclo"
+   },
+   {
+    "file": "mrgreaterthan_m1_helmet.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 1059,
+   "kind": "skin",
+   "albedo": "tex/young_lightskinned_male_diffuse_512.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 1059,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 1575,
+   "count": 597,
+   "kind": "hair",
+   "albedo": "tex/short01_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 2172,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/short_tail_camo_tee_diff_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 2772,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/cargo_pants_diff_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 3372,
+   "count": 1257,
+   "kind": "clothes",
+   "albedo": "tex/tactical_vest_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 4629,
+   "count": 1704,
+   "kind": "shoes",
+   "albedo": "tex/boot_128.jpg",
+   "normal": null,
+   "colour": [
+    0.65,
+    0.65,
+    0.65
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  },
+  {
+   "start": 6333,
+   "count": 35016,
+   "kind": "hat",
+   "albedo": "tex/m1helmet_diffuse_128.jpg",
+   "normal": null,
+   "colour": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "roughness": 0.7,
+   "alpha": null
+  }
+ ],
+ "vertices": 26189,
+ "triangles": 13783
+}

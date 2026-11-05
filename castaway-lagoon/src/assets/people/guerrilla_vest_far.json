@@ -1,0 +1,322 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   1.041,
+   0.0638
+  ],
+  "chest": [
+   0.0,
+   1.22355,
+   0.01683
+  ],
+  "neck": [
+   0.0,
+   1.66585,
+   -0.0147
+  ],
+  "head": [
+   0.0,
+   1.76851,
+   -0.04549
+  ],
+  "headTop": [
+   0.0,
+   1.93093,
+   -0.04592
+  ],
+  "clavicle.L": [
+   -0.0251,
+   1.58405,
+   -0.03222
+  ],
+  "toeTip.L": [
+   -0.23253,
+   0.02795,
+   -0.22078
+  ],
+  "hip.L": [
+   -0.12031,
+   1.04259,
+   0.00328
+  ],
+  "knee.L": [
+   -0.16389,
+   0.58487,
+   -0.03232
+  ],
+  "ankle.L": [
+   -0.21555,
+   0.08947,
+   -0.01037
+  ],
+  "toe.L": [
+   -0.21696,
+   0.05192,
+   -0.08095
+  ],
+  "shoulder.L": [
+   -0.20045,
+   1.55404,
+   -0.01967
+  ],
+  "elbow.L": [
+   -0.38607,
+   1.34402,
+   -0.02366
+  ],
+  "wrist.L": [
+   -0.53335,
+   1.20192,
+   -0.23691
+  ],
+  "fingers.L": [
+   -0.58371,
+   1.14409,
+   -0.3289
+  ],
+  "clavicle.R": [
+   0.0251,
+   1.58405,
+   -0.03222
+  ],
+  "toeTip.R": [
+   0.23253,
+   0.02795,
+   -0.22078
+  ],
+  "hip.R": [
+   0.12031,
+   1.04259,
+   0.00328
+  ],
+  "knee.R": [
+   0.16389,
+   0.58487,
+   -0.03232
+  ],
+  "ankle.R": [
+   0.21555,
+   0.08947,
+   -0.01037
+  ],
+  "toe.R": [
+   0.21696,
+   0.05192,
+   -0.08095
+  ],
+  "shoulder.R": [
+   0.20045,
+   1.55404,
+   -0.01967
+  ],
+  "elbow.R": [
+   0.38607,
+   1.34402,
+   -0.02366
+  ],
+  "wrist.R": [
+   0.53335,
+   1.20192,
+   -0.23691
+  ],
+  "fingers.R": [
+   0.58371,
+   1.14409,
+   -0.3289
+  ]
+ },
+ "cast": {
+  "name": "guerrilla_vest",
+  "gender": 1.0,
+  "age": 41,
+  "eth": [
+   0.9,
+   0,
+   0.1
+  ],
+  "muscle": 0.75,
+  "weight": 0.55,
+  "height": 0.6,
+  "skin": [
+   "skin male african middleage",
+   "middleage african male"
+  ],
+  "hair": [
+   "short01",
+   "short"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "muscle shirt",
+    "tankshirt"
+   ],
+   [
+    "cargo pants"
+   ],
+   [
+    "tactical vest"
+   ]
+  ],
+  "shoes": [
+   "male boots",
+   "boots"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "short01.mhclo"
+   },
+   {
+    "file": "elvs_male_muscle_shirt1.mhclo"
+   },
+   {
+    "file": "cortu_cargo_pants.mhclo"
+   },
+   {
+    "file": "mindfront_tactical_vest_male.mhclo"
+   },
+   {
+    "file": "culturalibre_male_boots.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 1767,
+   "kind": "skin",
+   "albedo": "tex/skin_male_african_middleage_512.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 1767,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 2283,
+   "count": 600,
+   "kind": "hair",
+   "albedo": "tex/short01_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 2883,
+   "count": 597,
+   "kind": "clothes",
+   "albedo": "tex/toptex1_256.jpg",
+   "normal": null,
+   "colour": [
+    0.8,
+    0.03204,
+    0.06279
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 3480,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/cargo_pants_diff_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 4080,
+   "count": 2046,
+   "kind": "clothes",
+   "albedo": "tex/tactical_vest_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 6126,
+   "count": 1704,
+   "kind": "shoes",
+   "albedo": "tex/boot_128.jpg",
+   "normal": null,
+   "colour": [
+    0.65,
+    0.65,
+    0.65
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  }
+ ],
+ "vertices": 2472,
+ "triangles": 2610
+}

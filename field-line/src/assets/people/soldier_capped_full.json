@@ -1,0 +1,371 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   1.0892,
+   0.06721
+  ],
+  "chest": [
+   0.0,
+   1.27867,
+   0.01625
+  ],
+  "neck": [
+   0.0,
+   1.73789,
+   -0.01575
+  ],
+  "head": [
+   0.0,
+   1.84677,
+   -0.04785
+  ],
+  "headTop": [
+   0.0,
+   2.01225,
+   -0.04629
+  ],
+  "clavicle.L": [
+   -0.02586,
+   1.65444,
+   -0.03423
+  ],
+  "toeTip.L": [
+   -0.24508,
+   0.02977,
+   -0.23148
+  ],
+  "hip.L": [
+   -0.12244,
+   1.09449,
+   0.00333
+  ],
+  "knee.L": [
+   -0.16856,
+   0.60084,
+   -0.03383
+  ],
+  "ankle.L": [
+   -0.22725,
+   0.09415,
+   -0.01194
+  ],
+  "toe.L": [
+   -0.22904,
+   0.0546,
+   -0.08429
+  ],
+  "shoulder.L": [
+   -0.20708,
+   1.62365,
+   -0.02224
+  ],
+  "elbow.L": [
+   -0.40318,
+   1.39965,
+   -0.02503
+  ],
+  "wrist.L": [
+   -0.55818,
+   1.24912,
+   -0.25069
+  ],
+  "fingers.L": [
+   -0.61077,
+   1.18752,
+   -0.34775
+  ],
+  "clavicle.R": [
+   0.02586,
+   1.65444,
+   -0.03423
+  ],
+  "toeTip.R": [
+   0.24508,
+   0.02977,
+   -0.23148
+  ],
+  "hip.R": [
+   0.12244,
+   1.09449,
+   0.00333
+  ],
+  "knee.R": [
+   0.16856,
+   0.60084,
+   -0.03383
+  ],
+  "ankle.R": [
+   0.22725,
+   0.09415,
+   -0.01194
+  ],
+  "toe.R": [
+   0.22904,
+   0.0546,
+   -0.08429
+  ],
+  "shoulder.R": [
+   0.20708,
+   1.62365,
+   -0.02224
+  ],
+  "elbow.R": [
+   0.40318,
+   1.39965,
+   -0.02503
+  ],
+  "wrist.R": [
+   0.55818,
+   1.24912,
+   -0.25069
+  ],
+  "fingers.R": [
+   0.61077,
+   1.18752,
+   -0.34775
+  ]
+ },
+ "cast": {
+  "name": "soldier_capped",
+  "gender": 1.0,
+  "age": 31,
+  "eth": [
+   0.9,
+   0,
+   0.1
+  ],
+  "muscle": 0.7,
+  "weight": 0.5,
+  "height": 0.65,
+  "skin": [
+   "middleage african male",
+   "african male"
+  ],
+  "hair": [
+   "short04",
+   "short"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "camo tee"
+   ],
+   [
+    "cargo pants",
+    "male trousers"
+   ],
+   [
+    "tactical vest"
+   ]
+  ],
+  "shoes": [
+   "male boots",
+   "boots"
+  ],
+  "hat": [
+   "patrol cap",
+   "cap"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "short04.mhclo"
+   },
+   {
+    "file": "drednicolson_short-tail_camo_tee.mhclo"
+   },
+   {
+    "file": "cortu_cargo_pants.mhclo"
+   },
+   {
+    "file": "mindfront_tactical_vest_male.mhclo"
+   },
+   {
+    "file": "culturalibre_male_boots.mhclo"
+   },
+   {
+    "file": "mindfront_patrol_cap.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 10122,
+   "kind": "skin",
+   "albedo": "tex/middleage_darkskinned_male_diffuse_2048.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    0.95,
+    0.85
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 10122,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 10638,
+   "count": 576,
+   "kind": "eyebrows",
+   "albedo": "tex/eyebrow001_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.6,
+   "alpha": "clip"
+  },
+  {
+   "start": 11214,
+   "count": 1104,
+   "kind": "eyelashes",
+   "albedo": "tex/eyelashes01_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.6,
+   "alpha": "clip"
+  },
+  {
+   "start": 12318,
+   "count": 600,
+   "kind": "hair",
+   "albedo": "tex/short04_diffuse_1024.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 12918,
+   "count": 1203,
+   "kind": "clothes",
+   "albedo": "tex/short_tail_camo_tee_diff_1024.jpg",
+   "normal": "tex/short_tail_camo_tee_nrml_1024.jpg",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 14121,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/cargo_pants_diff_1024.jpg",
+   "normal": "tex/cargo_pants_norm_1024.jpg",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 14721,
+   "count": 11895,
+   "kind": "clothes",
+   "albedo": "tex/tactical_vest_1024.jpg",
+   "normal": "tex/tactical_vest_nrm_1024.jpg",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 26616,
+   "count": 9876,
+   "kind": "shoes",
+   "albedo": "tex/boot_512.jpg",
+   "normal": null,
+   "colour": [
+    0.65,
+    0.65,
+    0.65
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  },
+  {
+   "start": 36492,
+   "count": 600,
+   "kind": "hat",
+   "albedo": "tex/patrol_cap_512.jpg",
+   "normal": "tex/patrol_cap_nrm_512.jpg",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.75,
+   "alpha": null
+  }
+ ],
+ "vertices": 8456,
+ "triangles": 12364
+}

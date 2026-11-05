@@ -1,0 +1,302 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   0.86639,
+   0.06435
+  ],
+  "chest": [
+   0.0,
+   1.00469,
+   -0.00035
+  ],
+  "neck": [
+   0.0,
+   1.40585,
+   -0.00013
+  ],
+  "head": [
+   0.0,
+   1.51092,
+   -0.041
+  ],
+  "headTop": [
+   0.0,
+   1.66025,
+   -0.02982
+  ],
+  "clavicle.L": [
+   -0.02389,
+   1.33491,
+   -0.02562
+  ],
+  "toeTip.L": [
+   -0.18961,
+   0.01737,
+   -0.19771
+  ],
+  "hip.L": [
+   -0.09872,
+   0.85343,
+   -0.01841
+  ],
+  "knee.L": [
+   -0.13984,
+   0.46843,
+   -0.04938
+  ],
+  "ankle.L": [
+   -0.17286,
+   0.07571,
+   -0.03005
+  ],
+  "toe.L": [
+   -0.17503,
+   0.0478,
+   -0.09169
+  ],
+  "shoulder.L": [
+   -0.16045,
+   1.32012,
+   -0.0224
+  ],
+  "elbow.L": [
+   -0.32317,
+   1.14199,
+   -0.02628
+  ],
+  "wrist.L": [
+   -0.43725,
+   1.0182,
+   -0.16772
+  ],
+  "fingers.L": [
+   -0.47853,
+   0.96677,
+   -0.23737
+  ],
+  "clavicle.R": [
+   0.02389,
+   1.33491,
+   -0.02562
+  ],
+  "toeTip.R": [
+   0.18961,
+   0.01737,
+   -0.19771
+  ],
+  "hip.R": [
+   0.09872,
+   0.85343,
+   -0.01841
+  ],
+  "knee.R": [
+   0.13984,
+   0.46843,
+   -0.04938
+  ],
+  "ankle.R": [
+   0.17286,
+   0.07571,
+   -0.03005
+  ],
+  "toe.R": [
+   0.17503,
+   0.0478,
+   -0.09169
+  ],
+  "shoulder.R": [
+   0.16045,
+   1.32012,
+   -0.0224
+  ],
+  "elbow.R": [
+   0.32317,
+   1.14199,
+   -0.02628
+  ],
+  "wrist.R": [
+   0.43725,
+   1.0182,
+   -0.16772
+  ],
+  "fingers.R": [
+   0.47853,
+   0.96677,
+   -0.23737
+  ]
+ },
+ "cast": {
+  "name": "guerrilla_woman",
+  "gender": 0.0,
+  "age": 27,
+  "eth": [
+   0.8,
+   0,
+   0.2
+  ],
+  "muscle": 0.55,
+  "weight": 0.4,
+  "height": 0.5,
+  "skin": [
+   "young african female",
+   "african female"
+  ],
+  "hair": [
+   "braid01",
+   "afro01",
+   "ponytail"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "tank top"
+   ],
+   [
+    "cargo pants"
+   ]
+  ],
+  "shoes": [
+   "heroine boots",
+   "boots"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "braid01.mhclo"
+   },
+   {
+    "file": "mindfront_tank_top_01.mhclo"
+   },
+   {
+    "file": "cortu_cargo_pants.mhclo"
+   },
+   {
+    "file": "culturalibre_heroine_boots_1.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 4392,
+   "kind": "skin",
+   "albedo": "tex/young_darkskinned_female_diffuse_512.jpg",
+   "normal": null,
+   "colour": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 4392,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_64.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 4908,
+   "count": 795,
+   "kind": "hair",
+   "albedo": "tex/braid01_diffuse_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 5703,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/tank_top_01_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 6303,
+   "count": 600,
+   "kind": "clothes",
+   "albedo": "tex/cargo_pants_diff_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 6903,
+   "count": 600,
+   "kind": "shoes",
+   "albedo": "tex/black_128.jpg",
+   "normal": null,
+   "colour": [
+    0.64,
+    0.64,
+    0.64
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  }
+ ],
+ "vertices": 1857,
+ "triangles": 2501
+}

@@ -1,0 +1,331 @@
+{
+ "format": 2,
+ "bones": [
+  "pelvis",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "clavicle.L",
+  "upperArm.L",
+  "forearm.L",
+  "hand.L",
+  "clavicle.R",
+  "upperArm.R",
+  "forearm.R",
+  "hand.R",
+  "thigh.L",
+  "shin.L",
+  "foot.L",
+  "toe.L",
+  "thigh.R",
+  "shin.R",
+  "foot.R",
+  "toe.R"
+ ],
+ "joints": {
+  "hip": [
+   0.0,
+   0.96056,
+   0.06555
+  ],
+  "chest": [
+   0.0,
+   1.13221,
+   0.01656
+  ],
+  "neck": [
+   0.0,
+   1.54778,
+   -0.0139
+  ],
+  "head": [
+   0.0,
+   1.64613,
+   -0.04643
+  ],
+  "headTop": [
+   0.0,
+   1.80315,
+   -0.04433
+  ],
+  "clavicle.L": [
+   -0.02354,
+   1.47135,
+   -0.02754
+  ],
+  "toeTip.L": [
+   -0.21455,
+   0.02316,
+   -0.21017
+  ],
+  "hip.L": [
+   -0.1118,
+   0.965,
+   0.00447
+  ],
+  "knee.L": [
+   -0.1551,
+   0.52474,
+   -0.03015
+  ],
+  "ankle.L": [
+   -0.20028,
+   0.0813,
+   -0.0156
+  ],
+  "toe.L": [
+   -0.20098,
+   0.04555,
+   -0.07905
+  ],
+  "shoulder.L": [
+   -0.19046,
+   1.44209,
+   -0.02015
+  ],
+  "elbow.L": [
+   -0.36275,
+   1.24488,
+   -0.01952
+  ],
+  "wrist.L": [
+   -0.49841,
+   1.1156,
+   -0.21183
+  ],
+  "fingers.L": [
+   -0.54767,
+   1.06115,
+   -0.30023
+  ],
+  "clavicle.R": [
+   0.02354,
+   1.47135,
+   -0.02754
+  ],
+  "toeTip.R": [
+   0.21455,
+   0.02316,
+   -0.21017
+  ],
+  "hip.R": [
+   0.1118,
+   0.965,
+   0.00447
+  ],
+  "knee.R": [
+   0.1551,
+   0.52474,
+   -0.03015
+  ],
+  "ankle.R": [
+   0.20028,
+   0.0813,
+   -0.0156
+  ],
+  "toe.R": [
+   0.20098,
+   0.04555,
+   -0.07905
+  ],
+  "shoulder.R": [
+   0.19046,
+   1.44209,
+   -0.02015
+  ],
+  "elbow.R": [
+   0.36275,
+   1.24488,
+   -0.01952
+  ],
+  "wrist.R": [
+   0.49841,
+   1.1156,
+   -0.21183
+  ],
+  "fingers.R": [
+   0.54767,
+   1.06115,
+   -0.30023
+  ]
+ },
+ "cast": {
+  "name": "guerrilla_shirt",
+  "gender": 1.0,
+  "age": 28,
+  "eth": [
+   0.1,
+   0.1,
+   0.8
+  ],
+  "muscle": 0.55,
+  "weight": 0.4,
+  "height": 0.55,
+  "skin": [
+   "light skin male bronze",
+   "young caucasian male"
+  ],
+  "hair": [
+   "short03",
+   "short"
+  ],
+  "eyes": [
+   "brown",
+   ""
+  ],
+  "clothes": [
+   [
+    "striped shirt",
+    "tankshirt"
+   ],
+   [
+    "jeans shorts",
+    "cargo pants"
+   ]
+  ],
+  "shoes": [
+   "flip flop",
+   "sandals"
+  ],
+  "sources": [
+   {
+    "file": "low-poly.mhclo"
+   },
+   {
+    "file": "eyebrow001.mhclo"
+   },
+   {
+    "file": "eyelashes01.mhclo"
+   },
+   {
+    "file": "short03.mhclo"
+   },
+   {
+    "file": "ews_striped_shirt.mhclo"
+   },
+   {
+    "file": "cortu_jeans_shorts.mhclo"
+   },
+   {
+    "file": "elvs_male_flip_flop_sandals1.mhclo"
+   }
+  ]
+ },
+ "groups": [
+  {
+   "start": 0,
+   "count": 17598,
+   "kind": "skin",
+   "albedo": "tex/young_lightskinned_male_diffuse_bronze_2048.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.5,
+   "alpha": null
+  },
+  {
+   "start": 17598,
+   "count": 516,
+   "kind": "eyes",
+   "albedo": "tex/brown_eye_256.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.08,
+   "alpha": null
+  },
+  {
+   "start": 18114,
+   "count": 576,
+   "kind": "eyebrows",
+   "albedo": "tex/eyebrow001_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.6,
+   "alpha": "clip"
+  },
+  {
+   "start": 18690,
+   "count": 1104,
+   "kind": "eyelashes",
+   "albedo": "tex/eyelashes01_256.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.6,
+   "alpha": "clip"
+  },
+  {
+   "start": 19794,
+   "count": 921,
+   "kind": "hair",
+   "albedo": "tex/short03_diffuse_1024.png",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": "clip"
+  },
+  {
+   "start": 20715,
+   "count": 3786,
+   "kind": "clothes",
+   "albedo": "tex/stripes_1024.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 24501,
+   "count": 597,
+   "kind": "clothes",
+   "albedo": "tex/jean_shorts_diff_1024.jpg",
+   "normal": "tex/jean_shorts_norm_1024.jpg",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.8,
+   "alpha": null
+  },
+  {
+   "start": 25098,
+   "count": 11244,
+   "kind": "shoes",
+   "albedo": "tex/fliptex2_512.jpg",
+   "normal": null,
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "roughness": 0.45,
+   "alpha": null
+  }
+ ],
+ "vertices": 8318,
+ "triangles": 12114
+}
