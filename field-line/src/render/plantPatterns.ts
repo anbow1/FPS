@@ -52,71 +52,92 @@ interface Segment {
 }
 
 /**
- * Pine branch spray, seen from above: a main twig up the card with side twigs
- * angled toward the tip, each one a bottlebrush of needles. The needle mass
- * is a rounded tube around every twig with a ragged edge, not individual
- * strands: strands a few texels wide alias into moiré stripes at range, while
- * tufts keep their shape down the mip chain.
+ * Spruce branch, seen from above: one card is a whole branch (up to ~5 m on the lower whorls), so it is
+ * drawn as one: the axis, side branches leaving it alternately and raked toward its tip, and along each
+ * of those the shoots, ~15 cm needle bottlebrushes every ~10 cm, with sky between them. Drawn with only
+ * the side twigs as needle tubes, the card read as one giant fern frond with 30 cm "needles" (photo critic
+ * loop). Needles themselves are 1–2 cm, a texel or two: they live in the tubes' ragged edges and relief,
+ * not as strokes, which alias into moiré at range.
  */
 export function pineSpray(): TexelSampler {
-  const inner: Rgb = hex(0x243220);
-  const outer: Rgb = hex(0x4f6136);
-  const twig: Rgb = hex(0x4a3b30);
-  const segs: Segment[] = [{ ax: 0.5, ay: 0.02, bx: 0.5, by: 0.93, radius: 0.1 }];
-  for (let i = 0; i < 12; i++) {
+  const inner: Rgb = hex(0x1f2b1b);
+  const outer: Rgb = hex(0x4a5c33);
+  const young: Rgb = hex(0x667a3e);
+  const wood: Rgb = hex(0x4a3b30);
+  interface Shoot extends Segment {
+    order: number; // 0 axis, 1 side branch, 2 shoot
+    id: number;
+  }
+  const segs: Shoot[] = [];
+  const axisTip = 0.95;
+  segs.push({ ax: 0.5, ay: 0.02, bx: 0.5, by: axisTip, radius: 0.016, order: 0, id: 0 });
+  const perSide = 16;
+  for (let i = 0; i < perSide * 2; i++) {
     const side = i % 2 === 0 ? -1 : 1;
-    const v0 = 0.08 + i * 0.066;
-    const len = 0.36 * (1 - v0 * 0.62) * (0.85 + hash2(i, 1, 7) * 0.3);
-    const ang = 0.75 + (hash2(i, 2, 7) - 0.5) * 0.3; // from the main twig, toward the tip
-    segs.push({ ax: 0.5, ay: v0, bx: 0.5 + side * Math.sin(ang) * len, by: v0 + Math.cos(ang) * len, radius: 0.075 * (1 - v0 * 0.4) });
+    const v0 = 0.04 + (i / (perSide * 2)) * 0.86;
+    // The card is a trapezoid, half-width 0.5 at the stem narrowing to 0.35 at the tip.
+    const room = 0.48 - v0 * 0.14;
+    const len = room * (1 - v0 * 0.55) * (0.8 + hash2(i, 1, 9) * 0.35);
+    const ang = 0.95 + (hash2(i, 2, 9) - 0.5) * 0.35; // from the axis, toward the tip
+    const bx = 0.5 + side * Math.sin(ang) * len;
+    const by = Math.min(0.99, v0 + Math.cos(ang) * len);
+    segs.push({ ax: 0.5, ay: v0, bx, by, radius: 0.02, order: 1, id: i + 1 });
+    // Shoots along the side branch, alternating, shorter toward its tip.
+    const steps = Math.max(2, Math.floor(len / 0.026));
+    for (let k = 1; k <= steps; k++) {
+      const f = k / (steps + 0.5);
+      const x0 = 0.5 + (bx - 0.5) * f;
+      const y0 = v0 + (by - v0) * f;
+      const sideK = k % 2 === 0 ? 1 : -1;
+      const dirA = Math.atan2(bx - 0.5, by - v0) + sideK * (0.7 + (hash2(i, k, 11) - 0.5) * 0.4);
+      const sl = 0.066 * (1 - f * 0.5) * (0.75 + hash2(i, k, 12) * 0.5);
+      segs.push({ ax: x0, ay: y0, bx: x0 + Math.sin(dirA) * sl, by: y0 + Math.cos(dirA) * sl, radius: 0.018 * (1 - f * 0.3), order: 2, id: (i + 1) * 64 + k });
+    }
+  }
+  // A coarse grid of the segments that can reach each cell, so a texel tests a handful, not ~350.
+  const G = 32;
+  const cells: Shoot[][] = Array.from({ length: G * G }, () => []);
+  for (const sg of segs) {
+    const reach = sg.radius * 1.4;
+    const x0 = Math.max(0, Math.floor((Math.min(sg.ax, sg.bx) - reach) * G));
+    const x1 = Math.min(G - 1, Math.floor((Math.max(sg.ax, sg.bx) + reach) * G));
+    const y0 = Math.max(0, Math.floor((Math.min(sg.ay, sg.by) - reach) * G));
+    const y1 = Math.min(G - 1, Math.floor((Math.max(sg.ay, sg.by) + reach) * G));
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) (cells[y * G + x] as Shoot[]).push(sg);
   }
   return (u, v, t) => {
-    // Nearest twig: distance along it (tile units), signed distance across it, and its needle reach.
+    const cell = cells[Math.min(G - 1, Math.floor(v * G)) * G + Math.min(G - 1, Math.floor(u * G))] as Shoot[];
     let best = 1e9;
-    let bestR = 0.1;
+    let hit: Shoot | null = null;
     let along = 0;
-    let alongM = 0;
-    let across = 0;
-    let seg = 0;
-    segs.forEach((s, i) => {
-      const dx = s.bx - s.ax;
-      const dy = s.by - s.ay;
-      const len = Math.hypot(dx, dy);
-      const k = Math.max(0, Math.min(1, ((u - s.ax) * dx + (v - s.ay) * dy) / (len * len)));
-      // Needles shorten toward each twig's tip.
-      const r = s.radius * (1 - k * 0.45);
-      const px = u - s.ax - dx * k;
-      const py = v - s.ay - dy * k;
-      const d = Math.hypot(px, py) / r;
-      if (d < best) {
-        best = d;
-        bestR = r;
+    let woodD = 1e9;
+    for (const sg of cell) {
+      const dx = sg.bx - sg.ax;
+      const dy = sg.by - sg.ay;
+      const len2 = dx * dx + dy * dy;
+      const k = Math.max(0, Math.min(1, ((u - sg.ax) * dx + (v - sg.ay) * dy) / len2));
+      const d = Math.hypot(u - sg.ax - dx * k, v - sg.ay - dy * k);
+      if (sg.order < 2) woodD = Math.min(woodD, d);
+      // Needle tubes taper to each shoot's tip; the bare axis wood carries few needles of its own.
+      const r = sg.radius * (1 - k * 0.5) * (sg.order === 0 ? 0.6 : 1);
+      if (d / r < best) {
+        best = d / r;
+        hit = sg;
         along = k;
-        alongM = k * len;
-        across = (px * dy - py * dx) / len;
-        seg = i;
       }
-    });
-    if (best * bestR < 0.0065) return set(t, twig, 0.9, 0.9, 0.9, 0.7);
-    // Ragged outline, as before: the spray's mass and its coverage stay (thin strokes alone left the crowns
-    // bare from below and vanished under the alpha test at a distance).
-    const ragged = 0.78 + tileNoise(u * 48, v * 48, 48, 211) * 0.3 + tileNoise(u * 13, v * 13, 13, 212) * 0.12;
-    if (best > ragged) return clear(t, inner);
-    // Needles inside it: straight strokes leaving the twig on both sides, raked ~50° toward its tip, one
-    // every 0.0062 tile, drawn in colour and relief; only in the outer quarter do the gaps between them open,
-    // so the edge is bristly instead of a blob's.
-    const a = Math.abs(across);
-    const rake = (alongM - a * 1.15) / 0.0062;
-    const n = Math.floor(rake);
-    const f = rake - n;
-    const side = across < 0 ? 1 : 2;
+    }
+    // Ragged needle edge: fine noise (a needle is about a texel) over a coarser lumpiness.
+    const ragged = 0.72 + tileNoise(u * 160, v * 160, 160, 221) * 0.32 + tileNoise(u * 40, v * 40, 40, 222) * 0.16;
+    // The needles hide the wood; it shows only where they leave it bare (the old axis near the trunk).
+    if (!hit || best > ragged) return woodD < 0.0035 ? set(t, wood, 0.9, 0.85, 0.9, 0.6) : clear(t, inner);
     const edge = best / ragged; // 0 at the twig, 1 at the needle tips
-    const onNeedle = f < 0.6;
-    if (!onNeedle && edge > 0.75) return clear(t, inner);
-    const shade = hash2(n, seg * 7 + side, 215);
-    const c = mix(inner, outer, Math.min(1, edge * 0.75 + along * 0.2 + (onNeedle ? shade * 0.25 : 0)));
-    const k = onNeedle ? 0.85 + shade * 0.3 : 0.55;
-    set(t, c, k, onNeedle ? 1 - Math.abs(f - 0.3) * 2.5 : 0.1, 0.8, onNeedle ? 0.55 + edge * 0.45 : 0.4);
+    // Needle grain in the relief and colour, not as strokes.
+    const grain = tileNoise(u * 300, v * 300, 300, 223);
+    const tone = hash2(hit.id, 3, 224);
+    let c = mix(inner, outer, Math.min(1, edge * 0.7 + tone * 0.25 + grain * 0.15));
+    // This year's growth at the shoot tips is lighter.
+    if (hit.order === 2 && along > 0.7) c = mix(c, young, (along - 0.7) * 1.6 * (0.4 + tone * 0.6));
+    set(t, c, 0.8 + grain * 0.35, (1 - edge * edge) * (0.6 + grain * 0.4), 0.8, 0.45 + edge * 0.55);
   };
 }
 
