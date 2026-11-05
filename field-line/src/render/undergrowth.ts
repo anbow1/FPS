@@ -189,6 +189,9 @@ export class Undergrowth {
         tileM: 4,
         // As the ground's baked canopy occlusion (up to 0.45 under the crowns).
         shadeOcclusion: 0.45,
+        // No sky sheen (as Ridgeline's): seen at a grazing angle the blades mirrored the open sky probe even
+        // under the canopy and stood out frosty white in shade (both games' photo critics).
+        matte: true,
         bladesPerTile: GRASS_FIELD.blades[quality],
         radiusM: GRASS_FIELD.radiusM[quality],
         wind: vec2(windVector.x, windVector.z),

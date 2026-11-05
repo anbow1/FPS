@@ -147,6 +147,9 @@ export class LagoonView {
         tileM: 4,
         // As the ground's baked canopy occlusion (up to 0.45 under the crowns).
         shadeOcclusion: 0.45,
+        // No sky sheen (as Ridgeline's): seen at a grazing angle the blades mirrored the open sky probe even
+        // under the canopy and stood out frosty white in shade (both games' photo critics).
+        matte: true,
         bladesPerTile: high ? 700 : 300,
         radiusM: high ? 40 : 24,
         wind: U.wind,
