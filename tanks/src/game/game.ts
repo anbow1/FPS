@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { CITY, DRONE, ENEMY_TANK, HMG_127, MG_762, MG_AIM, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
+import { ALLY_IFV, CITY, DRONE, ENEMY_IFV, ENEMY_TANK, HMG_127, MG_762, MG_AIM, PHYS_DT, PLAY_HALF, PLAYER_TANK, QUALITY, type QualityPreset, WATER_LEVEL } from '../config';
 import type { Input } from '../core/input';
 import { Rng } from '../core/rng';
 import { ATMO, installAtmosphere } from '../render/atmosphere';
@@ -68,6 +68,8 @@ export class Game {
   readonly projectiles: Projectiles;
   player!: Tank;
   enemies: Tank[] = [];
+  /** The player's escort: two IFVs that keep near and fight the nearest enemy. */
+  private allies: Tank[] = [];
   private ais: TankAI[] = [];
   private tanks: Tank[] = [];
   private headlight: THREE.SpotLight;
@@ -227,6 +229,7 @@ export class Game {
     this.player.place(PLAYER_SPAWN.x, PLAYER_SPAWN.z, PLAYER_SPAWN.yaw, this.world);
     this.player.engineVoice = this.audio.createEngine(true, this.player.pos);
     this.tanks.push(this.player);
+    this.spawnEscort();
     this.drone.reset();
     this.droneView = false;
     this.droneSpotted.clear();
@@ -249,6 +252,7 @@ export class Game {
     }
     this.tanks = [];
     this.enemies = [];
+    this.allies = [];
     this.ais = [];
     this.projectiles.clear();
     this.bullets.clear();
@@ -338,6 +342,7 @@ export class Game {
     this.ais = this.ais.filter((a) => this.tanks.includes(a.tank));
     this.wave++;
     const count = Math.min(2 + this.wave, 7);
+    const ifvs = Math.floor(count / 3);
     const skill = Math.min(1, 0.25 + this.wave * 0.12);
     const p = this.player;
     for (let i = 0; i < count; i++) {
@@ -357,7 +362,9 @@ export class Game {
         if (this.tanks.some((t) => hyp2(t.pos.x - x, t.pos.z - z) < 40)) continue;
         break;
       }
-      const e = new Tank(ENEMY_TANK, 'enemy', 'east', 100 + this.wave * 10 + i);
+      // about one in three is an IFV, its 30 mm gun dangerous to the escort and to a tank's flanks
+      const ifv = i < ifvs;
+      const e = new Tank(ifv ? ENEMY_IFV : ENEMY_TANK, 'enemy', ifv ? 'ifvEast' : 'east', 100 + this.wave * 10 + i);
       this.scene.add(e.model.root);
       e.place(x, z, Math.atan2(p.pos.x - x, p.pos.z - z) + this.rng.range(-0.6, 0.6), this.world);
       e.engineVoice = this.audio.createEngine(false, e.pos);
@@ -372,7 +379,9 @@ export class Game {
     const squads = Math.min(1 + Math.floor(this.wave / 2), 3);
     for (let i = 0; i < squads; i++) this.infantry.spawnSquad(this.world, p.pos, centre);
     this.hud.setWave(`FALA ${this.wave} · wrogów: ${count}`);
-    this.hud.message(`Fala ${this.wave}: ${count} czołgów wroga, piechota w zasadzkach`, 'info');
+    const tanks = count - ifvs;
+    const tankWord = tanks === 1 ? 'czołg' : tanks < 5 ? 'czołgi' : 'czołgów';
+    this.hud.message(`Fala ${this.wave}: ${tanks} ${tankWord}${ifvs ? ` i ${ifvs} BWP` : ''} wroga, piechota w zasadzkach`, 'info');
   }
 
   // ------------------------------------------------------------------ per-frame input (render rate)
@@ -584,8 +593,10 @@ export class Game {
     dir.z += this.rng.gauss() * mil;
     dir.normalize();
     this.projectiles.fire(t, ammo, muzzle, dir);
-    this.effects.muzzleBlast(muzzle, dir, this.world.hf.heightAt(muzzle.x, muzzle.z), true);
-    this.audio.cannon(muzzle, t === this.player);
+    const small = (ammo.scale ?? 1) < 0.5;
+    this.effects.muzzleBlast(muzzle, dir, this.world.hf.heightAt(muzzle.x, muzzle.z), !small);
+    if (small) this.audio.autocannon(muzzle, t === this.player);
+    else this.audio.cannon(muzzle, t === this.player);
     if (t === this.player) this.effects.shake = Math.max(this.effects.shake, this.sight ? 0.35 : 0.8);
   }
 
@@ -608,7 +619,10 @@ export class Game {
       p.aimDir.set(_dir.x, _dir.y, _dir.z);
     }
     this.fireCoax(dt);
-    for (const ai of this.ais) ai.update(dt, this.world, p, this.time, (t) => this.fireTank(t));
+    for (const ai of this.ais) {
+      const target = ai.tank.team === 'enemy' ? this.nearestAlive(ai.tank, this.friendlies()) ?? p : this.nearestAlive(ai.tank, this.enemies);
+      if (target) ai.update(dt, this.world, target, this.time, (t) => this.fireTank(t));
+    }
     for (const t of this.tanks) t.step(dt, this.world);
     this.collideTanks();
     // drone, infantry, small arms
@@ -833,6 +847,50 @@ export class Game {
     }
   }
 
+  /** The player and the escort: what the enemy shoots at. */
+  private friendlies(): Tank[] {
+    return this.allies.length ? [this.player, ...this.allies] : [this.player];
+  }
+
+  private nearestAlive(from: Tank, among: readonly Tank[]): Tank | null {
+    let best: Tank | null = null;
+    let bestD = Infinity;
+    for (const t of among) {
+      if (!t.alive) continue;
+      const d = hyp2(t.pos.x - from.pos.x, t.pos.z - from.pos.z);
+      if (d < bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** Two IFVs beside and behind the player's tank at the start, on dry open ground. */
+  private spawnEscort(): void {
+    const p = this.player;
+    const fx = Math.sin(p.yaw);
+    const fz = Math.cos(p.yaw);
+    for (const [k, side] of [-1, 1].entries()) {
+      let x = p.pos.x;
+      let z = p.pos.z;
+      for (let a = 0; a < 12; a++) {
+        const lat = side * (16 + a * 3);
+        const back = 10 + a * 2;
+        x = p.pos.x + fz * lat - fx * back;
+        z = p.pos.z - fx * lat - fz * back;
+        if (this.world.hf.heightAt(x, z) > WATER_LEVEL + 1.5 && !this.world.insideBuilding(x, z, 8)) break;
+      }
+      const ally = new Tank(ALLY_IFV, 'player', 'ifvWest', 31 + k);
+      this.scene.add(ally.model.root);
+      ally.place(x, z, p.yaw, this.world);
+      ally.engineVoice = this.audio.createEngine(false, ally.pos);
+      this.tanks.push(ally);
+      this.allies.push(ally);
+      this.ais.push(new TankAI(ally, 0.7, 4400 + k, p));
+    }
+  }
+
   private destroy(t: Tank, cookOff: boolean): void {
     t.kill(cookOff);
     t.centre(_v);
@@ -842,9 +900,10 @@ export class Game {
     this.audio.stopEngine(t.engineVoice);
     t.engineVoice = null;
     this.world.decals.addScorch(t.pos.x, t.pos.z, 9);
+    if (t.team === 'player' && t !== this.player) this.hud.message('Stracony wóz osłony', 'bad');
     if (t.team === 'enemy') {
       this.score += 100 * this.wave;
-      this.player.kills++;
+      if (t.lastHitBy === this.player) this.player.kills++;
       this.hud.setWave(`FALA ${this.wave} · wrogów: ${this.enemies.filter((e) => e.alive).length}`);
     }
     if (this.lockTarget === t) this.lockTarget = null;
@@ -853,15 +912,17 @@ export class Game {
   private onImpact(e: ImpactEvent): void {
     const sh = e.shell;
     const ammo = sh.ammo;
-    const byPlayer = sh.team === 'player';
+    const byPlayer = sh.owner === this.player;
+    // effects sized to the round: a 30 mm shell is a quarter of a tank gun's
+    const scale = ammo.scale ?? 1;
     // shrapnel and blast against infantry
-    const blastR = ammo.id === 'HE' ? 9 : ammo.id === 'HEAT' ? 4 : ammo.id === 'RPG' ? 3 : 1.5;
+    const blastR = (ammo.id === 'HE' ? 9 : ammo.id === 'HEAT' ? 4 : ammo.id === 'RPG' ? 3 : 1.5) * Math.max(0.35, scale);
     this.infantry.blast(e.point, blastR);
     if (this.drone.alive && this.drone.pos.distanceTo(e.point) < blastR * 1.5) this.drone.shootDown();
     if (e.kind === 'soft' && e.soft) {
       e.soft.onBullet(e.point, e.dir, 1000, sh.team);
-      if (ammo.blastRadius > 0) this.effects.explosionCore(e.point.x, e.point.y, e.point.z, ammo.id === 'HE' ? 1 : 0.5);
-      this.audio.explosion(e.point, 0.6);
+      if (ammo.blastRadius > 0) this.effects.explosionCore(e.point.x, e.point.y, e.point.z, (ammo.id === 'HE' ? 1 : 0.5) * scale);
+      this.audio.explosion(e.point, 0.6 * scale);
       return;
     }
     if (e.kind === 'tank' && e.tank && e.hit) {
@@ -872,7 +933,7 @@ export class Game {
       );
       const pen = rep.outcome === 'pen' || rep.outcome === 'kill';
       this.effects.armourHit(e.point, worldN, pen);
-      if (ammo.blastRadius > 0) this.effects.explosionCore(e.point.x, e.point.y, e.point.z, ammo.id === 'HE' ? 1 : 0.6);
+      if (ammo.blastRadius > 0) this.effects.explosionCore(e.point.x, e.point.y, e.point.z, (ammo.id === 'HE' ? 1 : 0.6) * scale);
       this.audio.clang(e.point, pen ? 1.4 : 1, rep.outcome === 'ricochet', t === this.player);
       if (rep.outcome === 'ricochet') this.projectiles.ricochet(sh, worldN);
       if (rep.cookOff || (rep.outcome === 'kill' && t.alive)) this.destroy(t, rep.cookOff);
@@ -891,19 +952,19 @@ export class Game {
       }
       return;
     }
-    const explosive = ammo.id === 'HE' ? 1 : ammo.id === 'HEAT' ? 0.5 : 0;
+    const explosive = (ammo.id === 'HE' ? 1 : ammo.id === 'HEAT' ? 0.5 : 0) * scale;
     if (e.kind === 'water') {
       this.water.ripples.disturb(e.point.x, e.point.z, 0.9 + explosive * 1.2, 0.25 + explosive * 0.2);
       for (let i = 0; i < 40; i++) {
         const a = Math.random() * Math.PI * 2;
         this.effects.emit(PKind.Dust, e.point.x, WATER_LEVEL + 0.2, e.point.z, Math.cos(a) * 2, 8 + Math.random() * 14, Math.sin(a) * 2, 1.2, 1.6, 0.85, 0.9, 0.92, 0.6, 2);
       }
-      this.audio.explosion(e.point, 0.4);
+      this.audio.explosion(e.point, 0.4 * Math.max(0.35, scale));
       return;
     }
     this.effects.groundImpact(e.point.x, e.point.y, e.point.z, explosive);
-    if (e.kind === 'terrain') this.world.decals.addScorch(e.point.x, e.point.z, 1.5 + explosive * 3);
-    this.audio.explosion(e.point, 0.5 + explosive);
+    if (e.kind === 'terrain') this.world.decals.addScorch(e.point.x, e.point.z, (1.5 + explosive * 3) * Math.max(0.35, scale));
+    this.audio.explosion(e.point, (0.5 + explosive) * Math.max(0.35, scale));
     // splash damage from HE near a tank
     if (ammo.blastRadius > 0) {
       for (const t of this.tanks) {
@@ -1197,6 +1258,10 @@ export class Game {
 
   get spottedSet(): Set<Tank> {
     return this.spotted;
+  }
+
+  get escort(): readonly Tank[] {
+    return this.allies;
   }
 
   get allTanks(): Tank[] {

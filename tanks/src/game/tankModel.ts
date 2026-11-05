@@ -6,7 +6,17 @@ import { makeTrackTexture } from '../render/textures';
 import { makeVehicleUniforms, vehicleMaterial, type VehicleUniforms } from '../render/vehicleMaterial';
 import { hyp2 } from '../core/mathx';
 
-export type TankStyle = 'west' | 'east';
+/** Which vehicle: the two sides' main battle tanks and their infantry fighting vehicles. */
+export type TankStyle = 'west' | 'east' | 'ifvWest' | 'ifvEast';
+
+/** The side a vehicle belongs to (its paint and, without its model, the procedural tank standing in). */
+export function sideOf(style: TankStyle): 'west' | 'east' {
+  return style === 'west' || style === 'ifvWest' ? 'west' : 'east';
+}
+
+export function isIfv(style: TankStyle): boolean {
+  return style === 'ifvWest' || style === 'ifvEast';
+}
 
 export interface WheelSpec {
   z: number;
@@ -230,7 +240,7 @@ function sprocketGeom(r: number, width: number, teeth: number): THREE.BufferGeom
   return mergeParts([ring(-width * 0.32), ring(width * 0.32), cyl(r * 0.55, r * 0.55, width * 0.9, 16, 'x'), cyl(r * 0.25, r * 0.25, width * 1.1, 10, 'x')]);
 }
 
-function layoutFor(style: TankStyle): Layout {
+function layoutFor(style: 'west' | 'east'): Layout {
   if (style === 'west') {
     const r = 0.34;
     const trackT = 0.09;
@@ -261,10 +271,12 @@ function layoutFor(style: TankStyle): Layout {
   };
 }
 
-export function buildTank(style: TankStyle, seed: number): TankModel {
-  // A downloaded model when one is loaded for this style (importedTank.ts); this procedural one otherwise.
-  const imported = importedTank(style, seed);
+export function buildTank(kind: TankStyle, seed: number): TankModel {
+  // A downloaded model when one is loaded for this vehicle (importedTank.ts); otherwise this procedural
+  // tank of its side (an IFV without its model is drawn as a tank, its gun and armour still its own).
+  const imported = importedTank(kind, seed);
   if (imported) return imported;
+  const style = sideOf(kind);
   const west = style === 'west';
   const uniforms = makeVehicleUniforms(
     seed,
@@ -638,7 +650,7 @@ export function buildTank(style: TankStyle, seed: number): TankModel {
   return model;
 }
 
-const aoCache = new Map<TankStyle, { hull: Float32Array[]; turret: Float32Array[] }>();
+const aoCache = new Map<'west' | 'east', { hull: Float32Array[]; turret: Float32Array[] }>();
 
 /** Bakes both styles' occlusion ahead of play, so the first enemy wave does not stall on it. */
 export function prebakeTankOcclusion(): void {

@@ -3,10 +3,12 @@ import { attribute } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import mbtWestInfo from '../../../shared/vehicles/mbt_west/mbt_west.json';
 import mbtEastInfo from '../../../shared/vehicles/mbt_east/mbt_east.json';
+import ifvWestInfo from '../../../shared/vehicles/ifv_west/ifv_west.json';
+import ifvEastInfo from '../../../shared/vehicles/ifv_east/ifv_east.json';
 import { makeVehicleUniforms, vehicleMaterial } from '../render/vehicleMaterial';
 import type { TankModel, TankStyle } from './tankModel';
 
-// Main battle tanks from downloaded models (shared/vehicles, CC BY; prepared by
+// Tanks and IFVs from downloaded models (shared/vehicles, CC BY; prepared by
 // paris/tools/vehicles/prepare_tank.py into a hull, a turret about its ring and a gun about its
 // trunnions), assembled into the same TankModel the procedural tanks are, so the game drives them the
 // same way: the turret group traverses, the gun group elevates, the muzzle, coax and roof gun are
@@ -28,20 +30,25 @@ interface TankInfo {
 }
 
 /**
- * Mean albedo the lifted texture lands on: weathered olive and camouflage paint measures about 0.08-0.1
- * linear. The downloaded models' textures were painted for engines that added little light (about 0.03),
- * so under this game's measured sun and sky they read near black. Never darkened, at most tripled.
+ * Mean albedo the lifted texture lands on: weathered olive and camouflage paint measures about 0.1-0.15
+ * linear. Most of the downloaded models' textures were painted for engines that added light of their own
+ * (0.016-0.05 measured over the texels in use), so under this game's measured sun and sky they read near
+ * black. Never darkened; lifted at most six times (the darkest texture, whose painted shading then
+ * stays as dark as it was drawn).
  */
-const PAINT_ALBEDO = 0.085;
+const PAINT_ALBEDO = 0.12;
+const MAX_GAIN = 6;
 
 const SOURCES: Record<TankStyle, { url: string; info: TankInfo }> = {
   west: { url: new URL('../../../shared/vehicles/mbt_west/mbt_west.glb', import.meta.url).href, info: mbtWestInfo },
   east: { url: new URL('../../../shared/vehicles/mbt_east/mbt_east.glb', import.meta.url).href, info: mbtEastInfo },
+  ifvWest: { url: new URL('../../../shared/vehicles/ifv_west/ifv_west.glb', import.meta.url).href, info: ifvWestInfo },
+  ifvEast: { url: new URL('../../../shared/vehicles/ifv_east/ifv_east.glb', import.meta.url).href, info: ifvEastInfo },
 };
 
 const loaded = new Map<TankStyle, THREE.Group>();
 
-/** Loads both tanks; a failure leaves the procedural tank for that style (logged, not thrown). */
+/** Loads every vehicle; a failure leaves the procedural tank of its side (logged, not thrown). */
 export async function loadTankModels(): Promise<void> {
   const loader = new GLTFLoader();
   await Promise.all(
@@ -73,7 +80,7 @@ export function importedTank(style: TankStyle, seed: number): TankModel | null {
   if (!scene) return null;
   const info = SOURCES[style].info;
   const uniforms = makeVehicleUniforms(seed, [0x4b5340, 0x4f3f2e, 0x262628]);
-  const mapGain = Math.min(3, Math.max(1, PAINT_ALBEDO / Math.max(info.albedo, 1e-3)));
+  const mapGain = Math.min(MAX_GAIN, Math.max(1, PAINT_ALBEDO / Math.max(info.albedo, 1e-3)));
   const materials: THREE.Material[] = [];
   const byMaterial = new Map<THREE.Material, THREE.Material>();
   const materialFor = (src: THREE.Material): THREE.Material => {

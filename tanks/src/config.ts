@@ -34,6 +34,11 @@ export interface AmmoSpec {
   /** blast radius for splash damage to modules and dirt (0 = none) */
   blastRadius: number;
   tracer: [number, number, number];
+  /**
+   * Size of what the round does beyond its penetration (blast against infantry, crater, flash, spall,
+   * damage through the armour) relative to a tank gun's round: 1 when absent, ~0.25 for 30 mm.
+   */
+  scale?: number;
 }
 
 // APFSDS matches the reference sheet: 0.32 s @500 m, 0.64 s @1000 m, 1.30 s @2000 m, 2.0 s @3000 m.
@@ -110,6 +115,15 @@ export interface TankSpec {
     turretFront: number; turretSide: number; turretRear: number; turretTop: number;
   };
   length: number; width: number; hullHeight: number;
+  /** The gun's own rounds in place of the tank gun's (an IFV's autocannon), by the slot they load from. */
+  rounds?: Partial<Record<AmmoId, AmmoSpec>>;
+  /**
+   * Hit points a penetration takes, relative to a tank's share (1 when absent): an IFV's thin hull holds
+   * crew, ammunition and fuel close together, and a tank round through it is nearly always a kill.
+   */
+  vulnerability?: number;
+  /** Rounds fired from one halt before relocating (an autocannon's burst); 2-3 aimed shots when absent. */
+  burst?: number;
 }
 
 const DEG = Math.PI / 180;
@@ -136,6 +150,47 @@ export const ENEMY_TANK: TankSpec = {
     turretFront: 600, turretSide: 220, turretRear: 70, turretTop: 40,
   },
   length: 7.0, width: 3.6, hullHeight: 1.1,
+};
+
+// 30 mm autocannon (the IFVs): APDS at ~1000 m/s goes through ~60 mm at 1000 m, a tank's side, rear
+// and roof but not its front; HE-T bursts against crews, optics and tracks. 300-odd rounds a minute in
+// bursts: one round every 0.25 s. Drag from the velocity lost over 1 km (v = v0·e^(-k·x)): APDS
+// 1000 → 800 m/s, HE-T 960 → 700 m/s.
+const AP30: AmmoSpec = {
+  id: 'APFSDS', label: 'APDS 30 mm', v0: 1000, k: 2.2e-4, pen0: 75, penLossPerKm: 18,
+  damage: 0.05, ricochetDeg: 70, blastRadius: 0, tracer: [1.0, 0.5, 0.25], scale: 0.25,
+};
+const HE30: AmmoSpec = {
+  id: 'HE', label: 'HE-T 30 mm', v0: 960, k: 3.2e-4, pen0: 12, penLossPerKm: 0,
+  damage: 0.03, ricochetDeg: 75, blastRadius: 1.8, tracer: [1.0, 0.45, 0.2], scale: 0.25,
+};
+
+/** Light tracked IFV, 30 mm gun: the enemy's (front-engined, aluminium and thin steel). */
+export const ENEMY_IFV: TankSpec = {
+  name: 'BWP-30', mass: 14300, maxFwd: 18.0, maxRev: 4.5, powerW: 224_000, maxAccel: 2.2,
+  brakeDecel: 6.5, pivotRate: 40 * DEG, runRate: 15 * DEG, turretRate: 35 * DEG, gunRate: 20 * DEG,
+  gunMin: -5 * DEG, gunMax: 60 * DEG, reload: 0.25, hp: 450,
+  ammo: { APFSDS: 999, HEAT: 999, HE: 999 },
+  armour: {
+    hullFront: 30, hullSide: 18, hullRear: 16, hullTop: 10,
+    turretFront: 30, turretSide: 20, turretRear: 15, turretTop: 10,
+  },
+  length: 6.7, width: 3.15, hullHeight: 0.95,
+  rounds: { APFSDS: AP30, HEAT: HE30, HE: HE30 },
+  vulnerability: 2.6,
+  burst: 8,
+};
+
+/** The player's escort: a heavier IFV with spaced side armour; its 25 mm gun shares the 30 mm's ballistics. */
+export const ALLY_IFV: TankSpec = {
+  ...ENEMY_IFV,
+  name: 'BWP-25', mass: 27600, maxFwd: 16.9, powerW: 450_000, turretRate: 40 * DEG,
+  armour: {
+    hullFront: 45, hullSide: 30, hullRear: 20, hullTop: 15,
+    turretFront: 45, turretSide: 30, turretRear: 20, turretTop: 15,
+  },
+  length: 6.55, width: 3.6, hullHeight: 1.2,
+  vulnerability: 2.2,
 };
 
 export interface QualityPreset {

@@ -82,6 +82,8 @@ export class Hud {
   private spotsG = $('spots') as unknown as SVGGElement;
   private spotPool: SVGPathElement[] = [];
   private extras: MinimapExtras | null = null;
+  /** The player's escort, drawn on the minimap. */
+  allies: readonly Tank[] = [];
   private mmCtx: CanvasRenderingContext2D;
   private mmBase: HTMLCanvasElement | null = null;
   private msgs: { el: HTMLElement; t: number }[] = [];
@@ -305,6 +307,14 @@ export class Hud {
         ctx.arc(x, y, 3.2, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+    // the escort, always known (on the radio): blue, like the player's own marker's side
+    ctx.fillStyle = '#5ab4ff';
+    for (const a of this.allies) {
+      if (!a.alive) continue;
+      ctx.beginPath();
+      ctx.arc(toPx(a.pos.x), toPx(a.pos.z), 2.8, 0, Math.PI * 2);
+      ctx.fill();
     }
     const ex = this.extras;
     if (ex) {

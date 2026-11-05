@@ -4,7 +4,7 @@ import { pushOutObb } from '../world/buildings';
 import type { World } from '../world/world';
 import { type ArmourResult, MODULES, type ModuleDef, type ModuleId, moduleLayout, resolveArmour, segmentBox } from './damage';
 import type { EngineVoice } from './audio';
-import { buildTank, type TankModel, type TankStyle, updateWheels } from './tankModel';
+import { buildTank, isIfv, sideOf, type TankModel, type TankStyle, updateWheels } from './tankModel';
 import { hyp2, hyp3 } from '../core/mathx';
 
 export type Team = 'player' | 'enemy';
@@ -115,7 +115,7 @@ export class Tank {
     seed: number,
   ) {
     this.model = buildTank(style, seed);
-    this.moduleDefs = moduleLayout(style === 'west');
+    this.moduleDefs = moduleLayout(isIfv(style) ? 'ifv' : sideOf(style));
     this.modules = Object.fromEntries(MODULES.map((m) => [m, 1])) as Record<ModuleId, number>;
     this.repairT = Object.fromEntries(MODULES.map((m) => [m, 0])) as Record<ModuleId, number>;
     this.hp = spec.hp;
@@ -124,7 +124,12 @@ export class Tank {
   }
 
   get ammoSpec(): AmmoSpec {
-    return AMMO[this.loaded ?? this.selected];
+    return this.round(this.loaded ?? this.selected);
+  }
+
+  /** What a slot fires from this gun: the tank gun's round, or the vehicle's own (an autocannon's). */
+  round(id: AmmoId): AmmoSpec {
+    return this.spec.rounds?.[id] ?? AMMO[id];
   }
 
   get mobile(): boolean {
@@ -439,13 +444,14 @@ export class Tank {
   /** Consumes the loaded round and starts the next reload. Recoil kicks the hull. */
   fire(time: number): AmmoSpec | null {
     if (!this.canFire()) return null;
-    const ammo = AMMO[this.loaded!];
+    const ammo = this.round(this.loaded!);
     this.loaded = null;
     this.reloadLeft = this.reloadTime;
     this.shotsFired++;
     this.lastShotTime = time;
-    this.barrelHeat = Math.min(1.2, this.barrelHeat + 0.25);
-    const k = 0.9;
+    const scale = ammo.scale ?? 1;
+    this.barrelHeat = Math.min(1.2, this.barrelHeat + 0.25 * scale);
+    const k = 0.9 * scale;
     this.pitchV += Math.cos(this.turretYaw) * k;
     this.rollV += Math.sin(this.turretYaw) * k * 0.7;
     return ammo;
@@ -529,32 +535,33 @@ export class Tank {
         if (d < ammo.blastRadius * 0.6) this.damageModule(def.id, (1 - d / (ammo.blastRadius * 0.6)) * 0.9, rep);
       }
       if (armour.outcome !== 'pen') {
-        const loss = this.spec.hp * (ammo.id === 'HE' ? 0.035 : 0.01);
+        const loss = this.spec.hp * (ammo.id === 'HE' ? 0.035 : 0.01) * (ammo.scale ?? 1);
         this.hp -= loss;
         rep.hpLoss += loss;
       }
     }
 
     if (armour.outcome === 'pen') {
-      const loss = this.spec.hp * ammo.damage * (0.8 + Math.random() * 0.4);
+      const loss = this.spec.hp * ammo.damage * (this.spec.vulnerability ?? 1) * (0.8 + Math.random() * 0.4);
       this.hp -= loss;
       rep.hpLoss += loss;
-      // spall cone: modules near the shot line inside the vehicle
-      const spallLen = ammo.id === 'APFSDS' ? 3.5 : 2.2;
+      // spall cone: modules near the shot line inside the vehicle (a 30 mm core throws a short, thin one)
+      const scale = ammo.scale ?? 1;
+      const spallLen = (ammo.id === 'APFSDS' ? 3.5 : 2.2) * Math.sqrt(scale);
       _p1.copy(hit.point).addScaledVector(dir, spallLen);
       for (const def of this.moduleDefs) {
         if (def.id === 'trackL' || def.id === 'trackR') continue; // tracks are outside the hull
         const w = this.moduleWorld(def, _v2);
         const d = distPointSegment(w, hit.point, _p1);
         if (d < def.r + 0.4) {
-          this.damageModule(def.id, 0.45 + Math.random() * 0.6, rep);
+          this.damageModule(def.id, (0.45 + Math.random() * 0.6) * Math.sqrt(scale), rep);
           if (def.id === 'ammo') {
             // west: bustle rack behind blow-out panels; east: carousel under the crew
             const p = this.moduleDefs.find((q) => q.id === 'ammo')!.frame === 'turret' ? 0.18 : 0.55;
-            if (Math.random() < p) rep.cookOff = true;
+            if (Math.random() < p * Math.sqrt(scale)) rep.cookOff = true;
           }
-          if (def.id === 'fuel' && Math.random() < 0.35) rep.fire = true;
-          if (def.id === 'engine' && Math.random() < 0.2) rep.fire = true;
+          if (def.id === 'fuel' && Math.random() < 0.35 * Math.sqrt(scale)) rep.fire = true;
+          if (def.id === 'engine' && Math.random() < 0.2 * Math.sqrt(scale)) rep.fire = true;
         }
       }
     }

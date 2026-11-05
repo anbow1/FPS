@@ -47,10 +47,15 @@ export class TankAI {
   private tof = 1;
   private angleOffset: number;
 
+  /**
+   * `escort`: the tank this one keeps near (the player's for the friendly IFVs): it patrols around it
+   * instead of wandering off across the map.
+   */
   constructor(
     readonly tank: Tank,
     private readonly skill: number,
     seed: number,
+    private readonly escort: Tank | null = null,
   ) {
     this.rng = new Rng(seed);
     this.hpAtThink = tank.hp;
@@ -62,9 +67,10 @@ export class TankAI {
     const t = this.tank;
     for (let i = 0; i < 10; i++) {
       const a = this.rng.next() * Math.PI * 2;
-      const d = this.rng.range(120, 380);
-      const x = Math.max(-PLAY_HALF + 60, Math.min(PLAY_HALF - 60, t.pos.x + Math.cos(a) * d));
-      const z = Math.max(-PLAY_HALF + 60, Math.min(PLAY_HALF - 60, t.pos.z + Math.sin(a) * d));
+      const c = this.escort?.alive ? this.escort.pos : t.pos;
+      const d = this.escort?.alive ? this.rng.range(30, 90) : this.rng.range(120, 380);
+      const x = Math.max(-PLAY_HALF + 60, Math.min(PLAY_HALF - 60, c.x + Math.cos(a) * d));
+      const z = Math.max(-PLAY_HALF + 60, Math.min(PLAY_HALF - 60, c.z + Math.sin(a) * d));
       this.goal.set(x, z);
       return;
     }
@@ -112,9 +118,11 @@ export class TankAI {
       if (aligned && this.errMil < floor + 0.6 && Math.abs(t.speed) < 2.5) {
         onFire(t);
         this.shotsHere++;
-        this.errMil += 1.5;
+        // an autocannon's burst walks a little; a tank gun's blast and recoil spoil the lay
+        const burst = t.spec.burst;
+        this.errMil += burst ? 0.25 : 1.5;
         this.errDir.set(this.rng.gauss(), this.rng.gauss()).normalize();
-        if (this.shotsHere >= 2 + this.rng.int(0, 1)) this.startReposition(target);
+        if (this.shotsHere >= (burst ?? 2 + this.rng.int(0, 1))) this.startReposition(target);
       }
     }
     this.drive(dt, world);

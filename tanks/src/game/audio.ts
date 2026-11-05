@@ -236,6 +236,11 @@ export class Audio {
   }
 
   /** Coax 7.62 mm. */
+  /** 30 mm autocannon: a lower, heavier bark than the machine guns, far short of the tank gun's boom. */
+  autocannon(pos: THREE.Vector3, local: boolean): void {
+    this.shot(pos, local, 420, local ? 1.0 : 1.5, 0.18);
+  }
+
   mg(pos: THREE.Vector3, local: boolean): void {
     this.shot(pos, local, 900, local ? 0.55 : 0.9, 0.09);
   }

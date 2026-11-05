@@ -60,7 +60,8 @@ export class Projectiles {
     if (s.tracer) {
       const c = ammo.tracer;
       (s.tracer.material as THREE.MeshBasicNodeMaterial).color.setRGB(c[0] * 30, c[1] * 30, c[2] * 30);
-      s.tracer.scale.set(ammo.id === 'APFSDS' ? 0.6 : 1.4, ammo.id === 'APFSDS' ? 0.6 : 1.4, 1);
+      const w = (ammo.id === 'APFSDS' ? 0.6 : 1.4) * Math.max(0.5, Math.sqrt(ammo.scale ?? 1));
+      s.tracer.scale.set(w, w, 1);
     }
     this.shells.push(s);
     return s;

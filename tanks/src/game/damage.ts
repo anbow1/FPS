@@ -13,7 +13,21 @@ export interface ModuleDef {
   r: number;
 }
 
-export function moduleLayout(west: boolean): ModuleDef[] {
+/** Where a vehicle's modules sit: a western or eastern tank, or an IFV (engine beside the driver up front,
+ * ready rounds in the turret basket, fuel in the rear doors and sponsons, troops in between). */
+export function moduleLayout(kind: 'west' | 'east' | 'ifv'): ModuleDef[] {
+  if (kind === 'ifv') {
+    return [
+      { id: 'engine', frame: 'hull', pos: new THREE.Vector3(0.5, 0.9, 1.9), r: 0.9 },
+      { id: 'trackL', frame: 'hull', pos: new THREE.Vector3(-1.35, 0.4, 0), r: 0.8 },
+      { id: 'trackR', frame: 'hull', pos: new THREE.Vector3(1.35, 0.4, 0), r: 0.8 },
+      { id: 'gun', frame: 'turret', pos: new THREE.Vector3(0, 0.35, 0.7), r: 0.6 },
+      { id: 'turretDrive', frame: 'hull', pos: new THREE.Vector3(0, 1.2, 0.3), r: 0.8 },
+      { id: 'ammo', frame: 'turret', pos: new THREE.Vector3(0, -0.2, 0), r: 0.7 },
+      { id: 'fuel', frame: 'hull', pos: new THREE.Vector3(0, 0.8, -2.4), r: 0.8 },
+    ];
+  }
+  const west = kind === 'west';
   return [
     { id: 'engine', frame: 'hull', pos: new THREE.Vector3(0, 1.1, west ? -2.6 : -2.5), r: 1.3 },
     { id: 'trackL', frame: 'hull', pos: new THREE.Vector3(-1.55, 0.45, 0), r: 0.9 },

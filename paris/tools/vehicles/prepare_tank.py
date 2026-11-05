@@ -198,7 +198,10 @@ def mean_albedo(obs):
             rgb = px.reshape(-1, 4)[:, :3]
             # Byte images hold their sRGB code values; decode before averaging.
             lin = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
-            lum = float((lin @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)).mean())
+            lum_all = lin @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+            # The atlas's empty background is black and no face samples it: leave it out of the mean.
+            used = lum_all[lum_all > 0.0015]
+            lum = float(used.mean()) if used.size else 0.0
             weight += tris
             total += tris * lum
     return total / weight if weight else 0.0

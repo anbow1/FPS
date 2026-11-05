@@ -274,6 +274,7 @@ async function boot(): Promise<void> {
     const info = pipeline.info.render;
     if (bench) benchFrame(rawDt, performance.now() - renderStart, info.drawCalls, info.triangles);
     hud.setExtras({ drone: game.droneMap, infantry: game.spottedInfantry, droneStatus: game.droneStatus });
+    hud.allies = game.escort;
     hud.update(dt, game.player, game.rangeInfo.range, game.rangeInfo.lased, game.enemies, game.spottedSet, fps, cpuMs, { calls: info.drawCalls, triangles: info.triangles, scale: pipeline.governorLabel, gpu: pipeline.passTimer.summary(), backend: pipeline.backendName }, game.quality.id, markers);
     input.endFrame();
     cpuMs += (performance.now() - frameStart - cpuMs) * 0.05;
