@@ -22,6 +22,8 @@ on:
       - 'ridgeline/**'
       - 'tanks/**'
       - 'android/**'
+      # models and other assets the games import from the shared folder
+      - 'shared/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
