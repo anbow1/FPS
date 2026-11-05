@@ -145,7 +145,7 @@ export class GameView {
     await progress('Building the world', 0.35);
     this.world = buildStaticWorld(map, lib);
     // The shared car models (shared/vehicles), only on maps that park cars.
-    if (map.props.some((p) => p.kind === 'car')) await loadCarModels();
+    if (map.props.some((p) => p.kind === 'car')) await loadCarModels(this.settings.quality);
     this.props = buildProps(map.props, lib);
     stage.scene.add(this.world.group, this.props.group);
     const furniture = buildStreetFurniture(map, lib);

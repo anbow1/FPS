@@ -179,10 +179,9 @@ class VehicleLod {
     model: VehicleModel,
     group: Group,
   ) {
-    for (const [parts, into, name] of [
-      [model.near, this.near, 'near'],
-      [model.far, this.far, 'far'],
-    ] as const) {
+    // One model for both ranges (Low loads only the far one): one set of meshes, every car in it.
+    const sets = model.near === model.far ? ([[model.far, this.near, 'far']] as const) : ([[model.near, this.near, 'near'], [model.far, this.far, 'far']] as const);
+    for (const [parts, into, name] of sets) {
       for (const part of parts) {
         const geometry = part.geometry.clone();
         if (part.recolour) geometry.setAttribute('paintTint', new InstancedBufferAttribute(new Float32Array(cars.length * 3), 3));
@@ -204,7 +203,7 @@ class VehicleLod {
     let nNear = 0;
     let nFar = 0;
     for (const p of this.cars) {
-      const isNear = Math.hypot(p.pos.x - camera.x, p.pos.z - camera.z) < CAR_NEAR_M;
+      const isNear = this.far.length === 0 || Math.hypot(p.pos.x - camera.x, p.pos.z - camera.z) < CAR_NEAR_M;
       const slot = isNear ? nNear++ : nFar++;
       _q.setFromAxisAngle(_up, p.yawRad);
       _m.compose(_pos.set(p.pos.x, p.pos.y, p.pos.z), _q, _scale.setScalar(p.scale));

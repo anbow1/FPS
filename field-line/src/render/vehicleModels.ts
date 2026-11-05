@@ -21,7 +21,7 @@ export interface VehiclePartMesh {
   castShadow: boolean;
 }
 
-/** Near (lod0) and far (lod1) part sets of one model. */
+/** Near (lod0) and far (lod1) part sets of one model; the same set twice when only the far one is loaded. */
 export interface VehicleModel {
   near: VehiclePartMesh[];
   far: VehiclePartMesh[];
@@ -46,15 +46,19 @@ export function carModel(id: CarModelId): VehicleModel | undefined {
   return models.get(id);
 }
 
-/** Loads every car model; a failure leaves the procedural cars in place (logged, not thrown). */
-export async function loadCarModels(): Promise<void> {
+/**
+ * Loads every car model; a failure leaves the procedural cars in place (logged, not thrown). On Low (the
+ * phones' preset) only the far level is fetched and serves near too: ~0.45 MB a model instead of ~2.3.
+ */
+export async function loadCarModels(quality: 'high' | 'low'): Promise<void> {
   const loader = new GLTFLoader();
   await Promise.all(
     CAR_MODELS.map(async (id) => {
       try {
-        const [near, far] = await Promise.all(URLS[id].map((url) => loader.loadAsync(url)));
-        if (!near || !far) return;
-        models.set(id, { near: partsOf(id, near.scene), far: partsOf(id, far.scene) });
+        const [nearUrl, farUrl] = URLS[id];
+        const far = partsOf(id, (await loader.loadAsync(farUrl)).scene);
+        const near = quality === 'high' ? partsOf(id, (await loader.loadAsync(nearUrl)).scene) : far;
+        models.set(id, { near, far });
       } catch (err) {
         console.warn(`car model ${id} did not load; the procedural car stands in:`, err);
       }
