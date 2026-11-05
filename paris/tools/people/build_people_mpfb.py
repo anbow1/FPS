@@ -78,7 +78,8 @@ def rig_bone(mh):
 # Patterns are matched against an asset's file name (lower case): every word of a pattern must occur in it.
 # A man's patterns never pick a "female_" asset unless they say "female".
 # Assets never picked, even as a fallback: shirts carrying a logo or a printed title (no marks in the games).
-EXCLUDE = {'male_casualsuit02.mhclo', 'elvs_male_logo_tshirt1.mhclo', 'punkduck_deathnote_t-shirt.mhclo'}
+EXCLUDE = {'male_casualsuit02.mhclo', 'elvs_male_logo_tshirt1.mhclo', 'punkduck_deathnote_t-shirt.mhclo',
+           'jaldmic_m1951_72.mhclo', 'toigo_ankle_boots_female.mhclo', 'wdg_scruffy_beard.mhclo', 'elvs_male_trouser_short_1.mhclo'}
 EYEBROWS = ['eyebrow001', 'eyebrow']
 EYELASHES = ['eyelashes01', 'eyelashes']
 EYES = ['low-poly', 'eyes']
@@ -124,13 +125,15 @@ CAST = [
      'clothes': [['female_casualsuit02', 'female_casualsuit']], 'shoes': ['shoes04', 'shoes']},
 ]
 
-# Field Line's soldiers (--cast fieldline): field jacket or camouflage T-shirt, cargo trousers, tactical
-# vest, a steel helmet or a patrol cap, boots. Short hair under the helmets, so none pokes through.
+# Field Line's soldiers (--cast fieldline): camouflage T-shirt or a knitted sweater, cargo trousers, tactical
+# vest, a steel helmet or a patrol cap, boots. Short hair under the helmets, so none pokes through. Not in
+# the picks (seen in the previews): the M1951 asset fits no torso, the female ankle boots render white,
+# the scruffy beard is a black block, the cut-off trousers show skin through holes.
 # No unit, flag or rank marks: the games' armies are invented.
 SOLDIERS = [
     {'name': 'soldier_rifleman', 'gender': 1.0, 'age': 24, 'eth': (0, 0, 1), 'muscle': 0.65, 'weight': 0.45, 'height': 0.6,
      'skin': ['young caucasian male', 'caucasian male'], 'hair': ['short01', 'short'], 'eyes': ['brown', ''],
-     'clothes': [['m1951', 'camo tee'], ['cargo pants', 'male trousers'], ['tactical vest']],
+     'clothes': [['camo tee'], ['cargo pants', 'male trousers'], ['tactical vest']],
      'shoes': ['male boots', 'boots'], 'hat': ['m1 helmet', 'helmet']},
     {'name': 'soldier_capped', 'gender': 1.0, 'age': 31, 'eth': (0.9, 0, 0.1), 'muscle': 0.7, 'weight': 0.5, 'height': 0.65,
      'skin': ['middleage african male', 'african male'], 'hair': ['short04', 'short'], 'eyes': ['brown', ''],
@@ -138,15 +141,15 @@ SOLDIERS = [
      'shoes': ['male boots', 'boots'], 'hat': ['patrol cap', 'cap']},
     {'name': 'soldier_kz', 'gender': 1.0, 'age': 27, 'eth': (0, 0.9, 0.1), 'muscle': 0.6, 'weight': 0.4, 'height': 0.45,
      'skin': ['young asian male', 'asian male'], 'hair': ['short02', 'short'], 'eyes': ['brown', ''],
-     'clothes': [['m1951', 'camo tee'], ['cargo pants', 'male trousers'], ['tactical vest']],
+     'clothes': [['knitted sweater', 'camo tee'], ['cargo pants', 'male trousers'], ['tactical vest']],
      'shoes': ['male boots', 'boots'], 'hat': ['helmet kz45', 'helmet']},
     {'name': 'soldier_woman', 'gender': 0.0, 'age': 26, 'eth': (0, 0.1, 0.9), 'muscle': 0.6, 'weight': 0.4, 'height': 0.5,
      'skin': ['young caucasian female', 'caucasian female'], 'hair': ['ponytail01', 'braid01', 'ponytail'], 'eyes': ['blue', ''],
      'clothes': [['camo tee'], ['cargo pants', 'female trousers'], ['tactical vest female', 'tactical vest']],
-     'shoes': ['ankle boots female', 'boots'], 'hat': ['patrol cap', 'cap']},
+     'shoes': ['heroine boots', 'boots'], 'hat': ['patrol cap', 'cap']},
     {'name': 'soldier_sergeant', 'gender': 1.0, 'age': 44, 'eth': (0.2, 0, 0.8), 'muscle': 0.6, 'weight': 0.65, 'height': 0.55,
      'skin': ['middleage caucasian male', 'caucasian male'], 'hair': ['short03', 'short'], 'eyes': ['grey', ''],
-     'clothes': [['m1951', 'camo tee'], ['cargo pants', 'male trousers'], ['gloves short']],
+     'clothes': [['camo tee'], ['cargo pants', 'male trousers'], ['gloves short']],
      'shoes': ['male boots', 'boots'], 'hat': ['patrol cap', 'cap']},
     {'name': 'soldier_gunner', 'gender': 1.0, 'age': 29, 'eth': (0.7, 0, 0.3), 'muscle': 0.85, 'weight': 0.6, 'height': 0.7,
      'skin': ['young african male', 'african male'], 'hair': ['short01', 'short'], 'eyes': ['brown', ''],
@@ -162,19 +165,19 @@ GUERRILLAS = [
      'clothes': [['tankshirt', 'muscle shirt'], ['cargo pants']], 'shoes': ['male boots', 'boots']},
     {'name': 'guerrilla_camo', 'gender': 1.0, 'age': 34, 'eth': (0.3, 0.5, 0.2), 'muscle': 0.6, 'weight': 0.45, 'height': 0.45,
      'skin': ['middleage asian male', 'asian male'], 'hair': ['short02', 'short'], 'eyes': ['brown', ''],
-     'clothes': [['camo tee'], ['cargo pants'], ['scruffy beard']], 'shoes': ['male boots', 'boots'], 'hat': ['patrol cap', 'cap']},
+     'clothes': [['camo tee'], ['cargo pants']], 'shoes': ['male boots', 'boots'], 'hat': ['patrol cap', 'cap']},
     {'name': 'guerrilla_shirt', 'gender': 1.0, 'age': 28, 'eth': (0.1, 0.1, 0.8), 'muscle': 0.55, 'weight': 0.4, 'height': 0.55,
      'skin': ['light skin male bronze', 'young caucasian male'], 'hair': ['short03', 'short'], 'eyes': ['brown', ''],
-     'clothes': [['shirt untucked'], ['trouser short', 'cargo pants']], 'shoes': ['flip flop', 'sandals'], 'hat': ['fishing hat']},
+     'clothes': [['striped shirt', 'tankshirt'], ['jeans shorts', 'cargo pants']], 'shoes': ['flip flop', 'sandals']},
     {'name': 'guerrilla_vest', 'gender': 1.0, 'age': 41, 'eth': (0.9, 0, 0.1), 'muscle': 0.75, 'weight': 0.55, 'height': 0.6,
      'skin': ['skin male african middleage', 'middleage african male'], 'hair': ['short01', 'short'], 'eyes': ['brown', ''],
      'clothes': [['muscle shirt', 'tankshirt'], ['cargo pants'], ['tactical vest']], 'shoes': ['male boots', 'boots']},
     {'name': 'guerrilla_coveralls', 'gender': 1.0, 'age': 52, 'eth': (0.2, 0.3, 0.5), 'muscle': 0.5, 'weight': 0.6, 'height': 0.5,
      'skin': ['middleage caucasian male', 'male'], 'hair': ['short04', 'short'], 'eyes': ['grey', ''],
-     'clothes': [['coveralls', 'male_worksuit'], ['scruffy beard']], 'shoes': ['male boots', 'boots'], 'hat': ['flat cap', 'cap']},
+     'clothes': [['coveralls', 'male_worksuit']], 'shoes': ['male boots', 'boots'], 'hat': ['flat cap', 'cap']},
     {'name': 'guerrilla_woman', 'gender': 0.0, 'age': 27, 'eth': (0.8, 0, 0.2), 'muscle': 0.55, 'weight': 0.4, 'height': 0.5,
      'skin': ['young african female', 'african female'], 'hair': ['braid01', 'afro01', 'ponytail'], 'eyes': ['brown', ''],
-     'clothes': [['tank top'], ['cargo pants']], 'shoes': ['ankle boots female', 'boots']},
+     'clothes': [['tank top'], ['cargo pants']], 'shoes': ['heroine boots', 'boots']},
 ]
 
 CASTS = {'paris': CAST, 'fieldline': SOLDIERS, 'lagoon': GUERRILLAS}
