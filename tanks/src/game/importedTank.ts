@@ -23,7 +23,16 @@ interface TankInfo {
   gunPivot: number[];
   muzzle: number[];
   boxes: { hull: PartBox; turret: PartBox; gun: PartBox };
+  /** Mean linear luminance of the model's colour textures (prepare_tank.py). */
+  albedo: number;
 }
+
+/**
+ * Mean albedo the lifted texture lands on: weathered olive and camouflage paint measures about 0.08-0.1
+ * linear. The downloaded models' textures were painted for engines that added little light (about 0.03),
+ * so under this game's measured sun and sky they read near black. Never darkened, at most tripled.
+ */
+const PAINT_ALBEDO = 0.085;
 
 const SOURCES: Record<TankStyle, { url: string; info: TankInfo }> = {
   west: { url: new URL('../../../shared/vehicles/mbt_west/mbt_west.glb', import.meta.url).href, info: mbtWestInfo },
@@ -64,6 +73,7 @@ export function importedTank(style: TankStyle, seed: number): TankModel | null {
   if (!scene) return null;
   const info = SOURCES[style].info;
   const uniforms = makeVehicleUniforms(seed, [0x4b5340, 0x4f3f2e, 0x262628]);
+  const mapGain = Math.min(3, Math.max(1, PAINT_ALBEDO / Math.max(info.albedo, 1e-3)));
   const materials: THREE.Material[] = [];
   const byMaterial = new Map<THREE.Material, THREE.Material>();
   const materialFor = (src: THREE.Material): THREE.Material => {
@@ -71,9 +81,9 @@ export function importedTank(style: TankStyle, seed: number): TankModel | null {
     if (!m) {
       const std = src as THREE.MeshStandardMaterial;
       const made = std.map
-        ? vehicleMaterial('natoGreen', uniforms, { map: std.map })
+        ? vehicleMaterial('natoGreen', uniforms, { map: std.map, mapGain })
         : vehicleMaterial('parkerised', uniforms, { params: { color: std.color ?? new THREE.Color(0x30302c) } });
-      // prepare_tank.py bakes Cycles occlusion into the second colour set: the sky and bounce light only.
+      // prepare_tank.py casts occlusion into the second colour set: it dims the sky and bounce light only.
       made.aoNode = attribute('color_1', 'vec3').x;
       materials.push(made);
       byMaterial.set(src, made);

@@ -53,13 +53,16 @@ def box(ob):
 
 def find_barrel(parts, front_z, size):
     """The longest piece much longer than it is wide, along Z, its muzzle in the vehicle's front third
-    (a tank's gun overhangs the hull; an IFV's cannon may stop short of its nose) and above the running
-    gear: the barrel. Track runs are as slender but lie low."""
+    (a tank's gun overhangs the hull; an IFV's cannon may stop short of its nose), round in section, near
+    the centre line and above the running gear: the barrel. Track runs and side skirts are as slender but
+    lie low or are flat."""
     best, best_len = None, 0.0
     for p in parts:
         lo, hi, c, d = box(p)
         slender = d.z > 6 * max(d.x, d.y) and d.z > 0.12 * size.z
-        if slender and lo.z < front_z + 0.33 * size.z and c.y > 0.9 and d.z > best_len:
+        # A tube, not a plate (side skirts are as long and lie as high), near the centre line.
+        round_ = 0.5 < d.x / max(d.y, 1e-6) < 2.0 and abs(c.x) < 0.25 * size.x
+        if slender and round_ and lo.z < front_z + 0.33 * size.z and c.y > 0.9 and d.z > best_len:
             best, best_len = p, d.z
     return best
 
@@ -101,6 +104,7 @@ def main():
     lo, hi = pv.bounds(parts)
     size = hi - lo
     print(f'{len(parts)} loose pieces; size {size.x:.2f} × {size.y:.2f} × {size.z:.2f} m')
+    print(f'{pv.outward_normals(parts)} pieces faced inward, turned')
 
     barrel = find_barrel(parts, lo.z, size)
     if barrel is None:
@@ -147,7 +151,8 @@ def main():
         if total > a.triangles:
             pv.decimate(o, max(200, int(a.triangles * t / total)))
     pv.downscale_textures(a.tex)
-    pv.bake_ao(obs)
+    albedo = mean_albedo(obs)
+    pv.ray_ao(obs)
     boxes = {}
     for name, o in (('hull', hull_ob), ('turret', turret_ob), ('gun', gun_ob)):
         plo, phi = pv.bounds([o])
@@ -166,10 +171,47 @@ def main():
         'muzzle': [round(v, 4) for v in muzzle],
         'boxes': boxes,
         'triangles': sum(sum(len(f.vertices) - 2 for f in o.data.polygons) for o in obs),
+        'albedo': round(albedo, 4),
     }
     with open(a.out + '.json', 'w') as f:
         json.dump(info, f, indent=1)
     print(json.dumps(info, indent=1))
+
+
+def mean_albedo(obs):
+    """Mean linear luminance of the colour textures, weighted by the triangles that wear each: game
+    textures are often painted dark, lighting baked in, and the game lifts them to a real paint's albedo."""
+    import numpy as np
+    weight, total = 0.0, 0.0
+    for o in obs:
+        for slot, mat in enumerate(o.data.materials):
+            img = base_image(mat)
+            if img is None:
+                continue
+            tris = sum(len(f.vertices) - 2 for f in o.data.polygons if f.material_index == slot)
+            px = np.empty(len(img.pixels), dtype=np.float32)
+            img.pixels.foreach_get(px)
+            rgb = px.reshape(-1, 4)[:, :3]
+            # Byte images hold their sRGB code values; decode before averaging.
+            lin = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+            lum = float((lin @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)).mean())
+            weight += tris
+            total += tris * lum
+    return total / weight if weight else 0.0
+
+
+def base_image(mat):
+    """The image feeding a material's base colour, if any."""
+    if mat is None or not mat.use_nodes:
+        return None
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    if bsdf is None or not bsdf.inputs['Base Color'].links:
+        return None
+    node = bsdf.inputs['Base Color'].links[0].from_node
+    while node is not None and node.type != 'TEX_IMAGE':
+        links = [l for i in node.inputs for l in i.links]
+        node = links[0].from_node if links else None
+    return node.image if node is not None and node.image is not None and node.image.size[0] > 0 else None
 
 
 def preview(obs, path):

@@ -161,6 +161,52 @@ def orient_and_scale(forward, up, length):
     print(f'scale ×{s:.4f} (model was {hi.z - lo.z:.3f} units long)')
 
 
+def outward_normals(parts, samples=48, reach=4.0):
+    """Turns every loose piece whose faces face into the model, as some models ripped from other engines
+    arrive (winding the other way round): their sun lighting falls on the wrong side and the occlusion
+    bake, which looks along the normal, comes out black. A piece's faces vote by casting a ray each way
+    against the whole model: the outer side of armour sees the open sky more often than its inner side.
+    Returns how many pieces were turned."""
+    import bmesh
+    import random
+    from mathutils.bvhtree import BVHTree
+    bm = bmesh.new()
+    for p in parts:
+        bm.from_mesh(p.data)
+    tree = BVHTree.FromBMesh(bm)
+    bm.free()
+    rng = random.Random(7)
+    turned = 0
+    for p in parts:
+        me = p.data
+        polys = list(me.polygons)
+        if not polys:
+            continue
+        votes = 0
+        for f in rng.sample(polys, min(samples, len(polys))):
+            c, n = f.center, f.normal
+            out_open = tree.ray_cast(c + n * 0.002, n, reach)[0] is None
+            in_open = tree.ray_cast(c - n * 0.002, -n, reach)[0] is None
+            votes += int(out_open) - int(in_open)
+        if votes >= 0:
+            continue
+        # Keep the model's smoothing: each corner's normal, negated, follows its vertex through the flip.
+        old = {}
+        corner = list(me.corner_normals) if hasattr(me, 'corner_normals') else []
+        for f in polys:
+            for li in f.loop_indices:
+                v = me.loops[li].vertex_index
+                old[(f.index, v)] = (-corner[li].vector) if corner else -f.normal
+        me.flip_normals()
+        custom = [None] * len(me.loops)
+        for f in me.polygons:
+            for li in f.loop_indices:
+                custom[li] = old[(f.index, me.loops[li].vertex_index)]
+        me.normals_split_custom_set(custom)
+        turned += 1
+    return turned
+
+
 def bounds(obs):
     lo = Vector((1e9, 1e9, 1e9))
     hi = -lo
@@ -304,6 +350,65 @@ def bake_ao(obs):
         if not me.materials:
             me.materials.append(bpy.data.materials.new('plain'))
         bpy.ops.object.bake(type='AO')
+
+
+def ray_ao(obs, rays=32, reach=0.6):
+    """AO per face corner, cast in Python, for models built of interpenetrating pieces (armour plates
+    through a hull, bolted-on boxes): Cycles' vertex bake looks from the vertex itself, which there lies
+    inside the neighbouring piece, and a low-poly face then goes black from corner to corner. Here each
+    corner looks from a little inside its own face and above it, and a ray that meets the back of a face
+    (it started inside another piece) counts as open. Written into the same `ao` colour as bake_ao."""
+    import math
+    import random
+    import bmesh
+    from mathutils.bvhtree import BVHTree
+    bm = bmesh.new()
+    for o in obs:
+        t = bmesh.new()
+        t.from_mesh(o.data)
+        t.transform(o.matrix_world)
+        me = bpy.data.meshes.new('ao_tmp')
+        t.to_mesh(me)
+        t.free()
+        bm.from_mesh(me)
+        bpy.data.meshes.remove(me)
+    tree = BVHTree.FromBMesh(bm)
+    bm.free()
+    rng = random.Random(3)
+    # Cosine-weighted directions about +Z (a Fibonacci spiral on the disc, lifted to the hemisphere).
+    golden = math.pi * (3 - math.sqrt(5))
+    base = []
+    for i in range(rays):
+        r = math.sqrt((i + 0.5) / rays)
+        a = i * golden
+        base.append(Vector((r * math.cos(a), r * math.sin(a), math.sqrt(max(0.0, 1 - r * r)))))
+    for o in obs:
+        me = o.data
+        if 'ao' in me.color_attributes:
+            me.color_attributes.remove(me.color_attributes['ao'])
+        attr = me.color_attributes.new('ao', 'BYTE_COLOR', 'CORNER')
+        mw = o.matrix_world
+        rot = mw.to_3x3().inverted().transposed()
+        for f in me.polygons:
+            centre = mw @ f.center
+            n = (rot @ f.normal).normalized()
+            t = n.orthogonal().normalized()
+            b = n.cross(t)
+            for li in f.loop_indices:
+                p = mw @ me.vertices[me.loops[li].vertex_index].co
+                origin = p + (centre - p) * 0.08 + n * 0.01
+                spin = rng.random() * 2 * math.pi
+                cs, sn = math.cos(spin), math.sin(spin)
+                hit = 0
+                for d in base:
+                    x = d.x * cs - d.y * sn
+                    y = d.x * sn + d.y * cs
+                    w = t * x + b * y + n * d.z
+                    loc, hn, _, _ = tree.ray_cast(origin, w, reach)
+                    if loc is not None and hn.dot(w) < 0:
+                        hit += 1
+                v = 1.0 - hit / rays
+                attr.data[li].color = (v, v, v, 1.0)
 
 
 def downscale_textures(size):

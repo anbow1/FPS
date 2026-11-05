@@ -47,9 +47,10 @@ const c3 = (c: THREE.Color) => vec3(c.r, c.g, c.b);
  */
 /**
  * `map`: a photographed or painted model's own colour (render/../game/importedTank.ts) in place of the
- * palette paint and camouflage; the dust, grime, burn and heat stay.
+ * palette paint and camouflage; the dust, grime, burn and heat stay. `mapGain` scales it (linear), for
+ * textures painted darker than the paint they show.
  */
-export function vehicleMaterial(key: PbrKey, u: VehicleUniforms, opts: { camo?: boolean; params?: THREE.MeshStandardMaterialParameters; map?: THREE.Texture } = {}): THREE.MeshStandardNodeMaterial {
+export function vehicleMaterial(key: PbrKey, u: VehicleUniforms, opts: { camo?: boolean; params?: THREE.MeshStandardMaterialParameters; map?: THREE.Texture; mapGain?: number } = {}): THREE.MeshStandardNodeMaterial {
   const p = PBR[key];
   const mat = new THREE.MeshStandardNodeMaterial({ color: p.color, roughness: p.rough, metalness: p.metal, ...opts.params });
   mat.name = `vehicle-${key}${opts.camo ? '-camo' : ''}`;
@@ -61,7 +62,7 @@ export function vehicleMaterial(key: PbrKey, u: VehicleUniforms, opts: { camo?: 
   const base = mat.color.clone();
   mat.colorNode = Fn(() => {
     grime.assign(fbm3(tp.mul(3.3)));
-    let paint: THREE.Node<'vec3'> = opts.map ? texture(opts.map, uv()).rgb : c3(base);
+    let paint: THREE.Node<'vec3'> = opts.map ? texture(opts.map, uv()).rgb.mul(opts.mapGain ?? 1) : c3(base);
     if (opts.camo && !opts.map) {
       const n1 = fbm3(tp.mul(vec3(0.42, 0.7, 0.42)));
       const n2 = fbm3(tp.mul(vec3(0.5, 0.8, 0.5)).add(19));
