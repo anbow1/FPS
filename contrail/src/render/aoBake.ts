@@ -111,7 +111,11 @@ export function bakeAmbientOcclusion(root: Group, options: AoOptions = AIRFRAME)
   const bitangent = new Vector3();
   const dir = new Vector3();
   const normalMatrix = new Matrix3();
-  const startOffset = cellM * 1.8;
+  // Rays leave from a point lifted off the surface along its normal: started on the surface, the grazing
+  // ones (most of a cosine fan's outer ring) ran inside the surface's own voxels and counted it as cover,
+  // so an open flat plate baked to ~0.4 instead of ~1 and a vehicle in shade went black.
+  const normalLift = cellM * 1.5;
+  const startOffset = cellM * 0.5;
   const stepM = cellM * 0.7;
   for (const { mesh, toRoot } of meshes) {
     const g = mesh.geometry;
@@ -130,12 +134,15 @@ export function bakeAmbientOcclusion(root: Group, options: AoOptions = AIRFRAME)
       }
       tangent.set(Math.abs(n.y) < 0.9 ? 0 : 1, Math.abs(n.y) < 0.9 ? 1 : 0, 0).cross(n).normalize();
       bitangent.crossVectors(n, tangent);
+      const ox = v.x + n.x * normalLift;
+      const oy = v.y + n.y * normalLift;
+      const oz = v.z + n.z * normalLift;
       let open = 0;
       for (const d of dirs) {
         dir.copy(tangent).multiplyScalar(d.x).addScaledVector(bitangent, d.y).addScaledVector(n, d.z);
         let hit = false;
         for (let t = startOffset; t < rangeM; t += stepM) {
-          const cell = cellOf(v.x + dir.x * t, v.y + dir.y * t, v.z + dir.z * t);
+          const cell = cellOf(ox + dir.x * t, oy + dir.y * t, oz + dir.z * t);
           if (cell >= 0 && grid[cell]) {
             hit = true;
             break;
