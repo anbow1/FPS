@@ -1,4 +1,4 @@
-import { attribute, texture, uv } from 'three/tsl';
+import { attribute, float, positionLocal, select, texture, uniform, uv } from 'three/tsl';
 import { type BufferGeometry, type Group, type Material, Mesh, MeshStandardNodeMaterial, type Texture } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import bulatInfo from '../../../shared/vehicles/heli_bulat/heli_bulat.json';
@@ -57,6 +57,13 @@ const SOURCES: Record<HeliId, { url: string; info: HeliInfo }> = {
 const loaded = new Map<HeliId, Group>();
 
 /**
+ * 1 while the camera sits in a crew seat. The model's own cockpit interior (coamings, panels and the
+ * bulkhead between the seats, drawn for a viewer outside) then gives way to the game's cockpit
+ * (heliCockpit.ts): its live displays stood behind the model's coaming at eye level and read as clutter.
+ */
+export const interiorClip = uniform(0);
+
+/**
  * Loads both helicopters' models; a failure leaves that one procedural (logged, not thrown). Loaded, its crew's
  * eye points move to the model's seats (the cockpit view and the crew figures follow them).
  */
@@ -89,6 +96,18 @@ export function importedHeli(id: HeliId): ImportedHeli | null {
   const lift = HELICOPTERS[id].wheels[0]?.[1] ?? 0;
   const gain = Math.min(MAX_GAIN, Math.max(1, PAINT_ALBEDO / Math.max(info.albedo, 1e-3)));
   const made = new Map<Material, MeshStandardNodeMaterial>();
+  // The cockpit tub round both seats (the file's frame): from the gunner's panel to behind the pilot, from
+  // the floor to just under the eyes, inside the side walls. The canopy, its frames and the walls stay.
+  const eyes = info.eyes;
+  const clip = eyes
+    ? {
+        hw: 0.42,
+        y0: Math.min(eyes.gunner[1] ?? 0, eyes.pilot[1] ?? 0) - 1.2,
+        y1: Math.min(eyes.gunner[1] ?? 0, eyes.pilot[1] ?? 0) - 0.12,
+        z0: Math.min(eyes.gunner[2] ?? 0, eyes.pilot[2] ?? 0) - 1.3,
+        z1: Math.max(eyes.gunner[2] ?? 0, eyes.pilot[2] ?? 0) + 0.5,
+      }
+    : null;
   const materialFor = (src: Material, fading: boolean): MeshStandardNodeMaterial => {
     const key = src;
     const cached = fading ? undefined : made.get(key);
@@ -98,6 +117,12 @@ export function importedHeli(id: HeliId): ImportedHeli | null {
     if (map) m.colorNode = texture(map, uv()).rgb.mul(gain);
     // prepare_heli.py casts occlusion into the second colour set: the sky and bounce light only.
     m.aoNode = attribute('color_1', 'vec3').x;
+    if (clip && !fading) {
+      const p = positionLocal;
+      const inTub = p.x.abs().lessThan(clip.hw).and(p.y.greaterThan(clip.y0)).and(p.y.lessThan(clip.y1)).and(p.z.greaterThan(clip.z0)).and(p.z.lessThan(clip.z1));
+      m.opacityNode = select(inTub.and(interiorClip.greaterThan(0.5)), float(0), float(1));
+      m.alphaTest = 0.5;
+    }
     // The blades fade into the smear disc as the rotor spins up (heliView.ts sets their opacity).
     if (fading) m.transparent = true;
     if (!fading) made.set(key, m);

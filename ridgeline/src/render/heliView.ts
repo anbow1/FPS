@@ -2,6 +2,7 @@ import { Quaternion, type Scene, Vector3 } from 'three/webgpu';
 import type { HeliId } from '../config.ts';
 import type { Helicopter } from '../sim/helicopter.ts';
 import { buildHeli, type HeliModel } from './heliModel.ts';
+import { interiorClip } from './importedHeli.ts';
 
 // A helicopter on screen: the model placed at the simulation state interpolated
 // between fixed steps (rules §3), the disc tilted by the flapping state, and the
@@ -31,6 +32,7 @@ export class HeliView {
     m.pilotFigure.visible = seat !== 'pilot';
     m.gunnerFigure.visible = seat !== 'gunner';
     m.glass.opacity = seat ? 0.1 : 0.6;
+    interiorClip.value = seat ? 1 : 0;
   }
 
   update(h: Helicopter, alpha: number, frameS: number, visible: boolean): void {
