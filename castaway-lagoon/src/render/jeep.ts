@@ -24,6 +24,7 @@ import {
 } from 'three/webgpu';
 import { JEEP } from '../config.ts';
 import type { Jeep } from '../game/jeep.ts';
+import { jeepLoaded, JEEP_LAMP, jeepParts } from './jeepModel.ts';
 import { HeadlightBeams } from './lightBeams.ts';
 import { tube } from './meshkit.ts';
 import { bakeAmbientOcclusion } from './aoBake.ts';
@@ -203,7 +204,7 @@ export class JeepView {
   readonly group = new Group();
   readonly headlights: SpotLight[] = [];
   /** The beams in the air (lightBeams.ts), seen at night, in haze and rain. */
-  private readonly beams = new HeadlightBeams(new Vector3(-0.285, 0.26, -1.68), new Vector3(0.285, 0.26, -1.68), new Vector3(0, -0.68, -10.32));
+  private readonly beams: HeadlightBeams;
   /** Radiance of the lamp glasses when lit, pre-exposed. */
   readonly glassGlow = uniform(0);
   private readonly wheels: { pivot: Group; spin: Group; front: boolean }[] = [];
@@ -213,6 +214,14 @@ export class JeepView {
   constructor() {
     this.group.name = 'jeep';
     this.group.rotation.order = 'YXZ';
+    // The downloaded model when it loaded (render/jeepModel.ts), else the procedural jeep drawn below.
+    const model = jeepLoaded();
+    const lamp = model ? { x: JEEP_LAMP.x, y: JEEP_LAMP.y, z: JEEP_LAMP.z - 0.02 } : { x: 0.285, y: 0.26, z: -1.68 };
+    this.beams = new HeadlightBeams(new Vector3(-lamp.x, lamp.y, lamp.z), new Vector3(lamp.x, lamp.y, lamp.z), new Vector3(0, -0.68, -10.32));
+    if (model) {
+      this.buildFromModel(lamp.y, lamp.z);
+      return;
+    }
     const paint = new MeshStandardNodeMaterial({ name: 'jeep paint', color: OLIVE, roughness: 0.72 });
     // Island use: sand caked low on the body and in the wheel arches, sun-faded paint on top.
     const p = positionLocal;
@@ -413,6 +422,31 @@ export class JeepView {
     // Grime in every corner and the sky light shut out under the body (aoBake.ts), baked once with the
     // doors and bonnet shut; their occlusion rides along when they open.
     bakeAmbientOcclusion(this.group);
+  }
+
+  /** The model's body, its bonnet on its hinge, its wheels on pivots that steer and hubs that roll. */
+  private buildFromModel(lampY: number, lampZ: number): void {
+    const parts = jeepParts(this.glassGlow);
+    for (const m of parts.body) this.group.add(m);
+    this.bonnet.position.copy(parts.hinge);
+    for (const m of parts.bonnet) this.bonnet.add(m);
+    this.group.add(this.bonnet);
+    for (const w of parts.wheels) {
+      const pivot = new Group();
+      pivot.position.copy(w.at);
+      const spin = new Group();
+      for (const m of w.meshes) spin.add(m);
+      pivot.add(spin);
+      this.group.add(pivot);
+      this.wheels.push({ pivot, spin, front: w.front });
+    }
+    // The model has no doors (an open tub): the door groups stay empty, the doors' openings only timed.
+    const light = new SpotLight(0xfff0d8, 0, 60, 0.5, 0.55, 2);
+    light.position.set(0, lampY, lampZ);
+    light.target.position.set(0, lampY - 0.68, lampZ - 10.3);
+    light.castShadow = false;
+    this.group.add(light, light.target, this.beams.mesh);
+    this.headlights.push(light);
   }
 
   update(jeep: Jeep, alpha: number, preExposure: number): void {

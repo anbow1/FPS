@@ -53,6 +53,9 @@ def args_of():
     ap.add_argument('--tex', type=int, default=2048)
     ap.add_argument('--tex-far', type=int, default=None,
                     help='texture size of lod1 (each farther level halves it); default half of --tex')
+    ap.add_argument('--part', action='append', default=[],
+                    help='name:x0,y0,z0,x1,y1,z1[,min] — loose parts wholly inside the box (game frame, m) whose '
+                         'largest extent is at least min, as their own node (a bonnet, a door) for the game to move')
     ap.add_argument('--preview', action='store_true')
     ap.add_argument('--cpu', action='store_true')
     # A pack of several cars in one file: the body to keep (a word or words in its object names); the
@@ -323,6 +326,32 @@ def is_light(ob, words):
     return False
 
 
+def gather_parts(specs, skip):
+    """Each `--part`: the loose pieces wholly inside its box and at least `min` long, joined into one object of
+    that name, left in the body's frame (the game puts the hinge where it belongs)."""
+    out = []
+    for spec in specs:
+        name, box = spec.split(':', 1)
+        v = [float(t) for t in box.split(',')]
+        lo, hi, least = Vector(v[0:3]), Vector(v[3:6]), v[6] if len(v) > 6 else 0.0
+        pieces = []
+        for o in [o for o in meshes() if o.name not in skip and o not in out]:
+            olo, ohi = bounds([o])
+            if any(ohi[i] < lo[i] or olo[i] > hi[i] for i in range(3)):
+                continue
+            for p in split_loose(o):
+                plo, phi = bounds([p])
+                if all(plo[i] >= lo[i] and phi[i] <= hi[i] for i in range(3)) and max(phi - plo) >= least:
+                    pieces.append(p)
+        ob = join(pieces, name)
+        if ob is None:
+            print(f'WARNING: nothing inside the box of --part {name}')
+            continue
+        print(f'{name}: {len(pieces)} pieces')
+        out.append(ob)
+    return out
+
+
 def decimate(ob, triangles):
     tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
     if tris <= triangles:
@@ -523,7 +552,8 @@ def main():
         info['wheels'][key] = {'centre': [round(c.x, 4), round(c.y, 4), round(c.z, 4)], 'radius': round(r, 4)}
         wheels.append(ob)
     wheel_names = {w.name for w in wheels}
-    rest = [o for o in meshes() if o.name not in wheel_names]
+    moving = gather_parts(a.part, wheel_names)
+    rest = [o for o in meshes() if o.name not in wheel_names and o not in moving]
     lo, hi = bounds(rest)
     mid_z = (lo.z + hi.z) / 2
     # One object can hold every lamp of the car (head and tail lights in one mesh): split it into its
@@ -544,7 +574,7 @@ def main():
         if fz and rz:
             info['wheelbase'] = round(sum(rz) / len(rz) - sum(fz) / len(fz), 3)
     downscale_textures(a.tex)
-    parts = [o for o in (body, head, rear) if o] + wheels
+    parts = [o for o in (body, head, rear) if o] + wheels + moving
     budgets = [int(x) for x in a.lod.split(',')]
     for i, budget in enumerate(budgets):
         copies = []

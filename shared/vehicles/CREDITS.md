@@ -9,7 +9,9 @@ flight model's rotor; the Bulat's posed gun mount turned straight ahead, its sea
 pods given as launch points. The fighters (jet_*) by `prepare_jet.py`: tailplanes, flaperons and rudders (the Talon's whole fins) on
 their hinge lines, the landing gear and squadron badges taken off. The lorries (cargo_truck, staff_car) and the lagoon's cutter and skiff (boat_cutter, boat_skiff) by
 `prepare_truck.py`: one body, wheels and all, after `scrub_marks.py` painted the staff car's door stars
-and maker's plates and the cargo lorry's door chevron out of their textures.
+and maker's plates and the cargo lorry's door chevron out of their textures. The lagoon's jeep (jeep_open) by
+`prepare_vehicle.py`: its wheels and its bonnet (`--part`) as their own nodes, after `scrub_marks.py` painted the
+stencilled star, numbers and data plate out of its colour and roughness maps.
 
 | Folder | Source | Author | Licence |
 | --- | --- | --- | --- |
@@ -25,6 +27,7 @@ and maker's plates and the cargo lorry's door chevron out of their textures.
 | jet_talon | [Sukhoi Su-57 3D Model](https://sketchfab.com/3d-models/sukhoi-su-57-3d-model-0626205c69204081b3fe416616ad8cf0) (stars, bort numbers and emblem painted out; lowered gear left out) | [thomas333](https://sketchfab.com/thomas333) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | boat_cutter | [Fisher boat](https://sketchfab.com/3d-models/fisher-boat-385b039e95754dca8d8c045ed0c515cf) (its name painted off the bow) | [Batuhan13](https://sketchfab.com/Batuhan13) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | boat_skiff | [«Progress» motorboat](https://sketchfab.com/3d-models/progress-motorboat-4d0e69bb45a34f669709c416eec37b15) (its own outboard left out: the game clamps its own on the transom) | [isiosiusin](https://sketchfab.com/isiosiusin) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| jeep_open | [Jeep](https://sketchfab.com/3d-models/jeep-ae6528c1735848a99de368936413fb9b) (its bonnet star, serial numbers and data plate painted out) | [rajibkc](https://sketchfab.com/rajibkc) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | jet_wraith | [F-35B Lightning II](https://sketchfab.com/3d-models/f-35b-lightning-ii-raf-617-squadron-1161f64164ce481189ce67d39502c068) (squadron badges and landing gear removed) | [mgg8](https://sketchfab.com/mgg8) | [CC0 1.0](http://creativecommons.org/publicdomain/zero/1.0/) |
 
 Credit line for the games' credits (CC BY requires it):
@@ -39,3 +42,4 @@ Credit line for the games' credits (CC BY requires it):
 > This work is based on "Sukhoi Su-57 3D Model" by thomas333, licensed under CC BY 4.0.
 > This work is based on "Fisher boat" by Batuhan13, licensed under CC BY 4.0.
 > This work is based on "«Progress» motorboat" by isiosiusin, licensed under CC BY 4.0.
+> This work is based on "Jeep" by rajibkc, licensed under CC BY 4.0.

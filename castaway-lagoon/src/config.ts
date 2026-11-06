@@ -87,10 +87,11 @@ export const BOAT = {
  * and grip are typical of soft beach sand against firm turf; the rest is tuned by hand.
  */
 export const JEEP = {
-  lengthM: 3.4,
-  widthM: 1.6,
-  wheelbaseM: 2.1,
-  trackM: 1.3,
+  // Over all and between the tyres' middles, as the model (render/jeepModel.ts) measures.
+  lengthM: 3.36,
+  widthM: 1.5,
+  wheelbaseM: 2.04,
+  trackM: 1.13,
   massKg: 1100,
   powerW: 45000,
   peakTractionN: 5500,
@@ -105,13 +106,14 @@ export const JEEP = {
   maxSteerRad: 0.6,
   /** From the ground to the body's reference point (the floor, roughly over the axles). */
   rideHeightM: 0.62,
-  wheelRadiusM: 0.36,
+  wheelRadiusM: 0.39,
   leanPerMs2: 0.012,
   /** Water deeper than this at the nose would reach the air intake. */
   maxWadeM: 0.55,
   /** Driver's seat (left-hand drive): along, up from the reference point, across (+ right). */
-  seat: { along: -0.2, up: 0.12, across: -0.38 },
-  seatedEyeM: 0.8,
+  seat: { along: -0.31, up: 0.17, across: -0.29 },
+  /** Eye over the cushion: a seated adult's ~0.8 m, less the cushion giving under them. */
+  seatedEyeM: 0.74,
   /** Each headlight's peak intensity (cd): an old sealed-beam lamp on high beam. */
   headlightCd: 20000,
 } as const;

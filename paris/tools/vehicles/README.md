@@ -21,6 +21,20 @@ blender -b --python prepare_vehicle.py -- C:\modele\hatchback.glb --out out\hatc
 - `--lod 60000,15000,3000` — budżety trójkątów nadwozia (koła po 1/6, światła po 1/10),
 - `--tex 2048` — maksymalny rozmiar tekstur.
 - `--tex-far 512` — rozmiar tekstur `lod1` (każdy dalszy poziom o połowę); domyślnie połowa `--tex`.
+- `--part "bonnet:x0,y0,z0,x1,y1,z1,min"` — luźne elementy leżące całe w pudełku (układ gry, metry) i dłuższe
+  niż `min` jako osobny węzeł (maska, drzwi), który gra obraca na zawiasie; opcję można powtórzyć.
+
+Jeep z Castaway Lagoon (gwiazda, numery i tabliczka najpierw zamalowane w kolorze **i** w mapie
+chropowatości — tam też były):
+
+```bat
+python -I scrub_marks.py tex\jeep.001_baseColor.png tex\jeep.001_baseColor.png --circle 3590,2200,168 --rect 3138,2100,3248,2490 --rect 3895,2140,4030,2490 --grain-patch 3250,2290,3400,2420
+python -I scrub_marks.py tex\jeep.001_metallicRoughness.png tex\jeep.001_metallicRoughness.png --circle 449,275,23 --rect 391,261,407,312 --rect 486,266,505,312 --grain-patch 407,286,425,302
+blender -b --python prepare_vehicle.py -- jeep\scene.gltf --out out\jeep_open --length 3.36 --forward=x --lod 12000 --tex 2048 --part "bonnet:-0.54,0.9,-1.42,0.58,1.09,-0.57,0.8" --preview
+```
+
+Cały proces od pobrania do gry (licencja, rozpakowanie, oznaczenia, Blender, podgląd, napisy, kod, render,
+APK) opisuje `docs/graphics-playbook.md`, §6q2.
 
 Wynik: `out\hatchback_lod0.glb`, `_lod1.glb`, `_lod2.glb` i `out\hatchback.json`
 (wymiary, środki i promienie kół, rozstaw osi). **Wpisz do `.json` autora, adres

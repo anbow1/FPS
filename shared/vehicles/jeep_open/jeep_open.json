@@ -1,0 +1,44 @@
+{
+ "source": "Jeep by rajibkc (sketchfab.com/rajibkc), sketchfab.com/3d-models/jeep-ae6528c1735848a99de368936413fb9b",
+ "licence": "CC BY 4.0; stencilled star, numbers and data plate painted out of the colour and roughness maps; wheels and bonnet split out, re-lit",
+ "wheels": {
+  "FL": {
+   "centre": [
+    -0.5466,
+    0.3936,
+    -1.1324
+   ],
+   "radius": 0.3936
+  },
+  "FR": {
+   "centre": [
+    0.5862,
+    0.3936,
+    -1.1324
+   ],
+   "radius": 0.3936
+  },
+  "RL": {
+   "centre": [
+    -0.5466,
+    0.3936,
+    0.91
+   ],
+   "radius": 0.3936
+  },
+  "RR": {
+   "centre": [
+    0.5862,
+    0.3936,
+    0.91
+   ],
+   "radius": 0.3936
+  }
+ },
+ "size": [
+  1.502,
+  1.895,
+  3.36
+ ],
+ "wheelbase": 2.042
+}
