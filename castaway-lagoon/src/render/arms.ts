@@ -1,6 +1,6 @@
 import { attribute, bumpMap, float, mix, mx_noise_float, positionGeometry, smoothstep, texture, uv, vec3 } from 'three/tsl';
 import { Bone, CanvasTexture, CylinderGeometry, Group, Matrix4, Mesh, MeshPhysicalNodeMaterial, MeshSSSNodeMaterial, MeshStandardNodeMaterial, Quaternion, RepeatWrapping, Skeleton, SkinnedMesh, SRGBColorSpace, Vector3 } from 'three/webgpu';
-import { type HandData, handData, type HandPose, poseRotations } from './handMesh.ts';
+import { type HandData, handData, type HandPose, handSkinTexture, poseRotations } from './handMesh.ts';
 
 // First-person arms: a real forearm and hand (handMesh.ts — MakeHuman's
 // body, its knuckles, tendons and nails) in fingerless leather gloves, a
@@ -29,6 +29,8 @@ export const POSES = {
 
 /** Tanned skin (sRGB): brown, not orange. */
 const SKIN_HEX = 0xa2785c;
+/** The photographed skin's mean over the hand and forearm (young light-skinned male, measured), linear. */
+const PHOTO_HAND_LINEAR = linear(0xc39780);
 
 /** How far the glove's leather stands off the skin (m). */
 const GLOVE_THICKNESS_M = 0.0013;
@@ -52,12 +54,15 @@ function armMaterials() {
   const forearm = smoothstep(0.3, 0.7, region.z);
   const glove = float(1).sub(bare).mul(float(1).sub(forearm));
   const nail = smoothstep(0.2, 0.6, region.y);
-  // Sun-tanned skin, mottled (sun spots, the redder skin over knuckles and tendons), the tattooed forearm
-  // from its own texture with its hairs and veins. An even, saturated tan read as a shop dummy's arm.
-  const mottle = mx_noise_float(positionGeometry.mul(90)).mul(0.06).add(mx_noise_float(positionGeometry.mul(23).add(3.1)).mul(0.08));
-  const skin = vec3(...linear(SKIN_HEX)).mul(mottle.add(1));
-  const handSkin = mix(skin, vec3(...linear(0x9f6e5a)), bare.mul(0.5));
-  const skinColour = mix(handSkin, texture(tattooTexture(), uv()).rgb.mul(mottle.add(1)), forearm);
+  // Photographed skin (MakeHuman's, CC0) on the base mesh's own UVs, its knuckles, creases, veins and
+  // nail beds as they are, tanned to the castaway's sun-browned tone. The forearm's tattoo, hairs and veins
+  // are drawn on a plain-skin ground: divided by that ground they darken the photograph where they are.
+  const photo = texture(handSkinTexture(), attribute('skinUv', 'vec2')).rgb;
+  const tan = vec3(...linear(SKIN_HEX)).div(vec3(...PHOTO_HAND_LINEAR));
+  const skin = photo.mul(tan);
+  const handSkin = mix(skin, skin.mul(vec3(1.0, 0.93, 0.92)), bare.mul(0.5));
+  const overlay = texture(tattooTexture(), uv()).rgb.div(vec3(...linear(SKIN_HEX))).min(1.2);
+  const skinColour = mix(handSkin, skin.mul(overlay), forearm);
   const withNail = mix(skinColour, vec3(...linear(0xd2a693)), nail);
   // The glove's cut edges, round each finger and at the wrist: the leather's raw edge, darker.
   const fingerEdge = float(1).sub(smoothstep(0.0, 0.12, region.x.sub(0.5).abs())).mul(float(1).sub(forearm));

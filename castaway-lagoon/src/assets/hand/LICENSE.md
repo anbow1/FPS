@@ -14,3 +14,11 @@ palm facing −Y), the forearm stretched to 27 cm, one Catmull–Clark step,
 weights reduced to four bones per vertex, region masks for the glove and the
 nails derived from the weights, and quantised (format in
 `render/handMesh.ts`). The left hand is the right one mirrored at load.
+
+## Skin
+
+`skin_diffuse.jpg` is MakeHuman's "young light-skinned male" skin (via MPFB, CC0), the same one Field
+Line's soldiers wear; the shader tans it to the castaway's tone. `hand_skinuv.bin` holds the base mesh's
+own UVs for each vertex of `hand.bin`, transferred by `tools/hand_skin_uv.py` (the base mesh brought into
+the hand frame by the rig's finger joints, the forearm pressed back to its length, each vertex taking the
+UV of the closest point on the base mesh's skin: median 0.1 mm off it).

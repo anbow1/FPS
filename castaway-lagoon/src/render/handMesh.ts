@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Quaternion, Vector3 } from 'three/webgpu';
+import { BufferAttribute, BufferGeometry, Quaternion, SRGBColorSpace, type Texture, TextureLoader, Vector3 } from 'three/webgpu';
 
 // Hands and forearms from a real body: MakeHuman's CC0 base mesh with its
 // default skeleton and skin weights (assets/hand/LICENSE.md), baked offline —
@@ -50,18 +50,30 @@ interface HandJson {
 }
 
 const BIN_URL = new URL('../assets/hand/hand.bin', import.meta.url).href;
+/** The base mesh's own UVs for each vertex (tools/hand_skin_uv.py), for the photographed MakeHuman skin. */
+const SKIN_UV_URL = new URL('../assets/hand/hand_skinuv.bin', import.meta.url).href;
+const SKIN_URL = new URL('../assets/hand/skin_diffuse.jpg', import.meta.url).href;
 const JSON_URL = new URL('../assets/hand/hand.json', import.meta.url).href;
 const MAGIC = 0x32444e48; // 'HND2'
 
 let right: HandData | null = null;
+let skin: Texture | null = null;
 let left: HandData | null = null;
 
 /** Loads the hand; call once before the viewmodel is built. */
 export async function loadHandMesh(): Promise<void> {
   if (right) return;
-  const [buf, json] = await Promise.all([(await fetch(BIN_URL)).arrayBuffer(), (await fetch(JSON_URL)).json() as Promise<HandJson>]);
-  right = parse(buf, json, false);
-  left = parse(buf, json, true);
+  const [buf, json, skinUv, tex] = await Promise.all([
+    (await fetch(BIN_URL)).arrayBuffer(),
+    (await fetch(JSON_URL)).json() as Promise<HandJson>,
+    (await fetch(SKIN_UV_URL)).arrayBuffer(),
+    new TextureLoader().loadAsync(SKIN_URL),
+  ]);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 4;
+  skin = tex;
+  right = parse(buf, json, false, skinUv);
+  left = parse(buf, json, true, skinUv);
 }
 
 /** The right hand, or the left: the right mirrored across x, its winding turned so it still faces out. */
@@ -71,7 +83,13 @@ export function handData(side: 1 | -1): HandData {
   return h;
 }
 
-function parse(buf: ArrayBuffer, json: HandJson, mirror: boolean): HandData {
+/** The photographed skin (MakeHuman's, CC0) the hand's `skinUv` reads. */
+export function handSkinTexture(): Texture {
+  if (!skin) throw new Error('hand skin requested before loadHandMesh() finished');
+  return skin;
+}
+
+function parse(buf: ArrayBuffer, json: HandJson, mirror: boolean, skinUvBuf: ArrayBuffer): HandData {
   const head = new DataView(buf, 0, 16);
   if (head.getUint32(0, true) !== MAGIC) throw new Error('not a hand mesh');
   const n = head.getUint32(4, true);
@@ -123,6 +141,12 @@ function parse(buf: ArrayBuffer, json: HandJson, mirror: boolean): HandData {
   g.setAttribute('skinWeight', new BufferAttribute(skinWeight, 4));
   g.setAttribute('region', new BufferAttribute(region, 4));
   g.setAttribute('uv', new BufferAttribute(uv, 2));
+  // The same skin on both hands: the left is the right mirrored, its texture with it. OBJ's v runs up, as
+  // the texture loader's flipped image does.
+  const su = new Uint16Array(skinUvBuf);
+  const skinUv = new Float32Array(n * 2);
+  for (let i = 0; i < n * 2; i++) skinUv[i] = (su[i] as number) / 65535;
+  g.setAttribute('skinUv', new BufferAttribute(skinUv, 2));
   g.setIndex(new BufferAttribute(index, 1));
   g.computeBoundingSphere();
   const v = (a: [number, number, number]): Vector3 => new Vector3(a[0] * sx, a[1], a[2]);
