@@ -259,7 +259,8 @@ def preview(obs, path):
         col = colours.get(o.name, (1.0, 0.55, 0.1, 1))
         m.use_nodes = True
         m.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = col
-        saved[o.name] = list(o.data.materials)
+        # Clearing the slots resets every face's material index to 0: keep them to put back.
+        saved[o.name] = (list(o.data.materials), [f.material_index for f in o.data.polygons])
         o.data.materials.clear()
         o.data.materials.append(m)
     lo, hi = pv.bounds(obs)
@@ -296,9 +297,11 @@ def preview(obs, path):
     bpy.data.objects.remove(cam)
     bpy.data.objects.remove(sun)
     for o in obs:
+        mats, index = saved[o.name]
         o.data.materials.clear()
-        for m in saved[o.name]:
+        for m in mats:
             o.data.materials.append(m)
+        o.data.polygons.foreach_set('material_index', index)
 
 
 if __name__ == '__main__':
