@@ -20,6 +20,7 @@ blender -b --python prepare_vehicle.py -- C:\modele\hatchback.glb --out out\hatc
   części przy narożnikach,
 - `--lod 60000,15000,3000` — budżety trójkątów nadwozia (koła po 1/6, światła po 1/10),
 - `--tex 2048` — maksymalny rozmiar tekstur.
+- `--tex-far 512` — rozmiar tekstur `lod1` (każdy dalszy poziom o połowę); domyślnie połowa `--tex`.
 
 Wynik: `out\hatchback_lod0.glb`, `_lod1.glb`, `_lod2.glb` i `out\hatchback.json`
 (wymiary, środki i promienie kół, rozstaw osi). **Wpisz do `.json` autora, adres
