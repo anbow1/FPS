@@ -48,60 +48,82 @@ def main():
     im = Image.open(a.src)
     mode = im.mode
     px = np.asarray(im.convert('RGBA')).astype(np.float32) / 255
-    rgb = px[..., :3]
-    h, w = rgb.shape[:2]
-    yy, xx = np.mgrid[0:h, 0:w]
-    region = np.zeros((h, w), bool)
-    boxes = []
-    for c in a.circle:
-        x, y, r = (float(v) for v in c.split(','))
-        region |= (xx - x) ** 2 + (yy - y) ** 2 <= r * r
-        boxes.append((x - r, y - r, x + r, y + r))
-    for c in a.rect:
-        x0, y0, x1, y1 = (float(v) for v in c.split(','))
-        region |= (xx >= x0) & (xx <= x1) & (yy >= y0) & (yy <= y1)
-        boxes.append((x0, y0, x1, y1))
-    luma = rgb @ np.array([0.2126, 0.7152, 0.0722], np.float32)
-    # Seams, rust streaks and window texels around a marking are not its paint: the slow variation is
-    # taken from the texels within a quarter of the surroundings' median luminance only.
-    ring = np.zeros((h, w), bool)
-    for (x0, y0, x1, y1) in boxes:
-        g = max(x1 - x0, y1 - y0) * 0.4
-        ring[max(0, int(y0 - g)):int(y1 + g) + 1, max(0, int(x0 - g)):int(x1 + g) + 1] = True
-    ring &= ~region
-    med = float(np.median(luma[ring]))
-    keep = (~region & (np.abs(luma - med) < 0.25 * med)).astype(np.float32)
-    # The paint's slow variation, from the texels outside the regions only.
+    h, w = px.shape[:2]
+    shapes = [('circle', tuple(float(v) for v in c.split(','))) for c in a.circle]
+    shapes += [('rect', tuple(float(v) for v in c.split(','))) for c in a.rect]
+    lw = np.array([0.2126, 0.7152, 0.0722], np.float32)
+
+    def bounds(kind, v):
+        if kind == 'circle':
+            x, y, r = v
+            return x - r, y - r, x + r, y + r
+        return v
+
+    def inside(kind, v, ys, xs):
+        if kind == 'circle':
+            x, y, r = v
+            return (xs - x) ** 2 + (ys - y) ** 2 <= r * r
+        x0, y0, x1, y1 = v
+        return (xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)
+
+    def window(x0, y0, x1, y1, m):
+        return (slice(max(0, int(y0 - m)), min(h, int(y1 + m) + 1)), slice(max(0, int(x0 - m)), min(w, int(x1 + m) + 1)))
+
+    def fine_of(sl):
+        """High frequencies (the paint's grain) of a window, blurred with a margin round it."""
+        big = window(sl[1].start, sl[0].start, sl[1].stop - 1, sl[0].stop - 1, 16)
+        c = px[big][..., :3]
+        f = c - blur(c, 4)
+        return f[sl[0].start - big[0].start:sl[0].stop - big[0].start, sl[1].start - big[1].start:sl[1].stop - big[1].start]
+
+    boxes = [bounds(k, v) for k, v in shapes]
     radius = max(max(b[2] - b[0], b[3] - b[1]) for b in boxes) * 0.35
-    low = blur(rgb * keep[..., None], radius) / np.maximum(blur(keep[..., None], radius), 1e-4)
-    mask = region.copy()
-    if a.bright is not None:
-        around = low @ np.array([0.2126, 0.7152, 0.0722], np.float32)
-        mask &= luma > around + a.bright
-        # Grow by a few texels to take the stencil's soft edge too.
-        mask = np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(7))) > 0
-        mask &= region
-    out = rgb.copy()
-    fine = rgb - blur(rgb, 4)
-    for (x0, y0, x1, y1) in boxes:
-        bw, bh = x1 - x0, y1 - y0
-        sl = (slice(max(0, int(y0)), min(h, int(y1) + 1)), slice(max(0, int(x0)), min(w, int(x1) + 1)))
+    total = 0
+    # Each marking in a window round it (a 4096 texture blurred whole takes gigabytes).
+    for (kind, v), (x0, y0, x1, y1) in zip(shapes, boxes):
+        win = window(x0, y0, x1, y1, 3 * radius + 8)
+        rgb = px[win][..., :3]
+        ys, xs = np.mgrid[win[0], win[1]]
+        # Every marking's own texels are left out of every window's paint.
+        region = np.zeros(ys.shape, bool)
+        for k2, v2 in shapes:
+            region |= inside(k2, v2, ys, xs)
+        own = inside(kind, v, ys, xs)
+        luma = rgb @ lw
+        # Seams, rust streaks and window texels around a marking are not its paint: the slow variation is
+        # taken from the texels within a quarter of the surroundings' median luminance only.
+        g = max(x1 - x0, y1 - y0) * 0.4
+        ring = (xs >= x0 - g) & (xs <= x1 + g) & (ys >= y0 - g) & (ys <= y1 + g) & ~region
+        med = float(np.median(luma[ring])) if ring.any() else float(np.median(luma))
+        keep = (~region & (np.abs(luma - med) < 0.25 * med)).astype(np.float32)
+        low = blur(rgb * keep[..., None], radius) / np.maximum(blur(keep[..., None], radius), 1e-4)
+        mask = own
+        if a.bright is not None:
+            mask = own & (luma > low @ lw + a.bright)
+            # Grow by a few texels to take the stencil's soft edge too.
+            mask = (np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(7))) > 0) & own
+        sl = window(x0, y0, x1, y1, 0)
+        oy, ox = sl[0].start - win[0].start, sl[1].start - win[1].start
         ph, pw = sl[0].stop - sl[0].start, sl[1].stop - sl[1].start
         if a.grain_patch:
             # A clean patch, mirrored and tiled over the region (no seam where the tiles meet).
-            gx0, gy0, gx1, gy1 = (int(v) for v in a.grain_patch.split(','))
-            tile = fine[gy0:gy1, gx0:gx1]
+            gx0, gy0, gx1, gy1 = (int(t) for t in a.grain_patch.split(','))
+            tile = fine_of((slice(gy0, gy1), slice(gx0, gx1)))
             tile = np.concatenate([tile, tile[::-1]], 0)
             tile = np.concatenate([tile, tile[:, ::-1]], 1)
             grain = np.tile(tile, (ph // tile.shape[0] + 1, pw // tile.shape[1] + 1, 1))[:ph, :pw]
         else:
-            dx, dy = (int(v) for v in a.grain_from.split(',')) if a.grain_from else (-int(bw * 1.1), 0)
-            grain = fine[sl[0].start + dy:sl[0].stop + dy, sl[1].start + dx:sl[1].stop + dx]
-        m = mask[sl]
-        out[sl][m] = np.clip(low[sl][m] + grain[m], 0, 1)
-    px[..., :3] = out
+            dx, dy = (int(t) for t in a.grain_from.split(',')) if a.grain_from else (-int((x1 - x0) * 1.1), 0)
+            # A region at the texture's edge borrows from the other side instead.
+            if not a.grain_from and sl[1].start + dx < 0:
+                dx = int((x1 - x0) * 1.1)
+            grain = fine_of((slice(sl[0].start + dy, sl[0].stop + dy), slice(sl[1].start + dx, sl[1].stop + dx)))
+        m = mask[oy:oy + ph, ox:ox + pw]
+        patch = px[sl]
+        patch[..., :3][m] = np.clip(low[oy:oy + ph, ox:ox + pw][m] + grain[m], 0, 1)
+        total += int(m.sum())
     Image.fromarray((px * 255 + 0.5).astype(np.uint8), 'RGBA').convert(mode).save(a.dst)
-    print(f'{a.dst}: {int(mask.sum())} texels repainted')
+    print(f'{a.dst}: {total} texels repainted')
 
 
 if __name__ == '__main__':

@@ -39,6 +39,17 @@ def args_of():
     ap.add_argument('--up', default='z')
     ap.add_argument('--triangles', type=int, default=90000)
     ap.add_argument('--tex', type=int, default=2048)
+    ap.add_argument('--glass', default='palettematerial002', help="words in the canopy's material names")
+    ap.add_argument('--drop', default='',
+                    help='words in the names of parts to leave out (and their children), e.g. a second, lowered gear')
+    ap.add_argument('--no-surfaces', action='store_true',
+                    help='the control surfaces are not separate pieces in this model: leave them on the body')
+    ap.add_argument('--main-gear-z', type=float, default=None,
+                    help="move the model along its length so its main wheels stand at this z (the flight model's)")
+    ap.add_argument('--engines', type=int, default=1, help='nozzles: 1 on the centre line, 2 side by side')
+    ap.add_argument('--surfaces', default='',
+                    help='control surfaces by part name, e.g. "stab=elevator;flaperon=aileron,flap;rudder=rudder" '
+                         '(each side by where it lies); a rudder named so is an all-moving fin')
     ap.add_argument('--preview', action='store_true')
     ap.add_argument('--cpu', action='store_true')
     return ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
@@ -88,7 +99,12 @@ def main():
 
     # The landing gear: the wheels are the pieces touching the ground; around each, everything hanging below
     # the belly (struts, wheels, the open doors) goes. The game retracts its own.
-    ground = [p for p in parts if box(p)[0].y < 0.03 * size.y]
+    words = [w.strip().lower() for w in a.drop.split(',') if w.strip()]
+    dropped = {p for p in parts if any(w in p.get('path', '').lower() for w in words)}
+    # A model carrying its gear twice (stowed and lowered) has its lowered gear dropped: its wheels, the
+    # pieces low down, are the legs.
+    ground = ([p for p in dropped if box(p)[0].y < 0.12 * size.y] if dropped
+              else [p for p in parts if box(p)[0].y < 0.03 * size.y])
     legs = []
     for p in ground:
         c = box(p)[2]
@@ -98,6 +114,15 @@ def main():
                 break
         else:
             legs.append({'x': c.x, 'z': c.z, 'pieces': [p]})
+    if a.main_gear_z is not None:
+        mains = [leg for leg in legs if abs(leg['x']) > 0.5]
+        dz = a.main_gear_z - sum(leg['z'] for leg in mains) / max(1, len(mains))
+        for p in parts:
+            p.data.transform(Matrix.Translation(Vector((0, 0, dz))))
+        for leg in legs:
+            leg['z'] += dz
+        lo, hi = pv.bounds(parts)
+        print(f'moved {dz:+.2f} m along the length: main wheels at z = {a.main_gear_z}')
     gear = set()
     bellies = []
     for leg in legs:
@@ -114,6 +139,7 @@ def main():
     # Badges on the fins: the palette-coloured decorations standing on their outer faces.
     fin_zone = lambda c: 0.1 * size.x < abs(c.x) < 0.25 * size.x and c.y > 0.65 * size.y and 0.28 * size.z < c.z
     badges = {p for p in parts if 'palette' in mat_name(p) and fin_zone(box(p)[2])}
+    gear |= dropped
     for p in gear | badges:
         parts.remove(p)
         bpy.data.objects.remove(p)
@@ -136,6 +162,19 @@ def main():
     rudders = {s: [p for p in parts if box(p)[2].x * s > 0.1 * size.x and box(p)[2].y > 0.6 * size.y and box(p)[3].y > 0.25 * size.y
                    and box(p)[3].z < 0.12 * size.z and box(p)[2].z > tail_z]
                for s in (1, -1)}
+    all_moving_fins = False
+    if a.no_surfaces:
+        stabs, flaps, rudders = {1: [], -1: []}, {1: [], -1: []}, {1: [], -1: []}
+    elif a.surfaces:
+        named = {}
+        for spec in filter(None, (t.strip() for t in a.surfaces.split(';'))):
+            kind, names = spec.split('=')
+            ws = [w.strip().lower() for w in names.split(',') if w.strip()]
+            named[kind.strip()] = {s: [p for p in parts if any(w in p.get('path', '').lower() for w in ws) and box(p)[2].x * s > 0]
+                                   for s in (1, -1)}
+        empty = {1: [], -1: []}
+        stabs, flaps, rudders = named.get('stab', empty), named.get('flaperon', empty), named.get('rudder', empty)
+        all_moving_fins = 'rudder' in named
     for name, groups in (('stab', stabs), ('flaperon', flaps), ('rudder', rudders)):
         print(name, {('L' if s < 0 else 'R'): len(g) for s, g in groups.items()})
 
@@ -146,7 +185,19 @@ def main():
             if not ps:
                 continue
             tag = f'{name}_{"L" if s < 0 else "R"}'
-            if name == 'stab':
+            if name == 'rudder' and all_moving_fins:
+                # An all-moving fin turns about its spar: through 30 % of the root chord, along the span
+                # (the fin's cant), to the same point on the tip.
+                vs = [v for p in ps for v in world_verts(p)]
+                ylo = min(v.y for v in vs)
+                yhi = max(v.y for v in vs)
+                root = [v for v in vs if v.y < ylo + 0.08 * (yhi - ylo)]
+                tip = [v for v in vs if v.y > yhi - 0.08 * (yhi - ylo)]
+                def spar(sec):
+                    zl, zh = min(v.z for v in sec), max(v.z for v in sec)
+                    return Vector((sum(v.x for v in sec) / len(sec), sum(v.y for v in sec) / len(sec), zl + 0.3 * (zh - zl)))
+                a_pt, b_pt = spar(root), spar(tip)
+            elif name == 'stab':
                 l, h = pv.bounds(ps)
                 root_x = l.x if s > 0 else h.x
                 root = [v for p in ps for v in world_verts(p) if abs(v.x - root_x) < 0.05]
@@ -165,7 +216,8 @@ def main():
                 if p in parts:
                     parts.remove(p)
 
-    glass = [p for p in parts if 'palettematerial002' in mat_name(p)]
+    glass_words = [w.strip().lower() for w in a.glass.split(',') if w.strip()]
+    glass = [p for p in parts if any(w in mat_name(p) for w in glass_words)]
     body = [p for p in parts if p not in glass]
     glass_ob = pv.join(glass, 'glass') if glass else None
     body_ob = pv.join(body, 'body')
@@ -185,11 +237,25 @@ def main():
     zmax = max(v.z for v in bverts)
     ring = [v for v in bverts if v.z > zmax - 0.15]
     nozzle = [0.0, round(sum(v.y for v in ring) / len(ring), 3), round(zmax, 3)]
+    nozzles = [nozzle]
+    if a.engines == 2:
+        # Side by side: each engine's exit ring, the rearmost skin a little off the centre line (the tail
+        # sting between them and the booms outboard are left out).
+        nozzles = []
+        for s in (-1, 1):
+            side = [v for v in world_verts(body_ob) if 0.035 * size.x < v.x * s < 0.12 * size.x]
+            zs = max(v.z for v in side)
+            r = [v for v in side if v.z > zs - 0.15]
+            nozzles.append([round(sum(v.x for v in r) / len(r), 3), round(sum(v.y for v in r) / len(r), 3), round(zs, 3)])
     allv = [v for o in obs for v in world_verts(o)]
     tip = max(allv, key=lambda v: v.x)
     eye = None
     if glass_ob:
-        gl, gh = pv.bounds([glass_ob])
+        # The canopy only: the glass ahead of the middle and over the centre line (lamp lenses on the wing
+        # or the tail may share its material).
+        front = [v for v in world_verts(glass_ob) if v.z < lo.z + 0.5 * size.z and abs(v.x) < 0.8]
+        gl = Vector((min(v.x for v in front), min(v.y for v in front), min(v.z for v in front)))
+        gh = Vector((max(v.x for v in front), max(v.y for v in front), max(v.z for v in front)))
         eye = [0.0, round(gh.y - 0.32, 3), round(gl.z + 0.62 * (gh.z - gl.z), 3)]
     for o, pivot in moving:
         o.data.transform(Matrix.Translation(-pivot))
@@ -198,6 +264,7 @@ def main():
         'source': os.path.basename(a.model),
         'size': [round(v, 3) for v in size],
         'hinges': hinge_info,
+        'nozzles': nozzles,
         'nozzle': nozzle,
         'wingtips': [[round(tip.x, 3), round(tip.y, 3), round(tip.z, 3)], [round(-tip.x, 3), round(tip.y, 3), round(tip.z, 3)]],
         'eye': eye,

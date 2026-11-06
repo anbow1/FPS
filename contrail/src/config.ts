@@ -310,9 +310,11 @@ export const AIRCRAFT: Record<AircraftId, AircraftConfig> = {
     signatureSide: 1.4,
     gear: {
       legs: [
-        { x: 0, y: -2.25, z: -6.2, travelM: 0.75, loadShare: 0.12, nose: true },
-        { x: 2.2, y: -2.15, z: 1.6, travelM: 0.75, loadShare: 0.44, nose: false },
-        { x: -2.2, y: -2.15, z: 1.6, travelM: 0.75, loadShare: 0.44, nose: false },
+        // The nose leg and the main track where the model's wells are (shared/vehicles/jet_talon); the
+        // shares are the static split of the weight between legs 6.4 m apart, the mains 1.6 m behind it.
+        { x: 0, y: -2.25, z: -4.8, travelM: 0.75, loadShare: 0.25, nose: true },
+        { x: 2.5, y: -2.15, z: 1.6, travelM: 0.75, loadShare: 0.375, nose: false },
+        { x: -2.5, y: -2.15, z: 1.6, travelM: 0.75, loadShare: 0.375, nose: false },
       ],
       staticCompressionM: 0.16,
       dampingRatio: 0.55,

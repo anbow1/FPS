@@ -53,3 +53,31 @@ blender -b --python prepare_truck.py -- m939\scene.gltf --out out\cargo_truck --
 ```
 
 (`--forward=-x` ze znakiem równości: argparse bierze samo `-x` za opcję.)
+
+## Śmigłowce i myśliwce: opcje dla trudniejszych modeli
+
+`prepare_heli.py`:
+- `--glass glass,mirror` — słowa w nazwach materiałów szyb kabiny,
+- `--gun-object Object_20` — działko wymodelowane w pozie skręconej (klatka animacji): skrypt prostuje
+  je wokół środka wieżyczki (oś główna wierzchołków),
+- `--eyes gz,gy,pz,py` — oczy strzelca i pilota (z, y), gdy szyba nie dzieli się na dwie sekcje,
+- `--stores "pod x,y,z,przód;launcher x,y,z,długość"` — zasobniki i zamknięte wyrzutnie wtopione
+  w kadłub (lustrzane na obie strony), zmierzone na pliku z pierwszego przebiegu.
+- obiekty bez żadnego materiału (pomocnicze sfery, bryły kolizji) są pomijane.
+
+```bat
+blender -b --python prepare_heli.py -- mi28\scene.gltf --out out\heli_bulat --rotor-radius 8.6 --forward=-y --glass glass,mirror --gun-object Object_20 --eyes=-2.8,2.72,-1.0,3.17 --stores "pod 1.745,1.24,0.85,0.09;launcher 2.92,1.98,0.75,1.42"
+```
+
+`prepare_jet.py`:
+- `--glass` — słowa w nazwie materiału owiewki (domyślnie paleta F-35),
+- `--drop landingon` — części do pominięcia po nazwie (z dziećmi), np. drugie, wypuszczone podwozie,
+- `--no-surfaces` — stery nie są osobnymi bryłami: zostają w kadłubie,
+- `--engines 2` — dwie dysze obok siebie,
+- `--main-gear-z 1.6` — przesuwa model wzdłuż, by koła główne stały tam, gdzie w modelu lotu,
+- `--surfaces "stab=elevator;flaperon=aileron,flap;rudder=rudder"` — stery po nazwach części (strona
+  według położenia); tak nazwany ster kierunku to cały ruchomy statecznik (oś przez 30 % cięciwy).
+
+```bat
+blender -b --python prepare_jet.py -- su57\scene.gltf --out out\jet_talon --length 21.9 --forward=-y --glass glass --drop gear_down,probe_on --surfaces "stab=elevator;flaperon=aileron,flap;rudder=rudder" --engines 2 --main-gear-z 1.6
+```

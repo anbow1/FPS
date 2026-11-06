@@ -7,7 +7,7 @@ import { bakeAmbientOcclusion } from './aoBake.ts';
 import { canopyMaterial, nozzleMaterial, type PaintSpec, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
 import { OVERLAY_LAYER, overlayBlending, overlayVisibility } from './stage.ts';
-import { type ImportedJet, importedWraith } from './importedJet.ts';
+import { type ImportedJet, importedJet } from './importedJet.ts';
 
 // Procedural models of the two aircraft, built to the scale sheet
 // (Wraith 15.70 × 10.70 × 4.33 m, Talon 21.90 × 15.30 × 5.90 m, height with
@@ -724,9 +724,9 @@ function stationAt2(stations: Station[], z: number): Station {
 }
 
 export function buildJet(id: AircraftId): JetModel {
-  // The Wraith from its downloaded model when it loaded (importedJet.ts); procedural otherwise.
-  const imported = id === 'wraith' ? importedWraith() : null;
-  const model = imported ? fromImportedJet(imported) : id === 'wraith' ? buildWraith() : buildTalon();
+  // From its downloaded model when it loaded (importedJet.ts); procedural otherwise.
+  const imported = importedJet(id);
+  const model = imported ? fromImportedJet(id, imported) : id === 'wraith' ? buildWraith() : buildTalon();
   const t0 = performance.now();
   bakeAmbientOcclusion(model.root);
   console.log(`${id}: ambient occlusion baked in ${(performance.now() - t0).toFixed(0)} ms`);
@@ -782,11 +782,11 @@ export function poseSurfaces(model: JetModel, cmd: SurfaceCommand): void {
  * leading-edge flaps are part of the wing and stay put), the procedural nozzle glow, flame and heat shimmer
  * at its nozzle's exit, the lights at its wingtips and tail, and the game's retractable gear under its belly.
  */
-function fromImportedJet(m: ImportedJet): JetModel {
+function fromImportedJet(id: AircraftId, m: ImportedJet): JetModel {
   const { info, lift } = m;
   const at = (v: readonly number[]): [number, number, number] => [v[0] ?? 0, (v[1] ?? 0) + lift, v[2] ?? 0];
   const root = new Group();
-  root.name = 'wraith';
+  root.name = id;
   for (const b of m.body) {
     b.position.y = lift;
     root.add(b);
@@ -812,19 +812,25 @@ function fromImportedJet(m: ImportedJet): JetModel {
     if (Math.abs(axis.x) >= Math.abs(axis.y) ? axis.x < 0 : axis.y < 0) axis.negate();
     hinges.push({ pivot, axis, kind: h.kind, side: h.side < 0 ? -1 : 1, maxRad: (travel[h.kind] * Math.PI) / 180 });
   }
-  // The engine's glow deep in the nozzle, the afterburner flame and the heat shimmer behind its exit.
+  // Each engine's glow deep in its nozzle, the afterburner flame and the heat shimmer behind its exit.
   const burner = uniform(0);
   const heat = uniform(0);
+  const nozzles = (info.nozzles ?? [info.nozzle]).map((n) => at(n));
+  const shimmer: Mesh[] = [];
+  for (const [nx, ny, nz] of nozzles) {
+    const turbine = mesh(lathe([[nz - 0.6, 0.46], [nz - 0.6, 0.0]], nx, ny, 24), turbineMaterial(heat), false);
+    root.add(turbine);
+    const flame = mesh(lathe([[nz - 0.04, 0.47], [nz + 0.7, 0.4], [nz + 2.6, 0.22], [nz + 4.3, 0.0]], nx, ny, 18), flameMaterial(burner, 4.3, nz - 0.04), false);
+    flame.renderOrder = 5;
+    flame.layers.set(OVERLAY_LAYER);
+    root.add(flame);
+    const haze = mesh(lathe([[nz, 0.5], [nz + 1.6, 0.75], [nz + 5.6, 1.1], [nz + 10, 1.3]], nx, ny, 16), shimmerMaterial(heat, 10, nz), false);
+    haze.renderOrder = 4;
+    root.add(haze);
+    shimmer.push(haze);
+  }
+  // The tail light over the centre line, above the exits.
   const [nx, ny, nz] = at(info.nozzle);
-  const turbine = mesh(lathe([[nz - 0.6, 0.46], [nz - 0.6, 0.0]], nx, ny, 24), turbineMaterial(heat), false);
-  root.add(turbine);
-  const flame = mesh(lathe([[nz - 0.04, 0.47], [nz + 0.7, 0.4], [nz + 2.6, 0.22], [nz + 4.3, 0.0]], nx, ny, 18), flameMaterial(burner, 4.3, nz - 0.04), false);
-  flame.renderOrder = 5;
-  flame.layers.set(OVERLAY_LAYER);
-  root.add(flame);
-  const shimmer = [mesh(lathe([[nz, 0.5], [nz + 1.6, 0.75], [nz + 5.6, 1.1], [nz + 10, 1.3]], nx, ny, 16), shimmerMaterial(heat, 10, nz), false)];
-  shimmer[0]!.renderOrder = 4;
-  root.add(shimmer[0]!);
   const eye = info.eye ? at(info.eye) : ([0, 1.12, -4.25] as [number, number, number]);
   const cockpit = pilot();
   cockpit.position.set(eye[0], eye[1] - 0.02, eye[2]);
@@ -838,7 +844,7 @@ function fromImportedJet(m: ImportedJet): JetModel {
     burner,
     heat,
     shimmer,
-    nozzles: [[nx, ny, nz]],
+    nozzles,
     wingtips: [tips[0] ?? [5, 0, 1.5], tips[1] ?? [-5, 0, 1.5]],
     eye,
     gearLegs: [],
@@ -850,6 +856,6 @@ function fromImportedJet(m: ImportedJet): JetModel {
     for (const g of info.gear) if (best && Math.hypot(g.x - x, g.z - z) < Math.hypot(best.x - x, best.z - z)) best = g;
     return (best?.belly ?? 1) + lift;
   };
-  buildGear(model, 'wraith', plain('wraith gear doors', 0x6a6d71, 0.58), roof);
+  buildGear(model, id, plain(`${id} gear doors`, 0x6a6d71, 0.58), roof);
   return model;
 }

@@ -244,10 +244,12 @@ export const HELICOPTERS: Record<HeliId, HeliConfig> = {
     stabAreaM2: 4,
     stabArmM: 9.5,
     vneMs: 90,
+    // Where the downloaded model's wheels stand (shared/vehicles/heli_bulat): the mains just ahead of the
+    // mast, the tail wheel under the boom, all three on the ground at rest.
     wheels: [
-      [-1.25, -2.1, -2.4],
-      [1.25, -2.1, -2.4],
-      [0, -1.4, 9.8],
+      [-1.3, -2.1, -0.5],
+      [1.3, -2.1, -0.5],
+      [0, -2.1, 9.45],
     ],
     gearStiffnessNm: 520_000,
     gearDampingNsM: 45_000,

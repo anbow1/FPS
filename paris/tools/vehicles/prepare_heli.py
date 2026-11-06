@@ -42,6 +42,14 @@ def args_of():
     ap.add_argument('--up', default='z')
     ap.add_argument('--triangles', type=int, default=60000)
     ap.add_argument('--tex', type=int, default=2048)
+    ap.add_argument('--glass', default='glass', help="words in the canopy's material names")
+    ap.add_argument('--gun-object', default='',
+                    help="the source object holding the whole gun mount, when its barrel is modelled turned aside")
+    ap.add_argument('--eyes', default='',
+                    help='gunner z,y,pilot z,y (m, the output frame) where the canopy does not split into two sections')
+    ap.add_argument('--stores', default='',
+                    help='stores modelled into the body, mirrored to both sides: "pod x,y,z,front;launcher x,y,z,length" '
+                         '(m, the output frame)')
     ap.add_argument('--preview', action='store_true')
     ap.add_argument('--cpu', action='store_true')
     return ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
@@ -89,6 +97,33 @@ def missiles_of(parts):
     return [p for p in parts if 'missile' in mat_name(p) and 1.4 < box(p)[3].z < 2.0 and max(box(p)[3].x, box(p)[3].y) < 0.3]
 
 
+def straightened_gun(pieces):
+    """A gun mount posed turned aside (a rigged model's animation frame): its long axis is the principal
+    axis of its vertices; it is turned about the mount's middle until that axis points straight ahead (-Z),
+    level, so the game's traverse and elevation start from the centre line. Returns the pieces and the
+    breech (the pivot)."""
+    import numpy as np
+    if not pieces:
+        raise SystemExit('--gun-object: no pieces of that object')
+    pts = np.array([tuple(p.matrix_world @ v.co) for p in pieces for v in p.data.vertices])
+    mid = pts.mean(0)
+    axis = np.linalg.svd(pts - mid, full_matrices=False)[2][0]
+    if axis[2] > 0:
+        axis = -axis
+    # The mount turns about its own middle (the turret ring under the nose): the median vertex lies in its
+    # bulk, not out along the barrel.
+    pivot = Vector(np.median(pts, 0))
+    a = Vector(axis).normalized()
+    turn = a.rotation_difference(Vector((0, 0, -1))).to_matrix().to_4x4()
+    m = Matrix.Translation(pivot) @ turn @ Matrix.Translation(-pivot)
+    for p in pieces:
+        p.data.transform(p.matrix_world.inverted() @ m @ p.matrix_world)
+    yaw = math.degrees(math.atan2(-axis[0], -axis[2]))
+    pitch = math.degrees(math.asin(max(-1.0, min(1.0, axis[1]))))
+    print(f'gun: {len(pieces)} pieces, turned {yaw:.1f}° and pitched {pitch:.1f}° off the centre line; straightened')
+    return pieces, pivot
+
+
 def main():
     a = args_of()
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -96,6 +131,13 @@ def main():
     print('Cycles device:', pv.use_gpu(a.cpu))
     pv.import_model(a.model)
     pv.flatten_hierarchy()
+    # Meshes with no material at all are an exporter's helpers (a bounding sphere, a collision hull): they
+    # would set the ground and the size.
+    helpers = [o for o in pv.meshes() if not any(o.data.materials)]
+    for o in helpers:
+        bpy.data.objects.remove(o)
+    if helpers:
+        print(f'{len(helpers)} helper meshes without a material dropped')
     # Any length first: the blades set the scale below.
     pv.orient_and_scale(a.forward, a.up, 17.0)
     parts = []
@@ -156,17 +198,22 @@ def main():
     tail_hub = Vector((sum(box(p)[2].x for p in tail) / len(tail), tail_c.y, tail_c.z))
     rest = [p for p in rest if p not in tail]
 
-    # Gun: the longest piece along the body, low, ahead of the mast; with what lies on its axis behind it.
-    barrel, best = None, 0.0
-    for p in rest:
-        l, h, c, d = box(p)
-        if d.z > 6 * max(d.x, d.y) and c.y < 0.2 * size.y and c.z < -0.1 * size.z and abs(c.x) < 0.4 and d.z > best:
-            barrel, best = p, d.z
-    if barrel is None:
-        raise SystemExit('no chin gun found')
-    bl, bh, bc, bd = box(barrel)
-    breech = Vector((bc.x, bc.y, bh.z))
-    gun = [barrel] + [p for p in rest if p is not barrel and (lambda l, h, c, d: abs(c.x - bc.x) < 0.25 and abs(c.y - bc.y) < 0.22 and bl.z - 0.1 < c.z < bh.z + 0.6 and max(d.x, d.y) < 0.45)(*box(p))]
+    if a.gun_object:
+        gun, breech = straightened_gun([p for p in rest if p.get('src', '') == a.gun_object])
+        gun_length = breech.z - min(box(p)[0].z for p in gun)
+    else:
+        # Gun: the longest piece along the body, low, ahead of the mast; with what lies on its axis behind it.
+        barrel, best = None, 0.0
+        for p in rest:
+            l, h, c, d = box(p)
+            if d.z > 6 * max(d.x, d.y) and c.y < 0.2 * size.y and c.z < -0.1 * size.z and abs(c.x) < 0.4 and d.z > best:
+                barrel, best = p, d.z
+        if barrel is None:
+            raise SystemExit('no chin gun found (if its barrel is modelled turned aside, pass --gun-object)')
+        bl, bh, bc, bd = box(barrel)
+        breech = Vector((bc.x, bc.y, bh.z))
+        gun_length = bd.z
+        gun = [barrel] + [p for p in rest if p is not barrel and (lambda l, h, c, d: abs(c.x - bc.x) < 0.25 and abs(c.y - bc.y) < 0.22 and bl.z - 0.1 < c.z < bh.z + 0.6 and max(d.x, d.y) < 0.45)(*box(p))]
     rest = [p for p in rest if p not in gun]
 
     # Rocket pods: the rest of the missile material (the tubes and their rockets), a pod per side.
@@ -182,8 +229,26 @@ def main():
     missiles = missiles_of(rest)
     missiles.sort(key=lambda p: (-abs(box(p)[2].x), box(p)[2].y, box(p)[2].x))
     rest = [p for p in rest if p not in missiles]
-    glass = [p for p in rest if 'glass' in mat_name(p)]
+    # A model with its stores in the body's material (closed launch tubes, as on the eastern helicopters):
+    # the rocket pods and the anti-armour launchers (the missiles fly from inside them, nothing to hide).
+    # They are many small pieces each, so they are given (--stores), measured off a first run's file.
+    sealed = []
+    for spec in filter(None, (t.strip() for t in a.stores.split(';'))):
+        kind, nums = spec.split(None, 1)
+        x, y, z, w = (float(v) for v in nums.split(','))
+        for side in (-1, 1):
+            if kind == 'pod':
+                pods.append({'centre': [side * abs(x), y, z], 'front': w})
+            elif kind == 'launcher':
+                sealed.append({'centre': [side * abs(x), y, z], 'length': w})
+            else:
+                raise SystemExit(f'--stores: unknown store {kind!r}')
+    glass_words = [w.strip().lower() for w in a.glass.split(',') if w.strip()]
+    glass = [p for p in rest if any(w in mat_name(p) for w in glass_words)]
     eyes = eyes_of(glass)
+    if a.eyes:
+        gz, gy, pz, py = (float(v) for v in a.eyes.split(','))
+        eyes = {'gunner': [0.0, gy, gz], 'pilot': [0.0, py, pz]}
     body = [p for p in rest if p not in glass]
     print(f'rotor {len(rotor)} ({len(blades)} blades), tail {len(tail)} ({len(tail_blades)} blades, r {tail_r:.2f} m, '
           f'side {tail_side}), gun {len(gun)}, missiles {len(missiles)}, glass {len(glass)}, body {len(body)}')
@@ -236,8 +301,8 @@ def main():
         'tailRadius': round(tail_r, 3),
         'tailSide': tail_side,
         'gunPivot': [round(v, 4) for v in breech],
-        'gunLength': round(bd.z, 3),
-        'missiles': missile_info,
+        'gunLength': round(gun_length, 3),
+        'missiles': missile_info or sealed,
         'pods': pods,
         'eyes': eyes,
         'albedo': round(albedo, 4),
