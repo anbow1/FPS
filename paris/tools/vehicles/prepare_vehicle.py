@@ -51,6 +51,8 @@ def args_of():
     ap.add_argument('--lights', default='light,lamp,headl,taill,brake,indicator,blinker')
     ap.add_argument('--lod', default='60000,15000,3000')
     ap.add_argument('--tex', type=int, default=2048)
+    ap.add_argument('--tex-far', type=int, default=None,
+                    help='texture size of lod1 (each farther level halves it); default half of --tex')
     ap.add_argument('--preview', action='store_true')
     ap.add_argument('--cpu', action='store_true')
     # A pack of several cars in one file: the body to keep (a word or words in its object names); the
@@ -559,7 +561,8 @@ def main():
         export(f'{a.out}_lod{i}.glb', copies)
         # Each farther level is seen at half the size: its textures halve too (the images are shared, and
         # the levels export near to far). At full size every level carried the near one's textures.
-        downscale_textures(max(128, a.tex >> (i + 1)))
+        far = a.tex_far if a.tex_far else a.tex >> 1
+        downscale_textures(max(128, far >> i))
         tris = sum(sum(len(p.vertices) - 2 for p in c.data.polygons) for c in copies)
         print(f'lod{i}: {tris} triangles → {a.out}_lod{i}.glb')
         if a.preview and i == 0:
