@@ -957,6 +957,25 @@ lamp glass near the nose pollutes an eye found from "glass" (keep to the
 canopy: front half, |x| < 0.8 m); a 4096 texture blurred whole takes gigabytes
 (scrub in windows round each marking).
 
+**Weapons** take the same steps with `prepare_gun.py` instead of the vehicle scripts:
+
+- Moving parts come three ways, and one gun can need two: bones of a rig (`--parts magazine=magazine_02`,
+  the AK), objects of their own (`--parts "slide=Gun_Slide"`, the AR-15 and the pistol), or loose pieces in
+  a box when the seller left them inside another object (`--part "magazine:x0,y0,z0,x1,y1,z1@Magazine"`,
+  the pistol's magazine was in the trigger's node). Render a side view coloured by part before trusting
+  the names: the pistol's "Magazine" node was its trigger.
+- Read the sights from the model's own vertices (the highest point on the centre line every few mm; the
+  scope's rim at its eyepiece; the holographic window's middle) and shift the file so its sight line sits
+  where the game's procedural weapon has it. The game then aims it with no other change. The AK's leaf
+  notch and post gave a 377 mm sight radius against the real 378 mm: a check that the scale is right.
+- Marks on guns are stamped, so they are in the **normal map** (logos, "MADE IN …", serials), often not in
+  the colour. Fill them flat (`--no-grain`), or straight across (`--interp x`) where the surface curves;
+  borrowed grain brings the neighbour's edges with it.
+- Budget per weapon ~20 k triangles and ≤ 6 MB: the AR-15 came at 62 k with two 2048 sets (10.7 MB) and
+  went in at 18 k + 1.5 k per part with 1024 sets (5.8 MB).
+- The viewmodel takes everything from the weapon: muzzle, both grips, magazine rest, suppressor. Numbers
+  fixed in the viewmodel for the procedural guns were the first thing to move.
+
 ## 6r. HDRI environments (FL `render/hdri.ts`)
 
 A photographed environment puts real facades, trees and clouds into car paint
