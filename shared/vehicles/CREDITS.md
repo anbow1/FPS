@@ -16,7 +16,7 @@ their hinge lines, the landing gear and squadron badges taken off.
 | ifv_west | [M2 Bradley IFV](https://sketchfab.com/3d-models/m2-bradley-ifv-ab022158ab5f4fbfa55d4142db7595ab) | [42manako](https://sketchfab.com/42manako) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | ifv_east | [BMP-2](https://sketchfab.com/3d-models/bmp-2-a843e922897c499ca53e718235b3875a) | [42manako](https://sketchfab.com/42manako) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | heli_warden | [AH-64D attack helicopter](https://sketchfab.com/3d-models/boeing-ah-64d-apache-combat-helicopter-c3b58008c46b45048fdd7dd283a3c8c8) | [Muhamad Mirza Arrafi](https://sketchfab.com/nazidefenseforceofficial) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
-| jet_wraith | [F-35B Lightning II](https://sketchfab.com/mgg8) (squadron badges and landing gear removed) | [mgg8](https://sketchfab.com/mgg8) | [CC0 1.0](http://creativecommons.org/publicdomain/zero/1.0/) |
+| jet_wraith | [F-35B Lightning II](https://sketchfab.com/3d-models/f-35b-lightning-ii-raf-617-squadron-1161f64164ce481189ce67d39502c068) (squadron badges and landing gear removed) | [mgg8](https://sketchfab.com/mgg8) | [CC0 1.0](http://creativecommons.org/publicdomain/zero/1.0/) |
 
 Credit line for the games' credits (CC BY requires it):
 
