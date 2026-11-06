@@ -163,7 +163,15 @@ class App {
     await initNavMesh();
     const game = new Game(map, s.modeId, Date.now() & 0xffff);
     this.game = game;
+    // Each loading stage's start time in the console: which stage a slow device spends its time in.
+    const t0 = performance.now();
+    let last = t0;
+    let lastLabel = 'start';
     this.view = await GameView.create(this.canvas, map, this.viewSettings(s), async (label, f) => {
+      const now = performance.now();
+      console.log(`[load] ${lastLabel}: ${((now - last) / 1000).toFixed(2)} s`);
+      last = now;
+      lastLabel = label;
       this.menu.showLoading(label, f);
       await nextFrame();
     });
@@ -179,6 +187,9 @@ class App {
       this.view.render(game, 1, 0, 0, 0);
       await nextFrame();
     }
+    console.log(`[load] ${lastLabel} → play: ${((performance.now() - last) / 1000).toFixed(2)} s; total ${((performance.now() - t0) / 1000).toFixed(2)} s`);
+    // The rifle scope's own builds, in the background from here on (view.ts).
+    this.view.precompileScope();
     this.audio.setAmbience(map.id, game.wind.length());
     this.debug.game = game;
     this.debug.view = this.view;

@@ -211,20 +211,6 @@ export class GameView {
     const restore = revealOnePerPipeline(stage.scene);
     try {
       await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
-      // The rifle scope draws the world again into its own half-float target (optics.ts): every material
-      // needs a second build for that target, and left to the first look through the scope they all
-      // compiled at once (a stall of ~10 s on a phone). Built here, against the scope's own target.
-      const scope = this.viewModel.scope;
-      scope.camera.position.copy(stage.camera.position);
-      scope.camera.quaternion.copy(stage.camera.quaternion);
-      scope.camera.updateMatrixWorld();
-      const prev = stage.renderer.getRenderTarget();
-      stage.renderer.setRenderTarget(scope.target);
-      try {
-        await precompile(stage.renderer.compileAsync(stage.scene, scope.camera));
-      } finally {
-        stage.renderer.setRenderTarget(prev);
-      }
     } finally {
       restore();
     }
@@ -464,11 +450,37 @@ export class GameView {
   async warmUp(game: Game): Promise<void> {
     this.render(game, 1, 0, 0, 0);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    // The scope's pass too (see build()): one look through it, at the spawn, with everything shown.
-    warmAllPipelines(this.stage.scene, () => {
-      this.stage.render();
-      this.viewModel.renderScope(this.stage.renderer, this.stage.scene, this.stage.camera.position);
-    });
+    warmAllPipelines(this.stage.scene, () => this.stage.render());
+  }
+
+  /**
+   * The rifle scope draws the world again into its own half-float target (optics.ts), so every material
+   * needs a second build for it; left to the first look through the scope they all compiled at once, a
+   * stall of ~10 s on a phone. Started once play begins and not awaited: the builds are asynchronous and
+   * finish in the background while the player walks, without lengthening the loading screen. The
+   * objects are gathered at the call, so everything shown for it is put back right after.
+   */
+  precompileScope(): void {
+    const stage = this.stage;
+    const scope = this.viewModel.scope;
+    scope.camera.position.copy(stage.camera.position);
+    scope.camera.quaternion.copy(stage.camera.quaternion);
+    scope.camera.updateMatrixWorld();
+    const restore = revealOnePerPipeline(stage.scene);
+    const prev = stage.renderer.getRenderTarget();
+    stage.renderer.setRenderTarget(scope.target);
+    let job: Promise<unknown>;
+    try {
+      job = stage.renderer.compileAsync(stage.scene, scope.camera);
+    } finally {
+      stage.renderer.setRenderTarget(prev);
+      restore();
+    }
+    const t0 = performance.now();
+    job.then(
+      () => console.log(`scope shaders built in the background in ${((performance.now() - t0) / 1000).toFixed(1)} s`),
+      (err: unknown) => console.warn('scope shader pre-build failed; they compile on first use:', err),
+    );
   }
 
   get adaptedEv(): number {
