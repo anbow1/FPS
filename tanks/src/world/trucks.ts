@@ -363,6 +363,11 @@ function materialFor(
     m.depthWrite = false;
     m.colorNode = vec3(0.02, 0.025, 0.028);
     m.opacityNode = float(0.6).mul(float(1).sub(burn));
+  } else if (src.name.toLowerCase().includes('grill') && src.map) {
+    // The radiator guard's picture is its mesh as a mask (white wire on black): dark steel wire, open between.
+    m.colorNode = mix(vec3(0.05, 0.055, 0.045), vec3(0.025, 0.022, 0.02), burn);
+    m.opacityNode = texture(src.map, uv()).r;
+    m.alphaTest = 0.5;
   } else if (src.transparent || src.alphaTest > 0) {
     // Windows cut into a body texture's alpha: holes onto the modelled cab.
     m.alphaTest = 0.5;

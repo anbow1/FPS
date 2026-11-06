@@ -46,6 +46,7 @@ skala, orientacja, normalne na zewnątrz, decymacja, AO jak przy czołgach; zost
 ```bat
 python -I scrub_marks.py tex\Material2_baseColor.jpeg tex\Material2_baseColor.jpeg --circle 1824,1359,80 --circle 1824,1769,80 --grain-patch 1790,1220,1930,1290
 python -I scrub_marks.py tex\Material_baseColor.png tex\Material_baseColor.png --rect 946,1568,1046,1622 --rect 1442,1670,1494,1770
+python -I scrub_marks.py m939\textures\Body1Mtl_baseColor.png m939\textures\Body1Mtl_baseColor.png --rect 543,412,598,460 --grain-from 0,60
 blender -b --python prepare_truck.py -- military_truck\scene.gltf --out out\staff_car --length 5.6 --forward=-x --triangles 18000 --preview
 blender -b --python prepare_truck.py -- m939\scene.gltf --out out\cargo_truck --length 7.75 --forward=-x --preview
 ```
