@@ -62,7 +62,7 @@ export function rifleModelLoaded(): boolean {
  * glTF keeps roughness in green and metalness in blue; the occlusion prepare_gun.py cast in the second
  * colour set darkens the folds.
  */
-function materialFor(src: Material): MeshStandardNodeMaterial {
+export function materialFor(src: Material): MeshStandardNodeMaterial {
   const s = src as MeshStandardNodeMaterial;
   const m = new MeshStandardNodeMaterial({ name: `ak ${src.name}`, roughness: 0.5, metalness: 0.5 });
   if (s.map) m.colorNode = texture(s.map as Texture, uv()).rgb;
@@ -127,4 +127,44 @@ export function modelRifle(): ModelRifle {
     gripRight: new Vector3(0, -0.13, 0.19),
     gripLeft: new Vector3(0, -0.075, -0.17),
   };
+}
+
+// ---- the survival knife (shared/weapons/knife_clip, CC BY; prepare_gun.py, one piece): a clip point with
+// a guard and a wood-and-steel grip, 0.30 m over all. The file stands on its guard's foot with its middle at
+// the origin; its grip runs from the guard 0.026 m behind the middle to the butt at 0.15 m, and its height
+// is centred 0.028 m up. The knife's frame (weaponModels.ts): blade toward −Z, edge down, grip centred on
+// the origin.
+
+const URL_KNIFE = new URL('../../../shared/weapons/knife_clip/knife_clip.glb', import.meta.url).href;
+const KNIFE_SHIFT = new Vector3(0, -0.028, -0.088);
+let knife: { geometry: BufferGeometry; material: MeshStandardNodeMaterial } | null = null;
+
+/** Loads the knife's model; a failure leaves the procedural knife (logged, not thrown). */
+export async function loadKnifeModel(): Promise<void> {
+  try {
+    const scene = (await new GLTFLoader().loadAsync(URL_KNIFE)).scene;
+    scene.updateMatrixWorld(true);
+    scene.traverse((o) => {
+      if (!(o instanceof Mesh) || knife) return;
+      const g = (o.geometry as BufferGeometry).clone().applyMatrix4(o.matrixWorld);
+      g.translate(KNIFE_SHIFT.x, KNIFE_SHIFT.y, KNIFE_SHIFT.z);
+      g.setAttribute('edge', new BufferAttribute(new Float32Array(g.getAttribute('position').count), 1));
+      knife = { geometry: g, material: materialFor((Array.isArray(o.material) ? o.material[0] : o.material) as Material) };
+    });
+  } catch (err) {
+    console.warn('the knife model did not load; the procedural knife stands in:', err);
+  }
+}
+
+/** The model's knife in the procedural one's frame, and its tip; null when it did not load. */
+export function modelKnife(): { root: Group; tip: Vector3 } | null {
+  if (!knife) return null;
+  const root = new Group();
+  root.name = 'knife';
+  const m = new Mesh(knife.geometry, knife.material);
+  m.name = 'knife';
+  m.castShadow = true;
+  m.receiveShadow = true;
+  root.add(m);
+  return { root, tip: new Vector3(0, -0.006, -0.238) };
 }

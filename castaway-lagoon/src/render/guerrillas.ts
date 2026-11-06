@@ -1224,7 +1224,7 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
 /** The player's AK (weaponModels.ts) merged into one geometry: wood furniture, dark steel. */
 function rifleGeometry(): BufferGeometry {
   // Cut without bevels (gunkit.ts): every man carries one, and at their distance a bevel is under a pixel.
-  const model = coarseParts(() => buildRifle());
+  const model = coarseParts(() => buildRifle({ procedural: true }));
   model.root.updateMatrixWorld(true);
   const parts: BufferGeometry[] = [];
   model.root.traverse((o) => {
