@@ -7,6 +7,7 @@ import { Game, type GameState } from './game/game';
 import { ATMO } from './render/atmosphere';
 import { benchSpots } from './game/bench';
 import { loadTankModels } from './game/importedTank';
+import { loadSoldierCast } from './render/soldierCast';
 import { BenchRecorder, type BenchSample, formatBench } from './render/benchRecorder';
 import { PRESETS } from './render/lighting';
 import { Pipeline } from './render/pipeline';
@@ -84,6 +85,8 @@ async function boot(): Promise<void> {
   game.setQuality(quality);
   // The downloaded tanks (shared/vehicles) before the first tank is built; the procedural ones stand in on failure.
   await loadTankModels();
+  // The infantry as Field Line's MPFB soldiers (render/soldierCast.ts); none loaded, the procedural men stay.
+  game.infantry.useCast(await loadSoldierCast());
   await game.init();
   game.setPreset(Number(lightSel.value));
   pipeline.setToneMapping(toneSel.value === 'agx' ? 'agx' : 'aces');
