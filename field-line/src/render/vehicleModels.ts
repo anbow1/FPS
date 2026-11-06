@@ -96,11 +96,11 @@ function partsOf(id: CarModelId, root: { traverse: (f: (o: unknown) => void) => 
   for (const [part, { geometries, material }] of pieces) {
     const geometry = mergeGeometries(geometries, false);
     if (!geometry) continue;
-    const paint = carModelInfo(id).paint;
+    const { paint, paintTolerance } = carModelInfo(id);
     out.push({
       part,
       geometry,
-      material: materialFor(part, material, paint),
+      material: materialFor(part, material, paint, paintTolerance),
       recolour: part === 'paint' && paint !== null,
       castShadow: part !== 'lamps',
     });
@@ -124,7 +124,7 @@ function cleanGeometry(src: BufferGeometry): BufferGeometry {
 
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 
-function materialFor(part: VehiclePart, src: SourceMaterial, paint: [number, number, number] | null): Material {
+function materialFor(part: VehiclePart, src: SourceMaterial, paint: [number, number, number] | null, tolerance: number): Material {
   // prepare_vehicle.py bakes Cycles occlusion into the second colour set: it dims the sky and bounce
   // light (aoNode), not the sun, which has its own shadows.
   const ao = attribute('color_1', 'vec3').x;
@@ -139,12 +139,13 @@ function materialFor(part: VehiclePart, src: SourceMaterial, paint: [number, num
     const m = new MeshPhysicalNodeMaterial({ name: 'car-paint', metalness: 0 });
     let colour: Node<'vec3'> = albedo;
     if (paint) {
-      // Recolour only the texels of the model's own paint: same chromaticity as it, not too dark (tyres,
-      // grilles and shut lines keep theirs). The baked shading rides along as the luminance ratio.
+      // Recolour only the texels of the model's own paint: its chromaticity within the model's own spread
+      // of it (vehicles.ts), not too dark (tyres, grilles and shut lines keep theirs). The baked shading
+      // rides along as the luminance ratio.
       const p = vec3(paint[0], paint[1], paint[2]);
       const chroma = (c: Node<'vec3'>): Node<'vec3'> => c.div(max(c.x.add(c.y).add(c.z), 1e-4));
       const mask = float(1)
-        .sub(smoothstep(0.05, 0.14, length(chroma(albedo).sub(chroma(p)))))
+        .sub(smoothstep(tolerance, tolerance + 0.06, length(chroma(albedo).sub(chroma(p)))))
         .mul(smoothstep(0.002, 0.012, dot(albedo, LUMA)));
       const tint = attribute('paintTint', 'vec3');
       const recoloured = tint.mul(clamp(dot(albedo, LUMA).div(dot(p, LUMA)), 0, 1.6));
