@@ -20,15 +20,20 @@ export interface CarModelInfo {
   size: [number, number, number];
   /** Linear RGB of the paint in the model's texture, or null when it is too dark to recolour. */
   paint: [number, number, number] | null;
+  /**
+   * How far (in chromaticity) the paint's texels stray from `paint`: the texture's baked shading shifts a
+   * saturated paint's hue (a yellow toward orange in the shade), so each model's mask is cut to its own spread.
+   */
+  paintTolerance: number;
 }
 
 /** The .json written by prepare_vehicle.py, checked: three sizes, three paint channels or none. */
-function info(j: { size: number[]; paint?: number[] | null }): CarModelInfo {
+function info(j: { size: number[]; paint?: number[] | null; paintTolerance?: number }): CarModelInfo {
   const [w, h, l] = j.size;
   if (w === undefined || h === undefined || l === undefined) throw new Error('car model .json without a size');
   const p = j.paint;
   const paint: [number, number, number] | null = p && p.length === 3 ? [p[0] as number, p[1] as number, p[2] as number] : null;
-  return { size: [w, h, l], paint };
+  return { size: [w, h, l], paint, paintTolerance: j.paintTolerance ?? 0.05 };
 }
 
 const INFO: Record<CarModelId, CarModelInfo> = {

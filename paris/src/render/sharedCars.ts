@@ -30,6 +30,8 @@ export interface SharedCar {
 interface CarJson {
   wheels: Record<'FL' | 'FR' | 'RL' | 'RR', { centre: number[]; radius: number }>;
   paint?: number[] | null;
+  /** How far the paint's texels stray from `paint` in chromaticity (prepare_vehicle.py measures it). */
+  paintTolerance?: number;
 }
 
 const MODELS: Record<CarVariant, { info: CarJson; urls: [string, string] }> = {
@@ -105,7 +107,7 @@ function carOf(scene: Group, info: CarJson): SharedCar {
     glass: geo('body', 'glass')?.g ?? null,
     headlamp: geo('lights_head')?.g ?? null,
     taillamp: geo('lights_rear')?.g ?? null,
-    paintMaterial: paintMaterial(body.m as MeshStandardNodeMaterial, info.paint ?? null),
+    paintMaterial: paintMaterial(body.m as MeshStandardNodeMaterial, info.paint ?? null, info.paintTolerance ?? 0.05),
     wheel: [fl.g, fr.g],
     wheelMaterial,
     axleZ: [(z('FL') + z('FR')) / 2, (z('RL') + z('RR')) / 2],
@@ -118,10 +120,10 @@ const LUMA = vec3(0.2126, 0.7152, 0.0722);
 
 /**
  * The body's own texture, its paint recoloured to the car's instance colour (`paint`): only the texels of
- * the model's paint (same chromaticity, not too dark), so tyres, grilles, trim and shut lines keep theirs;
+ * the model's paint (its chromaticity, within the model's measured spread of it; not too dark), so tyres, grilles, trim and shut lines keep theirs;
  * the texture's shading rides along as the luminance ratio. Lacquer: a smooth clear coat over the base.
  */
-function paintMaterial(src: MeshStandardNodeMaterial, paint: number[] | null): MeshPhysicalNodeMaterial {
+function paintMaterial(src: MeshStandardNodeMaterial, paint: number[] | null, tolerance: number): MeshPhysicalNodeMaterial {
   const m = new MeshPhysicalNodeMaterial({ name: 'car paint', metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.06 });
   const albedo: Node<'vec3'> = src.map ? texture(src.map as Texture, uv()).rgb : vec3(0.5);
   let colour: Node<'vec3'> = albedo;
@@ -129,7 +131,7 @@ function paintMaterial(src: MeshStandardNodeMaterial, paint: number[] | null): M
     const p = vec3(paint[0] ?? 0, paint[1] ?? 0, paint[2] ?? 0);
     const chroma = (c: Node<'vec3'>): Node<'vec3'> => c.div(max(c.x.add(c.y).add(c.z), 1e-4));
     const mask = float(1)
-      .sub(smoothstep(0.05, 0.14, length(chroma(albedo).sub(chroma(p)))))
+      .sub(smoothstep(tolerance, tolerance + 0.06, length(chroma(albedo).sub(chroma(p)))))
       .mul(smoothstep(0.002, 0.012, dot(albedo, LUMA)));
     const tint = attribute('paint', 'vec3');
     colour = mix(albedo, tint.mul(clamp(dot(albedo, LUMA).div(dot(p, LUMA)), 0, 1.6)), mask);
