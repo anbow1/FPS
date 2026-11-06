@@ -1,9 +1,12 @@
 import * as THREE from 'three/webgpu';
 import { PLAY_HALF, RIFLE_556, RPG_ROCKET, WATER_LEVEL } from '../config';
 import { Rng } from '../core/rng';
-import { attribute, mix } from 'three/tsl';
+import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, texture, uv, vec3 } from 'three/tsl';
 import { UNIFORM_COLOURS, bootGeometry, handGeometry, headGeometry, helmetGeometry, launcherGeometry, limb as clothLimb, rifleGeometry, torsoGeometry, warheadGeometry } from '../render/infantryModel';
 import { addThermalConst } from '../render/nodes';
+import { CastRig } from '../render/castRig';
+import { type CastCharacter, FULL_BONES } from '../render/mpfbCast';
+import { BoneTexture, skinnedPosition } from '../render/skinning';
 import { pushOutObb } from '../world/buildings';
 import type { World } from '../world/world';
 import type { Audio } from './audio';
@@ -104,6 +107,28 @@ export class Infantry {
   onKill: (s: Soldier, how: string) => void = () => {};
 
   private readonly cap = 48;
+  /** The MPFB soldiers (useCast), one instanced draw each; the procedural body parts stand in without them. */
+  private readonly cast: { rig: CastRig; mesh: THREE.InstancedMesh; bones: BoneTexture; n: number }[] = [];
+  /** The current man's 15 segment frames in the world (castRig.ts's order), for the cast's retargeting. */
+  private readonly segW = Array.from({ length: 15 }, () => new THREE.Matrix4());
+
+  /**
+   * Draws the men as the MPFB characters (mpfbCast.ts) from now on, each always the same one of them; the
+   * rifles and launchers stay as they are.
+   */
+  useCast(characters: readonly CastCharacter[]): void {
+    for (const c of characters) {
+      const bones = new BoneTexture(FULL_BONES.length, this.cap);
+      const mesh = new THREE.InstancedMesh(c.far.geometry, castMaterial(c.far.atlas, bones), this.cap);
+      mesh.name = `infantry-${c.name}`;
+      mesh.count = 0;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      this.cast.push({ rig: new CastRig(c.joints), mesh, bones, n: 0 });
+    }
+  }
 
   constructor() {
     // Clothes, kit and boots: per-vertex colour, darkened in the cloth's creases (render/infantryModel.ts).
@@ -436,12 +461,25 @@ export class Infantry {
 
   render(camPos: THREE.Vector3): void {
     this.counts = {};
+    for (const cv of this.cast) cv.n = 0;
     this.soldiers.forEach((s, k) => {
       if (s.deadT > 40) return;
       if (s.pos.distanceTo(camPos) > 700) return;
       this.kit = UNIFORM_COLOURS[(k * 7 + s.squad * 3) % UNIFORM_COLOURS.length]!;
-      this.pose(s);
+      const cv = this.cast.length ? this.cast[(k * 7 + s.squad * 3) % this.cast.length]! : null;
+      if (!cv) {
+        this.pose(s);
+        return;
+      }
+      this.poseCast(s, cv.rig);
+      const row = cv.n++;
+      cv.rig.skin(this.segW, (b, m) => cv.bones.set(row, b, m));
     });
+    for (const cv of this.cast) {
+      cv.mesh.count = cv.n;
+      cv.mesh.visible = cv.n > 0;
+      if (cv.n > 0) cv.bones.commit();
+    }
     for (const [name, im] of Object.entries(this.parts)) {
       im.count = this.counts[name] ?? 0;
       im.instanceMatrix.needsUpdate = true;
@@ -520,6 +558,84 @@ export class Infantry {
     } else this.put('rifle', w);
   }
 
+  /**
+   * The pose of pose(), for an MPFB man: the same stances on his own measurements (castRig.ts), written as
+   * his 15 segments' frames (origin at the joint, +Y back toward the parent joint, −Z toward the knee's or
+   * elbow's point, the thumb, the face) for the retargeting; the weapon placed as before.
+   */
+  private poseCast(s: Soldier, rig: CastRig): void {
+    const D = rig.dims;
+    const root = _root.makeRotationY(s.yaw).setPosition(s.pos);
+    if (!s.alive) {
+      const ax = _ax.set(Math.cos(s.fallDir), 0, -Math.sin(s.fallDir));
+      _rot.makeRotationAxis(ax, (s.fall * Math.PI) / 2 * 0.95);
+      root.copy(_rot.premultiply(_tr.makeTranslation(s.pos.x, s.pos.y + 0.12 * s.fall, s.pos.z)).multiply(_tr.makeRotationY(s.yaw)));
+    }
+    const kneel = s.alive && (s.state === 'hidden' || s.state === 'reload' || (s.state === 'aim' && s.role === 'rifle'));
+    const running = s.state === 'flee';
+    const ls = D.legScale;
+    const hip = kneel ? 0.55 * ls : D.standHip;
+    const ph = s.runPhase;
+    // Local space here: +z forward, so the character's rest offsets (front −z) flip their z.
+    const fwd = _f.set(0, 0, 1);
+    const set = (i: number, origin: THREE.Vector3, up: THREE.Vector3, front: THREE.Vector3): void => {
+      frameTo(_m3, origin, up, front);
+      (this.segW[i] as THREE.Matrix4).multiplyMatrices(root, _m3);
+    };
+    const hipC = _hc.set(0, hip, 0);
+    set(SEG.pelvis, hipC, _up, fwd);
+    for (const side of [-1, 1] as const) {
+      const hj = _hj.set(side * D.hipJoint.x, hip + D.hipJoint.y, -D.hipJoint.z);
+      let knee: THREE.Vector3;
+      const foot = _ft;
+      if (kneel) {
+        if (side < 0) {
+          knee = _kn.set(hj.x, 0.1, -0.05 * ls);
+          foot.set(hj.x, D.ankleY * 0.6, -0.5 * ls);
+        } else {
+          foot.set(hj.x, D.ankleY, 0.45 * ls);
+          knee = twoBone(hj, foot, D.thigh, D.shin, _p1.set(0, 0.3, 1), _kn);
+        }
+      } else {
+        const swing = running ? Math.sin(ph + (side > 0 ? 0 : Math.PI)) : 0;
+        const lift = running ? 0.18 * Math.max(0, Math.cos(ph + (side > 0 ? 0 : Math.PI))) : 0;
+        foot.set(hj.x * 1.05, D.ankleY + lift, swing * 0.42);
+        knee = twoBone(hj, foot, D.thigh, D.shin, _p1.set(0, 0.1, 1), _kn);
+      }
+      const L = side < 0;
+      set(L ? SEG.thighL : SEG.thighR, hj, _a.subVectors(hj, knee), fwd);
+      set(L ? SEG.shinL : SEG.shinR, knee, _a.subVectors(knee, foot), fwd);
+      set(L ? SEG.bootL : SEG.bootR, foot, _up, fwd);
+    }
+    const lean = running ? 0.35 : s.state === 'aim' ? 0.08 : 0.12;
+    const tUp = _tu.set(0, Math.cos(lean), Math.sin(lean));
+    const tFront = _tf.set(0, -Math.sin(lean), Math.cos(lean));
+    set(SEG.torso, hipC, tUp, tFront);
+    _a.copy(hipC).addScaledVector(tUp, D.shoulder.y + 0.15);
+    set(SEG.head, _a, _up, fwd);
+    // Shoulders on the trunk (the rest offset turned with the lean), the weapon at the right one.
+    _q.setFromUnitVectors(_up, tUp);
+    const shoulderY = _a.set(0, D.shoulder.y, -D.shoulder.z).applyQuaternion(_q).add(hipC).y;
+    const rpgUp = s.role === 'rpg' && s.state === 'aim';
+    const gunPos = rpgUp ? _gp.set(0.12, shoulderY + 0.12, 0.05) : _gp.set(0.05, shoulderY - 0.05, 0.25);
+    for (const side of [-1, 1] as const) {
+      const sh = _sh.set(side * D.shoulder.x, D.shoulder.y, -D.shoulder.z).applyQuaternion(_q).add(hipC);
+      const hand = _hd.copy(gunPos).add(_a.set(side * 0.05, -0.05, side > 0 ? 0.05 : 0.35));
+      const pole = _p1.set(side * 0.8, -1, -0.25);
+      const elbow = twoBone(sh, hand, D.upperArm, D.forearm, pole, _el);
+      const L = side < 0;
+      set(L ? SEG.upperArmL : SEG.upperArmR, sh, _a.subVectors(sh, elbow), pole);
+      set(L ? SEG.forearmL : SEG.forearmR, elbow, _a.subVectors(elbow, hand), pole);
+      set(L ? SEG.handL : SEG.handR, hand, _a.subVectors(elbow, hand), fwd);
+    }
+    _m2.makeRotationX(rpgUp ? 0 : running ? 0.9 : s.state === 'aim' ? 0 : 0.5).setPosition(gunPos);
+    const w = _t2.multiplyMatrices(root, _m2);
+    if (s.role === 'rpg') {
+      this.put('rpg', w);
+      this.put('warhead', w);
+    } else this.put('rifle', w);
+  }
+
   private seg(root: THREE.Matrix4, a: THREE.Vector3, b: THREE.Vector3): THREE.Matrix4 {
     const d = _d.subVectors(b, a);
     const len = d.length();
@@ -550,6 +666,52 @@ function elbowFor(shoulder: THREE.Vector3, hand: THREE.Vector3, pole: THREE.Vect
   return new THREE.Vector3().copy(shoulder).addScaledVector(u, l1 * cosA).addScaledVector(v, l1 * sinA);
 }
 
+/** castRig.ts's segment order. */
+const SEG = { pelvis: 0, torso: 1, head: 2, upperArmL: 3, forearmL: 4, handL: 5, upperArmR: 6, forearmR: 7, handR: 8, thighL: 9, shinL: 10, bootL: 11, thighR: 12, shinR: 13, bootR: 14 } as const;
+
+/** A segment's frame: origin, +Y along `up`, −Z toward `front` (as castRig.ts reads them). */
+function frameTo(out: THREE.Matrix4, origin: THREE.Vector3, up: THREE.Vector3, front: THREE.Vector3): THREE.Matrix4 {
+  _fy.copy(up).normalize();
+  _fz.copy(front).addScaledVector(_fy, -front.dot(_fy));
+  if (_fz.lengthSq() < 1e-8) _fz.set(0, 0, 1).addScaledVector(_fy, -_fy.z);
+  _fz.normalize().negate();
+  _fx.crossVectors(_fy, _fz);
+  return out.makeBasis(_fx, _fy, _fz).setPosition(origin);
+}
+
+/** Two-bone IK: the middle joint between `root` and `target` for bones `l1`, `l2`, bent toward `pole`. */
+function twoBone(root: THREE.Vector3, target: THREE.Vector3, l1: number, l2: number, pole: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
+  const u = _ikU.subVectors(target, root);
+  const raw = u.length();
+  if (raw < 1e-6) u.set(0, -1, 0);
+  else u.multiplyScalar(1 / raw);
+  const dist = Math.min(l1 + l2 - 1e-4, Math.max(Math.abs(l1 - l2) + 1e-4, raw));
+  const cosA = (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  const v = _ikV.copy(pole).addScaledVector(u, -pole.dot(u));
+  if (v.lengthSq() < 1e-8) v.set(u.y, -u.x, 0);
+  v.normalize();
+  return out.copy(root).addScaledVector(u, l1 * cosA).addScaledVector(v, l1 * sinA);
+}
+
+/**
+ * An MPFB soldier's material: his atlas (mpfbCast.ts) with the hair's cut-out, the baked occlusion on the
+ * indirect light, each piece's roughness, mud on the boots and trouser legs, and warm in the thermal sight.
+ */
+function castMaterial(atlas: THREE.Texture, bones: BoneTexture): THREE.MeshStandardNodeMaterial {
+  const m = new THREE.MeshStandardNodeMaterial({ name: 'infantry-cast', metalness: 0, side: THREE.DoubleSide });
+  const t = texture(atlas, uv());
+  const mud = smoothstep(0.42, 0.04, positionGeometry.y).mul(0.55).mul(smoothstep(0.35, 0.65, mx_noise_float(positionGeometry.mul(7)).mul(0.5).add(0.5)).mul(0.6).add(0.4));
+  m.colorNode = mix(t.rgb, vec3(0.11, 0.09, 0.065), mud);
+  m.opacityNode = t.a;
+  m.alphaTest = 0.5;
+  m.roughnessNode = mix(attribute('rough', 'float'), float(0.95), mud);
+  m.aoNode = attribute('ao', 'float');
+  m.positionNode = skinnedPosition(bones);
+  addThermalConst(m, 1.5);
+  return m;
+}
+
 function turnTo(a: number, b: number, rate: number): number {
   let d = b - a;
   d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -574,3 +736,19 @@ const _one = new THREE.Vector3(1, 1, 1);
 const _pole = new THREE.Vector3();
 const _ikU = new THREE.Vector3();
 const _ikV = new THREE.Vector3();
+const _f = new THREE.Vector3();
+const _a = new THREE.Vector3();
+const _hc = new THREE.Vector3();
+const _hj = new THREE.Vector3();
+const _kn = new THREE.Vector3();
+const _ft = new THREE.Vector3();
+const _p1 = new THREE.Vector3();
+const _tu = new THREE.Vector3();
+const _tf = new THREE.Vector3();
+const _gp = new THREE.Vector3();
+const _sh = new THREE.Vector3();
+const _hd = new THREE.Vector3();
+const _el = new THREE.Vector3();
+const _fx = new THREE.Vector3();
+const _fy = new THREE.Vector3();
+const _fz = new THREE.Vector3();
