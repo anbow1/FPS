@@ -105,9 +105,11 @@ export class Bullets {
         }
       }
       world.raycast(_a.x, _a.y, _a.z, _b.x, _b.y, _b.z, _ray, 5);
+      let structure = false;
       if (_ray.kind !== 'none' && _ray.t < bestT) {
         bestT = _ray.t;
         what = 'ground';
+        structure = _ray.kind === 'building';
       }
       let dead = b.age > 4 || b.s.y < -50;
       if (what && bestT <= 1) {
@@ -123,6 +125,14 @@ export class Bullets {
             this.effects.emit(PKind.Spark, p.x, p.y, p.z, (wn.x + (Math.random() - 0.5)) * sp, (wn.y + Math.random() * 0.6) * sp, (wn.z + (Math.random() - 0.5)) * sp, 0.12, 0.15 + Math.random() * 0.2, 3, 1.8, 0.8, 1, 0.3);
           }
           if (Math.random() < 0.25) audio.ping(p);
+        } else if (structure && world.trucks.at(p, 0.3) >= 0) {
+          // Through a lorry's sheet steel: sparks, and a long burst finds its fuel tank.
+          world.trucks.damage(world.trucks.at(p, 0.3), b.spec.damage * 0.02, p);
+          for (let k = 0; k < 3; k++) {
+            const sp = 4 + Math.random() * 8;
+            this.effects.emit(PKind.Spark, p.x, p.y, p.z, (Math.random() - 0.5) * sp, Math.random() * sp, (Math.random() - 0.5) * sp, 0.1, 0.15 + Math.random() * 0.2, 3, 1.8, 0.8, 1, 0.3);
+          }
+          if (Math.random() < 0.3) audio.ping(p);
         } else {
           const water = p.y < 0.05 && world.hf.heightAt(p.x, p.z) < 0;
           for (let k = 0; k < 3; k++) {

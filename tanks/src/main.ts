@@ -8,6 +8,7 @@ import { ATMO } from './render/atmosphere';
 import { benchSpots } from './game/bench';
 import { loadTankModels } from './game/importedTank';
 import { loadSoldierCast } from './render/soldierCast';
+import { loadTruckModels } from './world/trucks';
 import { BenchRecorder, type BenchSample, formatBench } from './render/benchRecorder';
 import { PRESETS } from './render/lighting';
 import { Pipeline } from './render/pipeline';
@@ -87,6 +88,8 @@ async function boot(): Promise<void> {
   await loadTankModels();
   // The infantry as Field Line's MPFB soldiers (render/soldierCast.ts); none loaded, the procedural men stay.
   game.infantry.useCast(await loadSoldierCast());
+  // The lorries' meshes (world/trucks.ts); their colliders stand from the start, models or not.
+  world.trucks.attach(await loadTruckModels());
   await game.init();
   game.setPreset(Number(lightSel.value));
   pipeline.setToneMapping(toneSel.value === 'agx' ? 'agx' : 'aces');

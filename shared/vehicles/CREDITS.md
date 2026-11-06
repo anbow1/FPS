@@ -6,7 +6,9 @@ ambient occlusion baked by Cycles). The tanks and IFVs (mbt_*, ifv_*) by `prepar
 and gun about their pivots, inward-facing pieces turned, ambient occlusion cast per face corner. The helicopter (heli_*) by
 `prepare_heli.py`: rotors (hub and blades), tail rotor, chin gun and missiles split out, scaled to the
 flight model's rotor. The fighter (jet_*) by `prepare_jet.py`: tailplanes, flaperons and rudders on
-their hinge lines, the landing gear and squadron badges taken off.
+their hinge lines, the landing gear and squadron badges taken off. The lorries (cargo_truck, staff_car) by
+`prepare_truck.py`: one body, wheels and all, after `scrub_marks.py` painted the staff car's door stars
+and maker's plates and the cargo lorry's door chevron out of their textures.
 
 | Folder | Source | Author | Licence |
 | --- | --- | --- | --- |
@@ -16,6 +18,8 @@ their hinge lines, the landing gear and squadron badges taken off.
 | ifv_west | [M2 Bradley IFV](https://sketchfab.com/3d-models/m2-bradley-ifv-ab022158ab5f4fbfa55d4142db7595ab) | [42manako](https://sketchfab.com/42manako) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | ifv_east | [BMP-2](https://sketchfab.com/3d-models/bmp-2-a843e922897c499ca53e718235b3875a) | [42manako](https://sketchfab.com/42manako) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | heli_warden | [AH-64D attack helicopter](https://sketchfab.com/3d-models/boeing-ah-64d-apache-combat-helicopter-c3b58008c46b45048fdd7dd283a3c8c8) | [Muhamad Mirza Arrafi](https://sketchfab.com/nazidefenseforceofficial) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| cargo_truck | [M939 utility truck](https://sketchfab.com/3d-models/m939-utility-truck-7613cbde1857466ab4dd49b44fbfb959) (door chevron painted out) | [42manako](https://sketchfab.com/42manako) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| staff_car | [Military Truck](https://sketchfab.com/3d-models/military-truck-d3a85af5faef4fddb217b3fce073614c) (door stars and plates painted out) | [Raphael Escamilla](https://sketchfab.com/Raffey) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
 | jet_wraith | [F-35B Lightning II](https://sketchfab.com/3d-models/f-35b-lightning-ii-raf-617-squadron-1161f64164ce481189ce67d39502c068) (squadron badges and landing gear removed) | [mgg8](https://sketchfab.com/mgg8) | [CC0 1.0](http://creativecommons.org/publicdomain/zero/1.0/) |
 
 Credit line for the games' credits (CC BY requires it):
@@ -23,5 +27,6 @@ Credit line for the games' credits (CC BY requires it):
 > This work is based on "Generic passenger car pack" by Comrade1280, licensed under CC BY 4.0.
 > This work is based on "M1A2 Abrams Main Battle Tank Woodland Camouflage" and "Uralvagonzavod T-90AM
 > Main Battle Tank" by Muhamad Mirza Arrafi, licensed under CC BY 4.0.
-> This work is based on "M2 Bradley IFV" and "BMP-2" by 42manako, licensed under CC BY 4.0.
+> This work is based on "M2 Bradley IFV", "BMP-2" and "M939 utility truck" by 42manako, licensed under CC BY 4.0.
+> This work is based on "Military Truck" by Raphael Escamilla, licensed under CC BY 4.0.
 > This work is based on "Boeing AH-64D Apache Combat Helicopter" by Muhamad Mirza Arrafi, licensed under CC BY 4.0.

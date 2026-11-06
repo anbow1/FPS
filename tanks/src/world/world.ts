@@ -12,6 +12,7 @@ import { Decals } from './decals';
 import { Grass } from './grass';
 import { Heightfield } from './heightfield';
 import { Terrain } from './terrain';
+import { placeTrucks, Trucks } from './trucks';
 import { Vegetation } from './vegetation';
 import { hyp2, hyp3 } from '../core/mathx';
 
@@ -38,6 +39,8 @@ export class World {
   readonly buildings: Obb[];
   readonly city: CityPlan;
   readonly lamps: StreetLamps;
+  /** Lorries left about the map: scenery that stops tanks and bullets and burns when hit. */
+  readonly trucks: Trucks;
   private readonly index: BuildingIndex;
   private readonly hits: number[] = [];
 
@@ -57,10 +60,16 @@ export class World {
     this.decals = new Decals(this.hf);
     const b = buildBuildings(this.hf, seed + 5);
     const town = buildCity(city, this.hf, quality.id === 'low');
-    this.buildings = [...b.colliders, ...town.colliders];
+    const fixed = [...b.colliders, ...town.colliders];
+    const rocks = this.vegetation.rocks;
+    // A lorry stands clear of the houses and the boulders (a brute-force look: once, at load).
+    const blocked = (x: number, z: number, m: number): boolean =>
+      fixed.some((c) => obbDistance(c, x, z) < m) || rocks.some((r) => hyp2(r.x - x, r.z - z) < r.r + m);
+    this.trucks = new Trucks(placeTrucks(this.hf, blocked, seed + 41));
+    this.buildings = [...fixed, ...this.trucks.colliders];
     this.index = new BuildingIndex(this.buildings);
     this.lamps = new StreetLamps(city.lamps, this.hf);
-    this.group.add(this.terrain.group, this.vegetation.group, this.grass.group, this.decals.group, b.group, town.group, this.lamps.group);
+    this.group.add(this.terrain.group, this.vegetation.group, this.grass.group, this.decals.group, b.group, town.group, this.lamps.group, this.trucks.group);
   }
 
   /** Indices of the building colliders that may lie within `r` of (x, z) (a superset; test each). */
@@ -140,6 +149,7 @@ export class World {
     this.grass.update(cam, dt);
     this.vegetation.update(dt, cam);
     this.lamps.update(dt);
+    this.trucks.update(dt);
   }
 }
 
