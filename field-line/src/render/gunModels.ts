@@ -1,5 +1,5 @@
 import { attribute, texture, uv } from 'three/tsl';
-import { BufferAttribute, type BufferGeometry, CylinderGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Texture, Vector3 } from 'three/webgpu';
+import { BufferAttribute, type BufferGeometry, CylinderGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, PlaneGeometry, type Texture, Vector3 } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // The player's three weapons from downloaded models (shared/weapons, CC BY; prepared by
@@ -137,7 +137,7 @@ export interface ModelGunCommon {
 }
 
 /** The carbine: body, magazine, charging handle, the holographic sight's two windows, its own suppressor. */
-export function modelCarbine(magRestY: number): (ModelGunCommon & { bolt: Mesh; dotLens: Mesh; suppressor: Mesh; eyeZ: number }) | null {
+export function modelCarbine(magRestY: number): (ModelGunCommon & { bolt: Mesh; dotLens: Mesh; suppressor: Mesh; eyeZ: number; hipOffset: Vector3 }) | null {
   const gun = guns.carbine;
   if (!gun) return null;
   const root = new Group();
@@ -158,6 +158,9 @@ export function modelCarbine(magRestY: number): (ModelGunCommon & { bolt: Mesh; 
     suppressor,
     // A cheek on the stock puts the eye ~0.22 m behind the window.
     eyeZ: 0.27,
+    // Its holographic window stands 0.07 m over the bore, the procedural tube's 0.04 m: held at the hip by
+    // the sight's height it sat 3 cm low, only the rail's top in view.
+    hipOffset: new Vector3(0, 0.03, 0),
     muzzle: new Vector3(0, -0.0724, -0.361),
     gripRight: new Vector3(0, -0.17, 0.1),
     gripLeft: new Vector3(-0.02, -0.11, -0.24),
@@ -215,8 +218,9 @@ export function modelPistol(magRestY: number): (ModelGunCommon & { slide: Mesh; 
   for (const m of meshesOf(gun, 'body')) root.add(m);
   const magazine = partAt(gun, 'magazine', new Vector3(0, magRestY, 0));
   const slide = partAt(gun, 'slide', new Vector3());
-  // No reflex sight: the dot's window is kept (the viewmodel gives it the dot's material) but never shown.
-  const dotLens = new Mesh();
+  // No reflex sight: the dot's window is kept (the viewmodel gives it the dot's material) but never shown; a
+  // speck of geometry all the same, since the shader warm-up draws hidden meshes too.
+  const dotLens = new Mesh(new PlaneGeometry(0.001, 0.001));
   dotLens.visible = false;
   root.add(magazine, slide, dotLens);
   return {

@@ -114,7 +114,7 @@ export class ViewModel {
     const hip = HIP[this.shown];
     // Aimed, the eye sits on the sight line: through the pistol's red dot window, above its irons.
     const sightY = this.shown === 'pistol' ? this.pistol.sightY : 0;
-    const pos = this.tmpPos.copy(hip.pos).lerp(_ads.set(0, -sightY, -eyeZ), ads);
+    const pos = this.tmpPos.copy(hip.pos).add(this.gun().hipOffset).lerp(_ads.set(0, -sightY, -eyeZ), ads);
     const rot = this.tmpRot.set(hip.rot.x * (1 - ads), hip.rot.y * (1 - ads), hip.rot.z * (1 - ads));
     pos.lerp(SPRINT.pos, this.sprintBlend);
     rot.x += SPRINT.rot.x * this.sprintBlend;

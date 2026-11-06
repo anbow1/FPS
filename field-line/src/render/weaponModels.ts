@@ -161,6 +161,8 @@ export interface GunPoints {
   /** Its own suppressor when the model has one (shown when fitted); else one is drawn round `suppressorAt`. */
   suppressor: Mesh | null;
   suppressorAt: Vector3;
+  /** Added to the viewmodel's hip pose: a model whose sight stands higher over its bore sits that much lower. */
+  hipOffset: Vector3;
 }
 
 export interface RifleModel extends GunPoints {
@@ -371,6 +373,7 @@ export function buildRifle(options: { procedural?: boolean } = {}): RifleModel {
     gripLeft: new Vector3(-0.02, -0.12, -0.3),
     suppressor: null,
     suppressorAt: new Vector3(0, -0.082, -0.69),
+    hipOffset: new Vector3(),
   };
 }
 
@@ -389,7 +392,7 @@ export interface SniperModel extends GunPoints {
 /** Bolt-action magnum rifle with a variable scope. Sight line y = 0; ocular at z = +0.12. */
 export function buildSniper(): SniperModel {
   const model = modelPrecision(MAG_REST_Y.sniper, BOLT_REST.z, BOLT_REST.downRad);
-  if (model) return { ...model, suppressor: null };
+  if (model) return { ...model, suppressor: null, hipOffset: new Vector3() };
   const root = new Group();
   root.name = 'sniper';
   const P = VM_MATERIALS;
@@ -548,6 +551,7 @@ export function buildSniper(): SniperModel {
     gripLeft: new Vector3(-0.02, -0.12, -0.25),
     suppressor: null,
     suppressorAt: new Vector3(0, -0.065, -0.98),
+    hipOffset: new Vector3(),
   };
 }
 
@@ -570,7 +574,7 @@ export interface PistolModel extends GunPoints {
  */
 export function buildPistol(): PistolModel {
   const model = modelPistol(MAG_REST_Y.pistol);
-  if (model) return { ...model, suppressor: null, suppressorAt: model.muzzle.clone() };
+  if (model) return { ...model, suppressor: null, suppressorAt: model.muzzle.clone(), hipOffset: new Vector3() };
   const root = new Group();
   root.name = 'pistol';
   const P = VM_MATERIALS;
@@ -668,6 +672,7 @@ export function buildPistol(): PistolModel {
     gripLeft: new Vector3(-0.01, -0.12, 0.05),
     suppressor: null,
     suppressorAt: new Vector3(0, -0.018, -0.21),
+    hipOffset: new Vector3(),
   };
 }
 
