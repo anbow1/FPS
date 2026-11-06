@@ -7,6 +7,7 @@ import { bakeAmbientOcclusion } from './aoBake.ts';
 import { canopyMaterial, nozzleMaterial, type PaintSpec, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
 import { OVERLAY_LAYER, overlayBlending, overlayVisibility } from './stage.ts';
+import { type ImportedJet, importedWraith } from './importedJet.ts';
 
 // Procedural models of the two aircraft, built to the scale sheet
 // (Wraith 15.70 × 10.70 × 4.33 m, Talon 21.90 × 15.30 × 5.90 m, height with
@@ -272,14 +273,14 @@ interface GearSpec {
  * Landing gear from the logic's leg positions (config.ts): the wheel sits where the spring acts, the strut
  * runs up to the bay roof in the belly. Doors are hinged along the bay edges.
  */
-function buildGear(model: JetModel, id: AircraftId, paint: Material): void {
+function buildGear(model: JetModel, id: AircraftId, paint: Material, roof?: (x: number, z: number) => number): void {
   const metal = plain('gear leg', 0xd7d7d2, 0.45);
   const chrome = plain('oleo', 0xc6c6c8, 0.15, 1);
   const tyre = plain('tyre', 0x2c2c2e, 0.86);
   const hub = plain('hub', 0xb9bbbd, 0.35, 1);
   const bayMat = plain('gear bay', 0x3a3c3b, 0.8);
   for (const leg of AIRCRAFT[id].gear.legs) {
-    const roofY = bellyY(model.stations, leg.x, leg.z) + 0.04;
+    const roofY = (roof ? roof(leg.x, leg.z) : bellyY(model.stations, leg.x, leg.z)) + 0.04;
     const pivot = new Group();
     pivot.position.set(leg.x, roofY, leg.z);
     const r = leg.nose ? (id === 'talon' ? 0.33 : 0.3) : id === 'talon' ? 0.52 : 0.42;
@@ -723,7 +724,9 @@ function stationAt2(stations: Station[], z: number): Station {
 }
 
 export function buildJet(id: AircraftId): JetModel {
-  const model = id === 'wraith' ? buildWraith() : buildTalon();
+  // The Wraith from its downloaded model when it loaded (importedJet.ts); procedural otherwise.
+  const imported = id === 'wraith' ? importedWraith() : null;
+  const model = imported ? fromImportedJet(imported) : id === 'wraith' ? buildWraith() : buildTalon();
   const t0 = performance.now();
   bakeAmbientOcclusion(model.root);
   console.log(`${id}: ambient occlusion baked in ${(performance.now() - t0).toFixed(0)} ms`);
@@ -771,4 +774,82 @@ export function poseSurfaces(model: JetModel, cmd: SurfaceCommand): void {
     }
     h.pivot.quaternion.setFromAxisAngle(h.axis, Math.max(-h.maxRad, Math.min(h.maxRad, angle)));
   }
+}
+
+/**
+ * The Wraith from a downloaded model's parts (importedJet.ts): its body and canopy, its moving surfaces on
+ * hinges along their real hinge lines (the same kinds and travel as the procedural ones; this model's
+ * leading-edge flaps are part of the wing and stay put), the procedural nozzle glow, flame and heat shimmer
+ * at its nozzle's exit, the lights at its wingtips and tail, and the game's retractable gear under its belly.
+ */
+function fromImportedJet(m: ImportedJet): JetModel {
+  const { info, lift } = m;
+  const at = (v: readonly number[]): [number, number, number] => [v[0] ?? 0, (v[1] ?? 0) + lift, v[2] ?? 0];
+  const root = new Group();
+  root.name = 'wraith';
+  for (const b of m.body) {
+    b.position.y = lift;
+    root.add(b);
+  }
+  const glassMat = canopyMaterial(0x4a4636, 0xd9c590);
+  addCanopyRain(glassMat);
+  if (m.glass) {
+    const glass = mesh(m.glass, glassMat, false);
+    glass.name = 'canopy glass';
+    glass.renderOrder = 4;
+    glass.position.y = lift;
+    root.add(glass);
+  }
+  const travel: Record<'stab' | 'flaperon' | 'rudder', number> = { stab: 24, flaperon: 22, rudder: 25 };
+  const hinges: Hinge[] = [];
+  for (const h of info.hinges) {
+    const pivot = new Group();
+    pivot.position.set(...at(h.a));
+    for (const part of m.surfaces.get(h.name) ?? []) pivot.add(part);
+    root.add(pivot);
+    const axis = h.kind === 'stab' ? new Vector3(1, 0, 0) : new Vector3((h.b[0] ?? 0) - (h.a[0] ?? 0), (h.b[1] ?? 0) - (h.a[1] ?? 0), (h.b[2] ?? 0) - (h.a[2] ?? 0)).normalize();
+    // As hinged(): a positive angle moves the trailing edge down (horizontal) or right (vertical).
+    if (Math.abs(axis.x) >= Math.abs(axis.y) ? axis.x < 0 : axis.y < 0) axis.negate();
+    hinges.push({ pivot, axis, kind: h.kind, side: h.side < 0 ? -1 : 1, maxRad: (travel[h.kind] * Math.PI) / 180 });
+  }
+  // The engine's glow deep in the nozzle, the afterburner flame and the heat shimmer behind its exit.
+  const burner = uniform(0);
+  const heat = uniform(0);
+  const [nx, ny, nz] = at(info.nozzle);
+  const turbine = mesh(lathe([[nz - 0.6, 0.46], [nz - 0.6, 0.0]], nx, ny, 24), turbineMaterial(heat), false);
+  root.add(turbine);
+  const flame = mesh(lathe([[nz - 0.04, 0.47], [nz + 0.7, 0.4], [nz + 2.6, 0.22], [nz + 4.3, 0.0]], nx, ny, 18), flameMaterial(burner, 4.3, nz - 0.04), false);
+  flame.renderOrder = 5;
+  flame.layers.set(OVERLAY_LAYER);
+  root.add(flame);
+  const shimmer = [mesh(lathe([[nz, 0.5], [nz + 1.6, 0.75], [nz + 5.6, 1.1], [nz + 10, 1.3]], nx, ny, 16), shimmerMaterial(heat, 10, nz), false)];
+  shimmer[0]!.renderOrder = 4;
+  root.add(shimmer[0]!);
+  const eye = info.eye ? at(info.eye) : ([0, 1.12, -4.25] as [number, number, number]);
+  const cockpit = pilot();
+  cockpit.position.set(eye[0], eye[1] - 0.02, eye[2]);
+  root.add(cockpit);
+  const tips = info.wingtips.map((t) => at(t));
+  const top = (info.size[1] ?? 4.3) + lift;
+  addLights(root, [tips[0] ?? [5, 0, 1.5], tips[1] ?? [-5, 0, 1.5]], [0, top - 2.2, 2.6], [nx, ny + 0.6, nz - 0.4]);
+  const model: JetModel = {
+    root,
+    hinges,
+    burner,
+    heat,
+    shimmer,
+    nozzles: [[nx, ny, nz]],
+    wingtips: [tips[0] ?? [5, 0, 1.5], tips[1] ?? [-5, 0, 1.5]],
+    eye,
+    gearLegs: [],
+    stations: [],
+  };
+  // The gear hangs from the belly over each leg, measured on the model by prepare_jet.py.
+  const roof = (x: number, z: number): number => {
+    let best = info.gear[0];
+    for (const g of info.gear) if (best && Math.hypot(g.x - x, g.z - z) < Math.hypot(best.x - x, best.z - z)) best = g;
+    return (best?.belly ?? 1) + lift;
+  };
+  buildGear(model, 'wraith', plain('wraith gear doors', 0x6a6d71, 0.58), roof);
+  return model;
 }

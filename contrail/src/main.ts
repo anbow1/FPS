@@ -1,3 +1,4 @@
+import { loadJetModels } from './render/importedJet.ts';
 import { DoubleSide, Mesh, Quaternion, Vector3 } from 'three/webgpu';
 import { Game } from './app/game.ts';
 import { PilotControls } from './app/pilot.ts';
@@ -131,6 +132,8 @@ async function main(): Promise<void> {
   const player = game.player;
   const aircraft = player.aircraft;
   const views = new Map<number, JetView>();
+  // The downloaded models first: building the views picks them up (importedJet.ts).
+  await loadJetModels();
   for (const f of game.combat.fighters) views.set(f.id, new JetView(f.kind, stage.scene, atmosphere));
   const playerView = views.get(player.id)!;
   // The office around the pilot's eye, for the cockpit and padlock views (the pilot's hands: handMesh.ts).
