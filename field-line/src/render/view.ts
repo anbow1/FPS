@@ -30,6 +30,7 @@ import { CITY, FOLIAGE, MaterialLibrary, wetness } from './materials.ts';
 import { CityLights } from './cityLights.ts';
 import { buildProps, type PropsView } from './props.ts';
 import { loadCarModels } from './vehicleModels.ts';
+import { loadSoldierCast } from './soldierCast.ts';
 import { CpuTimer } from './perf.ts';
 import { Stage, type StageSettings } from './stage.ts';
 import { Undergrowth } from './undergrowth.ts';
@@ -112,7 +113,8 @@ export class GameView {
     stage.camera.layers.enable(VIEWMODEL_LAYER);
     // The photographed sets are decoded before any material asks for one (photoTextures.ts).
     await progress('Loading textures', 0.1);
-    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh()]);
+    const [, , , , cast] = await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadSoldierCast(this.settings.quality)]);
+    this.actors.useCast(cast);
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';
     CITY.lamps = map.id === 'city' || map.id === 'boulevard';
@@ -346,7 +348,7 @@ export class GameView {
     this.viewModel.root.updateMatrixWorld(true);
     this.viewModel.aimRedDot();
 
-    this.actors.update(game.soldiers, alpha, frameSeconds);
+    this.actors.update(game.soldiers, alpha, frameSeconds, cam.position);
     this.effects.update(game, cam, frameSeconds);
     this.worldFx.update(game, cam, frameSeconds, this.world.glass, this.world.glassColliderIds);
     this.lighting.update(cam);

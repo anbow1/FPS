@@ -1,10 +1,12 @@
-import { attribute, float, floor, mix, mx_noise_float, positionGeometry, positionLocal, smoothstep, step, vec3 } from 'three/tsl';
-import { BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedBufferAttribute, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, type Node, Quaternion, Shape, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
+import { attribute, float, floor, mix, mx_noise_float, positionGeometry, positionLocal, smoothstep, step, texture, uv, vec3 } from 'three/tsl';
+import { BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, DoubleSide, ExtrudeGeometry, Group, InstancedBufferAttribute, InstancedMesh, LatheGeometry, Matrix4, Mesh, MeshPhysicalNodeMaterial, type Node, Quaternion, Shape, SphereGeometry, type Texture, TorusGeometry, Vector2, Vector3 } from 'three/webgpu';
 import type { Guerrilla } from '../game/guerrillas.ts';
 import { coarseParts } from './gunkit.ts';
 import { merge } from './meshkit.ts';
 import { boneIndex, clipDuration, clipSpeed, MocapPose, mocapReady } from './mocap.ts';
 import { BoneTexture, skinnedPosition } from './skinning.ts';
+import { CastRig, type Dims } from './castRig.ts';
+import { type CastCharacter, FULL_BONES } from './mpfbCast.ts';
 import { buildRifle } from './weaponModels.ts';
 
 // The guerrillas: a body of segments (pelvis, torso, head, upper arms,
@@ -46,6 +48,29 @@ const L_SHIN = 0.43;
 const ANKLE_Y = 0.09;
 const SPINE_M = 0.52;
 const SHOULDER_HALF = 0.19;
+
+/** The procedural man's measurements (castRig.ts: an MPFB character brings his own). */
+const PROC_DIMS: Dims = {
+  thigh: L_THIGH,
+  shin: L_SHIN,
+  upperArm: L_UPPER_ARM,
+  forearm: L_FOREARM,
+  ankleY: ANKLE_Y,
+  standHip: 0.93,
+  legScale: 1,
+  hipJoint: new Vector3(0.1, -0.02, 0),
+  shoulder: new Vector3(SHOULDER_HALF, SPINE_M - 0.06, 0),
+};
+/** The measurements of the man being posed (set per man in GuerrillaView.update). */
+let DIM: Dims = PROC_DIMS;
+/** Beyond this distance a man is drawn from his far level of detail. */
+const NEAR_M = 24;
+
+/** One MPFB character's instanced draws: near and far levels, each with its own bone rows. */
+interface CastView {
+  rig: CastRig;
+  lods: { mesh: InstancedMesh; bones: BoneTexture; far: boolean; n: number }[];
+}
 
 type Kind = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 const HARD: Kind = 0;
@@ -93,6 +118,38 @@ export class GuerrillaView {
   private readonly slotId = new Int32Array(MAX_MEN).fill(-1);
   private mocapA: MocapPose | null = null;
   private mocapB: MocapPose | null = null;
+  /** The MPFB guerrillas, when loaded (useCast): they replace the procedural body; the AK stays. */
+  private readonly cast: CastView[] = [];
+  /** The current man's segments, posed, in the world (cast mode: retargeted by castRig.ts). */
+  private readonly segW = BONES.map(() => new Matrix4());
+
+  /**
+   * Draws the band as the MPFB characters (mpfbCast.ts) from now on, each man always the same one of them;
+   * with none, the procedural body stays.
+   */
+  useCast(characters: readonly CastCharacter[]): void {
+    for (const c of characters) {
+      const lods: CastView['lods'] = [];
+      for (const [lod, far] of [
+        [c.full, false],
+        [c.far, true],
+      ] as const) {
+        if (!lod) continue;
+        const bones = new BoneTexture(FULL_BONES.length, MAX_MEN);
+        const mesh = new InstancedMesh(lod.geometry, castMaterial(lod.atlas, bones), MAX_MEN);
+        mesh.name = `guerrilla-${c.name}${far ? '-far' : ''}`;
+        mesh.count = 0;
+        mesh.visible = false;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+        this.group.add(mesh);
+        lods.push({ mesh, bones, far, n: 0 });
+      }
+      this.cast.push({ rig: new CastRig(c.joints), lods });
+    }
+    if (this.cast.length) this.body.visible = false;
+  }
 
   constructor() {
     this.group.name = 'guerrillas';
@@ -127,10 +184,12 @@ export class GuerrillaView {
     }
   }
 
-  update(men: readonly Guerrilla[], alpha: number, frameSeconds: number): void {
+  /** Poses every man for this frame; `eye` (the camera) picks each MPFB man's level of detail. */
+  update(men: readonly Guerrilla[], alpha: number, frameSeconds: number, eye?: Vector3): void {
     const n = Math.min(men.length, MAX_MEN);
     this.body.count = n;
     this.rifle.count = n;
+    for (const cv of this.cast) for (const l of cv.lods) l.n = 0;
     for (let i = 0; i < n; i++) {
       const g = men[i] as Guerrilla;
       if (this.slotId[i] !== g.id) this.dress(i, g.id);
@@ -143,10 +202,27 @@ export class GuerrillaView {
       _actor.makeRotationY(yaw).setPosition(_feet);
       // Where the round went, in the man's own frame: the dead turn away from it as they fall.
       _deathLocal.set(g.deathDir.x, 0, g.deathDir.z).applyAxisAngle(_yAxis, -yaw);
+      const cv = this.cast.length ? (this.cast[Math.abs(g.id) % this.cast.length] as CastView) : null;
+      DIM = cv ? cv.rig.dims : PROC_DIMS;
       this.pose(g, i, gait);
+      if (cv) {
+        const near = !eye || eye.distanceTo(_feet) < NEAR_M;
+        const lod = (cv.lods.find((l) => l.far !== near) ?? cv.lods[cv.lods.length - 1]) as CastView['lods'][number];
+        const row = lod.n++;
+        cv.rig.skin(this.segW, (b, m) => lod.bones.set(row, b, m));
+      }
     }
+    DIM = PROC_DIMS;
     this.rifle.instanceMatrix.needsUpdate = true;
-    this.bones.commit();
+    if (this.cast.length) {
+      for (const cv of this.cast) {
+        for (const l of cv.lods) {
+          l.mesh.count = l.n;
+          l.mesh.visible = l.n > 0;
+          if (l.n > 0) l.bones.commit();
+        }
+      }
+    } else this.bones.commit();
     if (this.gait.size > MAX_MEN * 4) this.gait.clear();
   }
 
@@ -184,10 +260,10 @@ export class GuerrillaView {
     const still = g.alive && !kneel ? 1 - Math.min(1, g.speedMs / 0.6) : 0;
     const stagger = still * (g.rifleUp ? 1 : 0.5);
     if (!kneel) {
-      _hip.set(0, 0.93 - stride * 0.06 * Math.abs(Math.sin(phase)) - still * 0.035, 0);
+      _hip.set(0, DIM.standHip - stride * 0.06 * Math.abs(Math.sin(phase)) - still * 0.035, 0);
       _up.set(0, 1, -0.07 - stride * 0.25).normalize();
     } else {
-      _hip.set(0, 0.5, 0.03);
+      _hip.set(0, 0.5 * DIM.legScale, 0.03);
       _up.set(0, 1, -0.3).normalize();
     }
     _right.set(1, 0, 0);
@@ -205,16 +281,17 @@ export class GuerrillaView {
     }
 
     this.place('pelvis', i, 0, _hip, _up, _front);
+    _pelvisQ.setFromRotationMatrix(frame(_rotM, _hip, _up, _front));
     this.armsAndRifle(g, i);
 
     for (const side of [0, 1] as const) {
       const sx = side === 1 ? 1 : -1;
-      _hipJoint.copy(_hip).addScaledVector(_right, sx * 0.1).addScaledVector(_up, -0.02);
+      hipJointOf(_hip, _pelvisQ, side, _hipJoint);
       _bootFront.set(0, 0, -1);
       _bootUp.set(0, 1, 0);
       if (kneel) {
         if (side === 0) {
-          _foot.set(-0.14, ANKLE_Y, -0.34);
+          _foot.set(-0.14, DIM.ankleY, -0.34);
           _pole.set(0, 0.2, -1);
         } else {
           _foot.set(0.14, 0.13, 0.4);
@@ -225,12 +302,12 @@ export class GuerrillaView {
       } else {
         const swing = Math.sin(phase + (side === 0 ? 0 : Math.PI));
         const lift = Math.max(0, Math.cos(phase + (side === 0 ? 0 : Math.PI))) * stride * 0.4;
-        _foot.set(sx * (0.11 + 0.05 * still), ANKLE_Y + lift, -swing * stride + (side === 0 ? -0.2 : 0.15) * stagger);
+        _foot.set(sx * (0.11 + 0.05 * still), DIM.ankleY + lift, -swing * stride + (side === 0 ? -0.2 : 0.15) * stagger);
         _pole.set(0, 0.1, -1);
         // The rear foot turned out, as it is in a shooting stance.
         _bootFront.set(side === 1 ? 0.55 * stagger : -0.1 * stagger, lift * 0.8, -1).normalize();
       }
-      this.limb('thigh', 'shin', i, side, _hipJoint, _foot, L_THIGH, L_SHIN, _pole);
+      this.limb('thigh', 'shin', i, side, _hipJoint, _foot, DIM.thigh, DIM.shin, _pole);
       this.place('boot', i, side, _end, _bootUp, _bootFront);
     }
   }
@@ -258,8 +335,9 @@ export class GuerrillaView {
 
     // AK: butt in the right shoulder pocket, along the aim. Model frame: −Z forward, sight line y = 0,
     // butt plate near (0, −0.09, +0.47).
-    _shoulderR.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_tRight, SHOULDER_HALF);
-    _shoulderL.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_tRight, -SHOULDER_HALF);
+    _torsoQ.setFromRotationMatrix(frame(_rotM, _hip, _up, _tFront));
+    shoulderOf(_hip, _torsoQ, 1, _shoulderR);
+    shoulderOf(_hip, _torsoQ, 0, _shoulderL);
     _rifleUp.set(0, 1, 0).addScaledVector(_rifleDir, -_rifleDir.y).normalize();
     _butt.copy(_shoulderR).addScaledVector(_tFront, 0.04).addScaledVector(_tRight, -0.06);
     if (lowReady) _butt.addScaledVector(_up, -0.12).addScaledVector(_front, -0.06);
@@ -269,10 +347,10 @@ export class GuerrillaView {
     _gripR.copy(_rifleO).addScaledVector(_rifleUp, -0.15).addScaledVector(_rifleDir, -0.12);
     _gripL.copy(_rifleO).addScaledVector(_rifleUp, -0.08).addScaledVector(_rifleDir, 0.26);
     _pole.copy(_tRight).multiplyScalar(0.8).addScaledVector(_up, -1).addScaledVector(_tFront, -0.3);
-    this.limb('upperArm', 'forearm', i, 1, _shoulderR, _gripR, L_UPPER_ARM, L_FOREARM, _pole);
+    this.limb('upperArm', 'forearm', i, 1, _shoulderR, _gripR, DIM.upperArm, DIM.forearm, _pole);
     this.placeHand(i, 1, _gripR, _rifleDir);
     _pole.copy(_tRight).multiplyScalar(-0.9).addScaledVector(_up, -1);
-    this.limb('upperArm', 'forearm', i, 0, _shoulderL, _gripL, L_UPPER_ARM, L_FOREARM, _pole);
+    this.limb('upperArm', 'forearm', i, 0, _shoulderL, _gripL, DIM.upperArm, DIM.forearm, _pole);
     this.placeHand(i, 0, _gripL, _rifleDir);
   }
 
@@ -298,24 +376,24 @@ export class GuerrillaView {
         const L = side === 0 ? 'Left' : 'Right';
         hipJointOf(hip, D('Hips'), side, _hipJoint);
         _dir.set(0, -1, 0).applyQuaternion(D(`${L}UpLeg`));
-        _mid.copy(_hipJoint).addScaledVector(_dir, L_THIGH);
+        _mid.copy(_hipJoint).addScaledVector(_dir, DIM.thigh);
         _dir.set(0, -1, 0).applyQuaternion(D(`${L}Leg`));
-        _end.copy(_mid).addScaledVector(_dir, L_SHIN);
+        _end.copy(_mid).addScaledVector(_dir, DIM.shin);
         low = Math.min(low, _end.y);
       }
       return low;
     };
     _hip.copy(cap.hips);
-    if (g.alive) _hip.y += ANKLE_Y - legs(_hip);
+    if (g.alive) _hip.y += DIM.ankleY - legs(_hip);
     else _hip.y += 0.04; // the capture's floor sits 4 cm under its toes' origin
     for (const side of [0, 1] as const) {
       const L = side === 0 ? 'Left' : 'Right';
       hipJointOf(_hip, D('Hips'), side, _hipJoint);
       _dir.set(0, -1, 0).applyQuaternion(D(`${L}UpLeg`));
-      _mid.copy(_hipJoint).addScaledVector(_dir, L_THIGH);
+      _mid.copy(_hipJoint).addScaledVector(_dir, DIM.thigh);
       this.place('thigh', i, side, _hipJoint, _tmpUp.copy(_dir).negate(), _front.set(0, 0, -1).applyQuaternion(D(`${L}UpLeg`)));
       _dir.set(0, -1, 0).applyQuaternion(D(`${L}Leg`));
-      _end.copy(_mid).addScaledVector(_dir, L_SHIN);
+      _end.copy(_mid).addScaledVector(_dir, DIM.shin);
       this.place('shin', i, side, _mid, _tmpUp.copy(_dir).negate(), _front.set(0, 0, -1).applyQuaternion(D(`${L}Leg`)));
       this.place('boot', i, side, _end, _bootUp.set(0, 1, 0).applyQuaternion(D(`${L}Foot`)), _bootFront.set(0, 0, -1).applyQuaternion(D(`${L}Foot`)));
     }
@@ -337,15 +415,18 @@ export class GuerrillaView {
       const L = side === 0 ? 'Left' : 'Right';
       const sx = side === 1 ? 1 : -1;
       const shoulder = side === 1 ? _shoulderR : _shoulderL;
-      shoulder.copy(_hip).addScaledVector(_up, SPINE_M - 0.06).addScaledVector(_right, sx * SHOULDER_HALF);
+      shoulderOf(_hip, D('Spine1'), side, shoulder);
       let at = shoulder;
       for (const [seg, bone, len] of [
-        ['upperArm', 'Arm', L_UPPER_ARM],
-        ['forearm', 'ForeArm', L_FOREARM],
+        ['upperArm', 'Arm', DIM.upperArm],
+        ['forearm', 'ForeArm', DIM.forearm],
         ['hand', 'Hand', 0],
       ] as const) {
         _tmpUp.set(-sx, 0, 0).applyQuaternion(D(`${L}${bone}`));
-        this.place(seg, i, side, at, _tmpUp, _bootFront.set(0, 0, -1).applyQuaternion(D(`${L}${bone}`)));
+        // A segment's front is its elbow's point (back, in the capture's T-pose) or the hand's thumb
+        // (forward); the procedural tubes do not show the difference, the MPFB arms would twist.
+        const front = this.cast.length && seg !== 'hand' ? 1 : -1;
+        this.place(seg, i, side, at, _tmpUp, _bootFront.set(0, 0, front).applyQuaternion(D(`${L}${bone}`)));
         at = (seg === 'upperArm' ? _mid : _end).copy(at).addScaledVector(_tmpUp, -len);
       }
       if (side === 1) _gripR.copy(_end);
@@ -387,8 +468,13 @@ export class GuerrillaView {
       this.rifle.setMatrixAt(i, _m);
       return;
     }
-    // The segment's frame is its bone: world × inverse bind takes the bind-pose skin to here.
     const b = boneOf(seg, side);
+    // An MPFB man: the frame itself, retargeted onto his skeleton after the whole pose (castRig.ts).
+    if (this.cast.length) {
+      (this.segW[b] as Matrix4).copy(_m);
+      return;
+    }
+    // The segment's frame is its bone: world × inverse bind takes the bind-pose skin to here.
     this.bones.set(i, b, _m.multiply(this.unbind[b] as Matrix4));
   }
 }
@@ -418,7 +504,36 @@ export function solveTwoBone(root: Vector3, target: Vector3, l1: number, l2: num
 
 /** The hip joint of `side` on the pelvis at `hip` turned by `pelvis` (the actor's frame). */
 function hipJointOf(hip: Vector3, pelvis: Quaternion, side: 0 | 1, out: Vector3): Vector3 {
-  return out.set(side === 1 ? 0.1 : -0.1, -0.02, 0).applyQuaternion(pelvis).add(hip);
+  const h = DIM.hipJoint;
+  return out.set(side === 1 ? h.x : -h.x, h.y, h.z).applyQuaternion(pelvis).add(hip);
+}
+
+/** The shoulder joint of `side` on the trunk at `hip` turned by `trunk` (the actor's frame). */
+function shoulderOf(hip: Vector3, trunk: Quaternion, side: 0 | 1, out: Vector3): Vector3 {
+  const s = DIM.shoulder;
+  return out.set(side === 1 ? s.x : -s.x, s.y, s.z).applyQuaternion(trunk).add(hip);
+}
+
+/**
+ * An MPFB guerrilla's material: his atlas (mpfbCast.ts) with the hair's cut-out, the baked occlusion on the
+ * indirect light, each piece's roughness, a sheen on cloth, and the island's mud and sand on his feet and
+ * trouser legs, as on the procedural men.
+ */
+function castMaterial(atlas: Texture, bones: BoneTexture): MeshPhysicalNodeMaterial {
+  const m = new MeshPhysicalNodeMaterial({ name: 'guerrilla-cast', metalness: 0, side: DoubleSide });
+  const t = texture(atlas, uv());
+  const y = positionGeometry.y;
+  const mud = smoothstep(0.42, 0.04, y).mul(0.5).mul(smoothstep(0.35, 0.65, mx_noise_float(positionGeometry.mul(7)).mul(0.5).add(0.5)).mul(0.6).add(0.4));
+  const colour = mix(t.rgb, vec3(0.16, 0.13, 0.09), mud);
+  m.colorNode = colour;
+  m.opacityNode = t.a;
+  m.alphaTest = 0.5;
+  m.roughnessNode = mix(attribute('rough', 'float'), float(0.95), mud);
+  m.aoNode = attribute('ao', 'float');
+  m.sheenNode = colour.mul(attribute('cloth', 'float').mul(0.4));
+  m.sheenRoughness = 0.7;
+  m.positionNode = skinnedPosition(bones);
+  return m;
 }
 
 /**
@@ -1128,6 +1243,9 @@ const DROPPED_DIR = new Vector3(0.15, 0, -1).normalize();
 const DROPPED_UP = new Vector3(1, 0, 0.15).normalize();
 const _actor = new Matrix4();
 const _fall = new Matrix4();
+const _rotM = new Matrix4();
+const _pelvisQ = new Quaternion();
+const _torsoQ = new Quaternion();
 const _rot = new Matrix4();
 const _m = new Matrix4();
 const _feet = new Vector3();

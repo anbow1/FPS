@@ -37,6 +37,7 @@ import type { RippleField } from './rippleField.ts';
 import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 import { CreatureView } from './creatures.ts';
 import { GuerrillaView } from './guerrillas.ts';
+import { loadGuerrillaCast } from './guerrillaCast.ts';
 import { buildCamp, type CampView } from './camp.ts';
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadHandMesh } from './handMesh.ts';
@@ -171,6 +172,7 @@ export class LagoonView {
     }
     if (game.band) {
       this.guerrillas = new GuerrillaView();
+      this.guerrillas.useCast(await loadGuerrillaCast(stage.quality));
       this.camp = buildCamp(game.band.camp);
       stage.scene.add(this.guerrillas.group, this.camp.group);
     }
@@ -271,7 +273,7 @@ export class LagoonView {
     placeWater(this.water.mesh, this.stage.camera.position);
     this.props.update(game);
     if (this.creatures && game.fauna) this.creatures.update(game.fauna.creatures, alpha, dt);
-    if (this.guerrillas && game.band) this.guerrillas.update(game.band.members, alpha, dt);
+    if (this.guerrillas && game.band) this.guerrillas.update(game.band.members, alpha, dt, this.stage.camera.position);
     this.camp?.update(env.daylight.night, this.lighting.preExposure, U.time.value);
     this.viewModel.root.updateMatrixWorld(true);
     this.viewModel.update(game, dt, pendingYawRad, pendingPitchRad);

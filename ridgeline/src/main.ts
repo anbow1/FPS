@@ -8,6 +8,7 @@ import { CameraRig } from './render/cameraRig.ts';
 import { CLOUD_QUALITY, Clouds } from './render/clouds.ts';
 import { CombatView, EMISSIVE_EXPOSURE } from './render/combatView.ts';
 import { HeliCockpit } from './render/heliCockpit.ts';
+import { loadHeliModels } from './render/importedHeli.ts';
 import { HeliView } from './render/heliView.ts';
 import { updateContact } from './render/contactShadow.ts';
 import { SkyLighting } from './render/lighting.ts';
@@ -134,6 +135,8 @@ async function main(): Promise<void> {
   loading.textContent = 'Ridgeline — rolling out the helicopter';
   const cfg = HELICOPTERS[opts.heli];
   const heli = new Helicopter(cfg);
+  // The downloaded models first: building the view picks them up (importedHeli.ts).
+  await loadHeliModels();
   const view = new HeliView(opts.heli, stage.scene);
   // The pilot's station inside the model (seen from the rear seat), with its live displays.
   const cockpit = new HeliCockpit(cfg, { sizeM: TERRAIN.nearSizeM, heightAt: groundAt, riverX, base: { x: 300, z: 0 } });

@@ -24,6 +24,7 @@ import { bandMaterials, bladeAntenna, dispenser, irJammer, missile, navLight, op
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
 import { canopyScratchMesh } from './canopyScratches.ts';
+import { type ImportedHeli, importedWarden } from './importedHeli.ts';
 
 // The two helicopters, procedural (no model files), in body axes (x right,
 // y up, −z forward, origin at the centre of gravity) so they line up with the
@@ -316,6 +317,9 @@ function canopy(sections: CanopySection[], glassMat: Material, frameMat: Materia
 }
 
 export function buildHeli(id: HeliId): HeliModel {
+  // The Warden from its downloaded model when it loaded (importedHeli.ts); procedural otherwise.
+  const imported = id === 'warden' ? importedWarden() : null;
+  if (imported) return fromImported(id, imported);
   const cfg = HELICOPTERS[id];
   const s = SHAPES[id];
   const root = new Group();
@@ -669,5 +673,124 @@ export function buildHeli(id: HeliId): HeliModel {
     gunPitch,
     missileRounds: interleave(missileRounds),
     hardpoints: { gun: hardpoints.gun, pods: hardpoints.pods, rails: interleave(hardpoints.rails) },
+  };
+}
+
+/**
+ * A HeliModel from a downloaded model's parts (importedHeli.ts): its body and glass in the body frame, the
+ * rotor hubs and blades spun on the same groups as the procedural ones (with the same smear discs taking
+ * over as they spin up), the chin gun on its azimuth and elevation groups, the missiles one group each,
+ * in a left-right firing order; the crew figures at the eye points.
+ */
+function fromImported(id: HeliId, m: ImportedHeli): HeliModel {
+  const cfg = HELICOPTERS[id];
+  const { info, lift } = m;
+  const at = (v: readonly number[], dy = 0): [number, number, number] => [v[0] ?? 0, (v[1] ?? 0) + lift + dy, v[2] ?? 0];
+  const root = new Group();
+  for (const b of m.body) root.add(b);
+  const glass = canopyMaterial(0x2c363c, null);
+  glass.side = DoubleSide;
+  addCanopyRain(glass);
+  if (m.glass) {
+    const g = mesh(m.glass, glass, false);
+    g.position.y = lift;
+    root.add(g);
+  }
+  for (const b of m.body) b.position.y = lift;
+  const gunnerFigure = crew();
+  gunnerFigure.position.set(...cfg.gunnerEye);
+  const pilotFigure = crew();
+  pilotFigure.position.set(...cfg.pilotEye);
+  root.add(gunnerFigure, pilotFigure);
+
+  // ---- main rotor: the model's hub and blades on the spinning group, the smear disc with them
+  const rc = cfg.rotor;
+  const rotor = new Group();
+  rotor.position.set(...at(info.hub));
+  root.add(rotor);
+  const bladeHub = new Group();
+  rotor.add(bladeHub);
+  for (const h of m.rotorHub) bladeHub.add(h);
+  for (const b of m.rotorBlades) bladeHub.add(b);
+  const rotorAngle = uniform(0);
+  const tailAngle = uniform(0);
+  const rotorSmear = uniform(0.3);
+  const tailSmear = uniform(0.6);
+  const discBlend = uniform(0);
+  const disc = new RingGeometry(0.4, rc.radiusM, 128, 6);
+  disc.rotateX(-Math.PI / 2);
+  const discMesh = mesh(disc, discMaterial(rc.blades, rc.chordM, rc.radiusM, rotorAngle, rotorSmear, discBlend, rc.direction, 0x2a2b2a), false);
+  discMesh.renderOrder = 2;
+  rotor.add(discMesh);
+
+  // ---- tail rotor: its axis along x. The group turns local +y onto the axis; the model's parts, already
+  // in place, are turned back inside the spinning hub so they spin about that axis.
+  const side = info.tailSide < 0 ? -1 : 1;
+  const tailRotor = new Group();
+  tailRotor.position.set(...at(info.tailHub));
+  tailRotor.rotation.z = (side * Math.PI) / 2;
+  root.add(tailRotor);
+  const tailHub = new Group();
+  tailRotor.add(tailHub);
+  const tailParts = new Group();
+  tailParts.rotation.z = (-side * Math.PI) / 2;
+  tailHub.add(tailParts);
+  for (const p of [...m.tailHub, ...m.tailBlades]) tailParts.add(p);
+  const tdisc = new RingGeometry(0.12, info.tailRadius, 64, 3);
+  tdisc.rotateX(-Math.PI / 2);
+  const tdiscMesh = mesh(tdisc, discMaterial(4, 0.25, info.tailRadius, tailAngle, tailSmear, discBlend, 1, 0x2a2b2a), false);
+  tdiscMesh.renderOrder = 2;
+  tailRotor.add(tdiscMesh);
+
+  // ---- chin gun: azimuth and elevation about its breech
+  const gunYaw = new Group();
+  gunYaw.position.set(...at(info.gunPivot));
+  root.add(gunYaw);
+  const gunPitch = new Group();
+  gunYaw.add(gunPitch);
+  for (const g of m.gun) gunPitch.add(g);
+
+  // ---- missiles: a group each (hidden as they go); left side then right, upper before lower, outboard first
+  const rounds = info.missiles.map((mi, i) => ({ mi, meshes: m.missiles[i] ?? [] }));
+  const order = (sign: number) =>
+    rounds.filter((r) => Math.sign(r.mi.centre[0] ?? 0) === sign).sort((a, b) => (b.mi.centre[1] ?? 0) - (a.mi.centre[1] ?? 0) || Math.abs(b.mi.centre[0] ?? 0) - Math.abs(a.mi.centre[0] ?? 0));
+  const sorted = [...order(-1), ...order(1)];
+  const missileRounds: Group[] = [];
+  const rails: [number, number, number][] = [];
+  for (const r of sorted) {
+    const g = new Group();
+    g.position.y = lift;
+    for (const x of r.meshes) g.add(x);
+    root.add(g);
+    missileRounds.push(g);
+    const c = r.mi.centre;
+    rails.push([c[0] ?? 0, (c[1] ?? 0) + lift, (c[2] ?? 0) - r.mi.length / 2]);
+  }
+  const pods: [number, number, number][] = info.pods.map((p) => [p.centre[0] ?? 0, (p.centre[1] ?? 0) + lift, p.front]);
+  const interleave = <T>(list: T[]): T[] => {
+    const half = list.length / 2;
+    const out: T[] = [];
+    for (let i = 0; i < half; i++) out.push(list[i] as T, list[i + half] as T);
+    return out;
+  };
+  const bladeMaterials = [...m.rotorBlades, ...m.tailBlades].map((b) => b.material as MeshStandardNodeMaterial);
+  return {
+    root,
+    rotor,
+    bladeHub,
+    tailHub,
+    rotorAngle,
+    tailAngle,
+    rotorSmear,
+    tailSmear,
+    discBlend,
+    bladeMaterials,
+    glass,
+    pilotFigure,
+    gunnerFigure,
+    gunYaw,
+    gunPitch,
+    missileRounds: interleave(missileRounds),
+    hardpoints: { gun: at(info.gunPivot), pods, rails: interleave(rails) },
   };
 }
