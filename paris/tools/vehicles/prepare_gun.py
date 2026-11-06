@@ -35,7 +35,8 @@ def args_of():
     ap.add_argument('--length', type=float, required=True, help='real length over all, m')
     ap.add_argument('--forward', default='-y', help="the muzzle's axis in Blender after import")
     ap.add_argument('--up', default='z')
-    ap.add_argument('--parts', default='', help='node=vertex group, comma separated')
+    ap.add_argument('--parts', default='', help='node=vertex group or words in object names (a|b), comma separated')
+    ap.add_argument('--triangles', type=int, default=0, help="the body's triangle budget (0: as it is)")
     ap.add_argument('--drop', default='', help='words in the names of parts (or their materials) to leave out')
     ap.add_argument('--tex', type=int, default=2048)
     ap.add_argument('--ao-reach', type=float, default=0.03, help='occlusion ray length, m')
@@ -106,6 +107,19 @@ def drop_unused_maps():
                         mat.node_tree.links.remove(link)
 
 
+def decimate(ob, triangles):
+    """Collapse to the budget without the vehicles' mirror symmetry (a gun's two sides differ)."""
+    tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    if tris <= triangles:
+        return
+    mod = ob.modifiers.new('decimate', 'DECIMATE')
+    mod.ratio = triangles / tris
+    mod.use_collapse_triangulate = True
+    bpy.context.view_layer.objects.active = ob
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    print(f'body: {tris} → {sum(len(p.vertices) - 2 for p in ob.data.polygons)} triangles')
+
+
 def top_profile(obs, step=0.005, half_width=0.004):
     """The highest point within `half_width` of the centre line every `step` along the gun: [z, y] pairs."""
     tops = {}
@@ -135,14 +149,26 @@ def main():
             bpy.data.objects.remove(o)
     pv.orient_and_scale(a.forward, a.up, a.length)
     obs = pv.meshes()
+    names = next((n for src, n in names_by_src.items() if n), [])
+    specs = [tuple(t.strip() for t in s.split('=')) for s in a.parts.split(',') if s.strip()]
+    # Parts that are objects of their own (unrigged models): gathered by words in their names before the
+    # rest is joined into the body; the others are vertex groups, split off the body after.
+    parts = []
+    by_group = []
+    for node, key in specs:
+        words = [w.lower() for w in key.split('|')]
+        hits = [o for o in obs if any(w in o.get('path', o.name).lower() for w in words)]
+        if hits and key not in names:
+            print(f'{node}: ' + ', '.join(o.get('path', o.name).split('/')[-1] for o in hits))
+            obs = [o for o in obs if o not in hits]
+            parts.append(pv.join(hits, node))
+        else:
+            by_group.append((node, key))
     body = pv.join(obs, 'body')
     # The joined object keeps the first object's group names; with one rigged mesh that is the rig's.
-    names = next((n for src, n in names_by_src.items() if n), [])
     while len(body.vertex_groups) < len(names):
         body.vertex_groups.new(name=names[len(body.vertex_groups)])
-    parts = []
-    for spec in [s for s in a.parts.split(',') if s.strip()]:
-        node, group = (t.strip() for t in spec.split('='))
+    for node, group in by_group:
         p = split_by_group(body, names, node, group)
         if p is not None:
             parts.append(p)
@@ -157,6 +183,8 @@ def main():
         o.vertex_groups.clear()
         for m in list(o.modifiers):
             o.modifiers.remove(m)
+    if a.triangles:
+        decimate(body, a.triangles)
     drop_unused_maps()
     pv.downscale_textures(a.tex)
     pv.ray_ao(every, reach=a.ao_reach)

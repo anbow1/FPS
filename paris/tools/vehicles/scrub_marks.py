@@ -44,6 +44,11 @@ def main():
     ap.add_argument('--bright', type=float, default=None, help='replace only texels this much brighter (0-1)')
     ap.add_argument('--grain-from', default=None, help='dx,dy of the patch lending its grain')
     ap.add_argument('--grain-patch', default=None, help='x0,y0,x1,y1 of a clean patch of paint, tiled for the grain')
+    ap.add_argument('--interp', choices=['x', 'y'], default=None, help='fill each rectangle row by row (x) or column '
+                    'by column (y), straight between the texels just outside it: keeps a curved surface\'s gradient '
+                    'in a normal map, which a blur flattens into a visible patch')
+    ap.add_argument('--no-grain', action='store_true', help='the smooth fill alone (normal maps: a stamped mark '
+                    'out of a flat panel leaves it flat, and borrowed grain brings the borrowed relief)')
     a = ap.parse_args()
     im = Image.open(a.src)
     mode = im.mode
@@ -76,6 +81,21 @@ def main():
         f = c - blur(c, 4)
         return f[sl[0].start - big[0].start:sl[0].stop - big[0].start, sl[1].start - big[1].start:sl[1].stop - big[1].start]
 
+    if a.interp:
+        # Rectangles only: each line across the mark runs straight from one side's texel to the other's.
+        for kind, (x0, y0, x1, y1) in shapes:
+            x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
+            if a.interp == 'x':
+                left, right = px[y0:y1 + 1, max(0, x0 - 1)], px[y0:y1 + 1, min(w - 1, x1 + 1)]
+                t = np.linspace(0, 1, x1 - x0 + 1, dtype=np.float32)[None, :, None]
+                px[y0:y1 + 1, x0:x1 + 1] = left[:, None, :] * (1 - t) + right[:, None, :] * t
+            else:
+                top, bottom = px[max(0, y0 - 1), x0:x1 + 1], px[min(h - 1, y1 + 1), x0:x1 + 1]
+                t = np.linspace(0, 1, y1 - y0 + 1, dtype=np.float32)[:, None, None]
+                px[y0:y1 + 1, x0:x1 + 1] = top[None, :, :] * (1 - t) + bottom[None, :, :] * t
+        Image.fromarray((px * 255 + 0.5).astype(np.uint8), 'RGBA').convert(mode).save(a.dst)
+        print(f'{a.dst}: {len(shapes)} rectangles interpolated')
+        return
     boxes = [bounds(k, v) for k, v in shapes]
     radius = max(max(b[2] - b[0], b[3] - b[1]) for b in boxes) * 0.35
     total = 0
@@ -107,7 +127,9 @@ def main():
         sl = window(x0, y0, x1, y1, 0)
         oy, ox = sl[0].start - win[0].start, sl[1].start - win[1].start
         ph, pw = sl[0].stop - sl[0].start, sl[1].stop - sl[1].start
-        if a.grain_patch:
+        if a.no_grain:
+            grain = np.zeros((ph, pw, 3), np.float32)
+        elif a.grain_patch:
             # A clean patch, mirrored and tiled over the region (no seam where the tiles meet).
             gx0, gy0, gx1, gy1 = (int(t) for t in a.grain_patch.split(','))
             tile = fine_of((slice(gy0, gy1), slice(gx0, gx1)))
