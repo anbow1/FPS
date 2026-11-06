@@ -38,6 +38,7 @@ import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 import { CreatureView } from './creatures.ts';
 import { GuerrillaView } from './guerrillas.ts';
 import { loadGuerrillaCast } from './guerrillaCast.ts';
+import { loadMooredBoat, MooredBoatView } from './mooredBoat.ts';
 import { buildCamp, type CampView } from './camp.ts';
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadHandMesh } from './handMesh.ts';
@@ -83,6 +84,8 @@ export class LagoonView {
   /** The carried lamp hangs from this pivot, which follows the left hand (swingLamp). */
   private readonly lampCarry = new Group();
   private readonly boat = new BoatView();
+  /** The cutter at anchor off the dock (scenery). */
+  private cutter: MooredBoatView | null = null;
   /** The animals and the guerrillas (game/fauna.ts, game/guerrillas.ts), and the guerrillas' camp. */
   private creatures: CreatureView | null = null;
   private guerrillas: GuerrillaView | null = null;
@@ -116,7 +119,7 @@ export class LagoonView {
     // Scanned textures first: the view's constructor already builds the skiff and the jeep, whose materials
     // read them, and every material built after does too (impostors are baked from those).
     await progress('Loading textures', 0.02);
-    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh()]);
+    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadMooredBoat()]);
     const v = new LagoonView(canvas, settings);
     await v.build(game, progress, extra);
     return v;
@@ -163,7 +166,8 @@ export class LagoonView {
     stage.scene.add(buildRocks(game.world.rocks));
     await progress('Building the shelter', 0.47);
     this.outpost = buildOutpost();
-    stage.scene.add(this.outpost.group, this.outpost.dock, this.lampCarry, this.boat.group, this.jeep.group);
+    this.cutter = new MooredBoatView();
+    stage.scene.add(this.outpost.group, this.outpost.dock, this.lampCarry, this.boat.group, this.jeep.group, this.cutter.group);
     this.props = new Props(game);
     stage.scene.add(this.props.group);
     if (game.fauna) {
@@ -265,6 +269,7 @@ export class LagoonView {
     this.gust = damp(this.gust, this.gustTarget, 0.8, dt);
     U.gust.value = this.gust;
     U.waveScale.value = waveScale(env.weather.rainRate, env.weather.windMs);
+    this.cutter?.update(U.time.value, U.waveScale.value);
     // Under water when the eye is below the chop right above it (the same waves the surface is drawn with).
     const eyeP = this.stage.camera.position;
     const surfY = waterSurfaceY(eyeP.x, eyeP.z, U.time.value, U.waveScale.value, WATER_LEVEL_M - heightAt(eyeP.x, eyeP.z));

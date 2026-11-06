@@ -30,6 +30,7 @@ def args_of():
     ap.add_argument('--up', default='z')
     ap.add_argument('--triangles', type=int, default=24000)
     ap.add_argument('--tex', type=int, default=1024)
+    ap.add_argument('--drop', default='', help='words in the names of parts (or their materials) to leave out')
     ap.add_argument('--preview', action='store_true')
     ap.add_argument('--cpu', action='store_true')
     return ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
@@ -58,6 +59,10 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     pv.import_model(a.model)
     pv.flatten_hierarchy()
+    words = [w.strip().lower() for w in a.drop.split(',') if w.strip()]
+    for o in [o for o in pv.meshes() if any(w in o.get('path', '').lower() or any(m and w in m.name.lower() for m in o.data.materials) for w in words)]:
+        print(f'dropped {o.get("path", o.name)}')
+        bpy.data.objects.remove(o)
     pv.orient_and_scale(a.forward, a.up, a.length)
     parts = []
     for o in list(pv.meshes()):

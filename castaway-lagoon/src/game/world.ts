@@ -3,6 +3,7 @@ import { CollisionWorld } from './colliders.ts';
 import type { P3 } from './events.ts';
 import type { ItemId } from './items.ts';
 import { CAN_LOG, DOCK, FURNITURE, OUTPOST, outpostToWorld } from './outpost.ts';
+import { buildMooredColliders } from './moored.ts';
 import { beachWidth, cliffiness, heightAt, ISLETS, LAGOON_CENTRE, normalAt, shoreDistance } from './terrain.ts';
 
 // Deterministic layout of everything placed in the lagoon: trees, rocks,
@@ -113,6 +114,7 @@ export function buildWorld(seed: number): LagoonWorld {
 
   buildOutpostColliders(collision);
   buildDockColliders(collision);
+  buildMooredColliders(collision);
   const occupied: { x: number; z: number; r: number }[] = [
     { x: OUTPOST.x, z: OUTPOST.z, r: 7.5 },
     { x: DOCK.x, z: DOCK.z - DOCK.lengthM / 2, r: 3 },
