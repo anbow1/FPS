@@ -24,7 +24,7 @@ import { bandMaterials, bladeAntenna, dispenser, irJammer, missile, navLight, op
 import { canopyMaterial, paintMaterial, plain } from './jetMaterials.ts';
 import { addCanopyRain } from './canopyRain.ts';
 import { canopyScratchMesh } from './canopyScratches.ts';
-import { type ImportedHeli, importedWarden } from './importedHeli.ts';
+import { type ImportedHeli, importedHeli } from './importedHeli.ts';
 
 // The two helicopters, procedural (no model files), in body axes (x right,
 // y up, −z forward, origin at the centre of gravity) so they line up with the
@@ -318,7 +318,7 @@ function canopy(sections: CanopySection[], glassMat: Material, frameMat: Materia
 
 export function buildHeli(id: HeliId): HeliModel {
   // The Warden from its downloaded model when it loaded (importedHeli.ts); procedural otherwise.
-  const imported = id === 'warden' ? importedWarden() : null;
+  const imported = importedHeli(id);
   if (imported) return fromImported(id, imported);
   const cfg = HELICOPTERS[id];
   const s = SHAPES[id];

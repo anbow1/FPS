@@ -1,18 +1,22 @@
 import { BufferAttribute, type BufferGeometry, type Group, type Material, Mesh, MeshStandardNodeMaterial, type Texture } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import talonInfo from '../../../shared/vehicles/jet_talon/jet_talon.json';
 import wraithInfo from '../../../shared/vehicles/jet_wraith/jet_wraith.json';
-import { AIRCRAFT } from '../config.ts';
+import { AIRCRAFT, type AircraftId } from '../config.ts';
 
-// The Wraith from a downloaded model (shared/vehicles/jet_wraith, CC0; prepared by
+// Both fighters from downloaded models (shared/vehicles/jet_wraith, CC0, and jet_talon, CC BY; prepared by
 // paris/tools/vehicles/prepare_jet.py): the body without its landing gear (the game's retractable gear is
-// drawn instead), the canopy glass, and the tailplanes, flaperons and rudders about their hinge lines.
-// jetModels.ts hangs them on the same hinges the procedural Wraith has, so the control laws move them
-// unchanged. The file's frame: nose toward −Z, standing on its wheels on y = 0; the body frame puts the
+// drawn instead), the canopy glass, and where the model has them apart, the tailplanes, flaperons and
+// rudders about their hinge lines (the Talon's are moulded into its skin: they stay still). jetModels.ts
+// hangs them on the same hinges the procedural fighters have, so the control laws move them unchanged.
+// The Talon's file is moved along its length so its main wheels stand where the flight model's do. The file's frame: nose toward −Z, standing on its wheels on y = 0; the body frame puts the
 // ground, at rest on the struts, `main.y − travel + static compression` below the centre of mass.
 
 export interface JetInfo {
   hinges: { name: string; kind: 'stab' | 'flaperon' | 'rudder'; side: number; a: number[]; b: number[] }[];
   nozzle: number[];
+  /** Each engine's exit (two side by side on the Talon); absent in older files: `nozzle` alone. */
+  nozzles?: number[][];
   wingtips: number[][];
   eye: number[] | null;
   gear: { x: number; z: number; belly: number }[];
@@ -30,26 +34,35 @@ export interface ImportedJet {
   surfaces: Map<string, Mesh[]>;
 }
 
-const URL_WRAITH = new URL('../../../shared/vehicles/jet_wraith/jet_wraith.glb', import.meta.url).href;
+const SOURCES: Record<AircraftId, { url: string; info: JetInfo }> = {
+  wraith: { url: new URL('../../../shared/vehicles/jet_wraith/jet_wraith.glb', import.meta.url).href, info: wraithInfo as JetInfo },
+  talon: { url: new URL('../../../shared/vehicles/jet_talon/jet_talon.glb', import.meta.url).href, info: talonInfo as JetInfo },
+};
 
-let wraith: Group | null = null;
+const loaded = new Map<AircraftId, Group>();
 
-/** Loads the Wraith's model; a failure leaves the procedural Wraith (logged, not thrown). */
+/** Loads both fighters' models; a failure leaves that one procedural (logged, not thrown). */
 export async function loadJetModels(): Promise<void> {
-  try {
-    wraith = (await new GLTFLoader().loadAsync(URL_WRAITH)).scene;
-  } catch (err) {
-    console.warn('the Wraith model did not load; the procedural one stands in:', err);
-  }
+  const loader = new GLTFLoader();
+  await Promise.all(
+    (Object.keys(SOURCES) as AircraftId[]).map(async (id) => {
+      try {
+        loaded.set(id, (await loader.loadAsync(SOURCES[id].url)).scene);
+      } catch (err) {
+        console.warn(`the ${id} model did not load; the procedural one stands in:`, err);
+      }
+    }),
+  );
 }
 
-/** The loaded Wraith's parts, fresh meshes and materials each call (one per fighter), or null. */
-export function importedWraith(): ImportedJet | null {
-  if (!wraith) return null;
-  const info = wraithInfo as JetInfo;
-  const legs = AIRCRAFT.wraith.gear.legs;
+/** A loaded fighter's parts, fresh meshes and materials each call (one per aircraft), or null. */
+export function importedJet(id: AircraftId): ImportedJet | null {
+  const scene = loaded.get(id);
+  if (!scene) return null;
+  const info = SOURCES[id].info;
+  const legs = AIRCRAFT[id].gear.legs;
   const main = legs.find((l) => !l.nose) ?? legs[0];
-  const lift = main ? main.y - main.travelM + AIRCRAFT.wraith.gear.staticCompressionM : 0;
+  const lift = main ? main.y - main.travelM + AIRCRAFT[id].gear.staticCompressionM : 0;
   const made = new Map<Material, MeshStandardNodeMaterial>();
   const materialFor = (src: Material): MeshStandardNodeMaterial => {
     let m = made.get(src);
@@ -57,7 +70,7 @@ export function importedWraith(): ImportedJet | null {
     const s = src as MeshStandardNodeMaterial;
     // The radar-absorbent coating: a satin grey, its panel lines in the normal map.
     m = new MeshStandardNodeMaterial({
-      name: `wraith ${src.name}`,
+      name: `${id} ${src.name}`,
       map: (s.map as Texture | null) ?? null,
       normalMap: (s.normalMap as Texture | null) ?? null,
       color: s.color,
@@ -68,7 +81,7 @@ export function importedWraith(): ImportedJet | null {
     return m;
   };
   const meshesOf = (name: string): Mesh[] => {
-    const node = wraith?.getObjectByName(name);
+    const node = scene.getObjectByName(name);
     if (!node) return [];
     node.updateMatrixWorld(true);
     const out: Mesh[] = [];
@@ -92,7 +105,7 @@ export function importedWraith(): ImportedJet | null {
     return out;
   };
   let glass: BufferGeometry | null = null;
-  const glassNode = wraith.getObjectByName('glass');
+  const glassNode = scene.getObjectByName('glass');
   glassNode?.updateMatrixWorld(true);
   glassNode?.traverse((o) => {
     if (o instanceof Mesh && !glass) glass = (o.geometry as BufferGeometry).clone().applyMatrix4(o.matrixWorld);

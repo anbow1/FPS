@@ -141,6 +141,12 @@ def flatten_hierarchy():
         flat = bpy.data.objects.new(ob.name, me)
         bpy.context.scene.collection.objects.link(flat)
         flat['src'] = ob.name
+        # The names of its parents too (a mesh node is often an anonymous child of the named part).
+        chain, up = [], ob
+        while up is not None:
+            chain.append(up.name)
+            up = up.parent
+        flat['path'] = '/'.join(reversed(chain))
     for ob in list(bpy.context.scene.objects):
         if 'src' not in ob:
             bpy.data.objects.remove(ob)
