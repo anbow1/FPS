@@ -5,6 +5,7 @@ import { makeTextureSet } from './textureSet.ts';
 import { arc, sectionPart, sidePart, steelMaterial, taperX, woodMaterial } from './gunkit.ts';
 import { merge, rand, tube } from './meshkit.ts';
 import { hex } from './patterns.ts';
+import { modelRifle, rifleModelLoaded } from './rifleModel.ts';
 
 // The hand-held models: an AK-pattern rifle, a clip-point survival knife and
 // a beach stone. Metres, facing −Z. The rifle's iron-sight line is y = 0 (rear
@@ -149,8 +150,63 @@ function magazineBand(e: { front: [number, number][]; back: [number, number][] }
   return out;
 }
 
+/**
+ * The red dot on its side mount, added to a rifle's root (the procedural one or the model's: both share the
+ * receiver's frame, the dust cover's top ~0.03 m under the sight line). Returns the window the dot is drawn on
+ * and the optic's axis height over the irons.
+ */
+function addRedDot(root: Group): { dotLens: Mesh; sightY: number } {
+  const W = WEAPON_MATERIALS;
+  // A side mount: the rail on the receiver's left wall, a clamp arm rising from it and a bridge over the
+  // dust cover, so the cover still comes off; a 30 mm tube red dot on the bridge, its axis DOT_Y over
+  // the irons. (On an AK the optic cannot sit on the cover itself: it moves.)
+  const DOT_Y = 0.036;
+  const z0 = 0.08;
+  const mount = parts(
+    [
+      block(0.005, 0.016, 0.11, -0.0205, -0.062, 0.09, 0.001), // side rail
+      block(0.008, 0.07, 0.07, -0.027, -0.03, z0, 0.002), // clamp arm
+      new CylinderGeometry(0.006, 0.006, 0.012, 14).rotateZ(Math.PI / 2).translate(-0.034, -0.055, z0), // clamp knob
+      block(0.036, 0.008, 0.07, -0.01, 0.007, z0, 0.0015), // bridge over the cover
+      block(0.022, 0.012, 0.05, 0, 0.016, z0, 0.0015), // riser
+      new LatheGeometry(
+        [
+          [0.0205, -0.055],
+          [0.0205, -0.035],
+          [0.018, -0.028],
+          [0.018, 0.04],
+          [0.0195, 0.046],
+          [0.0195, 0.052],
+        ].map(([r, y]) => new Vector2(r as number, y as number)),
+        32,
+      )
+        .rotateX(Math.PI / 2)
+        .translate(0, DOT_Y, z0),
+      new CylinderGeometry(0.0085, 0.0085, 0.016, 18).translate(0, DOT_Y + 0.024, z0 + 0.005), // elevation turret
+      new CylinderGeometry(0.0085, 0.0085, 0.016, 18).rotateZ(Math.PI / 2).translate(0.024, DOT_Y, z0 + 0.005), // windage turret
+    ],
+    'ak red dot',
+  );
+  root.add(mesh(mount, W.optic, 'red dot'));
+  const lensGeo = new CylinderGeometry(0.0165, 0.0165, 0.002, 24).rotateX(Math.PI / 2);
+  const front = new Mesh(lensGeo, W.glass);
+  front.position.set(0, DOT_Y, z0 - 0.05);
+  root.add(front);
+  const dotLens = new Mesh(lensGeo, W.glass);
+  dotLens.position.set(0, DOT_Y, z0 + 0.05);
+  root.add(dotLens);
+  return { dotLens, sightY: DOT_Y };
+}
+
 /** `optic`: a red dot on a side mount over the receiver (the player's rifle; the guerrillas shoot irons). */
-export function buildRifle(options: { optic?: boolean } = {}): RifleModel {
+export function buildRifle(options: { optic?: boolean; procedural?: boolean } = {}): RifleModel {
+  // The downloaded model when it loaded (rifleModel.ts), in this same frame and with the same handles;
+  // `procedural` keeps the drawn one (the guerrillas' merged rifles, which tell wood from steel by part).
+  if (rifleModelLoaded() && !options.procedural) {
+    const r = modelRifle();
+    const optic = options.optic ? addRedDot(r.root) : { dotLens: null, sightY: 0 };
+    return { ...r, ...optic };
+  }
   const W = WEAPON_MATERIALS;
   const root = new Group();
   root.name = 'ak';
@@ -307,49 +363,8 @@ export function buildRifle(options: { optic?: boolean } = {}): RifleModel {
   const chargingHandle = mesh(parts([new CylinderGeometry(0.004, 0.004, 0.025, 10).rotateZ(Math.PI / 2).translate(0.03, 0, 0), new CylinderGeometry(0.007, 0.0065, 0.01, 14).rotateZ(Math.PI / 2).translate(0.045, 0, 0)], 'charging handle'), W.bare, 'charging handle');
   chargingHandle.position.set(0, -0.045, -0.02);
   root.add(chargingHandle);
-  let dotLens: Mesh | null = null;
-  let sightY = 0;
-  if (options.optic) {
-    // A side mount: the rail on the receiver's left wall, a clamp arm rising from it and a bridge over the
-    // dust cover, so the cover still comes off; a 30 mm tube red dot on the bridge, its axis DOT_Y over
-    // the irons. (On an AK the optic cannot sit on the cover itself: it moves.)
-    const DOT_Y = 0.036;
-    const z0 = 0.08;
-    const mount = parts(
-      [
-        block(0.005, 0.016, 0.11, -0.0205, -0.062, 0.09, 0.001), // side rail
-        block(0.008, 0.07, 0.07, -0.027, -0.03, z0, 0.002), // clamp arm
-        new CylinderGeometry(0.006, 0.006, 0.012, 14).rotateZ(Math.PI / 2).translate(-0.034, -0.055, z0), // clamp knob
-        block(0.036, 0.008, 0.07, -0.01, 0.007, z0, 0.0015), // bridge over the cover
-        block(0.022, 0.012, 0.05, 0, 0.016, z0, 0.0015), // riser
-        new LatheGeometry(
-          [
-            [0.0205, -0.055],
-            [0.0205, -0.035],
-            [0.018, -0.028],
-            [0.018, 0.04],
-            [0.0195, 0.046],
-            [0.0195, 0.052],
-          ].map(([r, y]) => new Vector2(r as number, y as number)),
-          32,
-        )
-          .rotateX(Math.PI / 2)
-          .translate(0, DOT_Y, z0),
-        new CylinderGeometry(0.0085, 0.0085, 0.016, 18).translate(0, DOT_Y + 0.024, z0 + 0.005), // elevation turret
-        new CylinderGeometry(0.0085, 0.0085, 0.016, 18).rotateZ(Math.PI / 2).translate(0.024, DOT_Y, z0 + 0.005), // windage turret
-      ],
-      'ak red dot',
-    );
-    root.add(mesh(mount, W.optic, 'red dot'));
-    const lensGeo = new CylinderGeometry(0.0165, 0.0165, 0.002, 24).rotateX(Math.PI / 2);
-    const front = new Mesh(lensGeo, W.glass);
-    front.position.set(0, DOT_Y, z0 - 0.05);
-    root.add(front);
-    dotLens = new Mesh(lensGeo, W.glass);
-    dotLens.position.set(0, DOT_Y, z0 + 0.05);
-    root.add(dotLens);
-    sightY = DOT_Y;
-  }
+  const optic = options.optic ? addRedDot(root) : { dotLens: null, sightY: 0 };
+  const { dotLens, sightY } = optic;
   return {
     root,
     magazine,

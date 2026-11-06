@@ -40,6 +40,7 @@ import { GuerrillaView } from './guerrillas.ts';
 import { loadGuerrillaCast } from './guerrillaCast.ts';
 import { loadMooredBoat, MooredBoatView } from './mooredBoat.ts';
 import { loadJeepModel } from './jeepModel.ts';
+import { loadRifleModel } from './rifleModel.ts';
 import { loadSkiffModel } from './skiffModel.ts';
 import { buildCamp, type CampView } from './camp.ts';
 import { loadPhotoTextures } from './photoTextures.ts';
@@ -121,7 +122,7 @@ export class LagoonView {
     // Scanned textures first: the view's constructor already builds the skiff and the jeep, whose materials
     // read them, and every material built after does too (impostors are baked from those).
     await progress('Loading textures', 0.02);
-    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadMooredBoat(), loadSkiffModel(), loadJeepModel()]);
+    await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadMooredBoat(), loadSkiffModel(), loadJeepModel(), loadRifleModel()]);
     const v = new LagoonView(canvas, settings);
     await v.build(game, progress, extra);
     return v;
