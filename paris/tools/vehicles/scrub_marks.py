@@ -93,9 +93,11 @@ def main():
         # Seams, rust streaks and window texels around a marking are not its paint: the slow variation is
         # taken from the texels within a quarter of the surroundings' median luminance only.
         g = max(x1 - x0, y1 - y0) * 0.4
-        ring = (xs >= x0 - g) & (xs <= x1 + g) & (ys >= y0 - g) & (ys <= y1 + g) & ~region
-        med = float(np.median(luma[ring])) if ring.any() else float(np.median(luma))
-        keep = (~region & (np.abs(luma - med) < 0.25 * med)).astype(np.float32)
+        # Nor is the atlas's black gutter beside a panel's edge (it pulled a marking's fill toward black).
+        paint = luma > 0.02
+        ring = (xs >= x0 - g) & (xs <= x1 + g) & (ys >= y0 - g) & (ys <= y1 + g) & ~region & paint
+        med = float(np.median(luma[ring])) if ring.any() else float(np.median(luma[paint] if paint.any() else luma))
+        keep = (~region & paint & (np.abs(luma - med) < 0.25 * med)).astype(np.float32)
         low = blur(rgb * keep[..., None], radius) / np.maximum(blur(keep[..., None], radius), 1e-4)
         mask = own
         if a.bright is not None:
