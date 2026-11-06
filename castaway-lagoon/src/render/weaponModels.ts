@@ -5,7 +5,7 @@ import { makeTextureSet } from './textureSet.ts';
 import { arc, sectionPart, sidePart, steelMaterial, taperX, woodMaterial } from './gunkit.ts';
 import { merge, rand, tube } from './meshkit.ts';
 import { hex } from './patterns.ts';
-import { modelRifle, rifleModelLoaded } from './rifleModel.ts';
+import { modelKnife, modelRifle, rifleModelLoaded } from './rifleModel.ts';
 
 // The hand-held models: an AK-pattern rifle, a clip-point survival knife and
 // a beach stone. Metres, facing −Z. The rifle's iron-sight line is y = 0 (rear
@@ -387,6 +387,9 @@ export interface KnifeModel {
 
 /** Clip-point survival knife, blade toward −Z, edge down, grip centred on the origin. */
 export function buildKnife(): KnifeModel {
+  // The downloaded model when it loaded (rifleModel.ts), in this same frame.
+  const model = modelKnife();
+  if (model) return model;
   const W = WEAPON_MATERIALS;
   const root = new Group();
   root.name = 'knife';
