@@ -143,6 +143,7 @@ export class Game {
     this.bullets = new Bullets(this.effects);
     this.scene.add(this.bullets.tracers, this.drone.model, this.infantry.group);
     this.infantry.onKill = (s, how) => this.onSoldierKilled(s, how);
+    world.trucks.bind(this.effects, audio, world.decals);
     this.headlight = new THREE.SpotLight(0xfff4e0, 0, 120, 0.5, 0.45, 2);
     this.scene.add(this.headlight, this.headlight.target);
     this.setQuality(this.quality);
@@ -260,6 +261,7 @@ export class Game {
     this.aa.clear();
     this.effects.clear();
     this.world.decals.clear();
+    this.world.trucks.reset();
     this.lockTarget = null;
     this.lasedRange = null;
   }
@@ -625,6 +627,7 @@ export class Game {
     }
     for (const t of this.tanks) t.step(dt, this.world);
     this.collideTanks();
+    this.crushTrucks();
     // drone, infantry, small arms
     this.drone.update(dt, this.world, p, this.effects);
     this.droneSpotting(dt);
@@ -796,6 +799,20 @@ export class Game {
     }
   }
 
+  /** A tank driving into a lorry at more than a walking pace flattens it, and loses some way doing it. */
+  private crushTrucks(): void {
+    const trucks = this.world.trucks;
+    for (const t of this.tanks) {
+      if (Math.abs(t.speed) < 2.5) continue;
+      const reach = t.spec.length * 0.5 * Math.sign(t.speed);
+      _v.set(t.pos.x + Math.sin(t.yaw) * reach, t.pos.y + 1, t.pos.z + Math.cos(t.yaw) * reach);
+      const k = trucks.at(_v, t.spec.width * 0.5 + 0.5);
+      if (k < 0 || !trucks.crush(k)) continue;
+      t.speed *= 0.55;
+      if (t === this.player) this.effects.shake = Math.max(this.effects.shake, 0.4);
+    }
+  }
+
   private vehicleEffects(dt: number): void {
     const fx = this.effects;
     for (const t of this.tanks) {
@@ -918,6 +935,10 @@ export class Game {
     // shrapnel and blast against infantry
     const blastR = (ammo.id === 'HE' ? 9 : ammo.id === 'HEAT' ? 4 : ammo.id === 'RPG' ? 3 : 1.5) * Math.max(0.35, scale);
     this.infantry.blast(e.point, blastR);
+    // A lorry's thin sheet steel: any tank round sets it alight, a 30 mm shell takes a quarter of it.
+    const truck = e.kind === 'building' ? this.world.trucks.at(e.point, 0.6) : -1;
+    if (truck >= 0 && this.world.trucks.damage(truck, 100 * scale, e.point) && byPlayer) this.hud.message('Zniszczona ciężarówka', 'info');
+    if (ammo.blastRadius > 0) this.world.trucks.blast(e.point, ammo.blastRadius, scale);
     if (this.drone.alive && this.drone.pos.distanceTo(e.point) < blastR * 1.5) this.drone.shootDown();
     if (e.kind === 'soft' && e.soft) {
       e.soft.onBullet(e.point, e.dir, 1000, sh.team);
@@ -953,6 +974,12 @@ export class Game {
       return;
     }
     const explosive = (ammo.id === 'HE' ? 1 : ammo.id === 'HEAT' ? 0.5 : 0) * scale;
+    if (truck >= 0) {
+      this.effects.armourHit(e.point, _v.copy(e.dir).negate(), true);
+      if (explosive > 0) this.effects.explosionCore(e.point.x, e.point.y, e.point.z, explosive);
+      this.audio.explosion(e.point, (0.4 + explosive) * Math.max(0.35, scale));
+      return;
+    }
     if (e.kind === 'water') {
       this.water.ripples.disturb(e.point.x, e.point.z, 0.9 + explosive * 1.2, 0.25 + explosive * 0.2);
       for (let i = 0; i < 40; i++) {

@@ -430,7 +430,13 @@ def ray_ao(obs, rays=32, reach=0.6):
 
 def downscale_textures(size):
     for img in bpy.data.images:
-        if img.source != 'FILE' or not img.has_data:
+        if img.source != 'FILE':
+            continue
+        # An image no node has drawn yet is not loaded (has_data false): load it, or a big texture would
+        # be exported at its full size, its file's bytes passed through.
+        if not img.has_data:
+            img.update()
+        if not img.has_data:
             continue
         w, h = img.size
         if max(w, h) > size:
