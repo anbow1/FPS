@@ -9,8 +9,10 @@ import { merge, tube } from './meshkit.ts';
 import { markDry } from './outpost.ts';
 import { propMaterials, vehicleMaterial } from './propMaterials.ts';
 import { paintWear } from './wear.ts';
+import { SKIFF_TRANSOM_Y, skiffLoaded, skiffMaskGeometry, skiffMeshes } from './skiffModel.ts';
 
-// The dinghy as drawn: a lofted aluminium hull with a rolled gunwale rail and
+// The skiff as drawn: the downloaded runabout (skiffModel.ts) when it loaded, with the outboard below on its
+// transom and a water mask cut to its own gunwale. Otherwise, the dinghy: a lofted aluminium hull with a rolled gunwale rail and
 // a spray rail along each chine, ribs and floorboards inside, three thwarts, a
 // fuel tank piped to an outboard on the transom that turns with the tiller and
 // spins its propeller with the engine, oars and a coil of line in the bottom.
@@ -58,11 +60,8 @@ export class BoatView {
     const dark = new MeshStandardNodeMaterial({ name: 'outboard trim', color: 0x1d1f20, roughness: 0.7 });
     const bronze = new MeshStandardNodeMaterial({ name: 'outboard propeller', color: 0x8a8d8f, roughness: 0.3, metalness: 1 });
 
-    const hull = new Mesh(hullGeometry(), paint);
-    hull.castShadow = true;
-    hull.receiveShadow = true;
-    this.group.add(hull);
-
+    const model = skiffLoaded() ? skiffMeshes() : null;
+    // The downloaded runabout when it loaded (skiffModel.ts); the lofted dinghy below otherwise.
     const part = (g: BufferGeometry, m: Material, cast = true): Mesh => {
       const mesh = new Mesh(g, m);
       mesh.castShadow = cast;
@@ -75,75 +74,83 @@ export class BoatView {
       markDry(g, 0);
       return g;
     };
-    const thwarts: BufferGeometry[] = [];
-    for (const [along, t] of [
-      [BOAT.seat.along, 0.05],
-      [0.35, 0.05],
-      [1.25, 0.04],
-    ] as const) {
-      const w = halfBeam(along) * 2 - 0.06;
-      thwarts.push(new RoundedBoxGeometry(w, t, 0.26, 1, 0.008).translate(0, BOAT.seat.up - t / 2, -along));
-    }
-    // Floorboards: three slats along the flat of the bottom, resting on the ribs.
-    for (const x of [-0.22, 0, 0.22]) thwarts.push(new RoundedBoxGeometry(0.11, 0.018, 2.3, 1, 0.005).translate(x, floorY(x) + 0.033, 0.15));
-    part(wet(merge(thwarts, 'boat boards')), boards);
+    if (!model) {
+      const hull = new Mesh(hullGeometry(), paint);
+      hull.castShadow = true;
+      hull.receiveShadow = true;
+      this.group.add(hull);
 
-    // Rolled gunwale rail along the sheer and over the transom; a spray rail along each chine.
-    const railParts: BufferGeometry[] = [];
-    for (const s of [-1, 1]) {
-      const gunwale: Vector3[] = [];
-      const chine: Vector3[] = [];
-      for (let k = 0; k <= SECTIONS; k++) {
-        const along = -BOAT.lengthM / 2 + (k / SECTIONS) * BOAT.lengthM;
-        const hb = Math.max(0.005, halfBeam(along));
-        gunwale.push(new Vector3(s * hb * 1.02, sheer(along) + 0.005, -along));
-        if (along < BOAT.lengthM * 0.38) chine.push(new Vector3(s * hb * 1.004, keelAt(along) + 0.45 * (sheer(along) - keelAt(along)), -along));
+      const thwarts: BufferGeometry[] = [];
+      for (const [along, t] of [
+        [BOAT.seat.along, 0.05],
+        [0.35, 0.05],
+        [1.25, 0.04],
+      ] as const) {
+        const w = halfBeam(along) * 2 - 0.06;
+        thwarts.push(new RoundedBoxGeometry(w, t, 0.26, 1, 0.008).translate(0, BOAT.seat.up - t / 2, -along));
       }
-      railParts.push(tube(gunwale, gunwale.map(() => 0.02), 8, 0.5));
-      railParts.push(tube(chine, chine.map(() => 0.011), 6, 0.5));
-    }
-    const sternHb = halfBeam(-BOAT.lengthM / 2) * 1.02;
-    railParts.push(tube([new Vector3(-sternHb, GUNWALE_Y + 0.005, BOAT.lengthM / 2), new Vector3(sternHb, GUNWALE_Y + 0.005, BOAT.lengthM / 2)], [0.02, 0.02], 8, 0.5));
-    part(merge(railParts, 'boat rails'), rail);
+      // Floorboards: three slats along the flat of the bottom, resting on the ribs.
+      for (const x of [-0.22, 0, 0.22]) thwarts.push(new RoundedBoxGeometry(0.11, 0.018, 2.3, 1, 0.005).translate(x, floorY(x) + 0.033, 0.15));
+      part(wet(merge(thwarts, 'boat boards')), boards);
 
-    // Ribs: a frame round the inside of the hull at five stations, under the floorboards.
-    const ribs: BufferGeometry[] = [];
-    for (const along of [-1.25, -0.65, -0.05, 0.55, 1.1]) {
-      const hb = halfBeam(along);
-      const keel = keelAt(along);
-      const top = sheer(along);
-      const pts = PROFILE.map(([fx, fy]) => new Vector3(fx * (hb - 0.016), keel + fy * (top - keel - 0.02) + 0.014 * (1 - fy), -along));
-      ribs.push(tube(pts, pts.map(() => 0.013), 6, 0.5));
-    }
-    part(merge(ribs, 'boat ribs'), paint);
+      // Rolled gunwale rail along the sheer and over the transom; a spray rail along each chine.
+      const railParts: BufferGeometry[] = [];
+      for (const s of [-1, 1]) {
+        const gunwale: Vector3[] = [];
+        const chine: Vector3[] = [];
+        for (let k = 0; k <= SECTIONS; k++) {
+          const along = -BOAT.lengthM / 2 + (k / SECTIONS) * BOAT.lengthM;
+          const hb = Math.max(0.005, halfBeam(along));
+          gunwale.push(new Vector3(s * hb * 1.02, sheer(along) + 0.005, -along));
+          if (along < BOAT.lengthM * 0.38) chine.push(new Vector3(s * hb * 1.004, keelAt(along) + 0.45 * (sheer(along) - keelAt(along)), -along));
+        }
+        railParts.push(tube(gunwale, gunwale.map(() => 0.02), 8, 0.5));
+        railParts.push(tube(chine, chine.map(() => 0.011), 6, 0.5));
+      }
+      const sternHb = halfBeam(-BOAT.lengthM / 2) * 1.02;
+      railParts.push(tube([new Vector3(-sternHb, GUNWALE_Y + 0.005, BOAT.lengthM / 2), new Vector3(sternHb, GUNWALE_Y + 0.005, BOAT.lengthM / 2)], [0.02, 0.02], 8, 0.5));
+      part(merge(railParts, 'boat rails'), rail);
 
-    // Six-gallon tank aft on the floorboards, its fuel line looping up to the outboard.
-    const tankY = floorY(0.32) + 0.05;
-    const tank: BufferGeometry[] = [new RoundedBoxGeometry(0.3, 0.22, 0.42, 2, 0.035).translate(0.32, tankY + 0.11, 1.42)];
-    tank.push(new CylinderGeometry(0.025, 0.025, 0.03, 10).translate(0.37, tankY + 0.235, 1.3).toNonIndexed());
-    tank.push(new BoxGeometry(0.03, 0.03, 0.18).translate(0.27, tankY + 0.235, 1.45).toNonIndexed());
-    part(merge(tank, 'fuel tank'), tankMat);
-    const line = tube([new Vector3(0.37, tankY + 0.25, 1.3), new Vector3(0.33, tankY + 0.34, 1.45), new Vector3(0.18, GUNWALE_Y + 0.02, 1.68), new Vector3(0.05, GUNWALE_Y + 0.05, 1.8)], [0.008, 0.008, 0.008, 0.008], 6, 0.5);
-    part(line, dark);
+      // Ribs: a frame round the inside of the hull at five stations, under the floorboards.
+      const ribs: BufferGeometry[] = [];
+      for (const along of [-1.25, -0.65, -0.05, 0.55, 1.1]) {
+        const hb = halfBeam(along);
+        const keel = keelAt(along);
+        const top = sheer(along);
+        const pts = PROFILE.map(([fx, fy]) => new Vector3(fx * (hb - 0.016), keel + fy * (top - keel - 0.02) + 0.014 * (1 - fy), -along));
+        ribs.push(tube(pts, pts.map(() => 0.013), 6, 0.5));
+      }
+      part(merge(ribs, 'boat ribs'), paint);
 
-    // Oars shipped along the port side, on the thwarts, blades forward.
-    const oars: BufferGeometry[] = [];
-    for (const [x, y, roll] of [
-      [-0.5, BOAT.seat.up + 0.02, 0.1],
-      [-0.4, BOAT.seat.up + 0.045, -0.15],
-    ] as const) {
-      const from = new Vector3(x + 0.04, y, 1.35);
-      const to = new Vector3(x, y + 0.01, -0.9);
-      oars.push(tube([from, to], [0.019, 0.021], 8, 0.5, true));
-      oars.push(new CylinderGeometry(0.016, 0.016, 0.12, 8).rotateX(Math.PI / 2).translate(from.x, from.y, from.z + 0.06).toNonIndexed());
-      oars.push(new RoundedBoxGeometry(0.15, 0.014, 0.52, 1, 0.006).rotateZ(roll).translate(x - 0.005, y + 0.01, -1.15));
+      // Six-gallon tank aft on the floorboards, its fuel line looping up to the outboard.
+      const tankY = floorY(0.32) + 0.05;
+      const tank: BufferGeometry[] = [new RoundedBoxGeometry(0.3, 0.22, 0.42, 2, 0.035).translate(0.32, tankY + 0.11, 1.42)];
+      tank.push(new CylinderGeometry(0.025, 0.025, 0.03, 10).translate(0.37, tankY + 0.235, 1.3).toNonIndexed());
+      tank.push(new BoxGeometry(0.03, 0.03, 0.18).translate(0.27, tankY + 0.235, 1.45).toNonIndexed());
+      part(merge(tank, 'fuel tank'), tankMat);
+      const line = tube([new Vector3(0.37, tankY + 0.25, 1.3), new Vector3(0.33, tankY + 0.34, 1.45), new Vector3(0.18, GUNWALE_Y + 0.02, 1.68), new Vector3(0.05, GUNWALE_Y + 0.05, 1.8)], [0.008, 0.008, 0.008, 0.008], 6, 0.5);
+      part(line, dark);
+
+      // Oars shipped along the port side, on the thwarts, blades forward.
+      const oars: BufferGeometry[] = [];
+      for (const [x, y, roll] of [
+        [-0.5, BOAT.seat.up + 0.02, 0.1],
+        [-0.4, BOAT.seat.up + 0.045, -0.15],
+      ] as const) {
+        const from = new Vector3(x + 0.04, y, 1.35);
+        const to = new Vector3(x, y + 0.01, -0.9);
+        oars.push(tube([from, to], [0.019, 0.021], 8, 0.5, true));
+        oars.push(new CylinderGeometry(0.016, 0.016, 0.12, 8).rotateX(Math.PI / 2).translate(from.x, from.y, from.z + 0.06).toNonIndexed());
+        oars.push(new RoundedBoxGeometry(0.15, 0.014, 0.52, 1, 0.006).rotateZ(roll).translate(x - 0.005, y + 0.01, -1.15));
+      }
+      part(merge(oars, 'oars'), oarWood);
     }
-    part(merge(oars, 'oars'), oarWood);
 
     // Outboard: a small two-stroke clamped on the transom, pivoting for the tiller (motor frame: +z aft,
     // y up from the transom top). Rounded cowling over a darker lower cowl, a streamlined leg, the
     // anti-cavitation plate, the gearcase torpedo with its skeg, and a three-blade propeller.
-    this.motor.position.set(0, GUNWALE_Y - 0.02, BOAT.lengthM / 2 + 0.05);
+    // On the runabout's higher transom the leg is let down to the same depth, the bracket over the transom.
+    this.motor.position.set(0, model ? SKIFF_TRANSOM_Y - 0.2 : GUNWALE_Y - 0.02, BOAT.lengthM / 2 + (model ? 0.08 : 0.05));
     // Every part non-indexed so they merge (the rounded box already is: toNonIndexed would warn).
     const rbox = (w: number, h: number, d: number, r: number, x: number, y: number, z: number): BufferGeometry => {
       const g = new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2, h / 2, d / 2) * 0.999).translate(x, y, z);
@@ -192,16 +199,20 @@ export class BoatView {
 
     // Grime under the thwarts and round the outboard's bracket (aoBake.ts); the mask is skipped (transparent).
     bakeAmbientOcclusion(this.group);
-    // A coil of line in the bottom forward. Added after the bake: the rope material is the camp's,
-    // whose meshes carry no `ao` attribute, so it must not be wired to one (aoBake.ts).
-    const coil = merge(
-      [0, 1, 2, 3].map((k) => new TorusGeometry(0.16 - k * 0.012, 0.011, 5, 24).rotateX(Math.PI / 2).translate(0.18 + k * 0.006, floorY(0.18) + 0.06 + k * 0.016, -0.95)),
-      'boat line',
-    );
-    part(wet(coil), propMaterials().rope);
+    if (!model) {
+      // A coil of line in the bottom forward. Added after the bake: the rope material is the camp's,
+      // whose meshes carry no `ao` attribute, so it must not be wired to one (aoBake.ts).
+      const coil = merge(
+        [0, 1, 2, 3].map((k) => new TorusGeometry(0.16 - k * 0.012, 0.011, 5, 24).rotateX(Math.PI / 2).translate(0.18 + k * 0.006, floorY(0.18) + 0.06 + k * 0.016, -0.95)),
+        'boat line',
+      );
+      part(wet(coil), propMaterials().rope);
+    }
+    // The model after the bake: its occlusion was cast when it was prepared (its second colour set).
+    if (model) for (const m of model.meshes) this.group.add(m);
 
     // Depth-only cap that keeps the water surface out of the hull.
-    const mask = new Mesh(maskGeometry(), new MeshBasicNodeMaterial({ name: 'boat water mask', colorWrite: false, depthWrite: true, transparent: true, side: DoubleSide }));
+    const mask = new Mesh(model ? skiffMaskGeometry(model.geometries, SKIFF_TRANSOM_Y - 0.06) : maskGeometry(), new MeshBasicNodeMaterial({ name: 'boat water mask', colorWrite: false, depthWrite: true, transparent: true, side: DoubleSide }));
     mask.renderOrder = 9;
     this.group.add(mask);
   }

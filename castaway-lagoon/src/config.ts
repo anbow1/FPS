@@ -53,18 +53,19 @@ export const LAGOON_PLAYER = {
  * a few boat lengths; the hydrostatics (waterplane, ρ·g) are physical.
  */
 export const BOAT = {
-  lengthM: 3.6,
-  beamM: 1.5,
-  massKg: 260,
-  /** Share of length × beam that is waterplane (a pointed bow). */
-  waterplaneFraction: 0.7,
+  // A riveted aluminium runabout of 4.6 m (render/skiffModel.ts) with a 25 hp outboard, fuel and gear aboard.
+  lengthM: 4.62,
+  beamM: 1.62,
+  massKg: 300,
+  /** Share of length × beam that is waterplane (a fine bow, the chines out of the water forward). */
+  waterplaneFraction: 0.56,
   /** From the reference point (still waterline) down to the keel when floating level… */
   keelBelowRefM: 0.08,
   /** …and how deep the hull is: buoyancy stops growing past this immersion. */
-  hullDepthM: 0.45,
-  heaveDamping: 5200, // N·s/m, all points together: about 0.3 of critical
+  hullDepthM: 0.6,
+  heaveDamping: 5900, // N·s/m, all points together: as the dinghy's against the stiffer waterplane
   angularDamping: 2.2, // 1/s on pitch and roll rates
-  maxThrustN: 900,
+  maxThrustN: 1100,
   propSpeedMs: 9,
   reverseFraction: 0.4,
   surgeDragNs2m2: 11,
@@ -75,9 +76,10 @@ export const BOAT = {
   rudderNmPerMs2: 45,
   maxTillerRad: 0.6,
   squatNmPerKgMs: 0.35,
-  /** Seat on the aft thwart, by the tiller: along, up (above the reference point), across. */
-  seat: { along: -1.1, up: 0.28, across: 0 },
-  seatedEyeM: 0.8,
+  /** The helm seat behind the windscreen, to port: along, up (above the reference point), across. */
+  seat: { along: -0.15, up: 0.35, across: -0.35 },
+  /** Over the seat: the eye just clears the low windscreen's top. */
+  seatedEyeM: 0.88,
 } as const;
 
 /**
