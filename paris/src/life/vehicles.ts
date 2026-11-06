@@ -4,6 +4,7 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, 
 import { buildCar, type CarPart, type CarVariant } from '../render/carModel.ts';
 import { merge, tube } from '../render/meshkit.ts';
 import { linearRgb, SCENE } from '../render/nodes.ts';
+import { sharedCar } from '../render/sharedCars.ts';
 import type { Placed } from '../city/plan.ts';
 import { placeOf, type Vehicle } from './traffic.ts';
 
@@ -22,10 +23,13 @@ const AXLE_Z = [-1.3, 1.3];
 
 interface CarSet {
   parts: Map<CarPart, InstancedMesh>;
-  tyre: [InstancedMesh, InstancedMesh];
-  rim: [InstancedMesh, InstancedMesh];
+  /** Left and right wheel meshes (a tyre and a rim each for the procedural car, one textured wheel for a model). */
+  wheels: [InstancedMesh, InstancedMesh][];
   paint: InstancedBufferAttribute;
   brake: InstancedBufferAttribute;
+  axleZ: readonly [number, number];
+  trackHalf: number;
+  wheelR: number;
 }
 
 export class VehiclesView {
@@ -59,24 +63,10 @@ export class VehiclesView {
     const still = parked.filter((p) => isVariant(p.seed) && near(p) === fine);
     const n = moving.length + still.length;
     if (n === 0) return;
-    const geo = buildCar(variant, !fine);
     const paint = new InstancedBufferAttribute(new Float32Array(n * 3), 3);
     const brake = new InstancedBufferAttribute(new Float32Array(n), 1);
     const parts = new Map<CarPart, InstancedMesh>();
-    for (const part of ['paint', 'glass', 'trim', 'headlamp', 'taillamp', 'plate'] as const) {
-      const g = geo[part];
-      if (!g) continue;
-      if (part === 'paint') g.setAttribute('paint', paint);
-      if (part === 'taillamp') g.setAttribute('brake', brake);
-      parts.set(part, this.instanced(g, mats[part], n, part !== 'headlamp' && part !== 'taillamp' && part !== 'plate'));
-    }
-    const set: CarSet = {
-      parts,
-      tyre: [this.instanced(wheelOf(geo.tyre, -1), mats.tyre, n * 2, true), this.instanced(wheelOf(geo.tyre, 1), mats.tyre, n * 2, true)],
-      rim: [this.instanced(wheelOf(geo.rim, -1), mats.rim, n * 2, false), this.instanced(wheelOf(geo.rim, 1), mats.rim, n * 2, false)],
-      paint,
-      brake,
-    };
+    const set = this.sharedSet(variant, fine, n, paint, brake, mats) ?? this.proceduralSet(variant, fine, n, paint, brake, mats, parts);
     this.cars.push(set);
     let i = 0;
     for (const v of moving) {
@@ -87,6 +77,57 @@ export class VehiclesView {
       paint.setXYZ(i, ...(PAINTS[(p.seed >> 3) % PAINTS.length] as [number, number, number]));
       this.carList.push({ set, index: i++, v: null, parked: p });
     }
+  }
+
+  /**
+   * A car set from the shared models (render/sharedCars.ts): textured body recoloured per car, glass, lamps
+   * (the tail lamps brightening when braking) and its own wheels. Null when the model did not load.
+   */
+  private sharedSet(variant: CarVariant, fine: boolean, n: number, paint: InstancedBufferAttribute, brake: InstancedBufferAttribute, mats: ReturnType<typeof carMaterials>): CarSet | null {
+    const car = sharedCar(variant, fine);
+    if (!car) return null;
+    const parts = new Map<CarPart, InstancedMesh>();
+    car.paint.setAttribute('paint', paint);
+    parts.set('paint', this.instanced(car.paint, car.paintMaterial, n, true));
+    if (car.glass) parts.set('glass', this.instanced(car.glass, mats.glass, n, false));
+    if (car.headlamp) parts.set('headlamp', this.instanced(car.headlamp, mats.headlamp, n, false));
+    if (car.taillamp) {
+      car.taillamp.setAttribute('brake', brake);
+      parts.set('taillamp', this.instanced(car.taillamp, mats.taillamp, n, false));
+    }
+    return {
+      parts,
+      wheels: [[this.instanced(car.wheel[0], car.wheelMaterial, n * 2, true), this.instanced(car.wheel[1], car.wheelMaterial, n * 2, true)]],
+      paint,
+      brake,
+      axleZ: car.axleZ,
+      trackHalf: car.trackHalf,
+      wheelR: car.wheelR,
+    };
+  }
+
+  /** The lofted procedural car (render/carModel.ts), drawn per part. */
+  private proceduralSet(variant: CarVariant, fine: boolean, n: number, paint: InstancedBufferAttribute, brake: InstancedBufferAttribute, mats: ReturnType<typeof carMaterials>, parts: Map<CarPart, InstancedMesh>): CarSet {
+    const geo = buildCar(variant, !fine);
+    for (const part of ['paint', 'glass', 'trim', 'headlamp', 'taillamp', 'plate'] as const) {
+      const g = geo[part];
+      if (!g) continue;
+      if (part === 'paint') g.setAttribute('paint', paint);
+      if (part === 'taillamp') g.setAttribute('brake', brake);
+      parts.set(part, this.instanced(g, mats[part], n, part !== 'headlamp' && part !== 'taillamp' && part !== 'plate'));
+    }
+    return {
+      parts,
+      wheels: [
+        [this.instanced(wheelOf(geo.tyre, -1), mats.tyre, n * 2, true), this.instanced(wheelOf(geo.tyre, 1), mats.tyre, n * 2, true)],
+        [this.instanced(wheelOf(geo.rim, -1), mats.rim, n * 2, false), this.instanced(wheelOf(geo.rim, 1), mats.rim, n * 2, false)],
+      ],
+      paint,
+      brake,
+      axleZ: AXLE_Z as [number, number],
+      trackHalf: TRACK_HALF,
+      wheelR: WHEEL_R,
+    };
   }
 
   private addBusesAndBikes(vehicles: readonly Vehicle[], mats: ReturnType<typeof carMaterials>): void {
@@ -118,12 +159,14 @@ export class VehiclesView {
       for (const mesh of c.set.parts.values()) mesh.setMatrixAt(c.index, _car);
       c.set.brake.setX(c.index, c.v?.braking ? 1 : 0);
       const turn = c.v ? c.v.wheelRad : 0;
-      AXLE_Z.forEach((z, k) => {
+      const set = c.set;
+      // Each wheel rolls through its own circumference: a model's wheel radius is not the procedural one's.
+      const spin = (turn * WHEEL_R) / set.wheelR;
+      set.axleZ.forEach((z, k) => {
         for (const side of [0, 1] as const) {
-          _w.makeTranslation(side === 0 ? -TRACK_HALF : TRACK_HALF, WHEEL_R, z).multiply(_r.makeRotationX(-turn));
+          _w.makeTranslation(side === 0 ? -set.trackHalf : set.trackHalf, set.wheelR, z).multiply(_r.makeRotationX(-spin));
           _w.premultiply(_car);
-          c.set.tyre[side].setMatrixAt(c.index * 2 + k, _w);
-          c.set.rim[side].setMatrixAt(c.index * 2 + k, _w);
+          for (const pair of set.wheels) pair[side].setMatrixAt(c.index * 2 + k, _w);
         }
       });
     }

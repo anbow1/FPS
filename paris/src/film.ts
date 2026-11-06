@@ -16,6 +16,7 @@ import { PeopleView } from './life/people.ts';
 import { loadCharacters } from './life/humanMesh.ts';
 import { placeOf, Traffic, type Vehicle } from './life/traffic.ts';
 import { VehiclesView } from './life/vehicles.ts';
+import { loadSharedCars } from './render/sharedCars.ts';
 import { Pigeons } from './life/pigeons.ts';
 import type { Person } from './life/crowd.ts';
 import { loadMocap } from './render/mocap.ts';
@@ -74,6 +75,8 @@ export class Film {
     // A Blender character's full body is ~12k triangles against the procedural ~3k: full only within 30 m.
     const fullM = characters.length > 0 ? 30 : 70;
     this.people = new PeopleView(this.crowd.people, (p) => p.mode === 'ride' || Math.abs(p.z - camZ) < fullM, characters);
+    // The shared car models (shared/vehicles) first: the view builds from them, procedural if they fail.
+    await loadSharedCars();
     this.vehicles = new VehiclesView(this.traffic.vehicles, this.plan.parked, this.nearCamera());
     // The flock by the right kerb ahead of the camera, between the lamp posts and the trees; startled at 4.2 s.
     this.pigeons = new Pigeons(10.05, -15, 4.2);
