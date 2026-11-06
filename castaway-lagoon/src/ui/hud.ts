@@ -171,7 +171,7 @@ export class Hud {
             ? `<kbd>E</kbd> ${j.doorTarget.passenger > 0.5 ? 'Close' : 'Open'} the <b>door</b>`
             : '<kbd>E</kbd> Get in the <b>jeep</b>';
     } else if (game.player.inBoat) {
-      prompt = '<kbd>W</kbd><kbd>S</kbd> Throttle · <kbd>A</kbd><kbd>D</kbd> Tiller · <kbd>E</kbd> Leave the <b>boat</b>';
+      prompt = '<kbd>W</kbd><kbd>S</kbd> Throttle · <kbd>A</kbd><kbd>D</kbd> Steer · <kbd>E</kbd> Leave the <b>boat</b>';
     } else if (f && f.kind === 'boat' && !busy && eq.action.kind !== 'examine') {
       prompt = '<kbd>E</kbd> Board the <b>boat</b>';
     } else if (f && f.kind === 'fire' && !busy && eq.action.kind !== 'examine') {
