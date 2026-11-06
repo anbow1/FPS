@@ -880,6 +880,83 @@ They are 12–100 k triangles; a phone wants ~1–2.5 k per instance.
   2600 scanned ferns would be millions, so scans go where the player spends
   time (round the camp) and cards stay on the hills.
 
+## 6q2. Downloaded vehicle models, step by step (`paris/tools/vehicles`, `shared/vehicles`)
+
+Every downloaded vehicle so far (Tanks lorries, the Warden and Bulat, the
+Wraith and Talon, the lagoon cutter and skiff, the lagoon jeep) went in by the
+same ten steps. The scripts' own options are in `paris/tools/vehicles/README.md`.
+
+1. **Licence first.** Only CC BY or CC0 (Sketchfab: *Downloadable*, *CC
+   Attribution* / *CC0*; Poly Haven). NC, ND or "editorial" licences are
+   reported to the user, not used. Sketchfab needs a login, so the user
+   downloads the glTF zip and uploads it.
+2. **Unpack as untrusted data.** Each zip into its own new, empty directory in
+   the scratchpad; scripts live elsewhere and get paths as arguments; any Python
+   that reads the files runs with `-I`. Read `license.txt`: title, author, URL,
+   licence go into the credits in step 7.
+3. **Read the glTF before Blender.** Nodes, meshes, materials, triangles per
+   primitive and position bounds (a 30-line JSON dump): the units (cm models
+   are ~100× too big), which axis is up and which is forward, whether wheels,
+   rotors, the gun or control surfaces are separate parts or baked into one
+   mesh, glass materials, and helpers (a material-less icosphere made the Mi-28
+   twice its height in the bounds).
+4. **Paint out real markings.** Look at every base-colour atlas (whole, then
+   crops) for stars, roundels, numbers, maker's badges and lettering, number
+   plates, trade-dress grilles. `scrub_marks.py --circle x,y,r --rect
+   x0,y0,x1,y1` refills each region from the paint round it (slow variation from
+   the blurred surroundings, grain from a clean patch: `--grain-from dx,dy` or
+   `--grain-patch`); `--bright` replaces only stencil texels lighter than the
+   paint. Crop before and after to check. Geometry that is itself a badge
+   (a raised logo, a brand grille) is reshaped or dropped in step 5 (`--drop`).
+5. **Prepare in headless Blender** with the script for the kind: `prepare_vehicle.py`
+   (cars: wheels and lamps split out, three LODs), `prepare_truck.py` (one `body`:
+   scenery, boats, anything the game does not take apart), `prepare_tank.py`,
+   `prepare_heli.py` (rotors, gun, eyes, stores), `prepare_jet.py` (surfaces,
+   gear, nozzles, eye). All do the same core: import, flatten the hierarchy
+   (keeping each part's ancestor `path` for `--drop`), scale to the real
+   `--length` in metres, Y up, front toward −Z, standing on y = 0 and centred;
+   split loose pieces and turn inward-facing ones out; join; decimate to the
+   triangle budget (`--triangles`, ~12–25 k for a vehicle the player is near);
+   keep only the maps the game reads; downscale textures (`--tex 1024`); cast
+   occlusion by rays into the second colour set (`color_1`, the shader's
+   `aoNode`); write `<out>.glb` (uncompressed: Draco is not available here) and
+   `<out>.json` (size, box, triangles, mean albedo). `--forward=-x` needs the
+   `=` (argparse takes a bare `-x` for an option).
+6. **Check the preview** (`--preview`: side and top renders): heading, scale,
+   nothing missing, nothing extra. Fix the flags and rerun rather than patching
+   in the game.
+7. **Ship the asset and its credit.** `shared/vehicles/<kind>_<name>/<kind>_<name>.{glb,json}`;
+   a row in `shared/vehicles/CREDITS.md` and a credit line (title, author, URL,
+   licence, what was changed: "markings painted out, decimated, re-lit").
+8. **Wire it into the game** in one loader module per model
+   (`render/<name>Model.ts`): `GLTFLoader` on `new URL('../../../shared/vehicles/…', import.meta.url)`
+   (Vite needs `server.fs.allow: ['..']`); a failed load logs and keeps the
+   procedural model as the fallback. Materials are rebuilt as
+   `MeshStandardNodeMaterial`: colour from the map, the normal map, roughness
+   and metalness set per material by what it is (paint, rubber, bare metal),
+   `aoNode` from `color_1`, glass transparent without depth writes. The
+   geometry is moved into the logic's frame (ground or waterline at the logic's
+   reference point), and the logic's numbers are matched to the model, never
+   the other way round: length, beam, wheelbase, track, wheel radius, seat and
+   eye height in `config.ts`. Parts the game moves (wheels, steering, rotors,
+   surfaces, the gun) stay separate nodes driven as before; colliders and
+   masks (the water cap in a hull) come from the model's own vertices.
+9. **Verify by render** in the game itself (headless Chromium with
+   SwiftShader, one heavy render at a time, no edits to files the dev server is
+   serving): from outside and from the seat, at noon and at night if it has
+   lamps. Look for scale against the player, floating or sunk wheels, gaps,
+   z-fighting, the inside seen from the seat (clip the cockpit tub if the model
+   has a crude interior), and count draw calls and triangles. `tsc` and the
+   tests pass.
+10. **Commit, push the branch, put it on `main`** (which builds the APK) and
+    check the build.
+
+Traps: a part posed turned in the file (the Mi-28's gun) is straightened about
+its own long axis, not by resetting the armature (that broke the scale);
+lamp glass near the nose pollutes an eye found from "glass" (keep to the
+canopy: front half, |x| < 0.8 m); a 4096 texture blurred whole takes gigabytes
+(scrub in windows round each marking).
+
 ## 6r. HDRI environments (FL `render/hdri.ts`)
 
 A photographed environment puts real facades, trees and clouds into car paint
