@@ -1,0 +1,84 @@
+{
+ "source": "AR-15 by IVA (sketchfab.com/dxmhl), sketchfab.com/3d-models/ar-15-8f566f036a87474b804c493397d0e3f3",
+ "size": [
+  0.0685,
+  0.3372,
+  1.1461
+ ],
+ "triangles": 22459,
+ "parts": {
+  "body": {
+   "min": [
+    -0.0309,
+    0.05,
+    -0.287
+   ],
+   "max": [
+    0.0309,
+    0.3372,
+    0.5731
+   ]
+  },
+  "magazine": {
+   "min": [
+    -0.0171,
+    0.0,
+    0.0162
+   ],
+   "max": [
+    0.0145,
+    0.2207,
+    0.1248
+   ]
+  },
+  "bolt": {
+   "min": [
+    -0.0358,
+    0.2656,
+    0.1556
+   ],
+   "max": [
+    0.0327,
+    0.2757,
+    0.2713
+   ]
+  },
+  "glassA": {
+   "min": [
+    -0.0203,
+    0.3015,
+    0.0822
+   ],
+   "max": [
+    0.0175,
+    0.3295,
+    0.0827
+   ]
+  },
+  "glassB": {
+   "min": [
+    -0.0202,
+    0.3016,
+    0.1101
+   ],
+   "max": [
+    0.0176,
+    0.3296,
+    0.1238
+   ]
+  },
+  "suppressor": {
+   "min": [
+    -0.03,
+    0.2144,
+    -0.573
+   ],
+   "max": [
+    0.0273,
+    0.2719,
+    -0.2691
+   ]
+  }
+ },
+ "licence": "CC BY 4.0; makers' logos, origin and part marks painted out of the normal and colour maps; its magnifier left out; decimated; re-lit"
+}

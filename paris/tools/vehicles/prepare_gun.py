@@ -36,7 +36,12 @@ def args_of():
     ap.add_argument('--forward', default='-y', help="the muzzle's axis in Blender after import")
     ap.add_argument('--up', default='z')
     ap.add_argument('--parts', default='', help='node=vertex group or words in object names (a|b), comma separated')
+    ap.add_argument('--part', action='append', default=[],
+                    help='name:x0,y0,z0,x1,y1,z1[,min][@word] — loose pieces wholly inside the box (the gun\'s frame, m), '
+                         'at least min long and, with @word, from objects with that word in their names: their own node '
+                         '(a magazine sold inside a grip, not as an object)')
     ap.add_argument('--triangles', type=int, default=0, help="the body's triangle budget (0: as it is)")
+    ap.add_argument('--part-triangles', type=int, default=0, help="each moving part's budget (0: as it is)")
     ap.add_argument('--drop', default='', help='words in the names of parts (or their materials) to leave out')
     ap.add_argument('--tex', type=int, default=2048)
     ap.add_argument('--ao-reach', type=float, default=0.03, help='occlusion ray length, m')
@@ -117,7 +122,7 @@ def decimate(ob, triangles):
     mod.use_collapse_triangulate = True
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.modifier_apply(modifier=mod.name)
-    print(f'body: {tris} → {sum(len(p.vertices) - 2 for p in ob.data.polygons)} triangles')
+    print(f'{ob.name}: {tris} → {sum(len(p.vertices) - 2 for p in ob.data.polygons)} triangles')
 
 
 def top_profile(obs, step=0.005, half_width=0.004):
@@ -154,6 +159,11 @@ def main():
     # Parts that are objects of their own (unrigged models): gathered by words in their names before the
     # rest is joined into the body; the others are vertex groups, split off the body after.
     parts = []
+    for spec in a.part:
+        box, _, word = spec.partition('@')
+        skip = {o.name for o in pv.meshes() if word and word.lower() not in o.get('path', o.name).lower()}
+        parts += pv.gather_parts([box], skip | {p.name for p in parts})
+    obs = [o for o in pv.meshes() if o not in parts]
     by_group = []
     for node, key in specs:
         words = [w.lower() for w in key.split('|')]
@@ -185,6 +195,9 @@ def main():
             o.modifiers.remove(m)
     if a.triangles:
         decimate(body, a.triangles)
+    if a.part_triangles:
+        for p in parts:
+            decimate(p, a.part_triangles)
     drop_unused_maps()
     pv.downscale_textures(a.tex)
     pv.ray_ao(every, reach=a.ao_reach)

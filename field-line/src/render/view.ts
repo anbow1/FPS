@@ -2,6 +2,7 @@ import { buildParisStreet, parisLamps, syncParisLight, tickParis } from './paris
 import { loadPhotoTextures } from './photoTextures.ts';
 import { loadScanModels } from './scanModels.ts';
 import { loadHandMesh } from './handMesh.ts';
+import { loadGunModels } from './gunModels.ts';
 import { loadMocap } from './mocap.ts';
 import { type HdriSetting, loadHdri } from './hdri.ts';
 import { Object3D, Vector3 } from 'three/webgpu';
@@ -113,7 +114,7 @@ export class GameView {
     stage.camera.layers.enable(VIEWMODEL_LAYER);
     // The photographed sets are decoded before any material asks for one (photoTextures.ts).
     await progress('Loading textures', 0.1);
-    const [, , , , cast] = await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadSoldierCast(this.settings.quality)]);
+    const [, , , , cast] = await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadSoldierCast(this.settings.quality), loadGunModels()]);
     this.actors.useCast(cast);
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';
@@ -285,7 +286,7 @@ export class GameView {
     for (const e of events) {
       if (e.type === 'shot' && e.shooterId === game.player.id) {
         this.shake += 0.15;
-        this.effects.handle(e, game.player.id, this.muzzleWorld(game));
+        this.effects.handle(e, game.player.id, this.muzzleWorld());
         continue;
       }
       if (e.type === 'playerHit') this.shake += e.armour ? 0.4 : 0.7;
@@ -309,10 +310,9 @@ export class GameView {
   }
 
   /** The viewmodel's muzzle, projected out to true range along the same eye ray. */
-  private muzzleWorld(game: Game): Vector3 {
+  private muzzleWorld(): Vector3 {
     const cam = this.stage.camera;
-    const id = game.weapons.current;
-    this.muzzleMarker.position.set(0, id === 'pistol' ? -0.018 : id === 'sniper' ? -0.065 : -0.082, id === 'pistol' ? -0.13 : id === 'sniper' ? -0.95 : -0.67);
+    this.muzzleMarker.position.copy(this.viewModel.muzzle());
     this.viewModel.attachMuzzle(this.muzzleMarker);
     this.muzzleMarker.updateWorldMatrix(true, false);
     const m = this.muzzleMarker.getWorldPosition(this.tmp);

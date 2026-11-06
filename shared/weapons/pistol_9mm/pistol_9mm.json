@@ -1,0 +1,48 @@
+{
+ "source": "9mm Pistol by Urpo (sketchfab.com/Urpo), sketchfab.com/3d-models/9mm-pistol-30222f9a59104426ba526a6b20cd7532",
+ "size": [
+  0.0324,
+  0.1454,
+  0.186
+ ],
+ "triangles": 7161,
+ "parts": {
+  "body": {
+   "min": [
+    -0.0157,
+    0.0079,
+    -0.0913
+   ],
+   "max": [
+    0.0157,
+    0.118,
+    0.093
+   ]
+  },
+  "magazine": {
+   "min": [
+    -0.0167,
+    0.0,
+    0.0111
+   ],
+   "max": [
+    0.0124,
+    0.1172,
+    0.0848
+   ]
+  },
+  "slide": {
+   "min": [
+    -0.0143,
+    0.104,
+    -0.093
+   ],
+   "max": [
+    0.0144,
+    0.1454,
+    0.082
+   ]
+  }
+ },
+ "licence": "CC BY 4.0; serial numbers painted out of the normal map; its magazine taken out of the frame's node; re-lit"
+}

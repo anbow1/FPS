@@ -3,7 +3,7 @@ import { SCOPE, type WeaponId } from '../config.ts';
 import { clamp, damp, smoothstep } from '../core/vec.ts';
 import type { Game } from '../game/game.ts';
 import { RedDot, Scope } from './optics.ts';
-import { buildAmmoPouch, buildFrag, buildHand, buildMedKit, buildPistol, buildRifle, buildSniper, type PistolModel, type RifleModel, type SniperModel, VM_MATERIALS } from './weaponModels.ts';
+import { BOLT_REST, buildAmmoPouch, buildFrag, buildHand, buildMedKit, buildPistol, buildRifle, buildSniper, MAG_REST_Y, type PistolModel, type RifleModel, type SniperModel, VM_MATERIALS } from './weaponModels.ts';
 
 // First-person weapon. The whole rig is scaled down about the eye (VM_SCALE):
 // the picture is identical, but the gun sits inside the player's capsule and
@@ -17,7 +17,6 @@ import { buildAmmoPouch, buildFrag, buildHand, buildMedKit, buildPistol, buildRi
 
 export const VM_SCALE = 0.25;
 // Bolt handle at rest angles down beside the stock; it lifts ~75° to unlock.
-const BOLT_DOWN_RAD = -0.75;
 export const VIEWMODEL_LAYER = 1;
 
 interface Pose {
@@ -70,10 +69,13 @@ export class ViewModel {
     this.scope = new Scope(this.sniper.ocularRadiusM, scopeSidePx);
     this.sniper.ocular.material = this.scope.material;
     this.scope.setMagnification(SCOPE.magnifications[0]);
-    for (const [model, z, r] of [[this.rifle.root, -0.69, 0.018], [this.sniper.root, -0.98, 0.021]] as const) {
-      const s = buildSuppressor(r);
-      s.position.set(0, model === this.rifle.root ? -0.082 : -0.065, z);
-      model.add(s);
+    // A model's own suppressor when it has one, else a can drawn round the point it gives.
+    for (const [gun, r] of [[this.rifle, 0.018], [this.sniper, 0.021]] as const) {
+      const s = gun.suppressor ?? buildSuppressor(r);
+      if (!gun.suppressor) {
+        s.position.copy(gun.suppressorAt);
+        gun.root.add(s);
+      }
       this.suppressors.push(s);
     }
     this.pivot.add(this.rifle.root, this.sniper.root, this.pistol.root, this.handL, this.handR, this.frag, this.medKit, this.ammoPouch);
@@ -153,6 +155,16 @@ export class ViewModel {
   }
 
   /** Parents a marker to the weapon on screen (for the muzzle flash position). */
+  /** The weapon in hand. */
+  private gun(): RifleModel | SniperModel | PistolModel {
+    return this.shown === 'rifle' ? this.rifle : this.shown === 'sniper' ? this.sniper : this.pistol;
+  }
+
+  /** The muzzle of the weapon in hand, in its frame (view.ts puts the flash there). */
+  muzzle(): Vector3 {
+    return this.gun().muzzle;
+  }
+
   attachMuzzle(marker: Object3D): void {
     const root = this.shown === 'rifle' ? this.rifle.root : this.shown === 'sniper' ? this.sniper.root : this.pistol.root;
     if (marker.parent !== root) root.add(marker);
@@ -178,9 +190,9 @@ export class ViewModel {
     const t = a.durationSeconds > 0 ? clamp(a.elapsedSeconds / a.durationSeconds, 0, 1) : 1;
     const mag = this.shown === 'rifle' ? this.rifle.magazine : this.shown === 'sniper' ? this.sniper.magazine : this.pistol.magazine;
     mag.visible = true;
-    mag.position.y = this.shown === 'rifle' ? -0.142 : this.shown === 'sniper' ? -0.125 : -0.11;
-    this.sniper.bolt.rotation.z = BOLT_DOWN_RAD;
-    this.sniper.bolt.position.z = 0.13;
+    mag.position.y = MAG_REST_Y[this.shown];
+    this.sniper.bolt.rotation.z = BOLT_REST.downRad;
+    this.sniper.bolt.position.z = BOLT_REST.z;
     this.frag.visible = false;
     this.medKit.visible = false;
     this.ammoPouch.visible = false;
@@ -199,8 +211,8 @@ export class ViewModel {
       // Up, back, forward, down.
       const b = this.sniper.bolt;
       const lift = t < 0.2 ? t / 0.2 : t < 0.8 ? 1 : (1 - t) / 0.2;
-      b.rotation.z = BOLT_DOWN_RAD + lift * 1.3;
-      b.position.z = 0.13 + (t < 0.2 ? 0 : t < 0.5 ? ((t - 0.2) / 0.3) * 0.08 : t < 0.8 ? ((0.8 - t) / 0.3) * 0.08 : 0);
+      b.rotation.z = BOLT_REST.downRad + lift * 1.3;
+      b.position.z = BOLT_REST.z + (t < 0.2 ? 0 : t < 0.5 ? ((t - 0.2) / 0.3) * 0.08 : t < 0.8 ? ((0.8 - t) / 0.3) * 0.08 : 0);
       rot.z += 0.08 * Math.sin(Math.PI * t);
     } else if (a.kind === 'switch') {
       const k = t < 0.5 ? t / 0.5 : (1 - t) / 0.5;
@@ -238,16 +250,16 @@ export class ViewModel {
 
   /** Hands follow the current weapon's grips (and the magazine during a reload). */
   private animateHands(game: Game): void {
-    const rightGrip = this.shown === 'pistol' ? _v.set(0, -0.1, 0.06) : this.shown === 'rifle' ? _v.set(0, -0.19, 0.17) : _v.set(0, -0.15, 0.2);
-    this.handR.position.copy(rightGrip);
+    const gun = this.gun();
+    this.handR.position.copy(gun.gripRight);
     // Forearms run back, down and out toward the shoulders, never straight at the eye.
     this.handR.rotation.set(0.95, 0.45, -0.2);
     const reloading = game.weapons.action.kind === 'reload';
-    if (this.shown === 'pistol') this.handL.position.set(-0.01, -0.12, 0.05);
+    if (this.shown === 'pistol') this.handL.position.copy(gun.gripLeft);
     else if (reloading) {
       const mag = this.shown === 'rifle' ? this.rifle.magazine : this.sniper.magazine;
       this.handL.position.set(-0.03, mag.visible ? mag.position.y - 0.08 : -0.3, mag.position.z + 0.01);
-    } else this.handL.position.set(-0.02, -0.12, this.shown === 'rifle' ? -0.3 : -0.25);
+    } else this.handL.position.copy(gun.gripLeft);
     this.handL.rotation.set(0.55, -0.55, 0.4);
   }
 }
@@ -261,4 +273,3 @@ function buildSuppressor(radiusM: number): Mesh {
 
 const _ads = new Vector3();
 const _q = new Quaternion();
-const _v = new Vector3();

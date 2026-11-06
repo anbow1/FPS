@@ -1276,7 +1276,7 @@ function segmentGeometries(): Record<Segment, BufferGeometry> {
  * bevels (gunkit.ts): every soldier carries one, and at their distance a bevel is under a pixel.
  */
 function rifleGeometry(): BufferGeometry {
-  const model = coarseParts(() => buildRifle());
+  const model = coarseParts(() => buildRifle({ procedural: true }));
   model.root.updateMatrixWorld(true);
   const parts: BufferGeometry[] = [];
   model.root.traverse((o) => {

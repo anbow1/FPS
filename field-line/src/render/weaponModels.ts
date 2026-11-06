@@ -22,6 +22,7 @@ import {
   Vector3,
 } from 'three/webgpu';
 import { bevelOf, finish, polymerMaterial, sidePart, steelMaterial } from './gunkit.ts';
+import { modelCarbine, modelPistol, modelPrecision } from './gunModels.ts';
 import { handData, posedHandGeometry } from './handMesh.ts';
 
 // First-person weapon and hand models in metres, facing −Z, with the sight
@@ -59,6 +60,11 @@ export const VM_MATERIALS = {
 } as const;
 // The sleeve's creases, shaded per vertex (sleeveGeometry), get less light than its ridges.
 VM_MATERIALS.sleeve.colorNode = color(0x5a5e48).mul(attribute('shade', 'float'));
+
+/** Where the viewmodel holds each magazine at rest (it animates them from there in a reload). */
+export const MAG_REST_Y = { rifle: -0.142, sniper: -0.125, pistol: -0.11 } as const;
+/** The precision rifle's bolt at rest: along the bore, and the handle turned down. */
+export const BOLT_REST = { z: 0.13, downRad: -0.75 } as const;
 
 // ------------------------------------------------------------------ geometry helpers
 
@@ -145,7 +151,19 @@ function rail(z0: number, z1: number, topY: number, widthM = 0.022): BufferGeome
 
 // ------------------------------------------------------------------ carbine
 
-export interface RifleModel {
+/** What every weapon tells the viewmodel about itself, in its own frame. */
+export interface GunPoints {
+  /** Where the flash and the shot leave the barrel. */
+  muzzle: Vector3;
+  /** Where the hands hold it (the right on the grip, the left on the handguard). */
+  gripRight: Vector3;
+  gripLeft: Vector3;
+  /** Its own suppressor when the model has one (shown when fitted); else one is drawn round `suppressorAt`. */
+  suppressor: Mesh | null;
+  suppressorAt: Vector3;
+}
+
+export interface RifleModel extends GunPoints {
   root: Group;
   magazine: Mesh;
   bolt: Mesh;
@@ -156,7 +174,11 @@ export interface RifleModel {
 }
 
 /** 5.56 carbine with a tube red dot. Sight line: y = 0, the optic sits at z ≈ −0.05…0.07. */
-export function buildRifle(): RifleModel {
+export function buildRifle(options: { procedural?: boolean } = {}): RifleModel {
+  // The downloaded model when it loaded (gunModels.ts); `procedural` keeps the drawn one (the soldiers'
+  // merged rifles).
+  const model = options.procedural ? null : modelCarbine(MAG_REST_Y.rifle);
+  if (model) return { ...model, suppressorAt: model.muzzle.clone() };
   const root = new Group();
   root.name = 'rifle';
   const P = VM_MATERIALS;
@@ -338,12 +360,23 @@ export function buildRifle(): RifleModel {
   const dotLens = mesh(lensGeo, new MeshStandardNodeMaterial(), 'optic rear');
   dotLens.position.set(0, 0, 0.05);
   root.add(dotLens);
-  return { root, magazine, bolt, dotLens, eyeZ: 0.05 + 0.2 };
+  return {
+    root,
+    magazine,
+    bolt,
+    dotLens,
+    eyeZ: 0.05 + 0.2,
+    muzzle: new Vector3(0, -0.082, -0.67),
+    gripRight: new Vector3(0, -0.19, 0.17),
+    gripLeft: new Vector3(-0.02, -0.12, -0.3),
+    suppressor: null,
+    suppressorAt: new Vector3(0, -0.082, -0.69),
+  };
 }
 
 // ------------------------------------------------------------------ precision rifle
 
-export interface SniperModel {
+export interface SniperModel extends GunPoints {
   root: Group;
   magazine: Mesh;
   bolt: Group;
@@ -355,6 +388,8 @@ export interface SniperModel {
 
 /** Bolt-action magnum rifle with a variable scope. Sight line y = 0; ocular at z = +0.12. */
 export function buildSniper(): SniperModel {
+  const model = modelPrecision(MAG_REST_Y.sniper, BOLT_REST.z, BOLT_REST.downRad);
+  if (model) return { ...model, suppressor: null };
   const root = new Group();
   root.name = 'sniper';
   const P = VM_MATERIALS;
@@ -501,12 +536,24 @@ export function buildSniper(): SniperModel {
   ocular.position.set(0, 0, 0.149);
   root.add(ocular);
   // Eye relief: the eye sits 85 mm behind the ocular when aimed (config SCOPE.eyeReliefM).
-  return { root, magazine, bolt, ocular, eyeZ: 0.149 + 0.085, ocularRadiusM };
+  return {
+    root,
+    magazine,
+    bolt,
+    ocular,
+    eyeZ: 0.149 + 0.085,
+    ocularRadiusM,
+    muzzle: new Vector3(0, -0.065, -0.95),
+    gripRight: new Vector3(0, -0.15, 0.2),
+    gripLeft: new Vector3(-0.02, -0.12, -0.25),
+    suppressor: null,
+    suppressorAt: new Vector3(0, -0.065, -0.98),
+  };
 }
 
 // ------------------------------------------------------------------ pistol
 
-export interface PistolModel {
+export interface PistolModel extends GunPoints {
   root: Group;
   magazine: Mesh;
   slide: Mesh;
@@ -522,6 +569,8 @@ export interface PistolModel {
  * of the rear sight, its window centred `sightY` over the irons: the sights show low in the window.
  */
 export function buildPistol(): PistolModel {
+  const model = modelPistol(MAG_REST_Y.pistol);
+  if (model) return { ...model, suppressor: null, suppressorAt: model.muzzle.clone() };
   const root = new Group();
   root.name = 'pistol';
   const P = VM_MATERIALS;
@@ -607,7 +656,19 @@ export function buildPistol(): PistolModel {
   magazine.position.set(0, -0.11, 0.045);
   magazine.rotation.x = -0.25;
   root.add(magazine);
-  return { root, magazine, slide, dotLens, sightY: DOT_Y, eyeZ: 0.065 + 0.45 };
+  return {
+    root,
+    magazine,
+    slide,
+    dotLens,
+    sightY: DOT_Y,
+    eyeZ: 0.065 + 0.45,
+    muzzle: new Vector3(0, -0.018, -0.13),
+    gripRight: new Vector3(0, -0.1, 0.06),
+    gripLeft: new Vector3(-0.01, -0.12, 0.05),
+    suppressor: null,
+    suppressorAt: new Vector3(0, -0.018, -0.21),
+  };
 }
 
 // ------------------------------------------------------------------ hands and kit
