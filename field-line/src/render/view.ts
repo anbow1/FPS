@@ -187,7 +187,8 @@ export class GameView {
     const w = WORLD_WIND[map.id];
     windVector.value.set(Math.sin(w.directionRad) * w.speedMs, 0, Math.cos(w.directionRad) * w.speedMs);
     this.applyWeather();
-    this.viewModel = new ViewModel(this.scopeSidePx());
+    const side = this.scopeSidePx();
+    this.viewModel = new ViewModel(side, stage.sceneTargetLike(side, side));
     stage.passTimer.name(this.viewModel.scope.target, 'scope');
     stage.camera.add(this.viewModel.root);
     this.viewModel.setEnvironment(stage.scene.environment, 1);

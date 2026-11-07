@@ -2,7 +2,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { convertToTexture, float, Fn, int, length, Loop, mrt, normalize, output, pass, pow, rtt, saturation, screenSize, select, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, type Node, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, AgXToneMapping, FloatType, HalfFloatType, type Node, type PassNode, type RenderTarget, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -88,6 +88,8 @@ export class Stage {
   private readonly exposureInv = uniform(1);
   private dynamicScale = 1;
   private pipeline: RenderPipeline | null = null;
+  /** The pass the scene is drawn in (half-float colour and velocity). */
+  private scenePass: PassNode | null = null;
   private sceneTexture: Texture | null = null;
   private settings: StageSettings;
   /** Volumetric cumulus (volumeClouds.ts): a reduced-resolution march composited over the sky before TRAA. */
@@ -175,6 +177,7 @@ export class Stage {
   private buildPipeline(): void {
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
     scenePass.setMRT(mrt({ output, velocity }));
+    this.scenePass = scenePass;
     const depth = scenePass.getTextureNode('depth');
     const motion = scenePass.getTextureNode('velocity');
     this.sceneTexture = scenePass.getTexture('output');
@@ -241,6 +244,25 @@ export class Stage {
     pipeline.outputNode = this.settings.lens === 'bodycam' ? bodycamLens(sharp, this.exposureInv) : sharp;
     this.pipeline?.dispose();
     this.pipeline = pipeline;
+  }
+
+  /**
+   * A render target like the scene pass's (the same colour and velocity attachments, formats and samples)
+   * and its MRT, for another view of the scene (the rifle scope, optics.ts). A pipeline is keyed on the
+   * target's formats, not on the camera: drawn into a target like this, with the same outputs, the other
+   * view reuses every pipeline the scene pass built instead of building its own set (the scope's ~40 cost
+   * as long again as the scene's own on the loading screen, or a stall at the first look through it).
+   */
+  sceneTargetLike(width: number, height: number): { target: RenderTarget; mrt: ReturnType<PassNode['getMRT']> } | null {
+    const p = this.scenePass;
+    if (!p) return null;
+    const target = p.renderTarget.clone();
+    target.setSize(width, height);
+    // What PassNode.setup gives the pass's own target on its first frame (three r186).
+    target.samples = p.options.samples ?? this.renderer.samples;
+    for (const t of target.textures) t.type = this.renderer.getOutputBufferType();
+    if (this.renderer.reversedDepthBuffer && target.depthTexture) target.depthTexture.type = FloatType;
+    return { target, mrt: p.getMRT() };
   }
 
   resize(): void {

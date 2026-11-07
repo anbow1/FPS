@@ -57,7 +57,7 @@ export class ViewModel {
   /** 0..1: how far the eye sits behind the scope's exit pupil (1 = centred and settled). */
   scopeSettle = 0;
 
-  constructor(scopeSidePx: number) {
+  constructor(scopeSidePx: number, scopeLike: ConstructorParameters<typeof Scope>[2] = null) {
     this.root.name = 'viewmodel';
     this.root.scale.setScalar(VM_SCALE);
     this.root.add(this.pivot);
@@ -66,7 +66,7 @@ export class ViewModel {
     this.pistol = buildPistol();
     this.rifle.dotLens.material = this.redDot.material;
     this.pistol.dotLens.material = this.pistolDot.material;
-    this.scope = new Scope(this.sniper.ocularRadiusM, scopeSidePx);
+    this.scope = new Scope(this.sniper.ocularRadiusM, scopeSidePx, scopeLike);
     this.sniper.ocular.material = this.scope.material;
     this.scope.setMagnification(SCOPE.magnifications[0]);
     // A model's own suppressor when it has one, else a can drawn round the point it gives.

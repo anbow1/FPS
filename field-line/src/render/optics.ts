@@ -1,5 +1,5 @@
-import { abs, cameraPosition, cross, float, fract, length, max, min, positionGeometry, positionWorld, smoothstep, texture, uniform, vec2, vec3 } from 'three/tsl';
-import { HalfFloatType, MeshBasicNodeMaterial, type Node, PerspectiveCamera, type Quaternion, RenderTarget, type Scene, Vector2, Vector3, type WebGPURenderer } from 'three/webgpu';
+import { abs, cameraPosition, cross, float, fract, length, max, min, positionGeometry, positionWorld, smoothstep, texture, uniform, vec2, vec3, velocity } from 'three/tsl';
+import { HalfFloatType, MeshBasicNodeMaterial, type Node, type PassNode, PerspectiveCamera, type Quaternion, RenderTarget, type Scene, Vector2, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { CAMERA, SCOPE } from '../config.ts';
 
 // Real optics, not screen overlays (brief).
@@ -53,12 +53,17 @@ export class Scope {
   magnification = 4;
   private readonly apparentFovRad: number;
 
-  constructor(ocularRadiusM: number, sidePx: number) {
+  /** The scene pass's outputs, when the target is made like its (stage.ts, sceneTargetLike). */
+  private readonly mrt: ReturnType<PassNode['getMRT']>;
+
+  constructor(ocularRadiusM: number, sidePx: number, like: { target: RenderTarget; mrt: ReturnType<PassNode['getMRT']> } | null = null) {
     // Apparent field of the eyepiece, seen from the eye-relief distance.
     this.apparentFovRad = 2 * Math.atan(ocularRadiusM / SCOPE.eyeReliefM);
     this.camera = new PerspectiveCamera(10, 1, 0.5, CAMERA.farM);
     this.camera.layers.set(0); // world only: never the viewmodel
-    this.target = new RenderTarget(sidePx, sidePx, { type: HalfFloatType });
+    // Like the scene pass's target when the stage gives one: its pipelines then serve the scope too.
+    this.target = like?.target ?? new RenderTarget(sidePx, sidePx, { type: HalfFloatType });
+    this.mrt = like?.mrt ?? null;
     this.target.texture.name = 'scopeView';
 
     const radius = ocularRadiusM;
@@ -92,9 +97,21 @@ export class Scope {
     this.camera.quaternion.copy(orientation);
     this.camera.updateMatrixWorld();
     const prev = renderer.getRenderTarget();
+    const prevMrt = renderer.getMRT();
     renderer.setRenderTarget(this.target);
-    renderer.render(scene, this.camera);
-    renderer.setRenderTarget(prev);
+    // The scene pass's outputs, and the unjittered projection TRAA hands the velocity node while the scene
+    // pass draws: with both the scope's shaders are the scene's, and so are its pipelines.
+    if (this.mrt) {
+      renderer.setMRT(this.mrt);
+      velocity.setProjectionMatrix(this.camera.projectionMatrix);
+    }
+    try {
+      renderer.render(scene, this.camera);
+    } finally {
+      if (this.mrt) velocity.setProjectionMatrix(null);
+      renderer.setMRT(prevMrt);
+      renderer.setRenderTarget(prev);
+    }
   }
 }
 
