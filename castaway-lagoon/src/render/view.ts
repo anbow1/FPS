@@ -215,7 +215,7 @@ export class LagoonView {
     const restore = revealOnePerPipeline(stage.scene, shown);
     try {
       const t = performance.now();
-      await precompile(compileForPass(stage.renderer, stage.scene, stage.camera, stage.scenePass, shown, PRECOMPILE_TIMEOUT_MS - 1000));
+      if (!new URLSearchParams(location.search).has('noprecompile')) await precompile(compileForPass(stage.renderer, stage.scene, stage.camera, stage.scenePass, shown, PRECOMPILE_TIMEOUT_MS - 1000));
       console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
     } finally {
       restore();

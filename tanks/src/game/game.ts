@@ -296,7 +296,7 @@ export class Game {
       // For the scene pass the game draws in, all at once (warmup.ts, compileForPass); each build's own
       // timeout a second short of the whole's, so the pass's target is put back before the frames below.
       const t = performance.now();
-      await withTimeout(compileForPass(r, this.scene, this.camera, this.pipeline.scenePass, shown, 19000), 20000);
+      if (!new URLSearchParams(location.search).has('noprecompile')) await withTimeout(compileForPass(r, this.scene, this.camera, this.pipeline.scenePass, shown, 19000), 20000);
       console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
       this.water.warmMirror(r, this.scene, this.camera);
     } catch (err) {

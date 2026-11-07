@@ -569,7 +569,7 @@ async function main(): Promise<void> {
   const restore = revealOnePerPipeline(stage.scene, shown);
   const tc = performance.now();
   try {
-    await compileForPass(stage.renderer, stage.scene, stage.camera, stage.scenePass, shown, 19000);
+    if (!new URLSearchParams(location.search).has('noprecompile')) await compileForPass(stage.renderer, stage.scene, stage.camera, stage.scenePass, shown, 19000);
   } finally {
     restore();
   }
