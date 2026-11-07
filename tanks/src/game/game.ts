@@ -8,7 +8,7 @@ import type { Pipeline } from '../render/pipeline';
 import { CITY_LIGHT } from '../render/cityMaterial';
 import { G } from '../render/nodes';
 import { Rain } from '../render/rain';
-import { revealOnePerPipeline, warmAllPipelines } from '../render/warmup.ts';
+import { compileForPass, revealOnePerPipeline, warmAllPipelines } from '../render/warmup.ts';
 import type { Hud, MarkerState } from '../ui/hud';
 import { PLAYER_SPAWN } from '../world/layout';
 import { Water } from '../world/water';
@@ -274,7 +274,7 @@ export class Game {
   /**
    * Compile every shader the battle can need before it starts. Effects, tracers, the drone and
    * wreck fires are hidden until first used, and compileAsync skips hidden objects (and compiles
-   * for the plain framebuffer, not the post chain's scene pass), so they would otherwise compile
+   * for the plain framebuffer unless told the scene pass), so they would otherwise compile
    * mid-fight and stall a frame. One object per shader build is forced visible for compileAsync and
    * for one real frame of both post chains, sun shafts forced on, in the normal and thermal
    * channels; then everything is put back (render/warmup.ts, shared with anbow1/FPS).
@@ -290,9 +290,14 @@ export class Game {
         l.shadow.autoUpdate = true;
       }
     });
-    const restore = revealOnePerPipeline(this.scene);
+    const shown: THREE.Object3D[] = [];
+    const restore = revealOnePerPipeline(this.scene, shown);
     try {
-      await withTimeout(r.compileAsync(this.scene, this.camera), 20000);
+      // For the scene pass the game draws in, all at once (warmup.ts, compileForPass); each build's own
+      // timeout a second short of the whole's, so the pass's target is put back before the frames below.
+      const t = performance.now();
+      await withTimeout(compileForPass(r, this.scene, this.camera, this.pipeline.scenePass, shown, 19000), 20000);
+      console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
       this.water.warmMirror(r, this.scene, this.camera);
     } catch (err) {
       console.error('shader pre-compilation failed; continuing, the rest compiles on first use:', err);

@@ -2,7 +2,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { exp, float, Fn, int, length, Loop, mix, mrt, output, pass, pow, saturation, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, PCFShadowMap, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, type PassNode, PCFShadowMap, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { setMaxAnisotropy } from './textureSet.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 import { screenReflectionOn } from './screenReflection.ts';
@@ -75,6 +75,8 @@ export class LagoonStage {
   private readonly shaftCount = uniform(0, 'int');
   private dynamicScale = 1;
   private pipeline: RenderPipeline | null = null;
+  /** The pass the scene is drawn in (half-float colour and velocity): what its materials are built for. */
+  scenePass: PassNode | null = null;
   private sceneTexture: Texture | null = null;
   private settings: StageSettings;
   private readonly tmp = new Vector3();
@@ -158,6 +160,7 @@ export class LagoonStage {
   private buildPipeline(): void {
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
     scenePass.setMRT(mrt({ output, velocity }));
+    this.scenePass = scenePass;
     const colour = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
     const motion = scenePass.getTextureNode('velocity');

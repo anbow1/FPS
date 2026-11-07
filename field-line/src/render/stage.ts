@@ -2,9 +2,10 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { convertToTexture, float, Fn, int, length, Loop, mrt, normalize, output, pass, pow, rtt, saturation, screenSize, select, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, type Camera, FloatType, HalfFloatType, Matrix4, type Node, type Object3D, type PassNode, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, AgXToneMapping, type Camera, HalfFloatType, type Node, type Object3D, type PassNode, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
+import { compileForPass } from './warmup.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 import { screenReflectionOn } from './screenReflection.ts';
 import { bodycamLens } from './bodycam.ts';
@@ -90,7 +91,6 @@ export class Stage {
   private pipeline: RenderPipeline | null = null;
   /** The pass the scene is drawn in (half-float colour and velocity): what its materials are built for. */
   private scenePass: PassNode | null = null;
-  private readonly unjittered = new Matrix4();
   private sceneTexture: Texture | null = null;
   private settings: StageSettings;
   /** Volumetric cumulus (volumeClouds.ts): a reduced-resolution march composited over the sky before TRAA. */
@@ -247,61 +247,9 @@ export class Stage {
     this.pipeline = pipeline;
   }
 
-  /**
-   * Builds the scene's shaders for the pass the game draws them in, asynchronously (the loading screen's
-   * pre-compile, view.ts). renderer.compileAsync builds for whatever target is set, and with none set that
-   * is the plain framebuffer: other outputs (no velocity), tone mapping in the material, another format, so
-   * none of those builds was the one the game uses, and the first frame built every material again,
-   * synchronously, the main thread blocked. The target and MRT stay set until every build has finished:
-   * three r186 gathers the objects at the call but generates their shaders later, asynchronously, and
-   * shaders generated after the MRT was put back had one output for a pipeline with two targets (a
-   * validation error, and nothing the game could use). Nothing else may render meanwhile.
-   */
-  async compileScene(objects: readonly Object3D[], camera: Camera = this.camera, timeoutMs = 20000): Promise<unknown> {
-    const r = this.renderer;
-    const p = this.scenePass;
-    if (!p) return this.compileEach(objects, camera, timeoutMs);
-    const target = p.renderTarget;
-    // What PassNode.setup sets on the pipeline's first frame (three r186); until then the target holds its
-    // defaults, and the samples and the formats are part of every build.
-    target.samples = p.options.samples ?? r.samples;
-    target.texture.type = r.getOutputBufferType();
-    if (r.reversedDepthBuffer && target.depthTexture) target.depthTexture.type = FloatType;
-    const prevTarget = r.getRenderTarget();
-    const prevMrt = r.getMRT();
-    r.setRenderTarget(target);
-    r.setMRT(p.getMRT());
-    // TRAA hands the velocity node its unjittered projection while it renders (a per-object uniform in the
-    // shader) and takes it back after; built without it the shaders read the camera's (a shared uniform),
-    // and none matched what the game draws with.
-    velocity.setProjectionMatrix(this.unjittered.copy(camera.projectionMatrix));
-    try {
-      return await this.compileEach(objects, camera, timeoutMs);
-    } finally {
-      velocity.setProjectionMatrix(null);
-      r.setRenderTarget(prevTarget);
-      r.setMRT(prevMrt);
-    }
-  }
-
-  /**
-   * One compileAsync per object, all started at once. A single call over the whole scene (three r186)
-   * builds its objects one after another, waiting on each pipeline before the next and yielding to the
-   * page between them, and one pipeline that never became ready held up all the rest: on the loading screen
-   * it built one pipeline in twenty seconds and timed out every time, the first frame then building them
-   * all, synchronously. Started together, the browser builds the pipelines in parallel off the main thread,
-   * and a stuck one only times out alone.
-   */
-  private compileEach(objects: readonly Object3D[], camera: Camera, timeoutMs: number): Promise<unknown> {
-    const r = this.renderer;
-    const jobs = objects.map((o) => {
-      let timer = 0;
-      const timeout = new Promise<void>((resolve) => {
-        timer = window.setTimeout(resolve, timeoutMs);
-      });
-      return Promise.race([r.compileAsync(o, camera, this.scene), timeout]).finally(() => window.clearTimeout(timer));
-    });
-    return Promise.allSettled(jobs);
+  /** The scene's shaders built for the pass it is drawn in (warmup.ts, compileForPass). */
+  compileScene(objects: readonly Object3D[], camera: Camera = this.camera, timeoutMs = 20000): Promise<void> {
+    return compileForPass(this.renderer, this.scene, camera, this.scenePass, objects, timeoutMs);
   }
 
   resize(): void {

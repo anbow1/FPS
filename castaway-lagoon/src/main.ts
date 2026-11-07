@@ -147,7 +147,15 @@ class App {
     // ?peaceful: the lagoon without its animals and guerrillas (screenshots of the scenery).
     const game = new LagoonGame(20260927, time, weather, { threats: !new URLSearchParams(location.search).has('peaceful') });
     this.game = game;
+    // Each loading stage's time in the console: which stage a slow device spends its time in.
+    const t0 = performance.now();
+    let last = t0;
+    let lastLabel = 'start';
     const progress: Progress = async (label, f) => {
+      const now = performance.now();
+      console.log(`[load] ${lastLabel}: ${((now - last) / 1000).toFixed(2)} s`);
+      last = now;
+      lastLabel = label;
       this.menus.showLoading(label, f);
       await nextFrame();
     };
@@ -162,6 +170,7 @@ class App {
       this.view.render(game, 1, 0, 0, 0);
       await nextFrame();
     }
+    console.log(`[load] ${lastLabel} → play: ${((performance.now() - last) / 1000).toFixed(2)} s; total ${((performance.now() - t0) / 1000).toFixed(2)} s`);
     this.debug.game = game;
     this.debug.view = this.view;
     this.view.stage.governor.enabled = this.settings.adaptive;

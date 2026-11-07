@@ -148,7 +148,11 @@ export class GuerrillaView {
       }
       this.cast.push({ rig: new CastRig(c.joints), lods });
     }
-    if (this.cast.length) this.body.visible = false;
+    if (this.cast.length) {
+      this.body.visible = false;
+      // Replaced for good: never drawn, so never warmed up either (warmup.ts).
+      this.body.userData['noWarmup'] = true;
+    }
   }
 
   constructor() {

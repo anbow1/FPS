@@ -1,4 +1,4 @@
-import { Group, Quaternion, Vector3 } from 'three/webgpu';
+import { Group, type Object3D, Quaternion, Vector3 } from 'three/webgpu';
 import { damp } from '../core/vec.ts';
 import { lightColour } from './colour.ts';
 import { AutoExposure } from './exposure.ts';
@@ -34,7 +34,7 @@ import { Footprints, type PrintKind } from './footprints.ts';
 import { buildWrack } from './wrack.ts';
 import type { WakeFoam } from './wakeFoam.ts';
 import type { RippleField } from './rippleField.ts';
-import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
+import { compileForPass, revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
 import { CreatureView } from './creatures.ts';
 import { GuerrillaView } from './guerrillas.ts';
 import { loadGuerrillaCast } from './guerrillaCast.ts';
@@ -208,11 +208,15 @@ export class LagoonView {
     await progress('Compiling shaders', 0.92);
     // Compile with one object per shader build shown and at least one instance: an instanced mesh
     // pre-compiled while empty (count 0) was left with a pipeline that never became ready, so it
-    // never drew in the main pass (three r186). compileAsync collects its objects synchronously,
-    // so everything can be put back as soon as it returns or times out.
-    const restore = revealOnePerPipeline(stage.scene);
+    // never drew in the main pass (three r186). For the scene pass the game draws in, all at once
+    // (warmup.ts, compileForPass); each build's own timeout a second short of the whole's, so the pass's
+    // target is put back before the loading carries on.
+    const shown: Object3D[] = [];
+    const restore = revealOnePerPipeline(stage.scene, shown);
     try {
-      await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
+      const t = performance.now();
+      await precompile(compileForPass(stage.renderer, stage.scene, stage.camera, stage.scenePass, shown, PRECOMPILE_TIMEOUT_MS - 1000));
+      console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
     } finally {
       restore();
     }
