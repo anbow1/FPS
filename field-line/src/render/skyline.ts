@@ -2,6 +2,7 @@ import { abs, attribute, cameraViewMatrix, dot, float, floor, fract, fwidth, max
 import { BoxGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshStandardNodeMaterial, type Node, Quaternion, Vector3 } from 'three/webgpu';
 import { Rng } from '../core/rng.ts';
 import { cityNight, lightPreExposure } from './cityLights.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // The city beyond the map, after the browser city in a web-swinging game made
 // with AI (its sense of a real city is the skyline: towers of every height
@@ -99,7 +100,7 @@ export function buildSkyline(): InstancedMesh {
   const warm = mix(vec3(1, 0.78, 0.52), vec3(0.85, 0.92, 1), mix(step(0.6, hash2(cell.add(faceKey), 5)), float(0.4), blur));
   mat.emissiveNode = warm.mul(lit).mul(cityNight).mul(lightPreExposure).mul(4);
 
-  const mesh = new InstancedMesh(geo, mat, towers.length);
+  const mesh = markStaticInstances(new InstancedMesh(geo, mat, towers.length));
   mesh.name = 'skyline';
   // Far beyond the shadow cascades: they would cost a draw per cascade for nothing.
   mesh.castShadow = false;

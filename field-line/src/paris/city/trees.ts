@@ -5,6 +5,7 @@ import { indexed, merge, tube } from '../render/meshkit.ts';
 import { fbm2, heightBump, linearRgb, SCENE } from '../render/nodes.ts';
 import { photo } from '../render/photo.ts';
 import type { Placed } from './plan.ts';
+import { markStaticInstances } from '../../render/instancing.ts';
 
 // The boulevard's London planes (Platanus × acerifolia, the Paris street tree):
 // a straight trunk of mottled bark — cream, olive and grey where the old bark
@@ -33,8 +34,8 @@ export function buildTrees(trees: readonly Placed[]): Group {
     const geo = planeTree(1000 + v * 77);
     const mine = trees.filter((t) => t.seed % VARIANTS === v);
     if (mine.length === 0) continue;
-    const wood = new InstancedMesh(geo.wood, bark, mine.length);
-    const crown = new InstancedMesh(geo.leaves, leaves, mine.length);
+    const wood = markStaticInstances(new InstancedMesh(geo.wood, bark, mine.length));
+    const crown = markStaticInstances(new InstancedMesh(geo.leaves, leaves, mine.length));
     mine.forEach((t, i) => {
       const r = new Rng(t.seed);
       q.setFromAxisAngle(new Vector3(0, 1, 0), r.next() * Math.PI * 2);

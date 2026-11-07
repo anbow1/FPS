@@ -5,6 +5,7 @@ import { FacadeWriter, type FacadeBuilders } from './facade.ts';
 import { MeshBuilder } from './meshBuilder.ts';
 import type { StreetPlan } from './plan.ts';
 import { potGeometry, writeRoof } from './roof.ts';
+import { markStaticInstances } from '../../render/instancing.ts';
 
 // Every building of the street, built once at load: one mesh per material in
 // each 70 m chunk of the street (and per cross-street front), plus the chimney
@@ -61,7 +62,7 @@ function buildChunk(key: string, lots: StreetPlan['lots'], mats: Record<'stone' 
   add(b.iron, 'railings', mats.iron);
   add(b.awning, 'awnings', mats.awning);
   if (pots.length > 0) {
-    const potMesh = new InstancedMesh(potGeometry(), mats.pot, pots.length);
+    const potMesh = markStaticInstances(new InstancedMesh(potGeometry(), mats.pot, pots.length));
     const m = new Matrix4();
     pots.forEach((p, i) => potMesh.setMatrixAt(i, m.makeTranslation(p.x, p.y, p.z)));
     potMesh.castShadow = true;

@@ -1,4 +1,5 @@
 import { type BufferGeometry, Color, InstancedMesh, type Material, Matrix4, Sphere, Vector3 } from 'three/webgpu';
+import { markStaticInstances } from './instancing.ts';
 
 // Distance-limited instancing with ONE InstancedMesh per plant kind. three
 // r186 keys every InstancedMesh's shader build by the mesh's own uuid, so a
@@ -64,7 +65,7 @@ export class InstanceStream {
       list.push(i);
     });
     const capacity = Math.max(1, this.largestRefill());
-    this.mesh = new InstancedMesh(geometry, material, capacity);
+    this.mesh = markStaticInstances(new InstancedMesh(geometry, material, capacity));
     this.mesh.castShadow = opts.castShadow;
     this.mesh.receiveShadow = opts.receiveShadow ?? true;
     if (this.colours) this.mesh.setColorAt(0, new Color(1, 1, 1));

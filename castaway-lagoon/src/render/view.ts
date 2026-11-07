@@ -34,6 +34,7 @@ import { Footprints, type PrintKind } from './footprints.ts';
 import { buildWrack } from './wrack.ts';
 import type { WakeFoam } from './wakeFoam.ts';
 import type { RippleField } from './rippleField.ts';
+import { shareStaticInstanceShaders } from './instancing.ts';
 import { warmAllPipelines } from './warmup.ts';
 import { CreatureView } from './creatures.ts';
 import { GuerrillaView } from './guerrillas.ts';
@@ -208,6 +209,8 @@ export class LagoonView {
     // No separate shader pre-compile: three r186's compileAsync over the scene built one pipeline and hung
     // until its 20 s timeout on every load, and one call per object, all at once, came out slower than the
     // warm-up frame building them itself (warmUp, behind the title; measured on WebGPU: 159 s → 149 s).
+    // Static instanced meshes share their shaders (instancing.ts): far fewer to build in that frame.
+    console.log(`[load] ${shareStaticInstanceShaders(stage.renderer, stage.scene)} instanced meshes share their shaders`);
   }
 
   get depthMap() {

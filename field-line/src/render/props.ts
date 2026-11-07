@@ -30,6 +30,7 @@ import { buildCar, type CarGeometry, type CarPart, type CarVariant } from './car
 import { streetPropParts } from './streetProps.ts';
 import { carModel, type VehicleModel } from './vehicleModels.ts';
 import { carModelOf, type CarModelId } from '../maps/vehicles.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // Props: one InstancedMesh per (kind, material part), sized from real objects
 // (scale sheet: light 4x4 4.60 m, a hatchback 4.2 m; ISO container 6.06 m).
@@ -121,7 +122,7 @@ class CarLod {
       [true, this.far],
     ] as const) {
       for (const part of carParts(variant, lib, coarse)) {
-        const mesh = new InstancedMesh(part.geometry, part.material, cars.length);
+        const mesh = markStaticInstances(new InstancedMesh(part.geometry, part.material, cars.length));
         mesh.name = `prop-car-${coarse ? 'far' : 'near'}`;
         mesh.castShadow = part.castShadow ?? true;
         mesh.receiveShadow = true;
@@ -185,7 +186,7 @@ class VehicleLod {
       for (const part of parts) {
         const geometry = part.geometry.clone();
         if (part.recolour) geometry.setAttribute('paintTint', new InstancedBufferAttribute(new Float32Array(cars.length * 3), 3));
-        const mesh = new InstancedMesh(geometry, part.material, cars.length);
+        const mesh = markStaticInstances(new InstancedMesh(geometry, part.material, cars.length));
         mesh.name = `prop-car-${name}-${part.part}`;
         mesh.castShadow = part.castShadow;
         mesh.receiveShadow = true;
@@ -409,7 +410,7 @@ export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): Pro
       continue;
     }
     for (const part of partsFor(kind, variant, lib)) {
-      const mesh = new InstancedMesh(part.geometry, part.material, list.length);
+      const mesh = markStaticInstances(new InstancedMesh(part.geometry, part.material, list.length));
       mesh.name = `prop-${kind}`;
       mesh.castShadow = part.castShadow ?? true;
       mesh.receiveShadow = true;

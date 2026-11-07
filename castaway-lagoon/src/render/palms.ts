@@ -2,6 +2,7 @@ import { type BufferGeometry, Group, InstancedMesh, Matrix4, type Material, Quat
 import { type PalmInstance, PALM_VARIANTS } from '../game/world.ts';
 import { addSway, barkMaterial, leafMaterial, swayingSolid } from './foliageMaterials.ts';
 import { foldedStrip, merge, rand, tube } from './meshkit.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // Coconut palms, one modelled shape per variant (height and lean), instanced
 // and uniformly scaled per tree. The trunk leans toward +Z and curves back up
@@ -107,7 +108,7 @@ export function buildPalms(palms: readonly PalmInstance[]): Group {
     const parts = buildVariant(v);
     const shape = PALM_VARIANTS[v] as (typeof PALM_VARIANTS)[number];
     const add = (geo: BufferGeometry, mat: Material, shadows: boolean): void => {
-      const mesh = new InstancedMesh(geo, mat, list.length);
+      const mesh = markStaticInstances(new InstancedMesh(geo, mat, list.length));
       list.forEach((t, i) => {
         q.setFromAxisAngle(up, t.leanDirRad);
         const k = t.heightM / shape.heightM;

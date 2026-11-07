@@ -5,6 +5,7 @@ import type { RockInstance } from '../game/world.ts';
 import { noiseMap, terrainSet } from './textures.ts';
 import { type ScanId, type ScanModel, scanModel } from './scanModels.ts';
 import { U } from './uniforms.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // Coastal and jungle boulders from photoscans (scanModels.ts): three boulders
 // for anything over ~1.6 m across, three stones under it. Each keeps its own
@@ -32,7 +33,7 @@ export function buildRocks(rocks: readonly RockInstance[]): Group {
     const scan = scanModel(id);
     const geo = scan.geometry.clone();
     const moss = new Float32Array(list.length);
-    const mesh = new InstancedMesh(geo, scanRockMaterial(scan, id), list.length);
+    const mesh = markStaticInstances(new InstancedMesh(geo, scanRockMaterial(scan, id), list.length));
     list.forEach((r, i) => {
       // Across, the rock spans its placement's radii; its height is the scan's own, nudged by how flat
       // the placement asked for, so a standing block stays a standing block and no boulder is squashed.

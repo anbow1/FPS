@@ -8,6 +8,7 @@ import { addSway, barkMaterial, leafMaterial, scanLeafMaterial, swayingSolid } f
 import { type ScanId, scanModel } from './scanModels.ts';
 import { pathWeight } from './ground.ts';
 import { card, foldedStrip, merge, rand, tube } from './meshkit.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // Everything under the canopy: ferns, broadleaf shrubs, banana plants, tall
 // grass, small plants sprouting from the beach sand, and vines hanging from
@@ -253,7 +254,7 @@ function addAll(group: Group, geo: BufferGeometry, mat: Material, list: readonly
   const up = new Vector3(0, 1, 0);
   const s = new Vector3();
   const pos = new Vector3();
-  const mesh = new InstancedMesh(geo, mat, list.length);
+  const mesh = markStaticInstances(new InstancedMesh(geo, mat, list.length));
   list.forEach((p, i) => {
     q.setFromAxisAngle(up, p.yawRad);
     m.compose(pos.set(p.x, p.y, p.z), q, s.setScalar(p.scale));

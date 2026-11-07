@@ -42,6 +42,7 @@ import { buildStreetFurniture } from './streetFurniture.ts';
 import { buildWetStreet, puddleAmount, rainRate, wetTime } from './wetStreet.ts';
 import { Rain } from './rain.ts';
 import { roomDaylight } from './roomInteriors.ts';
+import { shareStaticInstanceShaders } from './instancing.ts';
 import { warmAllPipelines } from './warmup.ts';
 import { WeaponLight } from './weaponLight.ts';
 import { buildSkyline } from './skyline.ts';
@@ -209,6 +210,8 @@ export class GameView {
     // main pass afterwards (three r186), though its shadows did.
     this.foliage.update(this.stage.camera.position);
     this.undergrowth.update(this.stage.camera.position);
+    // Static instanced meshes share their shaders (instancing.ts): far fewer to build in the warm-up frame.
+    console.log(`[load] ${shareStaticInstanceShaders(stage.renderer, stage.scene)} instanced meshes share their shaders`);
     await progress('Ready', 1);
   }
 

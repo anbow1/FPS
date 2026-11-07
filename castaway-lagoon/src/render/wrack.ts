@@ -1,6 +1,7 @@
 import { BufferAttribute, type BufferGeometry, Color, ConeGeometry, CylinderGeometry, Group, InstancedMesh, Matrix4, MeshStandardNodeMaterial, Quaternion, SphereGeometry, Vector3 } from 'three/webgpu';
 import { Rng } from '../core/rng.ts';
 import { heightAt, LAGOON_CENTRE, normalAt, shoreDistance, surfaceAt } from '../game/terrain.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // The wrack line: what the sea leaves at the top of the swash, after the
 // beach in "Tidewater" (an AI-made three.js fishing game), whose sand reads as
@@ -82,7 +83,7 @@ export function buildWrack(): Group {
   for (const s of spots) (kinds[s.kind] as Kind).count++;
   const meshes = kinds.map((k) => {
     const mat = new MeshStandardNodeMaterial({ name: `wrack ${k.name}`, roughness: k.roughness, metalness: 0 });
-    const im = new InstancedMesh(k.geometry, mat, Math.max(1, k.count));
+    const im = markStaticInstances(new InstancedMesh(k.geometry, mat, Math.max(1, k.count)));
     im.name = `wrack ${k.name}`;
     im.count = 0;
     im.castShadow = k.cast;

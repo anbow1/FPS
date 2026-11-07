@@ -3,6 +3,7 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, Group, 
 import type { BoxLook, MapBox, MapData } from '../maps/types.ts';
 import { awningMaterial, facadeTrim } from './facadeTrim.ts';
 import type { MaterialLibrary } from './materials.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // Static world geometry. Map boxes are merged per material into a few large
 // meshes (draw calls stay far under the 2500 / 1500 ceiling), with world-space
@@ -181,7 +182,7 @@ export function buildStaticWorld(map: MapData, lib: MaterialLibrary): StaticWorl
   let glass: InstancedMesh | null = null;
   const glassColliderIds: number[] = [];
   if (glassBoxes.length > 0) {
-    glass = new InstancedMesh(new BoxGeometry(1, 1, 1), lib.get('windowGlass'), glassBoxes.length);
+    glass = markStaticInstances(new InstancedMesh(new BoxGeometry(1, 1, 1), lib.get('windowGlass'), glassBoxes.length));
     glass.name = 'glass';
     const m = new Matrix4();
     const q = new Quaternion();

@@ -5,6 +5,7 @@ import { Rng } from '../rng.ts';
 import { merge } from '../render/meshkit.ts';
 import { hash12, SCENE } from '../render/nodes.ts';
 import type { CafeTerrace, Placed, StreetPlan } from './plan.ts';
+import { markStaticInstances } from '../../render/instancing.ts';
 
 // Street furniture after the Paris originals, invented in detail and
 // unbranded: the boulevard candelabra (a fluted cast-iron post with a
@@ -24,7 +25,7 @@ export function buildFurniture(plan: StreetPlan): Group {
   const mat = furnitureMaterial();
   const place = (geo: BufferGeometry, list: readonly { x: number; z: number; yaw: number }[], shadow = true): void => {
     if (list.length === 0) return;
-    const mesh = new InstancedMesh(geo, mat, list.length);
+    const mesh = markStaticInstances(new InstancedMesh(geo, mat, list.length));
     const m = new Matrix4();
     const q = new Quaternion();
     list.forEach((p, i) => mesh.setMatrixAt(i, m.compose(new Vector3(p.x, STREET.kerbM, p.z), q.setFromAxisAngle(new Vector3(0, 1, 0), p.yaw), new Vector3(1, 1, 1))));

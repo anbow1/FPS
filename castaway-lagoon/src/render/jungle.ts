@@ -4,6 +4,7 @@ import { beachWidth, heightAt, LAGOON_CENTRE, normalAt, shoreDistance } from '..
 import type { TreeInstance } from '../game/world.ts';
 import { addSway, barkMaterial, leafMaterial } from './foliageMaterials.ts';
 import { card, merge, rand, tube } from './meshkit.ts';
+import { markStaticInstances } from './instancing.ts';
 
 // Rainforest trees: pale buttressed trunks, a few limbs, and a broad crown of
 // leaf-cluster cards on an ellipsoid shell with normals bent outward. The
@@ -106,7 +107,7 @@ export function buildJungle(trees: readonly TreeInstance[], quality: 'high' | 'l
       [parts.wood, bark],
       [parts.leaves, leaf],
     ] as const) {
-      const mesh = new InstancedMesh(geo, mat, list.length);
+      const mesh = markStaticInstances(new InstancedMesh(geo, mat, list.length));
       list.forEach((t, i) => {
         q.setFromAxisAngle(up, t.yawRad);
         const k = t.heightM / heightM;
