@@ -53,6 +53,8 @@ export interface MenuCallbacks {
 
 export class Menu {
   private rebinding: Action | null = null;
+  /** How long the last deployment took to load, stage by stage (main.ts), shown in the pause menu. */
+  loadReport = '';
 
   constructor(
     private readonly root: HTMLElement,
@@ -99,6 +101,7 @@ export class Menu {
       <div class="menu">
         <h1>PAUSED</h1>
         <p class="sub">Click Resume to recapture the mouse.</p>
+        <p class="sub" data-g="load"></p>
         <div class="row"><label>Light</label><div class="seg" data-g="preset"></div></div>
         ${this.settingsRows()}
         <div class="actions"><button class="primary" data-a="resume">Resume</button><button data-a="bench">Benchmark</button><button data-a="quit">Quit to menu</button><button data-a="exit">Quit game</button></div>
@@ -107,6 +110,8 @@ export class Menu {
     this.bindCommon();
     this.renderChoices();
     this.renderKeys();
+    // Text, not markup: the report carries stage labels.
+    this.q('[data-g="load"]').textContent = this.loadReport;
     this.q('[data-a="resume"]').addEventListener('click', () => this.cb.onResume());
     this.q('[data-a="bench"]').addEventListener('click', () => this.cb.onBenchmark());
     this.q('[data-a="quit"]').addEventListener('click', () => this.cb.onQuit());

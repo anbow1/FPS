@@ -167,9 +167,11 @@ class App {
     const t0 = performance.now();
     let last = t0;
     let lastLabel = 'start';
+    const stages: { label: string; s: number }[] = [];
     this.view = await GameView.create(this.canvas, map, this.viewSettings(s), async (label, f) => {
       const now = performance.now();
       console.log(`[load] ${lastLabel}: ${((now - last) / 1000).toFixed(2)} s`);
+      stages.push({ label: lastLabel, s: (now - last) / 1000 });
       last = now;
       lastLabel = label;
       this.menu.showLoading(label, f);
@@ -188,6 +190,10 @@ class App {
       await nextFrame();
     }
     console.log(`[load] ${lastLabel} → play: ${((performance.now() - last) / 1000).toFixed(2)} s; total ${((performance.now() - t0) / 1000).toFixed(2)} s`);
+    stages.push({ label: 'warm-up', s: (performance.now() - last) / 1000 });
+    // On a phone the console is out of reach: the pause menu shows the total and the longest stages.
+    const longest = [...stages].sort((a, b) => b.s - a.s).slice(0, 4);
+    this.menu.loadReport = `Loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s · ${longest.map((x) => `${x.label} ${x.s.toFixed(1)} s`).join(' · ')}`;
     // The rifle scope's own builds, in the background from here on (view.ts).
     this.view.precompileScope();
     this.audio.setAmbience(map.id, game.wind.length());

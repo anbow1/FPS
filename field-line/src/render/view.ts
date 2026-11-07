@@ -211,7 +211,7 @@ export class GameView {
     // so everything can be put back as soon as it returns or times out.
     const restore = revealOnePerPipeline(stage.scene);
     try {
-      await precompile(stage.renderer.compileAsync(stage.scene, stage.camera));
+      await precompile(stage.compileScene(stage.camera));
     } finally {
       restore();
     }
