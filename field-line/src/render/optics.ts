@@ -64,7 +64,8 @@ export class Scope {
     // Like the scene pass's target when the stage gives one: its pipelines then serve the scope too.
     this.target = like?.target ?? new RenderTarget(sidePx, sidePx, { type: HalfFloatType });
     this.mrt = like?.mrt ?? null;
-    this.target.texture.name = 'scopeView';
+    // The MRT finds its outputs by the textures' names ('output', 'velocity'): a shared target keeps them.
+    if (!like) this.target.texture.name = 'scopeView';
 
     const radius = ocularRadiusM;
     // Lens-plane coordinates in ocular radii, from the undeformed disc geometry.
