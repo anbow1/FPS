@@ -38,6 +38,9 @@ const SHIFTS: Record<keyof typeof URLS, Vector3> = {
 
 const guns: Partial<Record<keyof typeof URLS, Gun>> = {};
 
+/** A sight's front window: clear glass with a faint coating, drawn after the solids (no depth write). */
+const WINDOW_GLASS = new MeshStandardNodeMaterial({ name: 'sight window', color: 0x9fb7c4, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.08, depthWrite: false });
+
 function materialFor(src: Material): MeshStandardNodeMaterial {
   const s = src as MeshStandardNodeMaterial;
   const name = src.name.toLowerCase();
@@ -146,7 +149,12 @@ export function modelCarbine(magRestY: number): (ModelGunCommon & { bolt: Mesh; 
   const magazine = partAt(gun, 'magazine', new Vector3(0, magRestY, 0));
   const bolt = partAt(gun, 'bolt', new Vector3());
   // The front window stays glass; the rear one carries the collimated dot (viewmodel.ts).
-  for (const m of meshesOf(gun, 'glassA')) root.add(m);
+  // The model draws both windows with the sight's own textured, opaque material (it has no glass one): the
+  // front window then hid the target. It is clear coated glass here; the rear carries the dot.
+  for (const m of meshesOf(gun, 'glassA')) {
+    m.material = WINDOW_GLASS;
+    root.add(m);
+  }
   const dotLens = meshesOf(gun, 'glassB')[0] ?? new Mesh();
   const suppressor = meshesOf(gun, 'suppressor')[0] ?? new Mesh();
   root.add(magazine, bolt, dotLens, suppressor);
