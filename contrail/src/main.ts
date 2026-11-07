@@ -1,5 +1,6 @@
 import { loadJetModels } from './render/importedJet.ts';
-import { DoubleSide, Mesh, Quaternion, Vector3 } from 'three/webgpu';
+import { DoubleSide, Mesh, type Object3D, Quaternion, Vector3 } from 'three/webgpu';
+import { compileForPass, revealOnePerPipeline } from './render/warmup.ts';
 import { Game } from './app/game.ts';
 import { PilotControls } from './app/pilot.ts';
 import { AIRCRAFT, PHYSICS } from './config.ts';
@@ -56,6 +57,7 @@ import { menuUrl, PauseMenu } from './ui/pause.ts';
 const params = new URLSearchParams(location.search);
 
 async function main(): Promise<void> {
+  const tLoad = performance.now();
   const canvas = document.getElementById('view');
   const ui = document.getElementById('ui');
   if (!(canvas instanceof HTMLCanvasElement) || !ui) throw new Error('index.html must contain canvas#view and div#ui');
@@ -540,6 +542,7 @@ async function main(): Promise<void> {
         if (frameS > 0 && !document.hidden) stage.governor.update(frameS);
         stage.render();
         debugHooks.frames++;
+        if (debugHooks.frames === 2) console.log(`[load] first frames drawn at ${((performance.now() - tLoad) / 1000).toFixed(2)} s`);
       },
     },
     PHYSICS.maxStepsPerFrame,
@@ -549,6 +552,20 @@ async function main(): Promise<void> {
   lighting.update(stage.camera, stage.camera.position);
   await lighting.prepare(stage.camera);
   lighting.update(stage.camera, stage.camera.position);
+  // Every shader the first frames need, built behind the loading text for the scene pass the game draws in,
+  // all at once (render/warmup.ts): without it the first frame built them one after another, synchronously,
+  // the window frozen. The shadow and post passes still build in that frame.
+  loading.textContent = 'Contrail — compiling shaders';
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  const shown: Object3D[] = [];
+  const restore = revealOnePerPipeline(stage.scene, shown);
+  const tc = performance.now();
+  try {
+    await compileForPass(stage.renderer, stage.scene, stage.camera, stage.scenePass, shown, 19000);
+  } finally {
+    restore();
+  }
+  console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - tc) / 1000).toFixed(2)} s; loading ${((performance.now() - tLoad) / 1000).toFixed(2)} s`);
   loading.remove();
   loop.start();
 }

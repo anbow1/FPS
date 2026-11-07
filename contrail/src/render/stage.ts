@@ -3,7 +3,7 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { convertToTexture, depth as fragmentDepth, float, length, mix, mrt, normalize, output, pass, pow, rtt, screenSize, screenUV, select, texture, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AddEquation, AgXToneMapping, CustomBlending, DepthTexture, FloatType, HalfFloatType, Layers, type Material, type Node, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, RenderPipeline, Scene, SrcAlphaFactor, SRGBColorSpace, type TextureNode, WebGPURenderer, ZeroFactor } from 'three/webgpu';
+import { ACESFilmicToneMapping, AddEquation, AgXToneMapping, CustomBlending, DepthTexture, FloatType, HalfFloatType, Layers, type Material, type Node, OneFactor, type PassNode, OneMinusSrcAlphaFactor, PerspectiveCamera, RenderPipeline, Scene, SrcAlphaFactor, SRGBColorSpace, type TextureNode, WebGPURenderer, ZeroFactor } from 'three/webgpu';
 import { lensFlare } from './lensFlare.ts';
 import { FrameGovernor, PassTimer } from './perf.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -95,6 +95,8 @@ export class Stage {
   /** Volumetric clouds (clouds.ts): a reduced-resolution march composited over the hazed scene. */
   private clouds: CloudHook | null = null;
   private pipeline: RenderPipeline | null = null;
+  /** The pass the scene is drawn in (half-float colour and velocity): what its materials are built for. */
+  scenePass: PassNode | null = null;
   private settings: StageSettings;
 
   constructor(
@@ -158,6 +160,7 @@ export class Stage {
   private buildPipeline(): void {
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
     scenePass.setMRT(mrt({ output, velocity }));
+    this.scenePass = scenePass;
     const colour = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
     SCENE_DEPTH.value = scenePass.getTexture('depth');
