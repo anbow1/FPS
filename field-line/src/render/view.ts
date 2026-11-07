@@ -213,7 +213,9 @@ export class GameView {
     const restore = revealOnePerPipeline(stage.scene, shown);
     try {
       const t = performance.now();
-      await precompile(stage.compileScene(shown, stage.camera, PRECOMPILE_TIMEOUT_MS));
+      // Each build's own timeout a second short of the whole's: the scene pass's target is put back before
+      // the loading carries on to the warm-up frame.
+      await precompile(stage.compileScene(shown, stage.camera, PRECOMPILE_TIMEOUT_MS - 1000));
       console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
     } finally {
       restore();

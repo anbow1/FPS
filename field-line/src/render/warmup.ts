@@ -60,6 +60,8 @@ export function revealOnePerPipeline(scene: Object3D, shown: Object3D[] = []): (
     }
   };
   scene.traverse((o) => {
+    // Objects hidden for good (a body the loaded models replaced) are never drawn: nothing to warm.
+    if (o.userData['noWarmup'] === true) return;
     const key = pipelineKey(o);
     if (key === null || seen.has(key)) return;
     seen.add(key);
