@@ -183,11 +183,15 @@ class App {
     // pipelines on first use, which compileAsync does not reach. No hitch on the first real frame.
     this.menu.showLoading('Preparing shaders', 0.93);
     await nextFrame();
+    const tw = performance.now();
     await this.view.warmUp(game);
+    console.log(`[load] warm-up frames (every pipeline shown): ${((performance.now() - tw) / 1000).toFixed(2)} s`);
     this.menu.showLoading('Warming up', 0.97);
     for (let i = 0; i < 2; i++) {
+      const tf = performance.now();
       this.view.render(game, 1, 0, 0, 0);
       await nextFrame();
+      console.log(`[load] frame ${i + 1}: ${((performance.now() - tf) / 1000).toFixed(2)} s`);
     }
     console.log(`[load] ${lastLabel} → play: ${((performance.now() - last) / 1000).toFixed(2)} s; total ${((performance.now() - t0) / 1000).toFixed(2)} s`);
     stages.push({ label: 'warm-up', s: (performance.now() - last) / 1000 });
