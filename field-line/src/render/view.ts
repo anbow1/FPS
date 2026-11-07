@@ -496,7 +496,7 @@ export class GameView {
   }
 }
 
-const PRECOMPILE_TIMEOUT_MS = 20000;
+const PRECOMPILE_TIMEOUT_MS = Number(new URLSearchParams(location.search).get('pct')) || 20000;
 
 /**
  * Shader pre-compilation behind the loading screen (rules §9). A phone GPU can
