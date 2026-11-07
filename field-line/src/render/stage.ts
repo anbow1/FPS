@@ -2,7 +2,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { convertToTexture, float, Fn, int, length, Loop, mrt, normalize, output, pass, pow, rtt, saturation, screenSize, select, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, type Camera, FloatType, HalfFloatType, type Node, type PassNode, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, AgXToneMapping, type Camera, FloatType, HalfFloatType, type Node, type Object3D, type PassNode, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
@@ -254,10 +254,10 @@ export class Stage {
    * synchronously, the main thread blocked. The objects are gathered at the call; the target and MRT are
    * put back as soon as it returns.
    */
-  compileScene(camera: Camera = this.camera): Promise<unknown> {
+  compileScene(objects: readonly Object3D[], camera: Camera = this.camera, timeoutMs = 20000): Promise<unknown> {
     const r = this.renderer;
     const p = this.scenePass;
-    if (!p) return r.compileAsync(this.scene, camera);
+    if (!p) return this.compileEach(objects, camera, timeoutMs);
     const target = p.renderTarget;
     // What PassNode.setup sets on the pipeline's first frame (three r186); until then the target holds its
     // defaults, and the samples and the formats are part of every build.
@@ -269,11 +269,32 @@ export class Stage {
     r.setRenderTarget(target);
     r.setMRT(p.getMRT());
     try {
-      return r.compileAsync(this.scene, camera);
+      return this.compileEach(objects, camera, timeoutMs);
     } finally {
       r.setRenderTarget(prevTarget);
       r.setMRT(prevMrt);
     }
+  }
+
+  /**
+   * One compileAsync per object, all started at once. A single call over the whole scene (three r186)
+   * builds its objects one after another, waiting on each pipeline before the next and yielding to the
+   * page between them, and one pipeline that never became ready held up all the rest: on the loading screen
+   * it built one pipeline in twenty seconds and timed out every time, the first frame then building them
+   * all, synchronously. Started together, the browser builds the pipelines in parallel off the main thread,
+   * and a stuck one only times out alone. Each call reads the target and the objects when it is made, so
+   * the caller may put its state back once this returns.
+   */
+  private compileEach(objects: readonly Object3D[], camera: Camera, timeoutMs: number): Promise<unknown> {
+    const r = this.renderer;
+    const jobs = objects.map((o) => {
+      let timer = 0;
+      const timeout = new Promise<void>((resolve) => {
+        timer = window.setTimeout(resolve, timeoutMs);
+      });
+      return Promise.race([r.compileAsync(o, camera, this.scene), timeout]).finally(() => window.clearTimeout(timer));
+    });
+    return Promise.allSettled(jobs);
   }
 
   resize(): void {

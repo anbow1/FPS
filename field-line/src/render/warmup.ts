@@ -34,7 +34,7 @@ function pipelineKey(o: Object3D & { material?: Material | Material[]; geometry?
  * Forces one object per shader build visible, un-culled and with at least one
  * instance; returns the function that puts everything back.
  */
-export function revealOnePerPipeline(scene: Object3D): () => void {
+export function revealOnePerPipeline(scene: Object3D, shown: Object3D[] = []): () => void {
   const restore: (() => void)[] = [];
   const seen = new Set<string>();
   const reveal = (o: Object3D): void => {
@@ -64,6 +64,7 @@ export function revealOnePerPipeline(scene: Object3D): () => void {
     if (key === null || seen.has(key)) return;
     seen.add(key);
     reveal(o);
+    shown.push(o);
   });
   // Undo in reverse, so an ancestor revealed for two objects ends hidden again.
   return () => {

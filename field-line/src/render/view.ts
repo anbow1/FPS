@@ -209,9 +209,12 @@ export class GameView {
     // pre-compiled while empty (count 0) was left with a pipeline that never became ready, so it
     // never drew in the main pass (three r186). compileAsync collects its objects synchronously,
     // so everything can be put back as soon as it returns or times out.
-    const restore = revealOnePerPipeline(stage.scene);
+    const shown: Object3D[] = [];
+    const restore = revealOnePerPipeline(stage.scene, shown);
     try {
-      await precompile(stage.compileScene(stage.camera));
+      const t = performance.now();
+      await precompile(stage.compileScene(shown, stage.camera, PRECOMPILE_TIMEOUT_MS));
+      console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
     } finally {
       restore();
     }
