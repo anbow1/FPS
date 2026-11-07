@@ -198,8 +198,6 @@ class App {
     // On a phone the console is out of reach: the pause menu shows the total and the longest stages.
     const longest = [...stages].sort((a, b) => b.s - a.s).slice(0, 4);
     this.menu.loadReport = `Loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s · ${longest.map((x) => `${x.label} ${x.s.toFixed(1)} s`).join(' · ')}`;
-    // The rifle scope's own builds, in the background from here on (view.ts).
-    this.view.precompileScope();
     this.audio.setAmbience(map.id, game.wind.length());
     this.debug.game = game;
     this.debug.view = this.view;

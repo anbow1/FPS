@@ -1,4 +1,4 @@
-import { Group, type Object3D, Quaternion, Vector3 } from 'three/webgpu';
+import { Group, Quaternion, Vector3 } from 'three/webgpu';
 import { damp } from '../core/vec.ts';
 import { lightColour } from './colour.ts';
 import { AutoExposure } from './exposure.ts';
@@ -34,7 +34,7 @@ import { Footprints, type PrintKind } from './footprints.ts';
 import { buildWrack } from './wrack.ts';
 import type { WakeFoam } from './wakeFoam.ts';
 import type { RippleField } from './rippleField.ts';
-import { compileForPass, revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
+import { warmAllPipelines } from './warmup.ts';
 import { CreatureView } from './creatures.ts';
 import { GuerrillaView } from './guerrillas.ts';
 import { loadGuerrillaCast } from './guerrillaCast.ts';
@@ -205,21 +205,9 @@ export class LagoonView {
     this.placeCamera(game, 1, 0, 0);
     await this.lighting.bakeNow(game.env, stage.camera);
     this.exposure = new AutoExposure(stage.renderer, game.env.daylight.anchorEv, { belowStops: LAGOON_EXPOSURE.minEvBelowAnchor, aboveStops: LAGOON_EXPOSURE.maxEvAboveAnchor });
-    await progress('Compiling shaders', 0.92);
-    // Compile with one object per shader build shown and at least one instance: an instanced mesh
-    // pre-compiled while empty (count 0) was left with a pipeline that never became ready, so it
-    // never drew in the main pass (three r186). For the scene pass the game draws in, all at once
-    // (warmup.ts, compileForPass); each build's own timeout a second short of the whole's, so the pass's
-    // target is put back before the loading carries on.
-    const shown: Object3D[] = [];
-    const restore = revealOnePerPipeline(stage.scene, shown);
-    try {
-      const t = performance.now();
-      if (!new URLSearchParams(location.search).has('noprecompile')) await precompile(compileForPass(stage.renderer, stage.scene, stage.camera, stage.scenePass, shown, PRECOMPILE_TIMEOUT_MS - 1000));
-      console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
-    } finally {
-      restore();
-    }
+    // No separate shader pre-compile: three r186's compileAsync over the scene built one pipeline and hung
+    // until its 20 s timeout on every load, and one call per object, all at once, came out slower than the
+    // warm-up frame building them itself (warmUp, behind the title; measured on WebGPU: 159 s → 149 s).
   }
 
   get depthMap() {
@@ -494,28 +482,6 @@ export class LagoonView {
   }
 }
 
-const PRECOMPILE_TIMEOUT_MS = 20000;
 /** From the hand to the middle of the lamp's glass (m). */
 const LAMP_PIVOT_M = 0.2;
 
-/**
- * Shader pre-compilation behind the loading screen (rules §9). A phone GPU can
- * take very long, or a single failing pipeline can reject the whole batch;
- * neither may leave the player stuck on the loading screen, so after the
- * timeout (or a failure) loading carries on and anything left compiles on
- * first use.
- */
-async function precompile(job: Promise<unknown>): Promise<void> {
-  let timer = 0;
-  const timeout = new Promise<'timeout'>((resolve) => {
-    timer = window.setTimeout(() => resolve('timeout'), PRECOMPILE_TIMEOUT_MS);
-  });
-  try {
-    const result = await Promise.race([job, timeout]);
-    if (result === 'timeout') console.warn(`shader pre-compilation still running after ${PRECOMPILE_TIMEOUT_MS / 1000} s; continuing, the rest compiles on first use`);
-  } catch (err) {
-    console.error('shader pre-compilation failed; continuing, the renderer reports the failing material:', err);
-  } finally {
-    window.clearTimeout(timer);
-  }
-}

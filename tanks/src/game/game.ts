@@ -8,7 +8,7 @@ import type { Pipeline } from '../render/pipeline';
 import { CITY_LIGHT } from '../render/cityMaterial';
 import { G } from '../render/nodes';
 import { Rain } from '../render/rain';
-import { compileForPass, revealOnePerPipeline, warmAllPipelines } from '../render/warmup.ts';
+import { revealOnePerPipeline, warmAllPipelines } from '../render/warmup.ts';
 import type { Hud, MarkerState } from '../ui/hud';
 import { PLAYER_SPAWN } from '../world/layout';
 import { Water } from '../world/water';
@@ -39,19 +39,6 @@ const _fwd = new THREE.Vector3();
 
 function nextFrame(): Promise<void> {
   return new Promise((r) => requestAnimationFrame(() => r()));
-}
-
-/** Resolve `job`, or give up waiting after `ms` (a slow phone GPU must not hold the loading screen). */
-async function withTimeout(job: Promise<unknown>, ms: number): Promise<void> {
-  let timer = 0;
-  const timeout = new Promise<'timeout'>((resolve) => {
-    timer = window.setTimeout(() => resolve('timeout'), ms);
-  });
-  try {
-    if ((await Promise.race([job, timeout])) === 'timeout') console.warn(`shader pre-compilation still running after ${ms / 1000} s; continuing`);
-  } finally {
-    window.clearTimeout(timer);
-  }
 }
 
 const OUTCOME_TEXT: Record<string, string> = {
@@ -274,7 +261,7 @@ export class Game {
   /**
    * Compile every shader the battle can need before it starts. Effects, tracers, the drone and
    * wreck fires are hidden until first used, and compileAsync skips hidden objects (and compiles
-   * for the plain framebuffer unless told the scene pass), so they would otherwise compile
+   * for the plain framebuffer, not the post chain's scene pass), so they would otherwise compile
    * mid-fight and stall a frame. One object per shader build is forced visible for compileAsync and
    * for one real frame of both post chains, sun shafts forced on, in the normal and thermal
    * channels; then everything is put back (render/warmup.ts, shared with anbow1/FPS).
@@ -290,14 +277,12 @@ export class Game {
         l.shadow.autoUpdate = true;
       }
     });
-    const shown: THREE.Object3D[] = [];
-    const restore = revealOnePerPipeline(this.scene, shown);
+    // No compileAsync pre-compile: over the scene (three r186) it built one pipeline and hung until its
+    // 20 s timeout on every load, and one call per object, all at once, came out slower than the frames
+    // below building everything themselves (measured on WebGPU: 76 s → 56 s). Only the water's mirror is
+    // warmed here, with one object per shader build shown.
+    const restore = revealOnePerPipeline(this.scene);
     try {
-      // For the scene pass the game draws in, all at once (warmup.ts, compileForPass); each build's own
-      // timeout a second short of the whole's, so the pass's target is put back before the frames below.
-      const t = performance.now();
-      if (!new URLSearchParams(location.search).has('noprecompile')) await withTimeout(compileForPass(r, this.scene, this.camera, this.pipeline.scenePass, shown, 19000), 20000);
-      console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
       this.water.warmMirror(r, this.scene, this.camera);
     } catch (err) {
       console.error('shader pre-compilation failed; continuing, the rest compiles on first use:', err);

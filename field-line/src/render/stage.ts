@@ -2,10 +2,9 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { convertToTexture, float, Fn, int, length, Loop, mrt, normalize, output, pass, pow, rtt, saturation, screenSize, select, smoothstep, uniform, uv, vec2, vec3, vec4, velocity } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, type Camera, HalfFloatType, type Node, type Object3D, type PassNode, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, AgXToneMapping, HalfFloatType, type Node, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, type Texture, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { CAMERA } from '../config.ts';
 import { setMaxAnisotropy } from './textures.ts';
-import { compileForPass } from './warmup.ts';
 import { installWebGpuCompat } from './webgpuCompat.ts';
 import { screenReflectionOn } from './screenReflection.ts';
 import { bodycamLens } from './bodycam.ts';
@@ -89,8 +88,6 @@ export class Stage {
   private readonly exposureInv = uniform(1);
   private dynamicScale = 1;
   private pipeline: RenderPipeline | null = null;
-  /** The pass the scene is drawn in (half-float colour and velocity): what its materials are built for. */
-  private scenePass: PassNode | null = null;
   private sceneTexture: Texture | null = null;
   private settings: StageSettings;
   /** Volumetric cumulus (volumeClouds.ts): a reduced-resolution march composited over the sky before TRAA. */
@@ -178,7 +175,6 @@ export class Stage {
   private buildPipeline(): void {
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
     scenePass.setMRT(mrt({ output, velocity }));
-    this.scenePass = scenePass;
     const depth = scenePass.getTextureNode('depth');
     const motion = scenePass.getTextureNode('velocity');
     this.sceneTexture = scenePass.getTexture('output');
@@ -245,11 +241,6 @@ export class Stage {
     pipeline.outputNode = this.settings.lens === 'bodycam' ? bodycamLens(sharp, this.exposureInv) : sharp;
     this.pipeline?.dispose();
     this.pipeline = pipeline;
-  }
-
-  /** The scene's shaders built for the pass it is drawn in (warmup.ts, compileForPass). */
-  compileScene(objects: readonly Object3D[], camera: Camera = this.camera, timeoutMs = 20000): Promise<void> {
-    return compileForPass(this.renderer, this.scene, camera, this.scenePass, objects, timeoutMs);
   }
 
   resize(): void {

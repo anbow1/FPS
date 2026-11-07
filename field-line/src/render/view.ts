@@ -42,7 +42,7 @@ import { buildStreetFurniture } from './streetFurniture.ts';
 import { buildWetStreet, puddleAmount, rainRate, wetTime } from './wetStreet.ts';
 import { Rain } from './rain.ts';
 import { roomDaylight } from './roomInteriors.ts';
-import { revealOnePerPipeline, warmAllPipelines } from './warmup.ts';
+import { warmAllPipelines } from './warmup.ts';
 import { WeaponLight } from './weaponLight.ts';
 import { buildSkyline } from './skyline.ts';
 
@@ -198,28 +198,16 @@ export class GameView {
     this.syncPreExposure();
     // Cloud shadows on everything the sun shadows, now that the world is built.
     this.clouds.shadeReceivers(stage.scene, this.settings.quality === 'high' ? 3 : 2);
-    await progress('Compiling shaders', 0.75);
-    // Pre-compile every material the first frames will need (rules §9): no stall on the first shot.
+    // The camera at the spawn and the streamed plants filled for it: the warm-up frame (warmUp, behind the
+    // loading screen) builds every shader the first frames need, one object per build shown. No separate
+    // pre-compile: three r186's compileAsync over the scene built one pipeline and hung until its 20 s
+    // timeout on every load, and one call per object, all at once, came out slower than the warm-up frame
+    // building them itself (measured on WebGPU, every game: Field Line 71 s → 59 s without it).
     this.stage.camera.position.set(map.playerSpawn.pos.x, map.playerSpawn.pos.y + 1.7, map.playerSpawn.pos.z);
-    // Fill the streamed plant meshes first: an instanced mesh pre-compiled while it was empty
-    // (count 0) never drew in the main pass afterwards (three r186), though its shadows did.
+    // Fill the streamed plant meshes first: an instanced mesh first seen empty (count 0) never drew in the
+    // main pass afterwards (three r186), though its shadows did.
     this.foliage.update(this.stage.camera.position);
     this.undergrowth.update(this.stage.camera.position);
-    // Compile with one object per shader build shown and at least one instance: an instanced mesh
-    // pre-compiled while empty (count 0) was left with a pipeline that never became ready, so it
-    // never drew in the main pass (three r186). compileAsync collects its objects synchronously,
-    // so everything can be put back as soon as it returns or times out.
-    const shown: Object3D[] = [];
-    const restore = revealOnePerPipeline(stage.scene, shown);
-    try {
-      const t = performance.now();
-      // Each build's own timeout a second short of the whole's: the scene pass's target is put back before
-      // the loading carries on to the warm-up frame.
-      if (!new URLSearchParams(location.search).has('noprecompile')) await precompile(stage.compileScene(shown, stage.camera, PRECOMPILE_TIMEOUT_MS - 1000));
-      console.log(`[load] ${shown.length} shader builds pre-compiled in ${((performance.now() - t) / 1000).toFixed(2)} s`);
-    } finally {
-      restore();
-    }
     await progress('Ready', 1);
   }
 
@@ -455,37 +443,14 @@ export class GameView {
   async warmUp(game: Game): Promise<void> {
     this.render(game, 1, 0, 0, 0);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    warmAllPipelines(this.stage.scene, () => this.stage.render());
-  }
-
-  /**
-   * The rifle scope draws the world again into its own half-float target (optics.ts), so every material
-   * needs a second build for it; left to the first look through the scope they all compiled at once, a
-   * stall of ~10 s on a phone. Started once play begins and not awaited: the builds are asynchronous and
-   * finish in the background while the player walks, without lengthening the loading screen. The
-   * objects are gathered at the call, so everything shown for it is put back right after.
-   */
-  precompileScope(): void {
-    const stage = this.stage;
-    const scope = this.viewModel.scope;
-    scope.camera.position.copy(stage.camera.position);
-    scope.camera.quaternion.copy(stage.camera.quaternion);
-    scope.camera.updateMatrixWorld();
-    const restore = revealOnePerPipeline(stage.scene);
-    const prev = stage.renderer.getRenderTarget();
-    stage.renderer.setRenderTarget(scope.target);
-    let job: Promise<unknown>;
-    try {
-      job = stage.renderer.compileAsync(stage.scene, scope.camera);
-    } finally {
-      stage.renderer.setRenderTarget(prev);
-      restore();
-    }
-    const t0 = performance.now();
-    job.then(
-      () => console.log(`scope shaders built in the background in ${((performance.now() - t0) / 1000).toFixed(1)} s`),
-      (err: unknown) => console.warn('scope shader pre-build failed; they compile on first use:', err),
-    );
+    // The rifle scope draws the world again into its own half-float target (optics.ts), so every material
+    // needs a second build for it; left to the first look through the scope they all built at once, a stall
+    // of ~10 s on a phone. One look through it here, with everything shown, builds them behind the loading
+    // screen. (A background build with compileAsync after play began hung like the loading screen's did.)
+    warmAllPipelines(this.stage.scene, () => {
+      this.stage.render();
+      this.viewModel.renderScope(this.stage.renderer, this.stage.scene, this.stage.camera.position);
+    });
   }
 
   get adaptedEv(): number {
@@ -501,29 +466,7 @@ export class GameView {
   }
 }
 
-const PRECOMPILE_TIMEOUT_MS = Number(new URLSearchParams(location.search).get('pct')) || 20000;
 
-/**
- * Shader pre-compilation behind the loading screen (rules §9). A phone GPU can
- * take very long, or a single failing pipeline can reject the whole batch;
- * neither may leave the player stuck on the loading screen, so after the
- * timeout (or a failure) loading carries on and anything left compiles on
- * first use.
- */
-async function precompile(job: Promise<unknown>): Promise<void> {
-  let timer = 0;
-  const timeout = new Promise<'timeout'>((resolve) => {
-    timer = window.setTimeout(() => resolve('timeout'), PRECOMPILE_TIMEOUT_MS);
-  });
-  try {
-    const result = await Promise.race([job, timeout]);
-    if (result === 'timeout') console.warn(`shader pre-compilation still running after ${PRECOMPILE_TIMEOUT_MS / 1000} s; continuing, the rest compiles on first use`);
-  } catch (err) {
-    console.error('shader pre-compilation failed; continuing, the renderer reports the failing material:', err);
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
 
 /** The city's streets in the urban scans, the forest and the range in the woodland ones. */
 function hdriSetting(mapId: string): HdriSetting {

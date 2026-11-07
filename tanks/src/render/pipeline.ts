@@ -33,7 +33,7 @@ import {
   vec4,
   velocity,
 } from 'three/tsl';
-import { ACESFilmicToneMapping, AgXToneMapping, Color, HalfFloatType, type Node, type PassNode, type PerspectiveCamera, RenderPipeline, type Scene, SRGBColorSpace, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, AgXToneMapping, Color, HalfFloatType, type Node, type PerspectiveCamera, RenderPipeline, type Scene, SRGBColorSpace, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import type { QualityPreset } from '../config';
 import { hash12 } from './nodes';
 import { isTouchDevice } from '../ui/touch.ts';
@@ -116,8 +116,6 @@ export class Pipeline {
   private scene: Scene;
   camera: PerspectiveCamera;
   thermalOn = false;
-  /** The pass the scene is drawn in (half-float colour, velocity, normals with GTAO): what its materials are built for. */
-  scenePass: PassNode | null = null;
   /** 0..1 fraction of the preset's pixel ratio, set by the frame-time governor */
   renderScale = 1;
   /** governor may switch ambient occlusion off before touching resolution */
@@ -181,7 +179,6 @@ export class Pipeline {
 
   private build(q: QualityPreset): void {
     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
-    this.scenePass = scenePass;
     // TRAA on both presets: on a phone it is what keeps the 2× picture (grass, foliage, wires) from
     // shimmering, and a velocity target costs far less than the pixels FXAA would need to match it.
     // The normal target exists only for GTAO (config: off on both presets for now), so it costs nothing without it.
