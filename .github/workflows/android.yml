@@ -1,5 +1,5 @@
 # Builds the games as Android APKs on every push to main (and on demand),
-# uploads them as a workflow artifact, and publishes them on a rolling
+# and publishes them on a rolling
 # "android-latest" GitHub release so they can be downloaded straight to a phone.
 #
 # Tanks is always signed with its committed sideload key (android/app), so it
@@ -74,11 +74,17 @@ jobs:
           APP_VERSION_NAME: 1.0.${{ github.run_number }}
         run: bash android/build-apks.sh
 
+      # Main's APKs go to the release below, whose files do not count against the Actions
+      # storage quota; an artifact of every run (five APKs kept 90 days) filled that quota
+      # and failed the build. Only builds of other branches, which have no release, upload
+      # one, kept for three days.
       - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/main'
         with:
           name: android-apks
           path: android/out/*.apk
           if-no-files-found: error
+          retention-days: 3
 
       - name: Publish the android-latest release
         if: github.ref == 'refs/heads/main'
