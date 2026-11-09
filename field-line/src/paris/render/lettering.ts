@@ -39,7 +39,8 @@ export function letteringTexture(): CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = rowH * LETTERING_ASPECT;
   canvas.height = rowH * LETTERING_ROWS;
-  const ctx = canvas.getContext('2d');
+  // In memory, not on the GPU: drawn once, then copied into a WebGPU texture, and a GPU canvas's copy reads it back across contexts (seconds on software GPUs).
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2d canvas unavailable for the shop lettering');
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';

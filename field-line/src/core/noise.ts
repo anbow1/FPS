@@ -11,20 +11,39 @@ function fade(t: number): number {
   return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
+/**
+ * Each lattice point's gradient direction, from the top 16 bits of its hash: a table instead of a cosine and
+ * a sine per corner. Terrain and scatter call this tens of millions of times while the game loads, and the
+ * two trig calls were most of it (4× faster; the angles move by at most 1e-4 rad, heights by a millimetre).
+ */
+const GRAD_BITS = 16;
+const GRAD_X = new Float64Array(1 << GRAD_BITS);
+const GRAD_Y = new Float64Array(1 << GRAD_BITS);
+for (let i = 0; i < 1 << GRAD_BITS; i++) {
+  const a = ((i + 0.5) / (1 << GRAD_BITS)) * Math.PI * 2;
+  GRAD_X[i] = Math.cos(a);
+  GRAD_Y[i] = Math.sin(a);
+}
+
+/** The gradient at lattice point (cx, cy) dotted with the offset (dx, dy); hash2's bits, unscaled. */
+function grad(cx: number, cy: number, seed: number, dx: number, dy: number): number {
+  let h = (cx * 374761393 + cy * 668265263 + seed * 144269504) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  const k = h >>> (32 - GRAD_BITS);
+  return (GRAD_X[k] as number) * dx + (GRAD_Y[k] as number) * dy;
+}
+
 /** 2D gradient noise in about [-1, 1]. */
 export function noise2(x: number, y: number, seed = 0): number {
   const ix = Math.floor(x);
   const iy = Math.floor(y);
   const fx = x - ix;
   const fy = y - iy;
-  const g = (cx: number, cy: number, dx: number, dy: number): number => {
-    const a = hash2(cx, cy, seed) * Math.PI * 2;
-    return Math.cos(a) * dx + Math.sin(a) * dy;
-  };
-  const n00 = g(ix, iy, fx, fy);
-  const n10 = g(ix + 1, iy, fx - 1, fy);
-  const n01 = g(ix, iy + 1, fx, fy - 1);
-  const n11 = g(ix + 1, iy + 1, fx - 1, fy - 1);
+  const n00 = grad(ix, iy, seed, fx, fy);
+  const n10 = grad(ix + 1, iy, seed, fx - 1, fy);
+  const n01 = grad(ix, iy + 1, seed, fx, fy - 1);
+  const n11 = grad(ix + 1, iy + 1, seed, fx - 1, fy - 1);
   const u = fade(fx);
   const v = fade(fy);
   return (n00 + (n10 - n00) * u + (n01 - n00) * v + (n00 - n10 - n01 + n11) * u * v) * 1.41;

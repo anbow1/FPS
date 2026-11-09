@@ -438,7 +438,8 @@ function rangeSign(p: MapProp, lib: MaterialLibrary): Group {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 128;
-  const ctx = canvas.getContext('2d');
+  // In memory, not on the GPU: drawn once, then copied into a WebGPU texture, and a GPU canvas's copy reads it back across contexts (seconds on software GPUs).
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2D canvas unavailable for range sign labels');
   ctx.fillStyle = '#d6d6d0'; // sheet road paint: never pure white
   ctx.fillRect(0, 0, 256, 128);

@@ -72,11 +72,23 @@ interface GridSpec {
   cellM: number;
 }
 
+function gridHeights(spec: GridSpec, nx: number, nz: number): Float32Array {
+  const heights = new Float32Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) heights[j * nx + i] = heightAt(spec.x0 + i * spec.cellM, spec.z0 + j * spec.cellM);
+  return heights;
+}
+
+/** The near mesh's height grid: the mesh and the grass field both stand on it, so it is computed once. */
+let nearGrid: Float32Array | null = null;
+function nearHeights(): Float32Array {
+  nearGrid ??= gridHeights(NEAR, Math.round((NEAR.x1 - NEAR.x0) / NEAR.cellM) + 1, Math.round((NEAR.z1 - NEAR.z0) / NEAR.cellM) + 1);
+  return nearGrid;
+}
+
 function buildGrid(spec: GridSpec, trees: { x: number; z: number; r: number }[], isNear: boolean): BufferGeometry {
   const nx = Math.round((spec.x1 - spec.x0) / spec.cellM) + 1;
   const nz = Math.round((spec.z1 - spec.z0) / spec.cellM) + 1;
-  const heights = new Float32Array(nx * nz);
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) heights[j * nx + i] = heightAt(spec.x0 + i * spec.cellM, spec.z0 + j * spec.cellM);
+  const heights = spec === NEAR ? nearHeights() : gridHeights(spec, nx, nz);
   const h = (i: number, j: number): number => heights[Math.min(nz - 1, Math.max(0, j)) * nx + Math.min(nx - 1, Math.max(0, i))] as number;
   const insideNear = (x: number, z: number, margin: number): boolean => x > NEAR.x0 + margin && x < NEAR.x1 - margin && z > NEAR.z0 + margin && z < NEAR.z1 - margin;
 
@@ -427,8 +439,7 @@ function groundMaterial(caustics: Caustics): MeshStandardNodeMaterial {
 export function grassInputs(world: LagoonWorld, clear: (x: number, z: number) => boolean) {
   const nx = Math.round((NEAR.x1 - NEAR.x0) / NEAR.cellM) + 1;
   const nz = Math.round((NEAR.z1 - NEAR.z0) / NEAR.cellM) + 1;
-  const heights = new Float32Array(nx * nz);
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) heights[j * nx + i] = heightAt(NEAR.x0 + i * NEAR.cellM, NEAR.z0 + j * NEAR.cellM);
+  const heights = nearHeights();
   const bin = binTrees([...world.palms.map((p) => ({ x: p.x, z: p.z, r: 2.2 })), ...world.trees.map((t) => ({ x: t.x, z: t.z, r: t.heightM * 0.28 }))]);
   const cellM = 1;
   const size = Math.ceil(Math.max(NEAR.x1 - NEAR.x0, NEAR.z1 - NEAR.z0) / cellM) + 1;

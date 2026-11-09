@@ -27,7 +27,8 @@ function designatorTexture(): CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 256;
-  const g = c.getContext('2d');
+  // In memory, not on the GPU: drawn once, then copied into a WebGPU texture, and a GPU canvas's copy reads it back across contexts (seconds on software GPUs).
+  const g = c.getContext('2d', { willReadFrequently: true });
   if (!g) throw new Error('2D canvas unavailable for the runway designators');
   g.fillStyle = '#000';
   g.fillRect(0, 0, 512, 256);

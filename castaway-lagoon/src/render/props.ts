@@ -353,7 +353,9 @@ function canvasTexture(w: number, h: number, draw: (c: CanvasRenderingContext2D)
   const el = document.createElement('canvas');
   el.width = w;
   el.height = h;
-  const ctx = el.getContext('2d');
+  // In memory, not on the GPU: drawn once, then copied into a WebGPU texture, and a GPU canvas's copy
+  // reads it back across contexts (seconds per texture on software GPUs, the first one most).
+  const ctx = el.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2d canvas unavailable for prop textures');
   draw(ctx);
   const t = new CanvasTexture(el);

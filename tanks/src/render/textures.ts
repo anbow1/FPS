@@ -72,7 +72,8 @@ function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContex
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
-  const ctx = c.getContext('2d');
+  // In memory, not on the GPU: drawn once, then copied into a WebGPU texture, and a GPU canvas's copy reads it back across contexts (seconds on software GPUs).
+  const ctx = c.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2D canvas unavailable');
   return [c, ctx];
 }

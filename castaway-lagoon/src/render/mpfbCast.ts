@@ -193,7 +193,10 @@ function packAtlas(g: BufferGeometry, groups: readonly GroupJson[], pictures: re
   }
 
   const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(edge, edge) : Object.assign(document.createElement('canvas'), { width: edge, height: edge });
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  // In memory, not on the GPU: the atlas is drawn once and copied into a WebGPU texture, and copying a GPU
+  // canvas reads it back across contexts (eight seconds per 2048² atlas on a software GPU; in memory it is
+  // a plain upload).
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
   groups.forEach((grp, i) => {
     const t = tiles[i] as Tile;
     const pic = pictures[i];

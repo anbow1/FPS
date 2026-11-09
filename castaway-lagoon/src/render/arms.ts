@@ -96,7 +96,8 @@ function tattooTexture(): CanvasTexture {
   const el = document.createElement('canvas');
   el.width = 256;
   el.height = 256;
-  const c = el.getContext('2d');
+  // In memory: drawn once and uploaded (see props.ts canvasTexture).
+  const c = el.getContext('2d', { willReadFrequently: true });
   if (!c) throw new Error('2d canvas unavailable for the tattoo texture');
   c.fillStyle = `#${SKIN_HEX.toString(16).padStart(6, '0')}`;
   c.fillRect(0, 0, 256, 256);
