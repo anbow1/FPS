@@ -167,6 +167,12 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
 
 ### G4. Tanks i Ridgeline — trawa jak „grzebień” i w rzędach
 
+> **Stan: krok 1 zrobiony (b4cbdcc), krok 2 cofnięty, krok 3 niewykonany.** Plik `grassField.ts` jest
+> teraz identyczny w czterech grach. Rozrzut korzeni 1,8 odstępu (opcja `jitterScale`) nie dał wyraźnej
+> różnicy na zrzutach (Ridgeline z 60 m: żadnej, Tanks: rzędy nieco słabsze, pionowe „kreskowanie” zostaje),
+> więc cofnięty. Kolory źdźbeł w obu grach były już strojone w pętlach krytyka — zmiana koloru to ocena
+> obrazu, dla mocniejszego modelu.
+
 - **Widok:** `--game tanks --extra '&q=high' --views '[{"spot":"road","name":"road"},{"spot":"village","name":"village"}]'`;
   `--game ridgeline --views '[{"mode":"chase","name":"chase"}]'`
 - **Objaw:** z kamery kilka metrów nad ziemią źdźbła stoją w widocznych
@@ -211,6 +217,11 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
 
 ### G6. Contrail — fioletowe pola w cieniu chmur, białe kropki lasu
 
+> **Stan: zrobione** (aeb2b47, 49aa3c1). Przyczyna kropek była inna niż zakładana: to nie jasny kolor koron,
+> tylko połysk (odbicie nieba) płaskich kart bocznych impostorów — materiał bez odbicia
+> (`specularIntensity: 0`), ta sama poprawka w Ridgeline (eb99f1e). Dno cienia chmury 0,15: pole w cieniu
+> (106,101,95) → (115,109,100) — mniej fioletu, nie zero. 60 potoków przed i po.
+
 - **Widok:** `--game contrail --extra '&spawn=air&alt=900' --views '[{"mode":"chase","name":"chase","frames":20}]'`
 - **Objaw 1:** zaorane pola w cieniu chmury są fioletowo-bordowe. Paleta gleby
   (`contrail/src/render/terrainMesh.ts`, `lin(0x6b5a47)`) jest poprawna; kolor
@@ -235,6 +246,9 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
 
 ### G7. Ridgeline — rzeka bez brzegu, łąka jednolita
 
+> **Stan: (a)+(b) zrobione (aedc391), (c) cofnięte.** Brzeg z mułu i żwiru, jaśniejsza płycizna. Wolna oktawa
+> plam łąki nie zmieniła pomiaru (odchylenie jasności 7,2 → 6,7), więc jej nie ma.
+
 - **Widok:** `--game ridgeline --extra '&spawn=air&alt=60' --views '[{"mode":"chase","name":"chase","frames":20}]'`
 - **Objaw:** rzeka jest granatowym kształtem o ostrej krawędzi, bez pasa
   brzegu; łąki to jeden odcień zieleni aż po las.
@@ -252,6 +266,11 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
   (zrzut z `alt=600`).
 
 ### G8. Tanks — niebo liliowo-szare, asfalt bez faktury
+
+> **Stan: zrobione częściowo** (2aadb99, dad2449). Zenit ciemniejszy i bardziej niebieski
+> ((127,140,167) → (110,126,156)), ale niebo nadal szaroniebieskie: przykrywa je cienki welon chmur
+> (`cloudSky` w `lighting.ts`, pokrycie 0,42) — to już projekt nieba, dla mocniejszego modelu. Asfalt:
+> 0,06 z łatami 25 m i 3 m, średnia 69 → 78, zmienność 7,3 → 9,4.
 
 - **Widok:** `--game tanks --extra '&q=high' --views '[{"spot":"town","name":"town"},{"spot":"spawn","name":"spawn"}]'`
 - **Objaw 1:** niebo w południe jest płaskie, liliowo-szare (bez gradientu
@@ -272,6 +291,10 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
   potoki i draw calle bez zmian.
 
 ### G9. Kokpity — Contrail i Ridgeline
+
+> **Stan: oddane mocniejszemu modelowi (§5).** Szara „glina” w kabinie Ridgeline to wnętrze importowanego
+> modelu śmigłowca (`importedHeli.ts`), nie materiał ze stałymi; hełm ma już ciemny oliwkowy kolor
+> (`heliModel.ts`, 0x4a4d45) — jasny jest od oświetlenia. Wymaga zbadania materiałów modelu.
 
 - **Widok:** `--game contrail --extra '&spawn=air&alt=900' --views '[{"mode":"cockpit","name":"cockpit"}]'`,
   to samo dla `ridgeline` (`alt=60`).
@@ -305,6 +328,12 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
   szyb odbija niebo.
 
 ### G11. Lagoon — drobiazgi z poprzedniego przeglądu
+
+> **Stan: maska sprawdzona i cofnięta; AK i kropka niewykonane.** AO spodu maski faktycznie jest bardzo niskie
+> (ćwierć wartości ≤ 0,074), ale podniesienie go do 0,35 nie zmieniło obrazu (średnia 8 → 9 na 255): spód
+> jest czarny z innego powodu — do sprawdzenia normalne spodu (karta jednostronna) i światło od piasku.
+> Skrypt zrzutu z otwartą maską: `jeepbonnet.mjs` (opis w historii sesji; łatwy do odtworzenia na
+> `tools/measure/lib.mjs`).
 
 - Spód otwartej maski jeepa jest prawie czarny (`castaway-lagoon/src/render/jeepModel.ts`,
   AO z `color_1`): ogranicz dolną wartość AO dla węzła `bonnet` do ~0,35.

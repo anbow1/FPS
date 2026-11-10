@@ -1467,6 +1467,21 @@ and its state: `docs/wytyczne-prace-rutynowe.md` §3. What was learnt:
   a 2 m card with one spray of eleven leaves made half-metre leaves. Several
   smaller sprays on the same texture (`broadleafCluster(…, sprays)`) cost
   nothing and turned origami into foliage.
+- **Impostors are matte** (Contrail, Ridgeline `forest.ts`): a crown is a
+  volume of leaves, not a surface. With the ordinary specular, the flat side
+  cards of the impostors mirrored the sky at a grazing look and dotted every
+  forest seen from the air with pale grey posts. `specularIntensity: 0` on a
+  physical material, as the grass's `matte` option; one material, the same
+  pipelines.
+- **A cloud's shadow keeps a floor** (Contrail `clouds.ts`): under a cloud the
+  cloud itself sends down the light it scatters. Without it only the blue sky
+  lit the ground and brown fields turned violet; 15 % of the sun is enough.
+- **A river needs a bank**: a band of wet silt on the land side of the water's
+  cover edge, and lighter shallows over it (Ridgeline `terrainMesh.ts`).
+- **Half of the guesses were wrong.** Of eleven tasks written from screenshots,
+  the stated cause held for five; the others were found to be something else
+  (exposure, specular, a mesh's light rather than its occlusion) or changed
+  nothing measurable and were reverted. Measure before and after every one.
 - **Find the pixel's owner before changing its colour.** Bright specks in a
   far meadow survived fading the grass's dry tips; hiding the grass removed
   them all, and their colour had not moved — the blades themselves, not their
