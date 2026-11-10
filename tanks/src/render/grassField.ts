@@ -136,6 +136,8 @@ export interface GrassOptions {
    * from a camera several metres up (Tanks) it turns a meadow into dark dashes.
    */
   rootShade?: number;
+  /** Skylight lost under the canopy at full shade (the density map's fourth channel), 0 = none. */
+  shadeOcclusion?: number;
   /**
    * Lean multiplier (default 1). Seen from several metres up (a tank's commander), upright blades
    * project as parallel vertical strokes and a meadow reads as corduroy; leaning them further, each its
@@ -323,6 +325,11 @@ export class GrassField {
     // lit mostly as the ground it covers, a little as the blade: no black backs, no glare
     const nW = normalize(vec3(0, 1, 0).mul(0.6).add(vN.mul(faceDirection).mul(0.4)));
     m.normalNode = normalize(cameraViewMatrix.mul(vec4(nW, 0)).xyz);
+    // The canopy's sky occlusion, as the ground under it takes it (indirect light only; the sun has real
+    // shadows): without it a blade in a crown's shade got twice the ground's skylight and stood out pale
+    // against the dark litter it grows from (photo critic loop, both games).
+    const occlusion = opts.shadeOcclusion ?? 0;
+    if (occlusion > 0) m.aoNode = varying(float(1).sub(shade.mul(occlusion)), 'vGrassAo');
     this.material = m;
 
     RING_SEGMENTS.forEach((S, ringIdx) => {
