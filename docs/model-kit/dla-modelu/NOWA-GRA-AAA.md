@@ -11,11 +11,12 @@ model. Reguły techniczne są w `AGENT.md`, `rules/games-ts-threejs.md`,
 `docs/graphics-playbook.md`. Ten plik mówi, **w jakiej kolejności i do jakiej
 poprzeczki**, i wygrywa z nimi tylko tam, gdzie mówi o kolejności pracy.
 
-Start: `node docs/model-kit/new-test.mjs --new <nazwa> <folder>` układa folder
-(reguły, tablice, narzędzia, ten plik jako `NOWA-GRA-AAA.md`, formularz opisu
-`games/<nazwa>/OPIS.md`) i zapisuje `FIRST-MESSAGE.md` — pierwszą wiadomość dla
-modelu. Wypełnij `OPIS.md`, dołóż zdjęcia do `games/<nazwa>/references/`, wklej
-wiadomość.
+Start: skopiuj cały katalog `docs/nowa-gra-AAA/` do pustego folderu projektu —
+ma wszystko, czego trzeba (jego `README.md` prowadzi w trzech krokach).
+Wypełnij `games/nowa-gra/OPIS.md`, dołóż zdjęcia do
+`games/nowa-gra/references/`, wklej modelowi `FIRST-MESSAGE.md`. To samo z
+własną nazwą gry i z wariantem bez gotowych rozwiązań układa
+`node docs/model-kit/new-test.mjs --new <nazwa> <folder> [--fair]`.
 
 ---
 

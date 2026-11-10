@@ -6,7 +6,7 @@ model (Fable) zostaje do projektowania nowych technik, sporów o ocenę obrazu i
 debugowania wnętrza three.js — lista w §5.
 
 Plany, do których te zadania należą: `docs/przebudowa-gier-aaa.md`
-(przebudowa pięciu gier, etapy 0–5) i `docs/nowa-gra-aaa.md` (nowa gra, etapy
+(przebudowa pięciu gier, etapy 0–5) i `docs/nowa-gra-AAA/NOWA-GRA-AAA.md` (nowa gra, etapy
 0–8). Oba mają tabelę „podział pracy między modele”: to, co stoi w kolumnie
 lżejszego modelu, wykonujesz wg §1 i §2 tego pliku.
 

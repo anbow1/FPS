@@ -62,7 +62,7 @@ kształcie.
    `dla-ciebie/grading/<gra>/GRADING.md`.
 
 Nowa gra: najprościej przez `new-test.mjs --new` (wyżej) i
-`docs/nowa-gra-aaa.md`; ręcznie — napisz `games/<nowa-gra>/BRIEF.md` w tym samym układzie (co
+`docs/nowa-gra-AAA/NOWA-GRA-AAA.md`; ręcznie — napisz `games/<nowa-gra>/BRIEF.md` w tym samym układzie (co
 zbudować, twarde reguły, funkcje z kryteriami akceptacji, budżety, kolejność
 budowy) i ocenę z `dla-ciebie/GRADING-template.md`. Reguły i kontrakt graficzny
 działają bez zmian.

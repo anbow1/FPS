@@ -8,7 +8,7 @@ potok idzie przed treścią, a pilot przed powielaniem.
 Reguły techniczne: `AGENT.md`, `games-ts-threejs.md`; sposób budowy technik:
 `docs/graphics-playbook.md`; narzędzia pomiaru: `tools/measure/`; prace
 rutynowe dla lżejszego modelu: `docs/wytyczne-opus.md`. Nowa gra od zera:
-`docs/nowa-gra-aaa.md`.
+`docs/nowa-gra-AAA/NOWA-GRA-AAA.md`.
 
 ---
 

@@ -85,7 +85,7 @@ feature**, because every later claim leans on it:
 `docs/model-kit/` packs these rules, the briefs and the tools for handing to a
 model; `node docs/model-kit/new-test.mjs` lays out a fresh project folder for one
 (`--new <name>` for a game the user only describes). The plans built on this
-playbook: `docs/nowa-gra-aaa.md` (a new game, stage by stage, with the rules of
+playbook: `docs/nowa-gra-AAA/NOWA-GRA-AAA.md` (a new game, stage by stage, with the rules of
 what brings realism and what must come first: compressed textures, levels of
 detail, few shader variants) and `docs/przebudowa-gier-aaa.md` (the same rules
 applied to the five games here).
