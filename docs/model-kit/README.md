@@ -47,6 +47,10 @@ kształcie.
   tablice, narzędzia i brief tej gry, zapisuje `FIRST-MESSAGE.md` (tekst do
   wklejenia modelowi) i `TEST-RUN.md` (wariant testu i commit zestawu).
   `--fair` pomija `docs/` i `shared-src/`. Działa w PowerShellu i w bashu.
+  **Nowa gra bez briefu:** `node docs/model-kit/new-test.mjs --new <nazwa> <folder>`
+  — dokłada `NOWA-GRA-AAA.md` (reguły R1–R12 i etapy 0–8) oraz formularz
+  `games/<nazwa>/OPIS.md`: opisujesz rodzaj gry, zasady i otoczenie, a model
+  sam pisze brief, budżet i plan assetów i czeka na akceptację.
 
 ## Jak zacząć
 
@@ -57,7 +61,8 @@ kształcie.
 3. Po każdym etapie model raportuje w formacie ze `START.md`; sprawdzaj według
    `dla-ciebie/grading/<gra>/GRADING.md`.
 
-Nowa gra: napisz `games/<nowa-gra>/BRIEF.md` w tym samym układzie (co
+Nowa gra: najprościej przez `new-test.mjs --new` (wyżej) i
+`docs/nowa-gra-aaa.md`; ręcznie — napisz `games/<nowa-gra>/BRIEF.md` w tym samym układzie (co
 zbudować, twarde reguły, funkcje z kryteriami akceptacji, budżety, kolejność
 budowy) i ocenę z `dla-ciebie/GRADING-template.md`. Reguły i kontrakt graficzny
 działają bez zmian.

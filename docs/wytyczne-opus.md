@@ -5,6 +5,11 @@ opisane krok po kroku, mają kryterium odbioru i sposób pomiaru. Mocniejszy
 model (Fable) zostaje do projektowania nowych technik, sporów o ocenę obrazu i
 debugowania wnętrza three.js — lista w §5.
 
+Plany, do których te zadania należą: `docs/przebudowa-gier-aaa.md`
+(przebudowa pięciu gier, etapy 0–5) i `docs/nowa-gra-aaa.md` (nowa gra, etapy
+0–8). Oba mają tabelę „podział pracy między modele”: to, co stoi w kolumnie
+lżejszego modelu, wykonujesz wg §1 i §2 tego pliku.
+
 **Jak użyć:** pierwsza wiadomość do modelu:
 
 > Przeczytaj `AGENT.md`, `games-ts-threejs.md` i `docs/wytyczne-opus.md`.

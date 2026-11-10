@@ -14,6 +14,8 @@ note='> **Note for a model reading this in the kit:** file paths below point at 
 '
 { printf '%s\n' "$note"; cat "$repo/docs/graphics-playbook.md"; } > "$kit/dla-modelu/docs/graphics-playbook.md"
 cp "$repo/docs/graphics-rules-template.md" "$kit/dla-modelu/docs/graphics-rules-template.md"
+# The guide for a game that has no brief yet: the user describes it, the model writes the brief (new-test.mjs --new).
+cp "$repo/docs/nowa-gra-aaa.md" "$kit/dla-modelu/NOWA-GRA-AAA.md"
 cp "$repo"/references/*.png "$repo/references/_generate_references.py" "$kit/dla-modelu/reference-sheets/"
 
 # The tools a new game is measured and fed with: the headless probes (tools/measure) and the Blender
