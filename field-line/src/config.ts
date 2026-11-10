@@ -1,6 +1,7 @@
 // Every tunable in the game lives here, in SI units, with a source or a
 // "tuned by hand" note. Systems import from this file; they hold no magic numbers.
 
+import type { MapId } from './maps/types.ts';
 export const PHYSICS = {
   stepSeconds: 1 / 60, // fixed 60 Hz step, rules §5
   maxStepsPerFrame: 5, // after a long stall we drop time instead of spiralling
@@ -444,6 +445,11 @@ export const EXPOSURE = {
   // EV100 clamp per map, relative to the preset EV — an interior can drop
   // ~6 stops below the street, never above it.
   minEvBelowPreset: 7,
+  // Outdoors there is no room to walk into: the darkest a place gets by day is the shade of a canopy,
+  // 2–3 stops under open sun. Allowed the room's 7, the forest metered its shaded floor (3.4 stops under
+  // the preset at the spawn) and the sunflecks on the litter burnt out white (screenshot tour). Maps not
+  // listed keep minEvBelowPreset.
+  minEvBelowPresetOutdoors: { range: 2.5, forest: 2.5 } as Partial<Record<MapId, number>>,
   // At night the eye's range is the street's: dark-adapted it sees a lit street as dim, not as day. The
   // 7 stops are for a room by day; at night they turned a lamp-lit street into an orange noon.
   minEvBelowPresetNight: 2,
