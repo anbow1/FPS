@@ -32,10 +32,15 @@ export function buildRange(): MapData {
 
   // Covered firing line: a concrete pad, a roof on posts, a bench and sandbag rests.
   b.boxOnBase('concrete', 0, 0, 1.5, 24, 0.12, 6);
-  b.boxOnBase('roofTar', 0, 3.1, 2.0, 24, 0.25, 7);
+  // A timber roof: boarded underneath, felt only on top. The whole slab was felt (albedo ~0.04), so its
+  // underside, lit only by what the pad and the grass bounce up, read as a black band across the view;
+  // so did the dark steel posts against the sky. Both are timber now: the map's existing wood look, so
+  // the merged world mesh gains neither a material nor a draw call.
+  b.boxOnBase('wood', 0, 3.1, 2.0, 24, 0.21, 7);
+  b.boxOnBase('roofTar', 0, 3.31, 2.0, 24, 0.04, 7);
   for (const x of [-11.5, -4, 4, 11.5]) {
-    b.boxOnBase('metalDark', x, 0.12, -1.2, 0.2, 3.0, 0.2);
-    b.boxOnBase('metalDark', x, 0.12, 5.2, 0.2, 3.0, 0.2);
+    b.boxOnBase('wood', x, 0.12, -1.2, 0.2, 3.0, 0.2);
+    b.boxOnBase('wood', x, 0.12, 5.2, 0.2, 3.0, 0.2);
   }
   b.boxOnBase('wood', 3.5, 0.12, -0.6, 2.2, 0.8, 0.8); // bench
   b.boxOnBase('sandbag', -3.0, 0.12, -1.0, 1.6, 0.35, 0.6); // prone rest
