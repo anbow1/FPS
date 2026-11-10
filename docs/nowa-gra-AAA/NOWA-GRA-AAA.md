@@ -365,7 +365,10 @@ raportu. Budżety pamięci i ładowania z Etapu 2 muszą być dotrzymane.
 
 ### Podział pracy między modele
 
-| Mocniejszy model | Lżejszy model (wg `docs/wytyczne-opus.md`) |
+Jeden model może wykonać wszystko — tak wygląda test porównawczy modeli. Gdy
+masz do dyspozycji dwa poziomy modeli, dziel pracę tak:
+
+| Mocniejszy model | Lżejszy model (wg `docs/wytyczne-prace-rutynowe.md`) |
 |---|---|
 | Etap 0 (brief, budżet, plan assetów) | pobieranie i przygotowanie assetów skryptami |
 | pierwszy egzemplarz każdego elementu potoku (Etap 2) | przepuszczenie pozostałych plików przez potok |

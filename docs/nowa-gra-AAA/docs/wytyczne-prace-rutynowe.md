@@ -1,9 +1,10 @@
-# Wytyczne dla modelu Opus — prace rutynowe w repozytorium FPS
+# Wytyczne dla prac rutynowych w repozytorium FPS (dowolny model)
 
-Ten plik spisuje zadania, które **nie wymagają mocniejszego modelu**: są
-opisane krok po kroku, mają kryterium odbioru i sposób pomiaru. Mocniejszy
-model (Fable) zostaje do projektowania nowych technik, sporów o ocenę obrazu i
-debugowania wnętrza three.js — lista w §5.
+Ten plik spisuje zadania, które **nie wymagają najmocniejszego modelu**: są
+opisane krok po kroku, mają kryterium odbioru i sposób pomiaru. Nadaje się dla
+każdego modelu, który umie czytać pliki, uruchamiać polecenia i oglądać
+zrzuty ekranu. Mocniejszy model zostaje do projektowania nowych technik,
+sporów o ocenę obrazu i debugowania wnętrza three.js — lista w §5.
 
 Plany, do których te zadania należą: `docs/przebudowa-gier-aaa.md`
 (przebudowa pięciu gier, etapy 0–5) i `docs/nowa-gra-AAA/NOWA-GRA-AAA.md` (nowa gra, etapy
@@ -12,7 +13,7 @@ lżejszego modelu, wykonujesz wg §1 i §2 tego pliku.
 
 **Jak użyć:** pierwsza wiadomość do modelu:
 
-> Przeczytaj `AGENT.md`, `games-ts-threejs.md` i `docs/wytyczne-opus.md`.
+> Przeczytaj `AGENT.md`, `games-ts-threejs.md` i `docs/wytyczne-prace-rutynowe.md`.
 > Wykonaj zadanie `<numer>` z §3 (albo §4) dokładnie według §1 i §2. Odpowiadaj po polsku.
 
 ---
@@ -87,7 +88,7 @@ kill %1
   kilkanaście sekund. Długie polecenia uruchamiaj w tle i czekaj na wynik; nie
   uruchamiaj trzech przeglądarek naraz (4 rdzenie).
 - Commit: jedna sprawa na commit, w treści liczby przed/po. Stopka commita jak
-  w dotychczasowej historii (`git log -3`), z nazwą modelu, który pisał.
+  w dotychczasowej historii (`git log -3`), z nazwą modelu, który pisał (porównując modele, zapisuj ją też w raporcie).
 
 ---
 

@@ -22,6 +22,7 @@ budżetów i plan assetów i czeka na Twoją akceptację. Potem idzie etapami 1�
 |---|---|
 | `NOWA-GRA-AAA.md` | **przewodnik**: reguły R1–R12 (co daje realizm, co musi być najpierw: KTX2, poziomy szczegółowości, mało wariantów shaderów), etapy 0–8 z kryterium odbioru, podział pracy między modele, techniki i silniki na później |
 | `FIRST-MESSAGE.md` | pierwsza wiadomość do modelu |
+| `TEST-RUN.md` | karta przebiegu: który model, który wariant, wyniki — do porównań |
 | `games/nowa-gra/OPIS.md` | formularz, który wypełniasz |
 | `games/nowa-gra/references/` | Twoje zdjęcia miejsca i nastroju |
 | `AGENT.md` | ogólne zasady pracy agenta |
@@ -33,7 +34,7 @@ budżetów i plan assetów i czeka na Twoją akceptację. Potem idzie etapami 1�
 | `tools/assets/` | skrypty Blendera: modele pojazdów i broni, postacie, klipy ruchu |
 | `shared-src/` | pliki źródłowe do skopiowania bez zmian (rozgrzewka potoków, wspólne shadery instancji, pomiar, szum) |
 | `docs/graphics-playbook.md` | jak zbudowano i zmierzono każdą technikę w grach wzorcowych |
-| `docs/wytyczne-opus.md` | zasady (§1) i procedura pomiaru (§2) dla prac rutynowych lżejszym modelem; §3–§4 to zadania gier wzorcowych — w nowym projekcie pomiń je, a gałąź i nazwy gier zastąp własnymi |
+| `docs/wytyczne-prace-rutynowe.md` | zasady (§1) i procedura pomiaru (§2) dla prac rutynowych lżejszym modelem; §3–§4 to zadania gier wzorcowych — w nowym projekcie pomiń je, a gałąź i nazwy gier zastąp własnymi |
 
 ## Uwagi
 
@@ -44,7 +45,12 @@ budżetów i plan assetów i czeka na Twoją akceptację. Potem idzie etapami 1�
   reguł.
 - Ten katalog jest **kopią generowaną**: źródłem są pliki w repozytorium FPS
   (`AGENT.md`, `docs/graphics-playbook.md`, `tools/measure/`, …). Ręcznie edytuje
-  się tu tylko `README.md`, `NOWA-GRA-AAA.md` i `FIRST-MESSAGE.md`; resztę
+  się tu tylko `README.md`, `NOWA-GRA-AAA.md`, `FIRST-MESSAGE.md` i `TEST-RUN.md`; resztę
   odświeża `bash docs/model-kit/sync.sh`.
+- **Porównanie modeli:** każdemu modelowi daj świeżą kopię katalogu, ten sam
+  `OPIS.md` i tę samą pierwszą wiadomość; model i wariant zapisz w
+  `TEST-RUN.md`. Wytyczne nie zakładają żadnego konkretnego modelu.
+- Angielski bliźniak tego katalogu: `docs/new-game-AAA/` — zmiana w
+  przewodniku idzie do obu.
 - Przebudowa istniejących gier ma własny plan: `docs/przebudowa-gier-aaa.md` w
   repozytorium FPS.

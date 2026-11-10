@@ -7,7 +7,7 @@ potok idzie przed treścią, a pilot przed powielaniem.
 
 Reguły techniczne: `AGENT.md`, `games-ts-threejs.md`; sposób budowy technik:
 `docs/graphics-playbook.md`; narzędzia pomiaru: `tools/measure/`; prace
-rutynowe dla lżejszego modelu: `docs/wytyczne-opus.md`. Nowa gra od zera:
+rutynowe dla lżejszego modelu: `docs/wytyczne-prace-rutynowe.md`. Nowa gra od zera:
 `docs/nowa-gra-AAA/NOWA-GRA-AAA.md`.
 
 ---
@@ -97,14 +97,14 @@ pojazdami (R7 częściowo), 208–560 potoków na grę przed ostatnimi poprawkam
 wyłączone (R3).
 
 Tanie poprawki z tego samego obchodu (stałe i wzory w istniejących shaderach,
-G1–G12 w `docs/wytyczne-opus.md`) **wykonaj przed Etapem 1**: nie zależą od
+G1–G12 w `docs/wytyczne-prace-rutynowe.md`) **wykonaj przed Etapem 1**: nie zależą od
 potoku i od razu podnoszą punkt wyjścia.
 
 ---
 
 ## Zasady pracy
 
-1. Gałąź, commity, `main` i APK — jak w `docs/wytyczne-opus.md` §1.
+1. Gałąź, commity, `main` i APK — jak w `docs/wytyczne-prace-rutynowe.md` §1.
 2. **Jeden etap naraz, jedna gra naraz.** Etap ma liczby wejścia i wyjścia;
    bez liczb wyjścia nie zaczyna się następny.
 3. **Pilot: Field Line.** Największy build, najwięcej tekstur, najsłabsze
@@ -125,7 +125,7 @@ potoku i od razu podnoszą punkt wyjścia.
 
 **Zrób** dla każdej gry, presety Wysoka i Niska:
 
-1. Zrzuty w stałych widokach (polecenia w `docs/wytyczne-opus.md` §3) do
+1. Zrzuty w stałych widokach (polecenia w `docs/wytyczne-prace-rutynowe.md` §3) do
    `shots/baseline/` (poza repozytorium albo w `.gitignore`).
 2. `load.mjs --json`: potoki, moduły, uploady, ready, gpu idle.
 3. `benchView.mjs --save baseline`: draw calle, trójkąty, czasy.
@@ -315,7 +315,7 @@ z testu wydajności bez wzrostu ponad zapas.
 
 ## Podział pracy między modele
 
-| Mocniejszy model | Lżejszy model (`docs/wytyczne-opus.md`) |
+| Mocniejszy model | Lżejszy model (`docs/wytyczne-prace-rutynowe.md`) |
 |---|---|
 | pierwszy egzemplarz: KTX2 (1a), materiał rodziny (1c), wypiek światła i sondy (Etap 3) | Etap 0; G1–G12; P1–P6 |
 | wybór i ocena assetów, pierwszy egzemplarz każdej kategorii (Etap 2) | przygotowanie kolejnych assetów skryptami, powielenie na mapy i gry |

@@ -61,7 +61,9 @@ kształcie.
 3. Po każdym etapie model raportuje w formacie ze `START.md`; sprawdzaj według
    `dla-ciebie/grading/<gra>/GRADING.md`.
 
-Nowa gra: najprościej przez `new-test.mjs --new` (wyżej) i
+Nowa gra: gotowy komplet do skopiowania jest w `docs/nowa-gra-AAA/` (po
+polsku) i `docs/new-game-AAA/` (po angielsku); to samo z własną nazwą układa
+`new-test.mjs --new` (wyżej) wg
 `docs/nowa-gra-AAA/NOWA-GRA-AAA.md`; ręcznie — napisz `games/<nowa-gra>/BRIEF.md` w tym samym układzie (co
 zbudować, twarde reguły, funkcje z kryteriami akceptacji, budżety, kolejność
 budowy) i ocenę z `dla-ciebie/GRADING-template.md`. Reguły i kontrakt graficzny
