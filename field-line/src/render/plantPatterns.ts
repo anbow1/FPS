@@ -240,8 +240,12 @@ export function reedBed(): TexelSampler {
   };
 }
 
-/** A spray of ovate leaves on a twig (hazel, alder buckthorn): the broadleaf undergrowth card. */
-export function broadleafCluster(seed: number, base: number, alt: number): TexelSampler {
+/**
+ * A spray of ovate leaves on a twig (hazel, alder buckthorn): the broadleaf undergrowth card. `sprays` > 1
+ * puts sprays × sprays smaller twigs on the card, every other one mirrored: a street tree's cards are 1.5–2.5 m
+ * across, and one spray of eleven leaves made each leaf half a metre long (the crown read as origami).
+ */
+export function broadleafCluster(seed: number, base: number, alt: number, sprays = 1): TexelSampler {
   const leaves: { cx: number; cy: number; a: number; len: number; w: number; shade: number }[] = [];
   for (let i = 0; i < 11; i++) {
     const a = -1.2 + (i / 10) * 2.4 + (hash2(i, 1, seed) - 0.5) * 0.35;
@@ -251,7 +255,12 @@ export function broadleafCluster(seed: number, base: number, alt: number): Texel
   }
   const c0: Rgb = hex(base);
   const c1: Rgb = hex(alt);
-  return (u, v, t) => {
+  return (u0, v0, t) => {
+    const su = Math.min(sprays - 1, Math.floor(u0 * sprays));
+    const sv = Math.min(sprays - 1, Math.floor(v0 * sprays));
+    const fu = u0 * sprays - su;
+    const u = (su + sv) % 2 === 1 ? 1 - fu : fu;
+    const v = v0 * sprays - sv;
     for (let i = leaves.length - 1; i >= 0; i--) {
       const L = leaves[i] as (typeof leaves)[number];
       const ox = u - L.cx;

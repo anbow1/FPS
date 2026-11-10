@@ -497,7 +497,8 @@ export class MaterialLibrary {
         // 1024: single needles are a few texels wide, and at 512 they merged into green blobs.
         return leafCard(set('needles', 1024, PL.pineSpray, 2, true), name, true);
       case 'leaves':
-        return leafCard(set('leaves', 512, () => PL.broadleafCluster(41, 0x3f6420, 0x5c7f2a), 2, true), name, true);
+        // The street tree's crown (streetTree.ts): 3 × 3 sprays per card, leaves ~0.15–0.25 m on its 2 m cards.
+        return leafCard(set('leaves', 512, () => PL.broadleafCluster(41, 0x3f6420, 0x5c7f2a, 3), 2, true), name, true);
       case 'hazel':
         return leafCard(set('hazel', 512, () => PL.broadleafCluster(3, 0x3f5f22, 0x62812f), 2, true), name, true);
       case 'buckthorn':
