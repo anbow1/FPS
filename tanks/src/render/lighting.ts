@@ -276,9 +276,13 @@ export class Lighting {
     const L = (p.skyLux / Math.PI) * ex;
     // Rayleigh sky is far more saturated than its CCT suggests; haze pulls it back to grey.
     const rayleigh = new Color(0.18, 0.42, 1.0);
-    const zTint = skyTint.clone().lerp(rayleigh, 0.55 * (1 - p.haze));
+    // A clear noon zenith is a deep blue, a stop or more darker than the horizon (sheet: ~3000 cd/m² against a
+    // white horizon); at 0.55 of the Rayleigh hue and nearly the horizon's brightness the clear-noon sky came
+    // out a pale lilac grey and the whole scene milky (screenshot tour: zenith sRGB 127,140,167 under a
+    // 149,158,176 horizon). The overcast end (haze 1) keeps its old values: 0.75 L and no Rayleigh hue.
+    const zTint = skyTint.clone().lerp(rayleigh, 0.8 * (1 - p.haze));
     zTint.multiplyScalar(1 / (0.2126 * zTint.r + 0.7152 * zTint.g + 0.0722 * zTint.b));
-    const zenith = zTint.multiplyScalar(L * (1.0 - 0.25 * p.haze));
+    const zenith = zTint.multiplyScalar(L * (0.68 + 0.07 * p.haze));
     const neutral = new Color(1, 1, 1);
     const horizonTint = skyTint.clone().lerp(neutral, 0.5 + 0.4 * p.haze);
     if (p.sunElevDeg < 12 && p.sunLux > 0) horizonTint.lerp(key, 0.35);
