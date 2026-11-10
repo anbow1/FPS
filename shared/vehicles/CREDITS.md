@@ -11,10 +11,12 @@ their hinge lines, the landing gear and squadron badges taken off. The lorries (
 `prepare_truck.py`: one body, wheels and all, after `scrub_marks.py` painted the staff car's door stars
 and maker's plates and the cargo lorry's door chevron out of their textures. The lagoon's jeep (jeep_open) by
 `prepare_vehicle.py`: its wheels and its bonnet (`--part`) as their own nodes, after `scrub_marks.py` painted the
-stencilled star, numbers and data plate out of its colour and roughness maps. The parked cars of Field
-Line and Paris (compact, coupe, hatchback, minivan, offroad, pickup, sedan, suv, wagon) then had their
-textures re-encoded to KTX2 by `tools/assets/ktx2_glb.mjs` (block compression for the GPU; the pictures
-themselves unchanged), so loading them needs a KTX2 loader.
+stencilled star, numbers and data plate out of its colour and roughness maps. The cars (compact, coupe,
+hatchback, minivan, offroad, pickup, sedan, sport, suv, wagon), cargo_truck, staff_car, mbt_west, ifv_west,
+jeep_open, boat_cutter, jet_talon and jet_wraith then had their textures re-encoded to KTX2 by
+`tools/assets/ktx2_glb.mjs` (block compression for the GPU; the pictures themselves unchanged), so loading
+them needs a KTX2 loader. The others keep their JPEGs: for them KTX2 would add more to the file than it
+saves in memory (playbook §8.4).
 
 | Folder | Source | Author | Licence |
 | --- | --- | --- | --- |

@@ -1,7 +1,7 @@
 import { abs, attribute, float, length, positionLocal, select, texture, uv, vec2, vec3 } from 'three/tsl';
 import type { UniformNode } from 'three/webgpu';
 import { type BufferGeometry, DoubleSide, type Group, type Material, Mesh, MeshStandardNodeMaterial, type Object3D, type Texture, Vector3 } from 'three/webgpu';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from './gltf.ts';
 import { JEEP } from '../config.ts';
 
 // The jeep from a downloaded model (shared/vehicles/jeep_open, CC BY; prepared by
@@ -25,7 +25,7 @@ let scene: Group | null = null;
 /** Loads the jeep's model; a failure leaves the procedural jeep (logged, not thrown). */
 export async function loadJeepModel(): Promise<void> {
   try {
-    scene = (await new GLTFLoader().loadAsync(URL_JEEP)).scene;
+    scene = (await modelLoader().loadAsync(URL_JEEP)).scene;
   } catch (err) {
     console.warn('the jeep model did not load; the procedural jeep stands in:', err);
   }

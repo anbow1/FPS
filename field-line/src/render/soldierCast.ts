@@ -1,5 +1,4 @@
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
-import type { WebGPURenderer } from 'three/webgpu';
+import { ktx2Loader } from './gltf.ts';
 import { type CastCharacter, castUrls, loadCast } from './mpfbCast.ts';
 
 // Field Line's soldiers from MPFB (assets/people, built by paris/tools/people/build_people_mpfb.py
@@ -18,12 +17,7 @@ async function pieceTextures(): Promise<Record<string, string>> {
   return import.meta.env.MODE === 'bake' ? (await import('./soldierTex.ts')).TEX_URLS : {};
 }
 
-/** `renderer` must be initialised: the loader asks it which compressed formats the GPU takes. */
-export function loadSoldierCast(quality: 'high' | 'low', renderer: WebGPURenderer): Promise<CastCharacter[]> {
-  // No transcoder path: three's loader then points at its own copy of the Basis transcoder (new URL with
-  // import.meta.url), which the bundler emits into the build, so the APK needs no network.
-  const ktx2 = new KTX2Loader().detectSupport(renderer);
-  return pieceTextures()
-    .then((tex) => loadCast(castUrls(JSON_URLS, BIN_URLS, tex, ATLAS_URLS), quality, ktx2))
-    .finally(() => ktx2.dispose());
+/** After useRendererForModels() (gltf.ts): the atlases are KTX2. */
+export async function loadSoldierCast(quality: 'high' | 'low'): Promise<CastCharacter[]> {
+  return loadCast(castUrls(JSON_URLS, BIN_URLS, await pieceTextures(), ATLAS_URLS), quality, ktx2Loader());
 }

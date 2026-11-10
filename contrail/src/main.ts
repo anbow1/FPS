@@ -1,4 +1,5 @@
 import { loadJetModels } from './render/importedJet.ts';
+import { useRendererForModels } from './render/gltf.ts';
 import { DoubleSide, Mesh, Quaternion, Vector3 } from 'three/webgpu';
 import { Game } from './app/game.ts';
 import { PilotControls } from './app/pilot.ts';
@@ -76,6 +77,8 @@ async function main(): Promise<void> {
   const settings: StageSettings = { ...graphicsSetup(controls.graphics, input.touch), renderScale: 1, toneMap: params.get('tm') === 'agx' ? 'agx' : 'aces' };
   const stage = new Stage(canvas, settings);
   await stage.init();
+  // Before any model loads: their textures are KTX2 (render/gltf.ts).
+  useRendererForModels(stage.renderer);
   window.addEventListener('resize', () => stage.resize());
 
   // Physical sky and light (rules §4.1–4.2): the atmosphere's LUTs, the sun in lux, pre-exposure per preset.

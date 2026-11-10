@@ -1,6 +1,6 @@
 import { attribute, float, texture, uv, vec3 } from 'three/tsl';
 import { type BufferGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Texture } from 'three/webgpu';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from './gltf.ts';
 import { WATER_LEVEL_M } from '../config.ts';
 import { CUTTER } from '../game/moored.ts';
 import { heightAt } from '../game/terrain.ts';
@@ -19,7 +19,7 @@ let scene: Group | null = null;
 /** Loads the cutter's model; a failure leaves the lagoon without it (logged, not thrown). */
 export async function loadMooredBoat(): Promise<void> {
   try {
-    scene = (await new GLTFLoader().loadAsync(URL_CUTTER)).scene;
+    scene = (await modelLoader().loadAsync(URL_CUTTER)).scene;
   } catch (err) {
     console.warn('the moored cutter did not load:', err);
   }

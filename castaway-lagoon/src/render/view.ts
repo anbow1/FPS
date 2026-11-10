@@ -25,6 +25,7 @@ import { buildPalms } from './palms.ts';
 import { buildUndergrowth } from './undergrowth.ts';
 import { LagoonLighting } from './lighting.ts';
 import { LagoonStage, type StageSettings } from './stage.ts';
+import { useRendererForModels } from './gltf.ts';
 import { U } from './uniforms.ts';
 import { buildWater, placeWater } from './water.ts';
 import { BoatView } from './boat.ts';
@@ -115,24 +116,28 @@ export class LagoonView {
   /** Extra camera pitch from the viewmodel (recoil punch), radians. */
   cameraPunchRad = 0;
 
-  private constructor(canvas: HTMLCanvasElement, settings: StageSettings) {
-    this.stage = new LagoonStage(canvas, settings);
+  private constructor(stage: LagoonStage) {
+    this.stage = stage;
   }
 
   static async create(canvas: HTMLCanvasElement, game: LagoonGame, settings: StageSettings, progress: Progress, extra: (view: LagoonView, progress: Progress) => Promise<void>): Promise<LagoonView> {
     // Scanned textures first: the view's constructor already builds the skiff and the jeep, whose materials
     // read them, and every material built after does too (impostors are baked from those).
-    await progress('Loading textures', 0.02);
+    // The renderer before them: the downloaded models' textures are KTX2, and the KTX2 loader asks the
+    // initialised renderer which compressed formats the GPU takes (gltf.ts).
+    await progress('Starting renderer', 0.02);
+    const stage = new LagoonStage(canvas, settings);
+    await stage.init();
+    useRendererForModels(stage.renderer);
+    await progress('Loading textures', 0.04);
     await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadMooredBoat(), loadSkiffModel(), loadJeepModel(), loadRifleModel(), loadKnifeModel()]);
-    const v = new LagoonView(canvas, settings);
+    const v = new LagoonView(stage);
     await v.build(game, progress, extra);
     return v;
   }
 
   private async build(game: LagoonGame, progress: Progress, extra: (view: LagoonView, progress: Progress) => Promise<void>): Promise<void> {
     const { stage } = this;
-    await progress('Starting renderer', 0.04);
-    await stage.init();
     await progress('Shaping the island', 0.1);
     this.caustics = new Caustics(stage.quality);
     stage.passTimer.name(this.caustics.target, 'water');
@@ -180,7 +185,7 @@ export class LagoonView {
     }
     if (game.band) {
       this.guerrillas = new GuerrillaView();
-      this.guerrillas.useCast(await loadGuerrillaCast(stage.quality, stage.renderer));
+      this.guerrillas.useCast(await loadGuerrillaCast(stage.quality));
       this.camp = buildCamp(game.band.camp);
       stage.scene.add(this.guerrillas.group, this.camp.group);
     }

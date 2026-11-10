@@ -3,6 +3,7 @@ import { loadPhotoTextures } from './photoTextures.ts';
 import { loadScanModels } from './scanModels.ts';
 import { loadHandMesh } from './handMesh.ts';
 import { loadGunModels } from './gunModels.ts';
+import { useRendererForModels } from './gltf.ts';
 import { loadMocap } from './mocap.ts';
 import { type HdriSetting, loadHdri } from './hdri.ts';
 import { Object3D, Vector3 } from 'three/webgpu';
@@ -112,10 +113,11 @@ export class GameView {
     const { stage, map } = this;
     await progress('Starting renderer', 0.05);
     await stage.init();
+    useRendererForModels(stage.renderer);
     stage.camera.layers.enable(VIEWMODEL_LAYER);
     // The photographed sets are decoded before any material asks for one (photoTextures.ts).
     await progress('Loading textures', 0.1);
-    const [, , , , cast] = await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadSoldierCast(this.settings.quality, stage.renderer), loadGunModels()]);
+    const [, , , , cast] = await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadSoldierCast(this.settings.quality), loadGunModels()]);
     this.actors.useCast(cast);
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';
@@ -149,7 +151,7 @@ export class GameView {
     await progress('Building the world', 0.35);
     this.world = buildStaticWorld(map, lib);
     // The shared car models (shared/vehicles), only on maps that park cars.
-    if (map.props.some((p) => p.kind === 'car')) await loadCarModels(this.settings.quality, stage.renderer);
+    if (map.props.some((p) => p.kind === 'car')) await loadCarModels(this.settings.quality);
     this.props = buildProps(map.props, lib);
     stage.scene.add(this.world.group, this.props.group);
     const furniture = buildStreetFurniture(map, lib);

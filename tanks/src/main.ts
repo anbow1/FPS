@@ -8,6 +8,7 @@ import { ATMO } from './render/atmosphere';
 import { benchSpots } from './game/bench';
 import { loadTankModels } from './game/importedTank';
 import { loadSoldierCast } from './render/soldierCast';
+import { useRendererForModels } from './render/gltf';
 import { loadTruckModels } from './world/trucks';
 import { BenchRecorder, type BenchSample, formatBench } from './render/benchRecorder';
 import { PRESETS } from './render/lighting';
@@ -81,13 +82,15 @@ async function boot(): Promise<void> {
   let onGovernor = (): void => {};
   const pipeline = new Pipeline(canvas, new THREE.Scene(), new THREE.PerspectiveCamera(), () => onGovernor());
   await pipeline.init();
+  // Before any model loads: their textures are KTX2 (render/gltf.ts).
+  useRendererForModels(pipeline.renderer);
   const game = new Game(pipeline, world, input, hud, audio, quality.id);
   onGovernor = () => game.refreshPixelScale();
   game.setQuality(quality);
   // The downloaded tanks (shared/vehicles) before the first tank is built; the procedural ones stand in on failure.
   await loadTankModels();
   // The infantry as Field Line's MPFB soldiers (render/soldierCast.ts); none loaded, the procedural men stay.
-  game.infantry.useCast(await loadSoldierCast(pipeline.renderer));
+  game.infantry.useCast(await loadSoldierCast());
   // The lorries' meshes (world/trucks.ts); their colliders stand from the start, models or not.
   world.trucks.attach(await loadTruckModels());
   await game.init();

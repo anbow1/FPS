@@ -2257,6 +2257,26 @@ Pipelines unchanged everywhere. A parked car at 3–5 m, before and after, High 
 0.7/255, the differing pixels on edges only (anti-aliasing jitter), not on paint or lamps. Paris loads the
 same two cars through the same loader (its build 34.6 → 37.1 MB).
 
+**The other downloaded models** (2026-11-10). Every game's glTF loader now comes from one `render/gltf.ts`
+(`modelLoader()`, one shared KTX2 loader, set once after `renderer.init()`; Lagoon starts its renderer
+before loading models for this). Re-encoding all of them measured (software WebGPU, BC formats,
+alternating runs): Field Line range 234 → 126 MB, Lagoon 438 → 288, Tanks 179 → 65, Contrail 184 → 94,
+Ridgeline 85 → 77; GPU idle unchanged within noise except Contrail +2 s (the jet fills the chase view, and
+SwiftShader samples BC7 27 % slower than RGBA8); but the builds grew by 15, 20, 14, 7 and 5 MB. UASTC is
+8 bits a texel and zstd packs it ~1.5×; detailed maps (normal maps, worn metal) go UASTC throughout and a
+weapon's file grows 4–5× (the AK 1.6 → 7.5 MB). The user's rule: **keep KTX2 where a model saves at least
+10 MB of GPU memory per MB of file**. Kept: cargo_truck, staff_car, mbt_west, ifv_west, jeep_open,
+boat_cutter, jet_talon, jet_wraith, pistol_9mm (and sport with the cars). Back to JPEG: the AK, carbine, bolt
+rifle, knife, skiff, Bulat, BMP, T-90 and the Warden (estimated 27 MB, measured 8: Ridgeline draws only
+some of its maps; Ridgeline keeps its old loader). Result, one run each against the stage-0 builds:
+
+| Game | Uploaded textures | Build |
+|---|---|---|
+| Field Line (range, High) | 234 → 198 MB | 73.1 → 75.6 MB |
+| Castaway Lagoon (High) | 438 → 380 MB | 32.1 → 36.8 MB |
+| Tanks (High) | 179 → 97 MB | 35.2 → 41.6 MB |
+| Contrail (High) | 184 → 94 MB | 21.8 → 28.9 MB |
+
 The cars' GLBs grow by 6.4 MB because the near level keeps UASTC where ETC1S would show (lamps, sharp
 edges); the far levels stay at the JPEGs' size. Every game that loads one of these files needs
 `GLTFLoader.setKTX2Loader`: check with `grep -rn "<model>_lod"` before re-encoding a shared model.

@@ -1,6 +1,6 @@
 import { attribute, texture, uv } from 'three/tsl';
 import { BufferAttribute, type BufferGeometry, CylinderGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, PlaneGeometry, type Texture, Vector3 } from 'three/webgpu';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from './gltf.ts';
 
 // The player's three weapons from downloaded models (shared/weapons, CC BY; prepared by
 // paris/tools/vehicles/prepare_gun.py with their moving parts as nodes, makers' marks and serials painted
@@ -67,7 +67,7 @@ function materialFor(src: Material): MeshStandardNodeMaterial {
 
 async function loadGun(id: keyof typeof URLS): Promise<void> {
   try {
-    const scene = (await new GLTFLoader().loadAsync(URLS[id])).scene;
+    const scene = (await modelLoader().loadAsync(URLS[id])).scene;
     scene.updateMatrixWorld(true);
     const made = new Map<Material, MeshStandardNodeMaterial>();
     const parts: Gun = new Map();

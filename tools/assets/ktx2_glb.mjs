@@ -22,6 +22,15 @@
 // --raw      also write each decoded source image as <out>.<texture index>.rgba (raw RGBA8, top row first),
 //            to measure what the compression costs
 //
+// Worth it or not: UASTC is 8 bits a texel and zstd packs it only ~1.5×, where a JPEG packs ~10×, so a model
+// whose maps are detailed (normal maps, worn metal: UASTC throughout) grows 4–5× on disk. Keep KTX2 where
+// it saves at least 10 MB of GPU memory per MB it adds to the file (estimate: RGBA8 with mips is
+// 5.3 B a texel, UASTC 1.3, ETC1S 0.7), and the JPEGs elsewhere. Measured on the shared models: the cars,
+// jeep, lorries, the Abrams and Bradley, both jets and the pistol pass; the AK, carbine, bolt rifle,
+// knife, skiff, Bulat, BMP and T-90 do not (2–8 MB of file for 12–48 MB of memory each), nor the Warden:
+// Ridgeline measured 8 MB less memory for 1.6 MB more build (the game draws only some of its maps). The
+// estimate ranks; the game's own load.mjs memory decides.
+//
 // A loader then needs KTX2 support (`GLTFLoader.setKTX2Loader(new KTX2Loader()
 // .detectSupport(renderer))`): every game that loads the files must have it, or they stop loading.
 // Textures already in KTX2 are left as they are, so running twice changes nothing.

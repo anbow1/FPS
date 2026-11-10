@@ -4,7 +4,9 @@ Downloaded models the games' first-person weapons are made from, each prepared b
 `paris/tools/vehicles/prepare_gun.py` (moving parts as nodes, metres, the muzzle toward −Z, occlusion cast
 into the second colour set) after `scrub_marks.py` painted makers' logos, origin marks and serials out of
 their textures. The games set each in their own weapon's frame (`castaway-lagoon/src/render/rifleModel.ts`,
-`field-line/src/render/gunModels.ts`).
+`field-line/src/render/gunModels.ts`). pistol_9mm then had its textures re-encoded to KTX2 by `tools/assets/ktx2_glb.mjs` (block
+compression for the GPU; the pictures unchanged); the other weapons keep their JPEGs, which are a fifth of
+the KTX2 file for their detailed maps (playbook §8.4).
 
 | Asset | Model | Author | Licence |
 | --- | --- | --- | --- |

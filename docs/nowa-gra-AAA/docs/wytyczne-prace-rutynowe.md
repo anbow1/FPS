@@ -474,9 +474,12 @@ Wzór na następne tekstury (rutyna, dowolny model):
 
 1. **Model GLB** (pojazd, rekwizyt): `node tools/assets/ktx2_glb.mjs <plik>_lod0.glb --in-place` (tryb
    `auto`: ETC1S, a poniżej 40 dB UASTC), dalsze poziomy `--color etc1s --data etc1s` (widać je z daleka).
-   Pakiety i `KTX2_TOOLS` — nagłówek skryptu. Najpierw sprawdź `grep -rn "<nazwa>_lod" --include=*.ts`:
-   **każda** gra, która wczytuje plik, musi dostać `GLTFLoader.setKTX2Loader(new KTX2Loader().detectSupport(renderer))`
-   (wzór: `field-line/src/render/vehicleModels.ts`), inaczej model przestanie się wczytywać.
+   Pakiety i `KTX2_TOOLS` — nagłówek skryptu. **Opłacalność:** zostaw KTX2 tylko tam, gdzie model oszczędza
+   co najmniej 10 MB pamięci GPU na 1 MB przyrostu pliku (rachunek w nagłówku skryptu; tak zdecydował
+   użytkownik 2026-11-10); resztę cofnij `git checkout -- <plik>`. Najpierw sprawdź `grep -rn "<nazwa>_lod" --include=*.ts`:
+   **każda** gra, która wczytuje plik, musi brać loader z `render/gltf.ts` (`modelLoader()`; jest w Field
+   Line, Lagoon, Tanks i Contrail, Paris ma własny w `sharedCars.ts`; Ridgeline jeszcze nie — skopiuj plik), inaczej model przestanie
+   się wczytywać.
 2. **Atlas rysowany przy starcie**: `tools/assets/bake_atlases.mjs` (wzór: `field-line/src/render/soldierCast.ts`
    i `soldierTex.ts`).
 3. **Bez ścieżki transkodera** (`setTranscoderPath`) i bez kopii w `public/`: three dołącza swój.

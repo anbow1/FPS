@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import type { Node } from 'three/webgpu';
 import { attribute, dot, float, instancedBufferAttribute, max, mix, normalWorld, texture, uv, vec3 } from 'three/tsl';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from '../render/gltf';
 import cargoInfo from '../../../shared/vehicles/cargo_truck/cargo_truck.json';
 import staffInfo from '../../../shared/vehicles/staff_car/staff_car.json';
 import { WATER_LEVEL } from '../config';
@@ -380,7 +380,7 @@ function materialFor(
 
 /** Loads both models; a failure leaves the lorries as bare colliders (logged, not thrown). */
 export async function loadTruckModels(): Promise<Map<Kind, THREE.Group>> {
-  const loader = new GLTFLoader();
+  const loader = modelLoader();
   const out = new Map<Kind, THREE.Group>();
   await Promise.all(
     (Object.keys(URLS) as Kind[]).map(async (kind) => {

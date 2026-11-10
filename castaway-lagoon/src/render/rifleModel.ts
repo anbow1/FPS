@@ -1,6 +1,6 @@
 import { attribute, texture, uv } from 'three/tsl';
 import { BufferAttribute, type BufferGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Texture, Vector3 } from 'three/webgpu';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from './gltf.ts';
 
 // The AK-pattern rifle from a downloaded model (shared/weapons/rifle_ak, CC BY; prepared by
 // paris/tools/vehicles/prepare_gun.py: split at its rig's bones into the body, the magazine, the bolt
@@ -26,7 +26,7 @@ let parts: Map<string, { geometry: BufferGeometry; material: MeshStandardNodeMat
 /** Loads the rifle's model; a failure leaves the procedural rifle (logged, not thrown). */
 export async function loadRifleModel(): Promise<void> {
   try {
-    const scene = (await new GLTFLoader().loadAsync(URL_RIFLE)).scene;
+    const scene = (await modelLoader().loadAsync(URL_RIFLE)).scene;
     scene.updateMatrixWorld(true);
     const made = new Map<Material, MeshStandardNodeMaterial>();
     const found = new Map<string, { geometry: BufferGeometry; material: MeshStandardNodeMaterial }>();
@@ -142,7 +142,7 @@ let knife: { geometry: BufferGeometry; material: MeshStandardNodeMaterial } | nu
 /** Loads the knife's model; a failure leaves the procedural knife (logged, not thrown). */
 export async function loadKnifeModel(): Promise<void> {
   try {
-    const scene = (await new GLTFLoader().loadAsync(URL_KNIFE)).scene;
+    const scene = (await modelLoader().loadAsync(URL_KNIFE)).scene;
     scene.updateMatrixWorld(true);
     scene.traverse((o) => {
       if (!(o instanceof Mesh) || knife) return;

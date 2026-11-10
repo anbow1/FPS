@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { attribute } from 'three/tsl';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from '../render/gltf';
 import mbtWestInfo from '../../../shared/vehicles/mbt_west/mbt_west.json';
 import mbtEastInfo from '../../../shared/vehicles/mbt_east/mbt_east.json';
 import ifvWestInfo from '../../../shared/vehicles/ifv_west/ifv_west.json';
@@ -50,7 +50,7 @@ const loaded = new Map<TankStyle, THREE.Group>();
 
 /** Loads every vehicle; a failure leaves the procedural tank of its side (logged, not thrown). */
 export async function loadTankModels(): Promise<void> {
-  const loader = new GLTFLoader();
+  const loader = modelLoader();
   await Promise.all(
     (Object.keys(SOURCES) as TankStyle[]).map(async (style) => {
       try {

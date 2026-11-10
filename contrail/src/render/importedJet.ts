@@ -1,5 +1,5 @@
 import { BufferAttribute, type BufferGeometry, type Group, type Material, Mesh, MeshStandardNodeMaterial, type Texture } from 'three/webgpu';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from './gltf.ts';
 import talonInfo from '../../../shared/vehicles/jet_talon/jet_talon.json';
 import wraithInfo from '../../../shared/vehicles/jet_wraith/jet_wraith.json';
 import { AIRCRAFT, type AircraftId } from '../config.ts';
@@ -43,7 +43,7 @@ const loaded = new Map<AircraftId, Group>();
 
 /** Loads both fighters' models; a failure leaves that one procedural (logged, not thrown). */
 export async function loadJetModels(): Promise<void> {
-  const loader = new GLTFLoader();
+  const loader = modelLoader();
   await Promise.all(
     (Object.keys(SOURCES) as AircraftId[]).map(async (id) => {
       try {

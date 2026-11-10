@@ -1,6 +1,6 @@
 import { attribute, float, texture, uv, vec3 } from 'three/tsl';
 import { type BufferGeometry, DoubleSide, type Group, type Material, Mesh, MeshStandardNodeMaterial, Shape, ShapeGeometry, type Texture, Vector2 } from 'three/webgpu';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from './gltf.ts';
 
 // The skiff from a downloaded model (shared/vehicles/boat_skiff, CC BY; prepared by
 // paris/tools/vehicles/prepare_truck.py without its own outboard): a riveted aluminium runabout of 4.6 m
@@ -23,7 +23,7 @@ let scene: Group | null = null;
 /** Loads the skiff's model; a failure leaves the lofted procedural dinghy (logged, not thrown). */
 export async function loadSkiffModel(): Promise<void> {
   try {
-    scene = (await new GLTFLoader().loadAsync(URL_SKIFF)).scene;
+    scene = (await modelLoader().loadAsync(URL_SKIFF)).scene;
   } catch (err) {
     console.warn('the skiff model did not load; the procedural dinghy stands in:', err);
   }
