@@ -11,6 +11,7 @@ import {
   InstancedBufferGeometry,
   LinearFilter,
   Mesh,
+  MeshPhysicalNodeMaterial,
   MeshStandardNodeMaterial,
   type Node,
   OrthographicCamera,
@@ -327,7 +328,9 @@ export class Forest {
   }
 
   private material(atlas: TreeAtlas, frames: ReturnType<typeof uniformArray>, species: number, tex: TerrainTextures, shadow: Texture | null, ring: ForestRing): MeshStandardNodeMaterial {
-    const m = new MeshStandardNodeMaterial({ name: 'forest', roughness: 0.9, metalness: 0, alphaTest: 0.5, side: DoubleSide });
+    // No specular: a crown is a volume of leaves, not a surface, and the impostor's flat side cards mirrored
+    // the sky at a grazing look as pale grey posts all over the forest (screenshot tour; Contrail's forest.ts).
+    const m = new MeshPhysicalNodeMaterial({ name: 'forest', roughness: 0.9, metalness: 0, specularIntensity: 0, alphaTest: 0.5, side: DoubleSide });
     const N = ring.n;
     const s = ring.spacingM;
     const idx = float(instanceIndex);
