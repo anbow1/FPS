@@ -2149,6 +2149,18 @@ a material per prop), baking the remaining per-start generation to files, and
 compressed textures (KTX2: the photographed sets are decoded to RGBA8, four
 times the memory and upload of a block format).
 
+**State on 2026-11-10** (Field Line, High, software WebGPU, `tools/measure/load.mjs`; the baseline of
+`docs/przebudowa-gier-aaa.md` stage 0 — later changes are compared with it):
+
+| Map | Pipelines | Shader modules | Image uploads | Ready | GPU idle |
+|---|---|---|---|---|---|
+| range | 156 | 215 | 38, 0.10 s | 30.7 s | 60.2 s |
+| forest | 170 | 231 | 42, 0.22 s | 56.8 s | 114.8 s |
+| city | 204 | 273 | 120, 0.36 s | 113.6 s | 128.4 s |
+
+Still to add for the baseline: the Low preset, draw calls and triangles at the benchmark spots
+(`scripts/benchView.mjs`), texture memory, the other four games, and the phone's own numbers.
+
 **Traps**
 
 - A software GPU compiles 5–20× slower than a phone and uploads differently:
