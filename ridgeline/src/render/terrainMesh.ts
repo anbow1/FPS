@@ -128,7 +128,13 @@ export class TerrainRenderer {
       detailN = d.normal;
       roughLand = mix(d.roughness, float(0.62), snowHere);
     }
-    const waterColour = mix(lin(0x0d2a36), lin(0x1f3e44), cov.a.oneMinus().mul(2).clamp(0, 1));
+    // The river's own edge (screenshot tour: a navy shape cut sharp out of the meadow). A bank of wet silt
+    // and gravel on the land side of the cover's edge, darker for the water in it; the shallows over that
+    // bank greener and lighter than the deep channel.
+    const bank = smoothstep(0.12, 0.3, cov.a).mul(float(1).sub(smoothstep(0.4, 0.55, cov.a)));
+    albedo = mix(albedo, lin(0x6b604c).mul(0.85), bank.mul(0.75));
+    roughLand = mix(roughLand, float(0.55), bank);
+    const waterColour = mix(lin(0x0d2a36), lin(0x2c4e46), cov.a.oneMinus().mul(2).clamp(0, 1));
     m.colorNode = mix(albedo, waterColour, water);
     m.roughnessNode = mix(roughLand, float(0.07), water);
     // Water normals: flat with a little wind ripple. Land: the baked normal, roughened below the grid's
