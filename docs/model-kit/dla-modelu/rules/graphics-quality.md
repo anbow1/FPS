@@ -123,7 +123,8 @@ On the phone preset the picture is simpler, never different.
 
 | Must | Check |
 |---|---|
-| Every pipeline compiled behind the loading screen (reveal per cache key + one real frame per post variant). | Pipeline tracer: 0 new pipelines through weapons, effects, weather, time of day, views, teleports. |
+| Every pipeline built behind the loading screen by rendering it (reveal per cache key + one real frame per post variant and per extra camera; no `compileAsync`). | Pipeline tracer: 0 new pipelines through weapons, each sight and scope, effects, weather, time of day, views, teleports. |
+| Loading is measured and budgeted: stages logged, canvases drawn once made in memory, static instanced meshes sharing shaders, few materials. | `tools/measure/load.mjs`: the pipeline count and "gpu idle" before and after every change that adds a material, an instanced mesh or a camera; no image upload over ~50 ms. |
 | ≤ 16 sampled textures per shader stage. | Count per material; test on a real phone. |
 | No allocation, no material or light creation in play; GPU→CPU readbacks throttled. | 3 minutes of play: no frame over 50 ms after the first second. |
 | Frame governor holds 60 fps by dropping effects then render scale, never by recompiling. | Benchmark on Low on the phone; governor label in F3 shows what it gave up. |
@@ -156,11 +157,14 @@ On the phone preset the picture is simpler, never different.
      `GPUCanvasContext.configure/getCurrentTexture` with an offscreen texture in
      a test-only init script — shaders still compile and errors still surface.
    Zero page errors, zero console errors, the game reaches play.
-4. Look at screenshots at the fixed benchmark views; for anything that moves,
-   frames several seconds apart.
+4. Look at screenshots at the fixed benchmark views (`tools/measure/shots.mjs`,
+   the same views before and after); for anything that moves, frames several
+   seconds apart.
 5. Debug with false colour, not by eye: write the quantity you doubt (a hit
    mask, a depth gap, a weight) into the output and look at it.
-6. Benchmark table before and after any performance change.
+6. Benchmark table before and after any performance change; the loading
+   report (`tools/measure/load.mjs`) before and after anything that touches
+   materials, instancing, textures or cameras.
 7. On the real phone: the benchmark on Low, and three minutes of play.
 
 ## 14. Acceptance checklist (every scene, every preset)
@@ -176,6 +180,7 @@ On the phone preset the picture is simpler, never different.
       caustics on the bed, real reflections.
 - [ ] Budgets met at every benchmark view, both presets.
 - [ ] 0 new pipelines after loading; no hitch > 50 ms after the first second.
+- [ ] Loading: stage times logged, the pipeline count stated and justified.
 - [ ] High and Low look like the same world.
 - [ ] WebGPU and WebGL2 both run without errors.
 
@@ -186,6 +191,11 @@ On the phone preset the picture is simpler, never different.
 | Stuck at "compiling shaders" on phones; ground vanishes on desktop WebGPU | more than 16 textures in one shader | texture arrays; count bindings |
 | Hitch every few steps through vegetation | one `InstancedMesh` per chunk = one shader build each | one streamed mesh per kind |
 | Hidden or later objects compile on first use | `compileAsync` skips hidden / culled objects and the post pass | reveal one per cache key, render a real frame, in separate animation frames |
+| Every load waits out a timeout at "compiling shaders" | `compileAsync` hangs after its first pipeline (r186, WebGPU) | no precompile call; warm-up frames only |
+| Seconds per texture at the first frame | a GPU-backed 2D canvas is read back when copied into a texture | `getContext('2d', { willReadFrequently: true })` for canvases drawn once |
+| Hundreds of shader builds for a few dozen materials | each instanced mesh under 1024 instances has its own named uniform buffer | static meshes get capacity past the uniform-buffer limit (shared vertex attribute path) |
+| The first look through a scope freezes the game | its target differs from the scene pass's, so everything builds again | a target cloned from the scene pass's, same MRT; warm it up at load |
+| CI builds the APKs and then fails | an artifact per run filled the storage quota | publish to one rolling release |
 | Instanced plants visible only in shadows | precompiled with `count = 0` | fill before compiling |
 | Whole scene recompiles at dusk | `castShadow` toggled or a light added | fixed light set, fade intensities |
 | Hitch on every sky re-bake | new PMREM target per bake | re-bake into the same target |

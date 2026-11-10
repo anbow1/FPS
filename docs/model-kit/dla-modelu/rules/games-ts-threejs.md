@@ -69,8 +69,12 @@ scraped stills, no game or film captures).
    small vector maths, stepped at a fixed rate, testable headlessly in Node. A
    render layer reads the game state and writes transforms.
 6. **Everything procedural is a valid route**: terrain, buildings, vehicles,
-   plants, textures and sounds generated in code (the three reference games ship
-   ~1–2 MB builds with no asset files). If you do use files, follow §5.5.
+   plants, textures and sounds generated in code (the reference games began
+   that way, at ~1–2 MB a build). They later took photographed textures for the
+   surfaces the eye rests on and prepared models for vehicles, weapons and
+   people, where procedural stand-ins were the weakest part of the picture. If
+   you use files, follow §5.5, run every model through the preparation scripts
+   in `tools/assets/`, and keep a licence line per file (CC0 or CC BY only).
 7. Strict TypeScript, `any` banned, one typed config object for every tunable
    (with units and a source or "tuned by hand" comment).
 
@@ -308,13 +312,17 @@ asset. Licences in `LICENSES.md`.
 
 ## 10. Smoothness — zero hitches in play
 
-1. **Compile every pipeline behind the loading screen.** `compileAsync` skips
-   hidden and culled objects and does not compile for the post-processing pass,
-   so also: reveal one object per material/vertex-layout/instancing key, render
-   **one real frame of the full pipeline**, each in its own animation frame (the
-   scene pass renders at most once per frame), then restore. Bound
-   `compileAsync` with a timeout so a slow driver never traps the player.
-2. Fill instanced meshes (count ≥ 1) before precompiling.
+1. **Build every pipeline behind the loading screen, by rendering it.** Reveal
+   one object per material/vertex-layout/instancing key (forced visible,
+   un-culled, at least one instance), render **one real frame of the full
+   pipeline**, restore; each such frame in its own animation frame (the scene
+   pass renders at most once per frame). Do **not** call
+   `renderer.compileAsync`: it skips hidden and culled objects, compiles for the
+   wrong target, and in r186 waits out its whole timeout on WebGPU.
+2. Fill instanced meshes (count ≥ 1) before the warm-up frame. Every other
+   camera that draws the scene (scope, sight, mirror, sensor) renders one
+   warm-up frame too, into a target with the scene pass's formats, MRT and
+   sample count, so that it builds no pipelines of its own.
 3. Everything that can appear later exists in the scene from load: holstered
    weapons, the first muzzle flash, decals, particles, rain, night lights at
    intensity 0, every alternative view (thermal, scope, MFD).
@@ -322,6 +330,32 @@ asset. Licences in `LICENSES.md`.
 5. No allocation in the frame loop; pool bullets, decals, particles, sounds.
 6. Prove it: a pipeline tracer (count `renderer._pipelines` cache growth after
    load) must show **zero new pipelines** through every player action.
+
+## 10b. Loading time — a budget like the frame
+
+Measured with `tools/measure/load.mjs` (stages, pipelines, uploads) and
+`profile.mjs` (CPU by function). The number that counts is **gpu idle** — when
+the GPU has finished everything loading queued — not the moment the game says
+it is ready.
+
+1. Every loading stage logs `[load] <stage>: <seconds> s`, and a total; the pause
+   menu shows the total and the longest stages, so a phone reports its own.
+2. **Canvases drawn once are made in memory**
+   (`getContext('2d', { willReadFrequently: true })`): a GPU-backed canvas is
+   read back across contexts when copied into a texture. Not for canvases
+   redrawn every frame.
+3. **Instanced meshes filled once share their shaders**: under 1024 instances
+   three r186 gives each mesh a uniform buffer under its own name, hence its own
+   shader builds in every pass; give static meshes room for one matrix past the
+   uniform-buffer limit and the matrices come as a shared vertex attribute
+   (playbook §8.4, `render/instancing.ts`).
+4. **Few materials**: one per kind of surface with switches as uniforms, not one
+   per prop. State the pipeline count before and after any change that adds a
+   material, an instanced mesh or a camera.
+5. **No trigonometry in per-sample load loops** (table-driven gradient noise),
+   nothing two systems need computed twice, heavy bakes on workers or the GPU.
+6. Ship the APK through a release, not a workflow artifact per run (the storage
+   quota fills and the build fails at the upload).
 
 ## 11. Performance and measurement — from day one
 

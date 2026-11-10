@@ -34,8 +34,19 @@ kształcie.
   - `README.md` — protokół uczciwego porównania i arkusz punktów.
   - `grading/<gra>/GRADING.md` — jak sprawdzić i jak rozdzielić 100 punktów.
   - `GRADING-template.md` — szablon oceny dla nowej gry.
-- `sync.sh` — odświeża kopie playbooka, szablonu i tablic z ich źródeł w repo,
-  żeby zestaw nie rozjechał się z tym, co naprawdę robią gry.
+  - `tools/measure/` — skrypty pomiarowe (zrzuty ekranu w stałych widokach,
+    raport ładowania, profil CPU) i `tools/assets/` — skrypty Blendera do
+    przygotowania pobranych modeli, postaci i klipów ruchu.
+  - `shared-src/` — pliki źródłowe kopiowane 1:1 do nowej gry (rozgrzewka
+    shaderów, współdzielenie shaderów instancji, pomiar, szum).
+- `sync.sh` — odświeża kopie playbooka, szablonu, tablic, narzędzi i plików
+  wspólnych z ich źródeł w repo, żeby zestaw nie rozjechał się z tym, co
+  naprawdę robią gry.
+- `new-test.mjs` — **układa folder testowy dla jednej gry**:
+  `node docs/model-kit/new-test.mjs <gra> <folder> [--fair]`. Kopiuje reguły,
+  tablice, narzędzia i brief tej gry, zapisuje `FIRST-MESSAGE.md` (tekst do
+  wklejenia modelowi) i `TEST-RUN.md` (wariant testu i commit zestawu).
+  `--fair` pomija `docs/` i `shared-src/`. Działa w PowerShellu i w bashu.
 
 ## Jak zacząć
 
@@ -53,7 +64,8 @@ działają bez zmian.
 
 ## Uczciwy test modeli
 
-Usuń wcześniej folder `docs/` z kopii dla modelu: opisuje gotowe rozwiązania i
+Usuń wcześniej foldery `docs/` i `shared-src/` z kopii dla modelu (albo użyj
+`new-test.mjs --fair`): opisuje gotowe rozwiązania i
 wskazuje na kod gier wzorcowych. Bez niego sprawdzasz, co model wymyśli z
 samych reguł; z nim — jak dobrze wykonuje szczegółowy przepis. Zapisz, który
 wariant przeprowadziłeś.

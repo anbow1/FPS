@@ -23,8 +23,13 @@ traps that cost the most time.
   rendered frame by frame to a video (§6z3).
 
 All use **three.js r186**, `WebGPURenderer` (falls back to WebGL2 by itself),
-**TSL** node materials, strict TypeScript, Vite. Everything is procedural: no
-texture or model files, so the builds are ~1.2 MB and ship offline in an APK.
+**TSL** node materials, strict TypeScript, Vite. They began fully procedural
+(no texture or model files, builds of ~1.2 MB). Since then the surfaces a
+player's eye rests on took photographed textures (§6o, CC0) and the vehicles,
+weapons and people took downloaded or Blender-built models (§6q, §6q2; CC BY
+and CC0, credited in `shared/*/CREDITS.md`), so a build is now 20–65 MB; terrain,
+vegetation, water, sky and effects are still generated. All of it ships offline
+in an APK.
 
 > File references are relative to the repository root. "Lagoon" = `castaway-lagoon/src`,
 > "FL" = `field-line/src`.
@@ -51,6 +56,39 @@ bit us. Do not move on while a Check fails.
    map-scale terrain, baked mountain shadows, GPU forests, sky and clouds (§12);
    cockpits, displays and the HUD (§13); controls and the flight computer
    (§14) — the controls decide whether anyone can fly it.
+
+### 0b. A new game from scratch
+
+The order above is the order to build in. What to have **before the first
+feature**, because every later claim leans on it:
+
+1. **The debug contract** the scripts in `tools/measure/` drive (their README):
+   `?autostart` skips the menu, `&q=high|low` picks the preset without touching
+   stored settings, `window.__ready = true` once the first frames are drawn,
+   `window.__debug.place({x, y, z, yaw, pitch})` and `window.__debug.spot(name)`
+   put the camera at a view, and loading prints one `[load] <stage>: <seconds>`
+   line per stage and a total. With these a new game needs no adapter:
+   `--game generic`.
+2. **Fixed benchmark views** (`app/bench.ts`, §9.2) and the F3 overlay.
+3. **The shared files, copied one to one** from a reference game, never
+   rewritten: `render/warmup.ts`, `render/instancing.ts`, `render/perf.ts`,
+   `render/benchRecorder.ts`, `render/webgpuCompat.ts`, `core/noise.ts`; later, as
+   the game needs them, `render/instanceStream.ts`, `render/impostor.ts`,
+   `render/grassField.ts`, `render/rippleField.ts`, `render/ocean.ts`.
+4. **A loading budget from day one** (§8.4): run `tools/measure/load.mjs` after
+   every feature that adds a material, an instanced mesh, a canvas texture or a
+   second camera, and write the pipeline count in the commit.
+5. **Assets through the scripts, not by hand**: models through
+   `paris/tools/vehicles/prepare_*.py` (§6q2: scale, axes, parts, occlusion,
+   texture size, marks painted out), people through `paris/tools/people`, motion
+   through `tools/mocap`. A licence line in `CREDITS.md` goes in with the file.
+6. **The APK from the first playable** (`android/`, `.github/workflows/android.yml`):
+   the phone is where the numbers are real. The workflow publishes main's APKs
+   on a rolling release only; a workflow artifact per run filled the Actions
+   storage quota after ~120 builds and failed the build at the upload step.
+
+`docs/model-kit/` packs these rules, the briefs and the tools for handing to a
+model; `node docs/model-kit/new-test.mjs` lays out a fresh project folder for one.
 
 General rules that held up:
 
@@ -415,7 +453,7 @@ Field Line; in Tanks +0.1–0.4 M.
   chunk per cascade. Use one mesh per kind (§5.5.2).
 - **Pre-compiling an empty instanced mesh** (`count = 0`) left its pipeline
   never ready: the plants drew in the shadow pass but never in the main pass.
-  Fill streams at the spawn point before `compileAsync` (and see §8.3).
+  Fill streams at the spawn point before the warm-up frame (§8.3).
 
 ---
 
@@ -884,6 +922,102 @@ They are 12–100 k triangles; a phone wants ~1–2.5 k per instance.
   to, 512 for stones; ~0.5–0.8 MB of JPEG each. Count instances × triangles:
   2600 scanned ferns would be millions, so scans go where the player spends
   time (round the camp) and cards stay on the hills.
+
+## 6q2. Downloaded vehicle models, step by step (`paris/tools/vehicles`, `shared/vehicles`)
+
+Every downloaded vehicle so far (Tanks lorries, the Warden and Bulat, the
+Wraith and Talon, the lagoon cutter and skiff, the lagoon jeep) went in by the
+same ten steps. The scripts' own options are in `paris/tools/vehicles/README.md`.
+
+1. **Licence first.** Only CC BY or CC0 (Sketchfab: *Downloadable*, *CC
+   Attribution* / *CC0*; Poly Haven). NC, ND or "editorial" licences are
+   reported to the user, not used. Sketchfab needs a login, so the user
+   downloads the glTF zip and uploads it.
+2. **Unpack as untrusted data.** Each zip into its own new, empty directory in
+   the scratchpad; scripts live elsewhere and get paths as arguments; any Python
+   that reads the files runs with `-I`. Read `license.txt`: title, author, URL,
+   licence go into the credits in step 7.
+3. **Read the glTF before Blender.** Nodes, meshes, materials, triangles per
+   primitive and position bounds (a 30-line JSON dump): the units (cm models
+   are ~100× too big), which axis is up and which is forward, whether wheels,
+   rotors, the gun or control surfaces are separate parts or baked into one
+   mesh, glass materials, and helpers (a material-less icosphere made the Mi-28
+   twice its height in the bounds).
+4. **Paint out real markings.** Look at every base-colour atlas (whole, then
+   crops) for stars, roundels, numbers, maker's badges and lettering, number
+   plates, trade-dress grilles. `scrub_marks.py --circle x,y,r --rect
+   x0,y0,x1,y1` refills each region from the paint round it (slow variation from
+   the blurred surroundings, grain from a clean patch: `--grain-from dx,dy` or
+   `--grain-patch`); `--bright` replaces only stencil texels lighter than the
+   paint. Crop before and after to check. Geometry that is itself a badge
+   (a raised logo, a brand grille) is reshaped or dropped in step 5 (`--drop`).
+5. **Prepare in headless Blender** with the script for the kind: `prepare_vehicle.py`
+   (cars: wheels and lamps split out, three LODs), `prepare_truck.py` (one `body`:
+   scenery, boats, anything the game does not take apart), `prepare_tank.py`,
+   `prepare_heli.py` (rotors, gun, eyes, stores), `prepare_jet.py` (surfaces,
+   gear, nozzles, eye). All do the same core: import, flatten the hierarchy
+   (keeping each part's ancestor `path` for `--drop`), scale to the real
+   `--length` in metres, Y up, front toward −Z, standing on y = 0 and centred;
+   split loose pieces and turn inward-facing ones out; join; decimate to the
+   triangle budget (`--triangles`, ~12–25 k for a vehicle the player is near);
+   keep only the maps the game reads; downscale textures (`--tex 1024`); cast
+   occlusion by rays into the second colour set (`color_1`, the shader's
+   `aoNode`); write `<out>.glb` (uncompressed: Draco is not available here) and
+   `<out>.json` (size, box, triangles, mean albedo). `--forward=-x` needs the
+   `=` (argparse takes a bare `-x` for an option).
+6. **Check the preview** (`--preview`: side and top renders): heading, scale,
+   nothing missing, nothing extra. Fix the flags and rerun rather than patching
+   in the game.
+7. **Ship the asset and its credit.** `shared/vehicles/<kind>_<name>/<kind>_<name>.{glb,json}`;
+   a row in `shared/vehicles/CREDITS.md` and a credit line (title, author, URL,
+   licence, what was changed: "markings painted out, decimated, re-lit").
+8. **Wire it into the game** in one loader module per model
+   (`render/<name>Model.ts`): `GLTFLoader` on `new URL('../../../shared/vehicles/…', import.meta.url)`
+   (Vite needs `server.fs.allow: ['..']`); a failed load logs and keeps the
+   procedural model as the fallback. Materials are rebuilt as
+   `MeshStandardNodeMaterial`: colour from the map, the normal map, roughness
+   and metalness set per material by what it is (paint, rubber, bare metal),
+   `aoNode` from `color_1`, glass transparent without depth writes. The
+   geometry is moved into the logic's frame (ground or waterline at the logic's
+   reference point), and the logic's numbers are matched to the model, never
+   the other way round: length, beam, wheelbase, track, wheel radius, seat and
+   eye height in `config.ts`. Parts the game moves (wheels, steering, rotors,
+   surfaces, the gun) stay separate nodes driven as before; colliders and
+   masks (the water cap in a hull) come from the model's own vertices.
+9. **Verify by render** in the game itself (headless Chromium with
+   SwiftShader, one heavy render at a time, no edits to files the dev server is
+   serving): from outside and from the seat, at noon and at night if it has
+   lamps. Look for scale against the player, floating or sunk wheels, gaps,
+   z-fighting, the inside seen from the seat (clip the cockpit tub if the model
+   has a crude interior), and count draw calls and triangles. `tsc` and the
+   tests pass.
+10. **Commit, push the branch, put it on `main`** (which builds the APK) and
+    check the build.
+
+Traps: a part posed turned in the file (the Mi-28's gun) is straightened about
+its own long axis, not by resetting the armature (that broke the scale);
+lamp glass near the nose pollutes an eye found from "glass" (keep to the
+canopy: front half, |x| < 0.8 m); a 4096 texture blurred whole takes gigabytes
+(scrub in windows round each marking).
+
+**Weapons** take the same steps with `prepare_gun.py` instead of the vehicle scripts:
+
+- Moving parts come three ways, and one gun can need two: bones of a rig (`--parts magazine=magazine_02`,
+  the AK), objects of their own (`--parts "slide=Gun_Slide"`, the AR-15 and the pistol), or loose pieces in
+  a box when the seller left them inside another object (`--part "magazine:x0,y0,z0,x1,y1,z1@Magazine"`,
+  the pistol's magazine was in the trigger's node). Render a side view coloured by part before trusting
+  the names: the pistol's "Magazine" node was its trigger.
+- Read the sights from the model's own vertices (the highest point on the centre line every few mm; the
+  scope's rim at its eyepiece; the holographic window's middle) and shift the file so its sight line sits
+  where the game's procedural weapon has it. The game then aims it with no other change. The AK's leaf
+  notch and post gave a 377 mm sight radius against the real 378 mm: a check that the scale is right.
+- Marks on guns are stamped, so they are in the **normal map** (logos, "MADE IN …", serials), often not in
+  the colour. Fill them flat (`--no-grain`), or straight across (`--interp x`) where the surface curves;
+  borrowed grain brings the neighbour's edges with it.
+- Budget per weapon ~20 k triangles and ≤ 6 MB: the AR-15 came at 62 k with two 2048 sets (10.7 MB) and
+  went in at 18 k + 1.5 k per part with 1024 sets (5.8 MB).
+- The viewmodel takes everything from the weapon: muzzle, both grips, magazine rest, suppressor. Numbers
+  fixed in the viewmodel for the procedural guns were the first thing to move.
 
 ## 6r. HDRI environments (FL `render/hdri.ts`)
 
@@ -1850,35 +1984,44 @@ the choice as High / Balanced (cheaper effects, still 2×) / Fast (1×).
 - **Triangles in shadow passes**: cast shadows only from what is near.
 - **Overdraw** of alpha-tested grass and leaves: density and draw distance on Low.
 - **GPU→CPU readbacks**: throttle.
-- **Load time**: share expensive bakes (heights), avoid per-cell allocations in
-  hot loops (the wave-field solver went from 1.9 s to ~0.4 s).
+- **Load time**: its own budget and its own traps, §8.4.
 
-### 8.3 Stutter: compile every pipeline behind the loading screen
+### 8.3 Stutter: build every pipeline behind the loading screen
 
 "Stutters now and then" on a phone is almost always a **shader or pipeline built
 mid-game**. The three.js r186 rules we had to learn:
 
-1. `renderer.compileAsync(scene, camera)` **skips hidden objects and objects
-   outside the camera frustum**, and compiles for the plain framebuffer, not for
-   the post-processing scene pass (half-float colour + velocity MRT). So also
-   render **one real frame** with the full post chain.
+1. **Warm up by rendering, not with `renderer.compileAsync`.** `compileAsync`
+   skips hidden objects and objects outside the frustum and compiles for the
+   plain framebuffer, not for the post chain's scene pass (half-float colour +
+   velocity MRT), so a real frame was always needed as well. Worse, in r186 it
+   handles its objects one after another, yielding to the browser between each
+   and awaiting each pipeline in turn: on WebGPU it settled one pipeline and
+   then sat out its whole timeout (20 s here, on every load), and with the
+   timeout removed it was still slower than no precompile at all (§8.4, table).
+   All five games now go straight to the warm-up frames.
 2. The shader cache key includes: the material, the vertex layout (attribute names,
    item sizes, normalisation), `receiveShadow`, the **light set** (which lights,
-   which cast shadows), `scene.environment`/fog, and **for instanced meshes the
-   mesh itself (uuid)**.
-3. **Warm-up** (`render/warmup.ts`, identical in both games): traverse the scene,
+   which cast shadows), `scene.environment`/fog — and, for an instanced mesh
+   whose matrices fit a uniform buffer, **the mesh itself** (§8.4 item 3 removes
+   that for static meshes).
+3. **Warm-up** (`render/warmup.ts`, identical in every game): traverse the scene,
    take **one object per cache key**, force it (and its ancestors) visible,
    un-culled and with `count ≥ 1`, render the real pipeline once, restore.
-   Run the same reveal around `compileAsync`, and restore as soon as it returns
-   or times out (it collects its objects synchronously).
+   An object that must never be revealed (a procedural body an imported one
+   replaced, whose layout would exceed the vertex-buffer limit) carries
+   `userData.noWarmup = true`.
 4. **The scene pass renders at most once per animation frame** (three's
    `NodeFrame.frameId` advances in the renderer's own animation loop). Our
    warm-up first rendered a normal frame and then the reveal frame *in the same
    animation frame*, so the reveal frame drew nothing and nothing hidden was ever
    compiled. **Await a `requestAnimationFrame` between them.**
-5. **Pre-compile with instanced meshes non-empty** (fill streams at the spawn).
-6. Bound `compileAsync` with a timeout (20 s) and catch its failure, so a slow or
-   failing pipeline can never leave the player on the loading screen.
+5. **Warm up with instanced meshes non-empty** (fill streams at the spawn).
+6. **Every camera that draws the scene warms up too**: a scope, a mirror, a
+   sensor view render the same objects through their own render contexts. Give
+   such a target the scene pass's formats, MRT and sample count (§8.4 item 4) and
+   it builds nothing of its own; left different, Field Line's scope built 41
+   pipelines the first time the player aimed (a 10 s freeze on a phone).
 7. Everything that can appear later must exist in the scene at load: holstered
    weapons, the first muzzle flash, decals, particles, rain, night lights (at
    intensity 0), prop "gallery" copies. Never add a light or toggle `castShadow`
@@ -1886,9 +2029,105 @@ mid-game**. The three.js r186 rules we had to learn:
 8. Share materials between props (a cache), never create a material or a canvas
    texture mid-game.
 
-**Proof it worked** (§9.3): in both games the pipeline count after loading stays
-constant through equipping weapons, firing, storm, night, turning around and
-teleporting across the map.
+**Proof it worked** (§9.3): the pipeline count after loading stays constant
+through equipping weapons, aiming each sight, firing, storm, night, turning
+around and teleporting across the map.
+
+### 8.4 Loading time
+
+Players said it first: "the games take long to load, on the PC and on the
+phone". Loading is a budget like the frame is, and it has three parts that
+need three different tools (`tools/measure/`, §9.1b):
+
+| Part | Seen with | What it was here |
+|---|---|---|
+| Main-thread work: terrain, scatter, procedural textures | `profile.mjs` (CPU profile by function and file) | Lagoon: 15 s of a 110 s software-GPU load in one noise function |
+| Uploads: images and canvases into GPU textures | `load.mjs` (each `copyExternalImageToTexture`, by source kind and size) | Lagoon: 56 s in 75 uploads, 47 s of it six canvases |
+| Pipelines: one shader build per material × layout × pass | `load.mjs` (pipelines and modules per `[load]` stage, and "gpu idle") | Lagoon 559 builds, Field Line 208 |
+
+**"Ready" is not loaded.** Pipelines are built on the GPU's side; the game
+reports ready and the first seconds still stall. `load.mjs` waits on
+`GPUQueue.onSubmittedWorkDone()` after ready and prints **gpu idle**: that is
+the loading time a player feels, and the number to compare.
+
+What cut it, in the order of what it gave:
+
+1. **No `compileAsync` precompile** (§8.3 item 1). Seconds to gpu idle on
+   software WebGPU, with the old precompile / a parallel one / none:
+
+   | Game | old | parallel | none |
+   |---|---|---|---|
+   | Field Line | 70.9 | 74.6 | 59.1 |
+   | Lagoon | 159 | 190 | 148.5 |
+   | Tanks | 75.6 | 65 | 55.6 |
+   | Ridgeline | 24.6 | 29 | 24.6 |
+   | Contrail | 21.1 | 27.1 | 21.1 |
+
+2. **Canvases drawn once are made in memory**:
+   `canvas.getContext('2d', { willReadFrequently: true })`. A 2D canvas lives on
+   the GPU by default, and copying it into a WebGPU texture reads it back across
+   contexts: 8 s per 2048² atlas on a software GPU, and the first such copy pays
+   to set the path up whatever its size (a 128 × 170 label: 5.9 s). In memory
+   the same 75 uploads took 0.6 s instead of 56 s. For atlases, labels, signs,
+   leaf cards, decals: anything drawn at load and then left alone. **Not** for a
+   canvas redrawn every frame (cockpit displays, a minimap): there the GPU does
+   the drawing, and moving it to the CPU could cost more than the copy saves —
+   measure before changing one.
+3. **Static instanced meshes share their shaders** (`render/instancing.ts`).
+   r186 hands an instanced mesh's matrices to the shader in a uniform buffer
+   while they fit one (64 KiB: 1024 matrices) and declares that buffer under the
+   mesh's own name and length, so every such mesh built its own shaders in the
+   scene pass, in each shadow cascade and in every second camera, though most
+   share a material with others: 333 of Lagoon's 559 builds. Past the limit the
+   matrices come as a vertex attribute, declared alike for every mesh.
+   `markStaticInstances(mesh)` on a mesh filled once (plants, rocks, props,
+   parked cars, a skyline), then `shareStaticInstanceShaders(renderer, scene)`
+   before the first frame, gives each room for one matrix past the limit:
+   nothing more is drawn, the cost is ~130 KiB of memory per mesh. Lagoon
+   144.1 → 117.8 s (60 meshes), Field Line 75.5 → 71.5 s (5 meshes). Not for
+   meshes refilled every frame (they would upload the whole larger buffer), nor
+   for one whose layout would then pass WebGPU's 8 vertex buffers (the function
+   skips those).
+4. **A second camera's target is a twin of the scene pass's**
+   (FL `stage.sceneTargetLike`, `optics.ts`): cloned from the pass's own render
+   target after its first frame (three sets its sample count and its colour and
+   depth types then), with the same MRT, and with the velocity node given the
+   second camera's unjittered projection as TRAA gives it the main one's — the
+   projection is part of the generated shader. Keep the textures' names: the MRT
+   finds its outputs by name, and a renamed colour texture has no output
+   ("getNodeType of undefined"). Field Line's first aim through the scope: 41
+   pipelines and 27 s on the software GPU before, none after.
+5. **Noise without trigonometry** (`core/noise.ts`): gradient noise took a
+   cosine and a sine per lattice corner; a 65 536-entry table of directions,
+   indexed by the hash's top bits, gives the same field to within 4·10⁻⁵
+   (heights move by a millimetre) four times faster. Lagoon's island stage
+   5 s → 1.5 s, undergrowth 8 s → 1.8 s.
+6. **Compute once what two systems share**: the near ground mesh and the grass
+   field stood on two copies of the same 103 000-sample height grid; the
+   wave-field solver's per-cell allocations (1.9 s → 0.4 s). The profile by file
+   shows these as one function reached from two callers.
+7. **Tell the player, and yourself**: each stage logs `[load] <stage>: <s>`, and
+   the pause menu shows "Loaded in X s" with the four longest stages
+   (FL `main.ts`, `ui/menu.ts`), so a slow phone reports where its time went
+   without a cable.
+
+What is left, and what it would take (not done here): the count of pipelines
+itself (one material per kind of surface with switches as uniforms, instead of
+a material per prop), baking the remaining per-start generation to files, and
+compressed textures (KTX2: the photographed sets are decoded to RGBA8, four
+times the memory and upload of a block format).
+
+**Traps**
+
+- A software GPU compiles 5–20× slower than a phone and uploads differently:
+  the counts are exact, the seconds only rank runs on one machine. The canvas
+  change above moved 55 s of main-thread time and 15 s of the total: the main
+  thread had been waiting where the GPU was the limit anyway.
+- Do not edit sources while a headless run uses the dev server: hot reload
+  restarts the page mid-measurement. Measure a build (`tools/measure/serve.mjs`).
+- A table lookup changes results in the last digits. Terrain is consistent as
+  long as logic and rendering call the same function (§0); do not mix the old
+  and the new noise in one world.
 
 ---
 
@@ -1913,6 +2152,21 @@ teleporting across the map.
 6. **Do not judge flight or driving behaviour headless**: SwiftShader's frame
    rate makes wall-clock key presses a fraction of their simulated length (§14).
    Fly the simulation in unit tests and use the browser for pictures only.
+
+### 9.1b The scripts (`tools/measure/`)
+
+One folder, no dependencies beyond Playwright, for any game here and for a new
+one that keeps the debug contract (§0b):
+
+| Script | Answers |
+|---|---|
+| `serve.mjs <dir> [port]` | serves a production build (never measure through the dev server) |
+| `shots.mjs --game … --views '[…]' --out …` | screenshots at fixed views, before and after a change; `--extra '&q=low'`, `--gpu webgl` |
+| `load.mjs --game …` | loading: the game's `[load]` stages, pipelines and shader modules per stage, slow image uploads, ready and **gpu idle** (§8.4) |
+| `profile.mjs --game …` | CPU profile of loading by function and by source file |
+
+The per-game `scripts/benchView.mjs` (frame cost at the benchmark spots, §9.2)
+stays where it is.
 
 ### 9.2 Numbers to log: the measurement routine
 
@@ -2093,6 +2347,14 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | `motionBlur(traa(...), …)` fails with "sample is not a function" | the blur samples its input at offset uvs; a TRAA node is not a texture node | `motionBlur(convertToTexture(aa), velocityUv, samples)` |
 | Skinned figures smear under TRAA and motion blur | the velocity pass compares the skinned position with `positionPrevious`, the unskinned bind pose | assign `positionPrevious` in the `positionNode` from last frame's bone matrices |
 | Frames rendered in a loop for a recording come out as one flat colour | TRAA's history advances once per animation frame | one `requestAnimationFrame` per rendered frame; read the canvas in that task |
+| Every load waits 20 s at "compiling shaders", then starts anyway | `renderer.compileAsync` settles one pipeline and hangs until its timeout (it yields and awaits per object) | no precompile; warm-up frames only (§8.3) |
+| Seconds per texture at the first frame, worst on the first one | a 2D canvas is GPU-backed; `copyExternalImageToTexture` reads it back across contexts | `getContext('2d', { willReadFrequently: true })` for canvases drawn once (§8.4) |
+| Hundreds of shader builds for a few dozen materials | each instanced mesh under 1024 instances gets a uniform buffer named after itself | `markStaticInstances` + `shareStaticInstanceShaders` (§8.4) |
+| First look through a scope or mirror freezes the game | its render target differs from the scene pass's (formats, MRT, samples), so every object builds again | a target cloned from the scene pass's, same MRT, velocity given the camera's projection (§8.4) |
+| "getNodeType of undefined" after sharing a target with the scene pass | the MRT maps outputs by texture name and the target's texture was renamed | keep the cloned textures' names |
+| "Vertex buffer count (9) exceeds the maximum (8)" during warm-up | the reveal forced a hidden stand-in mesh (many attributes + instancing) to draw | `userData.noWarmup = true` on meshes that never draw |
+| "position not found" warning for a placeholder mesh | a `Mesh` with an empty geometry | a speck of real geometry (`PlaneGeometry(0.001)`), invisible |
+| CI builds the APKs and then fails | workflow artifacts of every run filled the Actions storage quota | publish to a rolling release only; artifacts on other branches with `retention-days` |
 
 ---
 

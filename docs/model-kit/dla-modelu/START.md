@@ -13,7 +13,13 @@ reference-sheets/*.png        binding numbers: light, PBR, scale, ballistics, HU
 docs/graphics-playbook.md     how every technique was built and measured (optional, see below)
 docs/graphics-rules-template.md  the same rules as a fill-in template (Polish)
 games/<game>/BRIEF.md         the task (+ target-look/*.png where available)
+tools/measure/                screenshots, loading report and CPU profile of a built game (README: the debug contract)
+tools/assets/                 Blender scripts: downloaded vehicle / weapon models, people, motion clips → game assets
+shared-src/                   source files to copy unchanged (warm-up, instancing, perf, noise) — optional, see below
 ```
+
+`node docs/model-kit/new-test.mjs <game> <folder> [--fair]` (from the repository)
+lays this out for one game and writes the first message.
 
 ---
 
@@ -59,8 +65,11 @@ games/<game>/BRIEF.md         the task (+ target-look/*.png where available)
 >   its checks.
 > - Build the measurement tools in the first milestone: fixed benchmark views,
 >   a `?bench` flag and a menu button producing a table (fps, p95 frame time,
->   CPU ms, draw calls, triangles, GPU ms per pass), an F3 overlay, and a
->   pipeline tracer. Every later performance claim uses them, before and after.
+>   CPU ms, draw calls, triangles, GPU ms per pass), an F3 overlay, a
+>   pipeline tracer, and the debug contract of `tools/measure/README.md`
+>   (`?autostart`, `window.__ready`, `window.__debug.place/spot`, `[load]` stage
+>   lines) so the kit's scripts run against your build. Every later performance
+>   or loading claim uses them, before and after.
 > - Verify every change: `tsc --noEmit`, unit tests, a production build served
 >   statically, headless Chromium on WebGL2 *and* on software WebGPU (flags in
 >   `rules/graphics-quality.md` §13) with zero page or console errors, and look
@@ -87,11 +96,12 @@ games/<game>/BRIEF.md         the task (+ target-look/*.png where available)
 
 ## Notes for whoever hands this over
 
-- **Fair test:** delete `docs/` before handing the folder over. The playbook
-  describes finished solutions (and points at the reference code); without it
-  you measure what the model can work out from the rules. With it you measure
-  how well it can follow a detailed recipe. Both are useful — say which one you
-  ran.
+- **Fair test:** delete `docs/` and `shared-src/` before handing the folder over
+  (`new-test.mjs --fair` does). The playbook describes finished solutions and
+  the shared source is finished code; without them you measure what the model
+  can work out from the rules. With them you measure how well it can follow a
+  detailed recipe. Both are useful — say which one you ran. `tools/` stays in
+  both: it measures, it does not solve.
 - **One game at a time.** Copying only `games/<GAME>/` is enough; the other
   briefs do no harm but are noise.
 - **Milestones are checkpoints.** A model that ships milestone 5 working beats

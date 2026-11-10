@@ -223,7 +223,9 @@ Everything is SI. Every number in the game world means something real.
 
 ### 3.5 Compression and filtering
 
-- KTX2 only. **Generate mipmaps at encode time** — the GPU cannot generate mips
+- KTX2 is the target for every shipped texture file (the reference games still
+  ship JPEG and PNG, decoded to RGBA8: four times the memory and upload of a
+  block format — a new game should not start that debt). **Generate mipmaps at encode time** — the GPU cannot generate mips
   for a compressed texture, and a KTX2 without mips shimmers.
 - **UASTC** for normal maps and hero textures, encoded as linear data. Never
   ETC1S for normals — it makes blocks and banding. ETC1S only for far, low-detail
@@ -343,8 +345,21 @@ Everything is SI. Every number in the game world means something real.
 - Profile with the Chrome performance panel and `renderer.info` before and after
   any optimisation. Put both numbers in the reply.
 - Load assets in a real streaming pass with a progress bar. No frame-time spike
-  on first shot because a texture decoded mid-fight. Pre-compile every shader
-  variant during loading.
+  on first shot because a texture decoded mid-fight. **Build every pipeline
+  behind the loading screen by rendering it**: one object per shader build
+  forced visible for one real frame of the full post chain, and one frame of
+  every other camera (scope, sight, mirror, sensor). Not `renderer.compileAsync`:
+  in r186 it hangs until its timeout and is slower than nothing.
+- **Loading is budgeted and measured like the frame** (`tools/measure/load.mjs`,
+  `profile.mjs`; playbook §8.4). Each stage logs `[load] <stage>: <seconds>`; the
+  number that counts is when the GPU has finished what loading queued, not when
+  the game says ready. Rules that came out of it: canvases drawn once are made
+  in memory (`willReadFrequently: true`); instanced meshes filled once are
+  marked so they share shaders (`render/instancing.ts`); a second camera's
+  render target is a twin of the scene pass's; noise in load-time loops uses the
+  gradient table (`core/noise.ts`); nothing two systems need is computed twice.
+  State the pipeline count before and after any change that adds a material, an
+  instanced mesh or a camera.
 - **Phones render at 2× device pixels** (never capped at 1×) with TRAA and a
   light sharpen on every preset; the frame governor lowers the render scale
   (down to ~0.42) before anything else. A "Fast" preset at 1× is the opt-out.
