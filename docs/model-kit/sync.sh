@@ -71,4 +71,11 @@ cp paris/tools/vehicles/README.en.md docs/new-game-AAA/tools/assets/vehicles/REA
 cp paris/tools/people/README.en.md docs/new-game-AAA/tools/assets/people/README.md
 grep -v 'graphics-rules-template.md' docs/model-kit/dla-modelu/START.md > docs/new-game-AAA/START.md
 
+# docs/new-game-AAA-lite: the same goal on a small context. GUIDE.md, NUMBERS.md, README.md and
+# FIRST-MESSAGE.md are written by hand; the tools, shared source, sheets, playbook and form are copied.
+for part in reference-sheets tools shared-src docs games; do
+  rm -rf "docs/new-game-AAA-lite/${part:?}"
+  cp -r "docs/new-game-AAA/$part" "docs/new-game-AAA-lite/$part"
+done
+
 echo "kit, docs/nowa-gra-AAA and docs/new-game-AAA synced from $repo"
