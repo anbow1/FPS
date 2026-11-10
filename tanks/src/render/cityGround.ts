@@ -3,7 +3,7 @@ import * as THREE from 'three/webgpu';
 import { CITY } from '../config';
 import { PITCH_X, PITCH_Z, RING_REACH_M } from '../world/cityPlan';
 import { kelvinToLinear } from './lighting';
-import { hash12 } from './nodes';
+import { hash12, vnoise2 } from './nodes';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -91,7 +91,15 @@ export function cityPaving(wp: V2, footprintM: F, blocks: THREE.DataTexture, fin
   const patch = smoothstep(0.66, 0.7, mid);
   const along = (half: F, d: F) => abs(abs(d).sub(half.mul(0.5))).lessThan(0.45);
   const tracks = select(along(hX, dx).and(carX.greaterThan(0.5)).or(along(hZ, dz).and(carZ.greaterThan(0.5))), float(1), float(0));
-  const asphaltCol = vec3(0.042, 0.042, 0.044).mul(fine.mul(0.3).add(0.85)).mul(mix(float(1), float(0.72), patch)).mul(mix(float(1), float(1.15), tracks));
+  // Weathered asphalt (sheet: fresh 0.04, aged grey 0.08–0.12) with wear at two scales the street's own
+  // noise does not have: oil-dark and sun-bleached stretches ~25 m long and scuffs ~3 m across. A uniform
+  // near-black carriageway read as a flat strip from the commander's hatch (screenshot tour).
+  const wear = vnoise2(wp.div(25)).mul(0.6).add(vnoise2(wp.div(3).add(7.3)).mul(0.4));
+  const asphaltCol = vec3(0.06, 0.06, 0.062)
+    .mul(fine.mul(0.3).add(0.85))
+    .mul(wear.mul(0.32).add(0.84))
+    .mul(mix(float(1), float(0.72), patch))
+    .mul(mix(float(1), float(1.15), tracks));
   // markings: not inside a junction; the zebra sits on each approach just outside it
   const junctionX = dz.lessThan(hZ.add(wZ)).and(actZ.greaterThan(0.5));
   const junctionZ = dx.lessThan(hX.add(wX)).and(actX.greaterThan(0.5));
@@ -107,7 +115,7 @@ export function cityPaving(wp: V2, footprintM: F, blocks: THREE.DataTexture, fin
   // worn paint: thin where the wheels run, gone in patches; faded out before it aliases
   const paint = select(lineX.or(lineZ), float(1), float(0)).mul(smoothstep(0.2, 0.5, fine.add(0.25))).mul(float(1).sub(smoothstep(0.03, 0.09, footprintM)));
   const carCol = mix(asphaltCol, vec3(0.6, 0.6, 0.56), paint.mul(0.9));
-  const carRough = mix(mix(float(0.9), float(0.78), tracks), float(0.6), paint);
+  const carRough = mix(mix(float(0.9), float(0.78), tracks).sub(wear.sub(0.5).mul(0.16)), float(0.6), paint);
 
   // --- pavement: 50 cm slabs, a 30 cm granite kerb at the carriageway
   const slab = wp.div(0.5);
