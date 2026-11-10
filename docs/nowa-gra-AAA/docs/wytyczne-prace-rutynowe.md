@@ -465,6 +465,32 @@ projektowanie — §5.
   `upload-artifact`, `gradle/actions/setup-gradle` do bieżących wersji
   głównych, jedna zmiana, sprawdź przebieg.
 
+### P7. Atlasy postaci w KTX2: Lagoon i Tanks (jak w Field Line)
+
+Pilot w Field Line jest gotowy i zmierzony (playbook §8.4, „KTX2 pilot”): las High 392 → 290 MB
+tekstur, start nie wolniejszy, wygląd ten sam na WebGPU i WebGL2. `mpfbCast.ts` jest już ten sam we
+wszystkich trzech grach; brakuje plików i podpięcia loadera.
+
+1. **Tanks** bierze dalekie postacie Field Line (`tanks/src/render/soldierCast.ts`), czyli te same
+   atlasy `_far`: dodaj glob `../../../field-line/src/assets/people/atlas/*_far.ktx2` jako czwarty
+   argument `castUrls`, przekaż `KTX2Loader` jak w `field-line/src/render/soldierCast.ts`
+   (`setTranscoderPath('basis/')`, `detectSupport(renderer)` po `renderer.init()`, `dispose()` po
+   wczytaniu) i skopiuj `field-line/public/basis/` do `tanks/public/basis/`. Kawałki tekstur przenieś do
+   osobnego modułu ładowanego tylko w trybie `bake` (wzór: `field-line/src/render/soldierTex.ts`).
+2. **Lagoon** ma własne postacie: zbuduj `npx vite build --base ./ --mode bake --outDir <scratch>`,
+   podaj przez `tools/measure/serve.mjs`, uruchom
+   `node tools/assets/bake_atlases.mjs --url … --game castaway-lagoon --out castaway-lagoon/src/assets/people/atlas`
+   (domyślne tryby: blisko UASTC + RDO 1, daleko ETC1S), potem to samo podpięcie co w punkcie 1.
+3. Pomiar przed i po (`load.mjs --json`, High i Low): pamięć „uploaded textures”, potoki (bez zmian),
+   ready / gpu idle (dwa przebiegi, nic innego nie liczy w tym czasie), rozmiar `dist`. Zrzut postaci z
+   bliska obok poprzedniego. Wynik dopisz do tabeli pilota w §8.4.
+4. Odbiór: pamięć niższa, potoki te same, start nie wolniejszy, postać nieodróżnialna, zero błędów.
+   W `LICENSE.md` obok atlasów: źródło kawałków i licencja transkodera (Apache-2.0), jak w
+   `field-line/src/assets/people/atlas/LICENSE.md`.
+
+Następny krok etapu 1a (samochody w GLB, ~720 MB do odzyskania w mieście Field Line) wymaga
+`gltf-transform` i sprawdzenia kanałów normalnych i ORM — to już nie rutyna (§5).
+
 ---
 
 ## 5. Czego tu nie robić — oddaj mocniejszemu modelowi

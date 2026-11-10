@@ -1,4 +1,5 @@
 import { BufferAttribute, BufferGeometry, CanvasTexture, SRGBColorSpace, type Texture } from 'three/webgpu';
+import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
 // The soldiers and guerrillas made in Blender from MPFB and the MakeHuman assets
 // (paris/tools/people/build_people_mpfb.py --cast fieldline / lagoon): photographed skin, clothes, kit and hair,
@@ -10,6 +11,12 @@ import { BufferAttribute, BufferGeometry, CanvasTexture, SRGBColorSpace, type Te
 // per level of detail and per shadow cascade, and this game is bound by its draw calls. So the pieces'
 // textures are packed into one atlas per character and level at load time, the uvs moved into it, and a
 // character is one instanced draw. Roughness and whether a piece is cloth ride along per vertex.
+//
+// An atlas can also come baked (assets/people/atlas/<name>_<lod>.ktx2, written by tools/assets/bake_atlases.mjs
+// from the very canvas drawn here): block-compressed, a quarter of the GPU memory of the canvas's RGBA8 (5.3 MB
+// instead of 21 for a 2048² atlas with its mipmaps), and nothing to fetch or draw at load. The tiles and uvs are
+// still laid out here, the same way, so a baked atlas and a drawn one are interchangeable; a missing or failing
+// one falls back to drawing.
 //
 // .bin, format 2: 'PPL2', u32 vertices n, u32 indices m, u32 groups; f32 pos[3n], f32 nor[3n],
 // f32 uv[2n], u8 bones[4n], u8 weights[4n], u8 ao[n], padding to 4, u32 index[m].
@@ -59,22 +66,28 @@ export interface CastCharacter {
 /** Atlas edge per level: the near one keeps the skin at 1024 texels, the far one at 256. */
 const ATLAS = { full: 2048, far: 512 } as const;
 
-export function castUrls(json: Record<string, string>, bin: Record<string, string>, tex: Record<string, string>): CastSources {
+export function castUrls(json: Record<string, string>, bin: Record<string, string>, tex: Record<string, string>, atlas: Record<string, string> = {}): CastSources {
   const byName = (urls: Record<string, string>): Map<string, string> => new Map(Object.entries(urls).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1), url]));
-  return { json: byName(json), bin: byName(bin), tex: byName(tex) };
+  return { json: byName(json), bin: byName(bin), tex: byName(tex), atlas: byName(atlas) };
 }
 
 export interface CastSources {
   json: Map<string, string>;
   bin: Map<string, string>;
   tex: Map<string, string>;
+  /** Baked atlases by file name (`<name>_full.ktx2`), if any. */
+  atlas: Map<string, string>;
 }
+
+/** Drawn atlases, kept for tools/assets/bake_atlases.mjs when the page sets `globalThis.__keepAtlases`. */
+const kept: { base: string; canvas: OffscreenCanvas | HTMLCanvasElement }[] = [];
+(globalThis as { __atlases?: typeof kept }).__atlases = kept;
 
 /**
  * Every character in the sources (none when the folder is empty: the procedural soldiers stay). On Low only
  * the far level is fetched. A character that fails to load is left out (logged).
  */
-export async function loadCast(src: CastSources, quality: 'high' | 'low'): Promise<CastCharacter[]> {
+export async function loadCast(src: CastSources, quality: 'high' | 'low', ktx2: KTX2Loader | null = null): Promise<CastCharacter[]> {
   const names = [...src.json.keys()].filter((f) => f.endsWith('_far.json')).map((f) => f.slice(0, -'_far.json'.length)).sort();
   const images = new Map<string, Promise<ImageBitmap | null>>();
   const image = (file: string | null): Promise<ImageBitmap | null> => {
@@ -91,6 +104,21 @@ export async function loadCast(src: CastSources, quality: 'high' | 'low'): Promi
     }
     return p;
   };
+  const bakedAtlas = async (base: string): Promise<Texture | null> => {
+    const url = src.atlas.get(`${base}.ktx2`);
+    if (!url || !ktx2 || (globalThis as { __keepAtlases?: boolean }).__keepAtlases) return null;
+    try {
+      const tex = await ktx2.loadAsync(url);
+      tex.colorSpace = SRGBColorSpace;
+      // Encoded from the canvas as it is, top row first: the same orientation as the drawn atlas.
+      tex.flipY = false;
+      tex.anisotropy = 4;
+      return tex;
+    } catch (err) {
+      console.warn(`baked atlas ${base} did not load; drawing it instead:`, err);
+      return null;
+    }
+  };
   const lod = async (base: string, edge: number): Promise<{ lod: CastLod; json: CharacterJson }> => {
     const jsonUrl = src.json.get(`${base}.json`);
     const binUrl = src.bin.get(`${base}.bin`);
@@ -98,10 +126,12 @@ export async function loadCast(src: CastSources, quality: 'high' | 'low'): Promi
     const [json, bin] = await Promise.all([fetch(jsonUrl).then((r) => r.json() as Promise<CharacterJson>), fetch(binUrl).then((r) => r.arrayBuffer())]);
     if (json.format !== 2) throw new Error(`character '${base}': format ${json.format}, expected 2`);
     if (!json.bones || json.bones.length !== FULL_BONES.length || json.bones.some((b, i) => b !== FULL_BONES[i])) throw new Error(`character '${base}': not the 21-bone skeleton`);
-    const pictures = await Promise.all(json.groups.map((g) => image(g.albedo)));
     const geometry = parseBin(bin, base);
-    const atlas = packAtlas(geometry, json.groups, pictures, edge);
-    return { lod: { geometry, atlas }, json };
+    const tiles = layoutAtlas(geometry, json.groups, edge);
+    const baked = await bakedAtlas(base);
+    if (baked) return { lod: { geometry, atlas: baked }, json };
+    const pictures = await Promise.all(json.groups.map((g) => image(g.albedo)));
+    return { lod: { geometry, atlas: drawAtlas(base, json.groups, tiles, pictures, edge) }, json };
   };
   const out: CastCharacter[] = [];
   await Promise.all(
@@ -169,11 +199,11 @@ interface Tile {
 }
 
 /**
- * Packs the pieces' textures into one square atlas (power-of-two tiles in a quadtree: they always fit, the
- * shares above sum to at most the whole), moves each piece's uvs into its tile and adds the per-vertex
- * roughness and cloth flag the material reads. Pieces without a texture get a tile of their flat colour.
+ * Lays the pieces out in one square atlas (power-of-two tiles in a quadtree: they always fit, the shares
+ * above sum to at most the whole), moves each piece's uvs into its tile and adds the per-vertex roughness
+ * and cloth flag the material reads. Returns the tiles, for drawing the atlas (or not, when it is baked).
  */
-function packAtlas(g: BufferGeometry, groups: readonly GroupJson[], pictures: readonly (ImageBitmap | null)[], edge: number): Texture {
+function layoutAtlas(g: BufferGeometry, groups: readonly GroupJson[], edge: number): Tile[] {
   const order = groups.map((_, i) => i).sort((a, b) => tileShare((groups[b] as GroupJson).kind) - tileShare((groups[a] as GroupJson).kind));
   const free: Tile[] = [{ x: 0, y: 0, size: edge }];
   const tiles: Tile[] = new Array(groups.length);
@@ -191,25 +221,6 @@ function packAtlas(g: BufferGeometry, groups: readonly GroupJson[], pictures: re
     }
     tiles[i] = cur;
   }
-
-  const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(edge, edge) : Object.assign(document.createElement('canvas'), { width: edge, height: edge });
-  // In memory, not on the GPU: the atlas is drawn once and copied into a WebGPU texture, and copying a GPU
-  // canvas reads it back across contexts (eight seconds per 2048² atlas on a software GPU; in memory it is
-  // a plain upload).
-  const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-  groups.forEach((grp, i) => {
-    const t = tiles[i] as Tile;
-    const pic = pictures[i];
-    const clip = grp.alpha === 'clip';
-    ctx.clearRect(t.x, t.y, t.size, t.size);
-    if (!clip || !pic) {
-      // Opaque pieces: a solid ground under the picture, so the atlas's alpha (the hair's cut-out) is 1 here.
-      const c = grp.colour.map((v) => Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055)));
-      ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
-      ctx.fillRect(t.x, t.y, t.size, t.size);
-    }
-    if (pic) ctx.drawImage(pic, t.x, t.y, t.size, t.size);
-  });
 
   // Uvs into the tiles (inset half a texel against the neighbour's colour), roughness and cloth per vertex.
   const uv = g.getAttribute('uv') as BufferAttribute;
@@ -235,7 +246,31 @@ function packAtlas(g: BufferGeometry, groups: readonly GroupJson[], pictures: re
   }
   g.setAttribute('rough', new BufferAttribute(rough, 1));
   g.setAttribute('cloth', new BufferAttribute(cloth, 1));
+  return tiles;
+}
 
+/** Draws the atlas: each piece's picture in its tile; pieces without a texture get their flat colour. */
+function drawAtlas(base: string, groups: readonly GroupJson[], tiles: readonly Tile[], pictures: readonly (ImageBitmap | null)[], edge: number): Texture {
+  const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(edge, edge) : Object.assign(document.createElement('canvas'), { width: edge, height: edge });
+  // In memory, not on the GPU: the atlas is drawn once and copied into a WebGPU texture, and copying a GPU
+  // canvas reads it back across contexts (eight seconds per 2048² atlas on a software GPU; in memory it is
+  // a plain upload).
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  groups.forEach((grp, i) => {
+    const t = tiles[i] as Tile;
+    const pic = pictures[i];
+    const clip = grp.alpha === 'clip';
+    ctx.clearRect(t.x, t.y, t.size, t.size);
+    if (!clip || !pic) {
+      // Opaque pieces: a solid ground under the picture, so the atlas's alpha (the hair's cut-out) is 1 here.
+      const c = grp.colour.map((v) => Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055)));
+      ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+      ctx.fillRect(t.x, t.y, t.size, t.size);
+    }
+    if (pic) ctx.drawImage(pic, t.x, t.y, t.size, t.size);
+  });
+
+  if ((globalThis as { __keepAtlases?: boolean }).__keepAtlases) kept.push({ base, canvas });
   const tex = new CanvasTexture(canvas as HTMLCanvasElement);
   tex.colorSpace = SRGBColorSpace;
   // The exporter wrote glTF-style uvs (v down the image), as the canvas is.

@@ -2161,8 +2161,9 @@ What cut it, in the order of what it gave:
 What is left, and what it would take (not done here): the count of pipelines
 itself (one material per kind of surface with switches as uniforms, instead of
 a material per prop), baking the remaining per-start generation to files, and
-compressed textures (KTX2: the photographed sets are decoded to RGBA8, four
-times the memory and upload of a block format).
+compressed textures for the rest (KTX2: the photographed sets and the cars' GLB textures are still
+decoded to RGBA8, four times the memory and upload of a block format; the characters' atlases are done,
+below).
 
 **State on 2026-11-10** (Field Line, High, software WebGPU, `tools/measure/load.mjs`; the baseline of
 `docs/przebudowa-gier-aaa.md` stage 0 — later changes are compared with it):
@@ -2173,8 +2174,47 @@ times the memory and upload of a block format).
 | forest | 170 | 231 | 42, 0.22 s | 56.8 s | 114.8 s |
 | city | 204 | 273 | 120, 0.36 s | 113.6 s | 128.4 s |
 
-Still to add for the baseline: the Low preset, draw calls and triangles at the benchmark spots
-(`scripts/benchView.mjs`), texture memory, the other four games, and the phone's own numbers.
+Low preset, and texture memory (`load.mjs` wraps `GPUDevice.createTexture` and counts a texture as
+*uploaded* once `writeTexture` or `copyExternalImageToTexture` fills it; everything else is a render target,
+a bake or a shadow map. Usage flags cannot tell them apart: three sets RENDER_ATTACHMENT on most textures):
+
+| Map | Pipelines High / Low | Ready / GPU idle, Low | Uploaded textures High | Low | Render targets High |
+|---|---|---|---|---|---|
+| range | 156 / 118 | 25.3 / 40.1 s | 336 MB | 207 MB | 175 MB (Low 52) |
+| forest | 170 / 129 | 39.5 / 66.6 s | 392 MB | 264 MB | — |
+| city | 204 / 166 | 90.1 / 103.4 s | 1265 MB | 320 MB | — |
+
+The city's High figure is mostly the parked cars: 45 GLB textures at 2048², about 960 MB as RGBA8 with mips.
+Draw calls and triangles at the benchmark spots (`scripts/benchView.mjs`, WebGL): range High 146 calls at
+the spawn / 105 looking back, 1.16 M triangles; Low 107 / 77, 0.49 M. Still to add: forest and city draw
+calls, the other four games, and the phone's own numbers.
+
+**KTX2 pilot (stage 1a): the characters' atlases.** The MPFB soldiers' atlases were drawn into a canvas
+at every start (2048² per character near, 512² far: RGBA8, a third more with mips) from about 60 piece
+textures. They are baked now (`tools/assets/bake_atlases.mjs`): the game is opened with
+`globalThis.__keepAtlases`, the drawn canvases are read back and encoded with Basis Universal (npm
+`ktx2-encoder`), and `mpfbCast.ts` loads `<name>.ktx2` through `KTX2Loader`, falling back to drawing when a
+file is missing or fails. The piece textures leave the game's build (a `vite build --mode bake` build
+carries them for the baker). Measured on Field Line:
+
+| | Before | KTX2 |
+|---|---|---|
+| Forest, High, uploaded textures | 392 MB | 290 MB (34 MB block-compressed) |
+| Forest, Low | 264 MB | 258 MB (Low draws the far atlases only) |
+| Range, High / Low (ready, GPU idle unchanged: 28.0 → 28.3 s, 56.9 → 55.1 s) | 336 / 207 MB | 234 / 201 MB |
+| Pipelines, forest High | 170 | 170 |
+| Forest High, ready / GPU idle (two clean rounds) | 115.0 / 151.4 s, 55.5 / 133.6 s | 105.2 / 141.4 s, 49.6 / 104.1 s |
+| Build (dist) | 65.7 MB | 67.3 MB (+1.6: atlases 10.7, transcoder 0.6, pieces −10.3) |
+
+Choice of format, measured on the rifleman's near atlas (RGB PSNR against the drawn atlas, file): ETC1S
+q200 35–36 dB, 0.37 MB, blocky up close on faces and insignia; UASTC 48–50 dB, 2.0 MB; **UASTC + RDO 1
+45.6 dB, 1.65 MB** (taken); RDO 2 43.3 dB, 1.54 MB; RDO 4 41.1 dB, 1.44 MB. The far atlases (seen small)
+take ETC1S at ~50 KiB. On a device the transcoder picks ASTC 4×4 for UASTC and ETC2 for ETC1S (BC7 / BC1–3
+on desktops); a device with none of them gets RGBA8 back, correct but without the saving. Checked on
+both backends: WebGPU and the WebGL2 fallback show the same atlas pixels (a one-plane test page; the whole
+game does not reach ready on headless WebGL2 within 7 minutes, with or without KTX2). The build grows
+by 1.6 MB: UASTC carries more bits than the JPEG/PNG pieces did. That is the price of a texture the
+GPU reads directly; it is paid once on disk and saves on every start and in every frame's memory.
 
 **Traps**
 
@@ -2182,6 +2222,15 @@ Still to add for the baseline: the Low preset, draw calls and triangles at the b
   the counts are exact, the seconds only rank runs on one machine. The canvas
   change above moved 55 s of main-thread time and 15 s of the total: the main
   thread had been waiting where the GPU was the limit anyway.
+- Vite emits every file an `import.meta.glob` names, even in a branch that can never run. To keep files
+  out of the game's build, put the glob in its own module and import it dynamically behind
+  `import.meta.env.MODE === 'bake'` (FL `soldierTex.ts`): Vite drops that branch and the module with it.
+- `KTX2Loader.detectSupport(renderer)` asks the renderer which compressed formats the device has; call it
+  after `renderer.init()`, or it sees none and transcodes everything to RGBA8. The transcoder
+  (`basis_transcoder.js` / `.wasm`, from three's `examples/jsm/libs/basis/`) goes in `public/basis/` with a
+  relative path: the APK works offline.
+- A baked atlas is a copy of a layout. Bake again after changing a character, a piece texture or the
+  atlas layout; a stale one puts the wrong picture under the uvs (and loads without an error).
 - Do not edit sources while a headless run uses the dev server: hot reload
   restarts the page mid-measurement. Measure a build (`tools/measure/serve.mjs`).
 - A table lookup changes results in the last digits. Terrain is consistent as

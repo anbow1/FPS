@@ -115,7 +115,7 @@ export class GameView {
     stage.camera.layers.enable(VIEWMODEL_LAYER);
     // The photographed sets are decoded before any material asks for one (photoTextures.ts).
     await progress('Loading textures', 0.1);
-    const [, , , , cast] = await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadSoldierCast(this.settings.quality), loadGunModels()]);
+    const [, , , , cast] = await Promise.all([loadPhotoTextures(), loadScanModels(), loadMocap(), loadHandMesh(), loadSoldierCast(this.settings.quality, stage.renderer), loadGunModels()]);
     this.actors.useCast(cast);
     await progress('Generating textures', 0.15);
     FOLIAGE.translucent = this.settings.quality === 'high';

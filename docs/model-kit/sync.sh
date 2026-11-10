@@ -30,6 +30,8 @@ cp tools/measure/*.mjs tools/measure/README.md "$tools/measure/"
 cp paris/tools/vehicles/*.py paris/tools/vehicles/README.md "$tools/assets/vehicles/"
 cp paris/tools/people/*.py paris/tools/people/README.md "$tools/assets/people/"
 cp tools/mocap/*.py "$tools/assets/mocap/"
+# The KTX2 baker for the characters' atlases (playbook §8.4); it imports ../measure/lib.mjs, copied above.
+cp tools/assets/*.mjs "$tools/assets/"
 
 # The shared source files a new game copies instead of rewriting (playbook §0b), from the game that
 # carries the newest copy of each.

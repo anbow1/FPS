@@ -166,6 +166,12 @@ potem powiela.
    (np. `gltf-transform`), rozszerzenie `KHR_texture_basisu`; `GLTFLoader`
    dostaje `setKTX2Loader`.
 
+**Stan (2026-11-10):** pilot zrobiony na atlasach postaci Field Line zamiast tekstury podłoża (atlasy
+nie przechodzą przez pakowanie na CPU z punktu 4, a dają największą pamięć na postać): las High
+392 → 290 MB tekstur, start nie wolniejszy, WebGPU i WebGL2 ten sam obraz, build +1,6 MB (UASTC jest
+większy od JPEG; uzasadnienie i liczby w playbooku §8.4). Powielenie na Lagoon i Tanks:
+`docs/wytyczne-prace-rutynowe.md` P7. Następne: punkt 6 (samochody GLB w mieście, ~720 MB).
+
 **Odbiór:** zrzuty nieodróżnialne z odległości gry; pamięć tekstur i czas
 uploadu wyraźnie niższe (oczekiwane kilkukrotnie — potwierdź liczbą); build
 nie większy; zero błędów na obu zapleczach i na telefonie.
