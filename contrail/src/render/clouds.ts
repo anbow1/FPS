@@ -115,6 +115,9 @@ function hg(c: F, g: number): F {
   return float((1 - g * g) / (4 * Math.PI)).div(pow(float(1 + g * g).sub(c.mul(2 * g)), 1.5));
 }
 
+/** Share of the direct sun a thick cloud still lets down, as light scattered through it (tuned by hand: 0.15). */
+const CLOUD_SHADOW_FLOOR = 0.15;
+
 export class Clouds {
   readonly base = uniform(1600);
   readonly top = uniform(3400);
@@ -422,7 +425,10 @@ export class Clouds {
   shadeReceivers(root: Object3D, samples: number): void {
     // ShadowNode calls this with the shadow factor; three's typing declares it argument-less.
     // Built inside the callback: the march assigns to variables, which needs the shader-building stack.
-    const cloud = (): Node<'float'> => this.sunShadow(positionWorld, cameraPosition, samples);
+    // A cloud's shadow is not the sun switched off: the cloud itself sends down the light it scatters, as a
+    // dim white. Without it only the blue sky lit the ground under a cloud, and brown ploughland in a cloud's
+    // shadow turned violet from 900 m (screenshot tour).
+    const cloud = (): Node<'float'> => mix(float(CLOUD_SHADOW_FLOOR), float(1), this.sunShadow(positionWorld, cameraPosition, samples));
     const fn = ((shadow: Node<'vec4'>) => shadow.mul(cloud())) as unknown as () => Node;
     root.traverse((o) => {
       if (!(o instanceof Mesh) || !o.receiveShadow) return;
