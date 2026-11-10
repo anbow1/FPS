@@ -89,7 +89,8 @@ kill %1
 ## 3. Zadania z obchodu grafiki (listopad 2026)
 
 Obchód: `tools/measure/shots.mjs` na buildach wszystkich pięciu gier, WebGPU
-programowe, 800 × 450, preset High. Każde zadanie niżej jest **tanie w sensie
+programowe, 800 × 450, preset High. Lagoon wypadła najlepiej (jeden zrzut kontrolny, bez nowych uwag — zostają
+drobiazgi z G11). Każde zadanie niżej jest **tanie w sensie
 §1.2** (stałe i wzory w istniejących shaderach albo geometria doklejona do
 istniejącej siatki). Kolejność = stosunek zysku do ryzyka.
 
@@ -287,6 +288,19 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
   `addRedDot`, `DOT_Y`): zrób zrzut z celowaniem i popraw położenie/jasność.
 - **Widok:** `--game castaway-lagoon --views '[{"pitch":-0.1,"name":"spawn"},{"turn":3.14,"name":"back"},{"dx":12,"dz":34,"name":"jungle"}]'`
   jako kontrola, że nic innego się nie zmieniło.
+
+### G12. Field Line, las — gałęzie sosen jak „pióra”
+
+- **Widok:** jak G1 (po wykonaniu G1, bo prześwietlenie maskuje ten objaw).
+- **Objaw:** igliwie na gałęziach to grube, równoległe prążki — gałąź wygląda
+  jak pióro albo liść paproci; ściółka w cieniu ma ziarnisty, „mrowiący” wzór.
+- **Kroki:** znajdź teksturę/wzór igieł sosny (`field-line/src/render/` —
+  `foliagePatterns`, materiały roślin, playbook §5.2–5.3). Zagęść wzór igieł
+  na karcie gałęzi 2× (stała skali wzoru lub UV), bez zmiany rozmiaru tekstury
+  i geometrii. Dla ściółki: sprawdź, czy detal normalnej zanika z rozmiarem
+  piksela (`fwidth`), jak wymaga playbook §2; jeśli nie — dodaj zanik.
+- **Odbiór:** gałąź z 5 m czyta się jako kępy drobnych igieł; ściółka z 10 m
+  bez ziarna; dwa zrzuty w odstępie 20 klatek bez migotania.
 
 ### Po wszystkich zadaniach G
 
