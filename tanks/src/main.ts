@@ -87,7 +87,7 @@ async function boot(): Promise<void> {
   // The downloaded tanks (shared/vehicles) before the first tank is built; the procedural ones stand in on failure.
   await loadTankModels();
   // The infantry as Field Line's MPFB soldiers (render/soldierCast.ts); none loaded, the procedural men stay.
-  game.infantry.useCast(await loadSoldierCast());
+  game.infantry.useCast(await loadSoldierCast(pipeline.renderer));
   // The lorries' meshes (world/trucks.ts); their colliders stand from the start, models or not.
   world.trucks.attach(await loadTruckModels());
   await game.init();

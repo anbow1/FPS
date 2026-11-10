@@ -1,6 +1,7 @@
 import { attribute, clamp, dot, float, length, max, mix, smoothstep, texture, uv, vec3 } from 'three/tsl';
-import { BufferAttribute, type BufferGeometry, type Material, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type Texture } from 'three/webgpu';
+import { BufferAttribute, type BufferGeometry, type Material, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type Texture, type WebGPURenderer } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAR_MODELS, type CarModelId, carModelInfo } from '../maps/vehicles.ts';
 import { lampLit } from './materials.ts';
@@ -49,9 +50,14 @@ export function carModel(id: CarModelId): VehicleModel | undefined {
 /**
  * Loads every car model; a failure leaves the procedural cars in place (logged, not thrown). On Low (the
  * phones' preset) only the far level is fetched and serves near too: ~0.45 MB a model instead of ~2.3.
+ * The models' textures are KTX2 (tools/assets/ktx2_glb.mjs): `renderer` must be initialised, the loader
+ * asks it which compressed formats the GPU takes.
  */
-export async function loadCarModels(quality: 'high' | 'low'): Promise<void> {
-  const loader = new GLTFLoader();
+export async function loadCarModels(quality: 'high' | 'low', renderer: WebGPURenderer): Promise<void> {
+  // No transcoder path: three's loader then points at its own copy of the Basis transcoder (new URL with
+  // import.meta.url), which the bundler emits into the build, so the APK needs no network.
+  const ktx2 = new KTX2Loader().detectSupport(renderer);
+  const loader = new GLTFLoader().setKTX2Loader(ktx2);
   await Promise.all(
     CAR_MODELS.map(async (id) => {
       try {
@@ -63,7 +69,7 @@ export async function loadCarModels(quality: 'high' | 'low'): Promise<void> {
         console.warn(`car model ${id} did not load; the procedural car stands in:`, err);
       }
     }),
-  );
+  ).finally(() => ktx2.dispose());
 }
 
 function categoryOf(materialName: string): VehiclePart {

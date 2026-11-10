@@ -76,7 +76,7 @@ export class Film {
     const fullM = characters.length > 0 ? 30 : 70;
     this.people = new PeopleView(this.crowd.people, (p) => p.mode === 'ride' || Math.abs(p.z - camZ) < fullM, characters);
     // The shared car models (shared/vehicles) first: the view builds from them, procedural if they fail.
-    await loadSharedCars();
+    await loadSharedCars(this.stage.renderer);
     this.vehicles = new VehiclesView(this.traffic.vehicles, this.plan.parked, this.nearCamera());
     // The flock by the right kerb ahead of the camera, between the lamp posts and the trees; startled at 4.2 s.
     this.pigeons = new Pigeons(10.05, -15, 4.2);

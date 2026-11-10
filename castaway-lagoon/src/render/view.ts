@@ -180,7 +180,7 @@ export class LagoonView {
     }
     if (game.band) {
       this.guerrillas = new GuerrillaView();
-      this.guerrillas.useCast(await loadGuerrillaCast(stage.quality));
+      this.guerrillas.useCast(await loadGuerrillaCast(stage.quality, stage.renderer));
       this.camp = buildCamp(game.band.camp);
       stage.scene.add(this.guerrillas.group, this.camp.group);
     }

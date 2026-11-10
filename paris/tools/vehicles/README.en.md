@@ -45,6 +45,12 @@ Output: `out\hatchback_lod0.glb`, `_lod1.glb`, `_lod2.glb` and `out\hatchback.js
 address and the licence into the `.json`** — CC BY requires a credit in the game
 (in its credits / README).
 
+**Then the textures to KTX2** (playbook §8.4): `node tools/assets/ktx2_glb.mjs out/hatchback_lod*.glb --in-place`
+(from the repository's root; the packages and `KTX2_TOOLS` are in the script's head). Its `auto` mode encodes
+each texture in ETC1S, and one whose PSNR falls below 40 dB in UASTC. A game that loads the file needs
+`GLTFLoader.setKTX2Loader` (see `field-line/src/render/vehicleModels.ts`) (no transcoder path: three's loader brings its own);
+without it the model fails to load and the procedural stand-in stays.
+
 ## What to look for (realism, no brands)
 
 Models carrying makers' logos and names must be de-branded (badges removed,

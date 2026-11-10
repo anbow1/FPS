@@ -12,12 +12,28 @@
 //
 // WebGPU only (the counters wrap the WebGPU API). A software GPU is 5–20× slower than a phone at
 // compiling: compare runs on one machine, and read the counts (pipelines, modules, uploads) as exact.
+//
+// --hide-features  comma-separated WebGPU features the page must not see. For KTX2 textures pass
+//                  texture-compression-astc,texture-compression-etc2: the software GPU (SwiftShader) offers
+//                  both, so KTX2Loader picks ASTC, and SwiftShader decodes ASTC and ETC2 on every texture
+//                  read (measured: 12 full-screen draws 580 ms against 200 ms for RGBA8 and 255 ms for BC7).
+//                  Hidden, the loader takes BC7/BC1 as on a desktop GPU, which SwiftShader samples at RGBA8's
+//                  speed: the time then measures the game, not the emulator. Phones sample ASTC in hardware.
 import { writeFileSync } from 'node:fs';
 import { gameOf, launch, openGame, parseArgs } from './lib.mjs';
 
 const args = parseArgs();
 const game = gameOf(args.game ?? 'generic');
 const { browser, page, errors } = await launch('webgpu');
+
+if (args['hide-features']) {
+  await page.addInitScript((hidden) => {
+    const has = GPUSupportedFeatures.prototype.has;
+    GPUSupportedFeatures.prototype.has = function (name) {
+      return !hidden.includes(name) && has.call(this, name);
+    };
+  }, args['hide-features'].split(','));
+}
 
 await page.addInitScript(() => {
   const ev = (window.__ev = []);

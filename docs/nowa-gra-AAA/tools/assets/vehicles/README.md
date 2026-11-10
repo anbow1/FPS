@@ -40,6 +40,12 @@ Wynik: `out\hatchback_lod0.glb`, `_lod1.glb`, `_lod2.glb` i `out\hatchback.json`
 (wymiary, środki i promienie kół, rozstaw osi). **Wpisz do `.json` autora, adres
 strony i licencję** — CC-BY wymaga podpisu w grze (w napisach / README gry).
 
+**Potem tekstury do KTX2** (playbook §8.4): `node tools/assets/ktx2_glb.mjs out/hatchback_lod*.glb --in-place`
+(z katalogu głównego repozytorium; pakiety i `KTX2_TOOLS` — nagłówek skryptu). Tryb `auto` koduje każdą
+teksturę w ETC1S, a tę, której PSNR spada poniżej 40 dB, w UASTC. Gra, która wczytuje plik, potrzebuje
+`GLTFLoader.setKTX2Loader` (wzór: `field-line/src/render/vehicleModels.ts`) (bez ścieżki transkodera: loader three ma własny);
+bez tego model się nie wczyta i zostanie proceduralny zastępca.
+
 ## Co szukać (realizm, bez marek)
 
 Modele z logo i nazwami producentów trzeba „odmarkowić” (zdjąć znaczki, zmienić

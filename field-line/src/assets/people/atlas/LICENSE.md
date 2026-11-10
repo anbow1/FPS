@@ -9,7 +9,7 @@ the encoding adds no terms.
 Bake again whenever a character, its textures or the atlas layout change. A stale atlas puts the wrong
 picture under the uvs.
 
-The transcoder that unpacks them at load (`public/basis/basis_transcoder.js`, `.wasm`) is copied
-unchanged from three.js (`examples/jsm/libs/basis/`). It is Basis Universal by Binomial LLC,
+The transcoder that unpacks them at load (`basis_transcoder.js`, `.wasm`) is three.js's own copy
+(`examples/jsm/libs/basis/`), which the bundler emits into the build unchanged. It is Basis Universal by Binomial LLC,
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). The encoder is the npm package
 `ktx2-encoder` (MIT) and is used only at bake time; it does not ship.

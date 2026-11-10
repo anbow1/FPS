@@ -11,7 +11,7 @@ const BIN_URLS = import.meta.glob<string>('../assets/people/*.bin', { eager: tru
 const ATLAS_URLS = import.meta.glob<string>('../assets/people/atlas/*.ktx2', { eager: true, query: '?url', import: 'default' });
 // The pieces' own textures go into the build only for baking (`vite build --mode bake`, which
 // tools/assets/bake_atlases.mjs opens): the game itself draws nothing, it loads the baked atlases (11 MB
-// instead of these 10). A character without a baked atlas is left out, and the procedural men stand in.
+// instead of these 10). An atlas that is missing or fails to load is drawn in each piece's plain colour.
 // A dynamic import behind a build-time constant: outside the bake mode the bundler drops the branch, and the
 // textures with it.
 async function pieceTextures(): Promise<Record<string, string>> {
@@ -20,8 +20,9 @@ async function pieceTextures(): Promise<Record<string, string>> {
 
 /** `renderer` must be initialised: the loader asks it which compressed formats the GPU takes. */
 export function loadSoldierCast(quality: 'high' | 'low', renderer: WebGPURenderer): Promise<CastCharacter[]> {
-  // The Basis transcoder ships in the build (public/basis), so the APK needs no network.
-  const ktx2 = new KTX2Loader().setTranscoderPath('basis/').detectSupport(renderer);
+  // No transcoder path: three's loader then points at its own copy of the Basis transcoder (new URL with
+  // import.meta.url), which the bundler emits into the build, so the APK needs no network.
+  const ktx2 = new KTX2Loader().detectSupport(renderer);
   return pieceTextures()
     .then((tex) => loadCast(castUrls(JSON_URLS, BIN_URLS, tex, ATLAS_URLS), quality, ktx2))
     .finally(() => ktx2.dispose());

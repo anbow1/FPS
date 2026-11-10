@@ -2190,9 +2190,30 @@ a bake or a shadow map. Usage flags cannot tell them apart: three sets RENDER_AT
 | city | 204 / 166 | 90.1 / 103.4 s | 1265 MB | 320 MB | — |
 
 The city's High figure is mostly the parked cars: 45 GLB textures at 2048², about 960 MB as RGBA8 with mips.
-Draw calls and triangles at the benchmark spots (`scripts/benchView.mjs`, WebGL): range High 146 calls at
-the spawn / 105 looking back, 1.16 M triangles; Low 107 / 77, 0.49 M. Still to add: forest and city draw
-calls, the other four games, and the phone's own numbers.
+
+Draw calls and triangles at the benchmark spots (`scripts/benchView.mjs --gpu webgpu --no-present`; without
+`--no-present` this headless Chrome loses the WebGPU device and every row reads 0):
+
+| Map | High: calls (spots) | High: triangles | Low: calls | Low: triangles |
+|---|---|---|---|---|
+| range | 146 / 105 | 1.16 M | 107 / 77 | 0.49 M |
+| forest | 167–224 | 6.8–8.3 M | 103–123 | 3.0–3.5 M |
+| city | 573–742 | 15.9–16.5 M | 288–328 | 8.2–8.3 M |
+
+The other four games (`load.mjs`, High / Low, software WebGPU, 2026-11-10):
+
+| Game | Pipelines | Ready / GPU idle | Uploaded textures | Render targets |
+|---|---|---|---|---|
+| Castaway Lagoon | 268 / 233 | 79.9 / 93.5 s; 65.1 / 70.8 s | 540 / 411 MB | 454 / 56 MB |
+| Tanks | 321 / 171 | 72.0 / 94.2 s; 43.6 / 50.5 s | 185 / 184 MB | 156 / 55 MB |
+| Contrail | 69 / 64 | 24.0 / 29.6 s; 18.3 / 21.6 s | 184 / 184 MB | 95 / 74 MB |
+| Ridgeline | 64 / 62 | 31.3 / 38.3 s; 22.4 / 25.4 s | 85 / 77 MB | 117 / 82 MB |
+
+Read across: the city's 16 M triangles and 700 draw calls on High are the largest frame cost in the five
+games (stage 1b, levels of detail, starts there); Tanks builds the most pipelines (321, stage 1c); Lagoon's
+High carries 454 MB of render targets. Tanks High logs a WGSL error ("structures must have at least one
+member", a `MeshBasicNodeMaterial` pipeline) before any of this stage's changes. Still to add: the phone's
+own numbers.
 
 **KTX2 pilot (stage 1a): the characters' atlases.** The MPFB soldiers' atlases were drawn into a canvas
 at every start (2048² per character near, 512² far: RGBA8, a third more with mips) from about 60 piece
@@ -2209,7 +2230,7 @@ carries them for the baker). Measured on Field Line:
 | Range, High / Low (ready, GPU idle unchanged: 28.0 → 28.3 s, 56.9 → 55.1 s) | 336 / 207 MB | 234 / 201 MB |
 | Pipelines, forest High | 170 | 170 |
 | Forest High, ready / GPU idle (two clean rounds) | 115.0 / 151.4 s, 55.5 / 133.6 s | 105.2 / 141.4 s, 49.6 / 104.1 s |
-| Build (dist) | 65.7 MB | 67.3 MB (+1.6: atlases 10.7, transcoder 0.6, pieces −10.3) |
+| Build (dist) | 65.7 MB | 66.7 MB (+1.0: atlases 10.7, transcoder 0.6, pieces −10.3) |
 
 Choice of format, measured on the rifleman's near atlas (RGB PSNR against the drawn atlas, file): ETC1S
 q200 35–36 dB, 0.37 MB, blocky up close on faces and insignia; UASTC 48–50 dB, 2.0 MB; **UASTC + RDO 1
@@ -2221,6 +2242,30 @@ game does not reach ready on headless WebGL2 within 7 minutes, with or without K
 by 1.6 MB: UASTC carries more bits than the JPEG/PNG pieces did. That is the price of a texture the
 GPU reads directly; it is paid once on disk and saves on every start and in every frame's memory.
 
+**Repeated (P7): Lagoon's and Tanks' characters, and the cars.** Lagoon bakes its own band
+(`castaway-lagoon/src/render/guerrillaCast.ts`, the same bake as Field Line); Tanks loads Field Line's
+far atlases directly (one `mpfbCast.ts` in both games, so the same layout). The nine parked car models of
+`shared/vehicles` (Field Line's city, Paris) had their textures re-encoded inside the GLB
+(`tools/assets/ktx2_glb.mjs`, `KHR_texture_basisu`): near level `auto` (ETC1S, and UASTC where ETC1S falls
+below 40 dB: the headlamp atlas at 28.6 dB, most wheel roughness maps, three bodies), the far levels ETC1S
+throughout (seen from afar; 30–46 dB). Software WebGPU, the texture formats a desktop GPU takes (see the
+trap below), two or four alternating runs each:
+
+| | Uploaded textures before → after | GPU idle before → after | Build |
+|---|---|---|---|
+| Field Line city, High | 1265 → 506 MB (432 MB with ASTC/ETC2, as on a phone) | 125.5, 126.7 → 121.2, 127.5 s | 65.7 → 73.1 MB (cars +6.4, atlases +1.0) |
+| Field Line city, Low | 320 → 262 MB | not compared (one run after, 87.7 s with ASTC) | |
+| Castaway Lagoon, High | 540 → 438 MB | mean of 4: 93.5 → 94.6 s (noise; loading the band +0.3 s) | 34.0 → 32.1 MB |
+| Tanks, High | 185 → 179 MB | 88.4, 86.8 → 81.7, 84.4 s | 34.9 → 35.2 MB |
+
+Pipelines unchanged everywhere. A parked car at 3–5 m, before and after, High and Low: mean difference
+0.7/255, the differing pixels on edges only (anti-aliasing jitter), not on paint or lamps. Paris loads the
+same two cars through the same loader (its build 34.6 → 37.1 MB).
+
+The cars' GLBs grow by 6.4 MB because the near level keeps UASTC where ETC1S would show (lamps, sharp
+edges); the far levels stay at the JPEGs' size. Every game that loads one of these files needs
+`GLTFLoader.setKTX2Loader`: check with `grep -rn "<model>_lod"` before re-encoding a shared model.
+
 **Traps**
 
 - A software GPU compiles 5–20× slower than a phone and uploads differently:
@@ -2231,9 +2276,17 @@ GPU reads directly; it is paid once on disk and saves on every start and in ever
   out of the game's build, put the glob in its own module and import it dynamically behind
   `import.meta.env.MODE === 'bake'` (FL `soldierTex.ts`): Vite drops that branch and the module with it.
 - `KTX2Loader.detectSupport(renderer)` asks the renderer which compressed formats the device has; call it
-  after `renderer.init()`, or it sees none and transcodes everything to RGBA8. The transcoder
-  (`basis_transcoder.js` / `.wasm`, from three's `examples/jsm/libs/basis/`) goes in `public/basis/` with a
-  relative path: the APK works offline.
+  after `renderer.init()`, or it sees none and transcodes everything to RGBA8. Leave the transcoder path unset:
+  three r186's loader then points at its own `basis_transcoder.js` / `.wasm` with `new URL(…, import.meta.url)`,
+  which Vite emits into the build (the APK works offline). Setting a path *and* copying the files into
+  `public/` ships them twice (0.6 MB each time), as the first version of the pilot did.
+- **A software GPU makes compressed textures look slow.** SwiftShader offers ASTC and ETC2, so KTX2Loader
+  picks ASTC, and SwiftShader decodes ASTC and ETC2 on every texture read: twelve full-screen 1024² draws
+  took 580 ms (ASTC) and 549 ms (ETC2) against 200 ms for RGBA8 and 255 ms for BC7, while the uploads were
+  3–5× faster. The city's cars measured +7 s with ASTC and nothing with BC7. Measure KTX2 with
+  `load.mjs --hide-features texture-compression-astc,texture-compression-etc2` (the desktop's formats);
+  a phone samples ASTC in hardware. Alternate the runs (before, after, after, before): this machine slows
+  over a series, and a fixed order once read as a 5 % loss that the reversed order turned into a gain.
 - A baked atlas is a copy of a layout. Bake again after changing a character, a piece texture or the
   atlas layout; a stale one puts the wrong picture under the uvs (and loads without an error).
 - Do not edit sources while a headless run uses the dev server: hot reload

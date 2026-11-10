@@ -58,3 +58,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Basis Universal transcoder
+
+`basis_transcoder.js` and `.wasm` (unpacking the soldiers' KTX2 atlases at load) are three.js's own copy
+(`examples/jsm/libs/basis/`), which the bundler emits into the build unchanged. Basis Universal is by Binomial LLC, used under the
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).

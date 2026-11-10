@@ -1,6 +1,7 @@
 import { attribute, clamp, dot, float, length, max, mix, smoothstep, texture, uv, vec3 } from 'three/tsl';
-import { type BufferGeometry, type Group, type Material, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type Texture } from 'three/webgpu';
+import { type BufferGeometry, type Group, type Material, Mesh, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node, type Texture, type WebGPURenderer } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import hatchInfo from '../../../shared/vehicles/hatchback/hatchback.json';
 import sedanInfo from '../../../shared/vehicles/sedan/sedan.json';
 import type { CarVariant } from './carModel.ts';
@@ -52,9 +53,16 @@ export function sharedCar(variant: CarVariant, fine: boolean): SharedCar | undef
   return loaded.get(`${variant}-${fine ? 0 : 1}`);
 }
 
-/** Loads both cars at both levels; a failure leaves the procedural cars (logged, not thrown). */
-export async function loadSharedCars(): Promise<void> {
-  const loader = new GLTFLoader();
+/**
+ * Loads both cars at both levels; a failure leaves the procedural cars (logged, not thrown). The models'
+ * textures are KTX2 (tools/assets/ktx2_glb.mjs): `renderer` must be initialised, the loader asks it which
+ * compressed formats the GPU takes.
+ */
+export async function loadSharedCars(renderer: WebGPURenderer): Promise<void> {
+  // No transcoder path: three's loader then points at its own copy of the Basis transcoder (new URL with
+  // import.meta.url), which the bundler emits into the build, so the APK needs no network.
+  const ktx2 = new KTX2Loader().detectSupport(renderer);
+  const loader = new GLTFLoader().setKTX2Loader(ktx2);
   await Promise.all(
     (Object.keys(MODELS) as CarVariant[]).flatMap((variant) =>
       [0, 1].map(async (lod) => {
@@ -67,7 +75,7 @@ export async function loadSharedCars(): Promise<void> {
         }
       }),
     ),
-  );
+  ).finally(() => ktx2.dispose());
 }
 
 function carOf(scene: Group, info: CarJson): SharedCar {

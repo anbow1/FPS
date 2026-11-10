@@ -123,6 +123,9 @@ potoku i od razu podnoszą punkt wyjścia.
 
 ## Etap 0. Punkt odniesienia (pół dnia, rutyna)
 
+**Stan (2026-11-10):** zrobione na programowym GPU dla pięciu gier (playbook §8.4: potoki, ready / gpu
+idle, pamięć tekstur, draw calle i trójkąty Field Line). Brakuje liczb z telefonu.
+
 **Zrób** dla każdej gry, presety Wysoka i Niska:
 
 1. Zrzuty w stałych widokach (polecenia w `docs/wytyczne-prace-rutynowe.md` §3) do
@@ -169,8 +172,10 @@ potem powiela.
 **Stan (2026-11-10):** pilot zrobiony na atlasach postaci Field Line zamiast tekstury podłoża (atlasy
 nie przechodzą przez pakowanie na CPU z punktu 4, a dają największą pamięć na postać): las High
 392 → 290 MB tekstur, start nie wolniejszy, WebGPU i WebGL2 ten sam obraz, build +1,6 MB (UASTC jest
-większy od JPEG; uzasadnienie i liczby w playbooku §8.4). Powielenie na Lagoon i Tanks:
-`docs/wytyczne-prace-rutynowe.md` P7. Następne: punkt 6 (samochody GLB w mieście, ~720 MB).
+większy od JPEG; uzasadnienie i liczby w playbooku §8.4). Powielone (P7, `docs/wytyczne-prace-rutynowe.md`): atlasy Lagoon i Tanks; punkt 6 dla
+samochodów miasta (`tools/assets/ktx2_glb.mjs`): miasto High 1265 → 506 MB tekstur, start bez zmian.
+Zostały: tekstury podłoża ze zdjęć (punkt 4: pakowanie na CPU do przeniesienia offline) oraz pozostałe
+modele GLB (czołgi, ciężarówki, jeep, łodzie, broń).
 
 **Odbiór:** zrzuty nieodróżnialne z odległości gry; pamięć tekstur i czas
 uploadu wyraźnie niższe (oczekiwane kilkukrotnie — potwierdź liczbą); build
