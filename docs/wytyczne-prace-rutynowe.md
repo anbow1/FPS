@@ -106,6 +106,10 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
 
 ### G1. Field Line, las — prześwietlone plamy słońca (największy zysk)
 
+> **Stan: zrobione** (e1e11c1). Pomiar zamiast założenia: w lesie ekspozycja schodziła 3,4 EV pod preset
+> (11,9 przy 15,3), nie 7. Granica 2,5 EV dla `range` i `forest` (`EXPOSURE.minEvBelowPresetOutdoors`),
+> las stoi na 12,8 EV; plamy słońca i łąka mają fakturę, rękaw od tyłu oliwkowy.
+
 - **Widok:** `--game field-line --extra '&map=forest' --views '[{"name":"spawn"},{"turn":3.14,"name":"back"}]'`
 - **Objaw:** pod koronami ekspozycja otwiera się tak mocno, że oświetlona
   ściółka jest prawie biała, rękaw kombinezonu blado-miętowy zamiast oliwkowego.
@@ -122,6 +126,9 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
 
 ### G2. Field Line, strzelnica — czarny spód dachu i słupy
 
+> **Stan: zrobione** (f741023). Dach: deski 0,21 m + papa 0,04 m na wierzchu; słupy drewniane; materiał
+> `metalDark` zniknął z tej mapy. Spód dachu to brązowe deski ze słojem.
+
 - **Widok:** `--extra '&map=range' --views '[{"name":"spawn"},{"turn":3.14,"name":"back"}]'`
 - **Objaw:** dach wiaty i słupy są smoliście czarne (ok. 2 % jasności), choć
   spód dachu oświetla odbicie od jasnego betonu i trawy.
@@ -135,6 +142,14 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
   liczba draw calli i potoków bez zmian.
 
 ### G3. Field Line, strzelnica — żółte „iskry” na trawie
+
+> **Stan: cofnięte, oddane mocniejszemu modelowi (§5).** Zmiana (a) dała tylko −12 % punkcików
+> (171 → 150 w kadrze 300 × 100), więc cofnięta. Ustalone pomiarem: punkciki to **same źdźbła** (z ukrytą
+> trawą: 0 punkcików), kolor punkcika (181,181,105) przy tle (106,115,73) **nie zmienił się** po wygaszeniu
+> suchych końcówek — to nie końcówki i nie tekstura podłoża. Do sprawdzenia: przeostrzenie (`sharpen` 0,3 w
+> `stage.ts`) na źdźbłach o szerokości 1,3 px, utrata ciemnej nasady dalekich źdźbeł (`far.mul(0.8)`),
+> oświetlenie źdźbła z normalną 60 % w górę. Skrypt pomiaru punkcików: piksel jaśniejszy niż 1,35 × mediana
+> 5 × 5 + 8.
 
 - **Widok:** jak G2, zwłaszcza `back`.
 - **Objaw:** łąka w pasie 15–60 m jest usiana jasnożółtymi pojedynczymi
@@ -175,6 +190,10 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
   fakturze; nie widać rzędów ani „deszczu” kresek. Draw calle bez zmian.
 
 ### G5. Field Line, miasto — korony drzew z wielkich wielokątów
+
+> **Stan: zrobione** (ed71583). Drzewa miasta to `streetTree.ts` + materiał `leaves` (nie
+> `paris/city/trees.ts` — to bulwar). Karta 1,5–2,5 m miała jedną gałązkę z 11 liśćmi; tekstura ma teraz
+> 3 × 3 gałązki (`broadleafCluster(…, sprays)`), ten sam rozmiar, karty i trójkąty. Bez migotania.
 
 - **Widok:** `--extra '&map=city' --views '[{"name":"spawn"},{"turn":1.57,"name":"side"}]'`,
   plus jedno zbliżenie korony (`"pitch": 0.5`).
@@ -270,6 +289,10 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
 
 ### G10. Field Line, miasto — cegła i szyby
 
+> **Stan: sprawdzone, bez zmian.** `brickDark` ma luminancję liniową ≈ 0,15 (w zakresie arkusza po
+> wcześniejszej pętli krytyka), szyby `windowGlass` mają szorstkość 0,02 i odbijają sondę. Ciemne
+> elewacje w zrzucie to ściany w cieniu, nie błąd materiału.
+
 - **Widok:** `--extra '&map=city' --views '[{"turn":3.14,"name":"back"},{"turn":1.57,"name":"side"}]'`
 - **Kroki:** (a) sprawdź albedo `brick` / `brickDark` w
   `field-line/src/render/materials.ts:50–60` z arkuszem PBR
@@ -296,6 +319,11 @@ liczby wg §2. **Jedno zadanie = jeden commit.**
   jako kontrola, że nic innego się nie zmieniło.
 
 ### G12. Field Line, las — gałęzie sosen jak „pióra”
+
+> **Stan: oddane mocniejszemu modelowi (§5).** Wzór igieł to `pineSpray()` w `plantPatterns.ts`: jedna oś
+> i 32 boczne gałązki na karcie, tekstura 1024 px, igły już mają kilka tekseli (komentarz przy `needles`
+> w `materials.ts`: przy 512 zlewały się). Powtórzenie UV 2× dałoby dwie osie na jednej karcie, a
+> zmniejszenie pędów zejdzie poniżej rozdzielczości tekstury — to przeprojektowanie karty, nie stała.
 
 - **Widok:** jak G1 (po wykonaniu G1, bo prześwietlenie maskuje ten objaw).
 - **Objaw:** igliwie na gałęziach to grube, równoległe prążki — gałąź wygląda

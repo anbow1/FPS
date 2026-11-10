@@ -1442,6 +1442,37 @@ its edges whatever the shape does, and shade the decal with the ground's own
 inputs (the same photograph and macro variation at the same world UVs, the same
 wetness) so only the change — the dent — shows.
 
+## 6aa. Cheap fixes from a screenshot tour (November 2026)
+
+A tour of all five games with `tools/measure/shots.mjs` listed what gave the
+picture away, each fix limited to constants, formulas and geometry already in
+the scene (no pass, texture, light, draw call or pipeline added). The list
+and its state: `docs/wytyczne-prace-rutynowe.md` §3. What was learnt:
+
+- **Measure the cause before fixing it.** The forest's burnt-out sunflecks
+  were blamed on a 7-stop exposure floor; the meter showed the eye 3.4 stops
+  under the preset, so the floor was not what bound it. A probe of
+  `presetEv`, `adaptedEv` and the metered EV at the view took one run.
+- **Outdoors, the eye opens 2.5 stops at most** (FL `EXPOSURE.minEvBelowPresetOutdoors`):
+  the darkest place by day without a roof is a canopy's shade, 2–3 stops
+  under open sun. Metering the shaded floor fully (EV 11.9 at noon) burnt the
+  sunlit litter white; stopped at 12.8 it keeps its texture. The 7 stops stay
+  for maps with rooms.
+- **A roof is boards underneath** (FL range): a slab of one dark material is
+  dark on every face, and its underside, lit only by what the ground bounces,
+  was a black band across the view. Give the underside the material it really
+  has, from the looks the map already uses, so the merged world mesh gains
+  no draw call.
+- **A leaf card's texture is drawn at the card's scale** (FL `streetTree.ts`):
+  a 2 m card with one spray of eleven leaves made half-metre leaves. Several
+  smaller sprays on the same texture (`broadleafCluster(…, sprays)`) cost
+  nothing and turned origami into foliage.
+- **Find the pixel's owner before changing its colour.** Bright specks in a
+  far meadow survived fading the grass's dry tips; hiding the grass removed
+  them all, and their colour had not moved — the blades themselves, not their
+  tips. Hide one system at a time and count (a pixel brighter than 1.35 × the
+  median of its 5 × 5 neighbourhood).
+
 ## 6h. Animals and enemies (lagoon `render/creatures.ts`, `render/guerrillas.ts`)
 
 - **The same rigid-segment rig as the soldiers** (§6c), one InstancedMesh per
@@ -2348,6 +2379,8 @@ Condensed from the "Real-Time Coastal Simulator" prompt in
 | `motionBlur(traa(...), …)` fails with "sample is not a function" | the blur samples its input at offset uvs; a TRAA node is not a texture node | `motionBlur(convertToTexture(aa), velocityUv, samples)` |
 | Skinned figures smear under TRAA and motion blur | the velocity pass compares the skinned position with `positionPrevious`, the unskinned bind pose | assign `positionPrevious` in the `positionNode` from last frame's bone matrices |
 | Frames rendered in a loop for a recording come out as one flat colour | TRAA's history advances once per animation frame | one `requestAnimationFrame` per rendered frame; read the canvas in that task |
+| Sunlit ground burnt white in a forest at noon | auto exposure allowed to open as far as for a room, and it meters the canopy's shade | an outdoor floor of ~2.5 stops under the preset (§6aa) |
+| A roof or canopy reads as a black band from under it | one dark material on every face of the slab | the underside in its own material (boards, plaster), from the map's existing looks |
 | Every load waits 20 s at "compiling shaders", then starts anyway | `renderer.compileAsync` settles one pipeline and hangs until its timeout (it yields and awaits per object) | no precompile; warm-up frames only (§8.3) |
 | Seconds per texture at the first frame, worst on the first one | a 2D canvas is GPU-backed; `copyExternalImageToTexture` reads it back across contexts | `getContext('2d', { willReadFrequently: true })` for canvases drawn once (§8.4) |
 | Hundreds of shader builds for a few dozen materials | each instanced mesh under 1024 instances gets a uniform buffer named after itself | `markStaticInstances` + `shareStaticInstanceShaders` (§8.4) |
