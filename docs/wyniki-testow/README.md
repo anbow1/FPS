@@ -22,6 +22,27 @@ GPU (SwiftShader) porównują przebiegi na jednej maszynie; prawdziwe są z tele
 
 ---
 
+## 2026-11-11 · Ridgeline: pojazdy kolumny scalone po materiale
+
+Sonda `passes.mjs --game ridgeline`: 1632 wywołania w obrazie na High **i** Low przy 1,2 / 0,6 mln
+trójkątów; same okucia (`fittings`) 757, podwozie 356, opony 98, szyby 69 — każdy pojazd złożony z
+dziesiątek małych siatek. Szablon pojazdu scalony po wypieczeniu AO: jedna siatka na materiał i flagę
+cienia, kadłub w przestrzeni pojazdu, wieża w swojej (dalej się obraca po zniszczeniu).
+
+| | Przed | Po |
+|---|---|---|
+| Wywołania w obrazie, High / Low | 1632 / 1630 | 234 / 232 |
+| Trójkąty, High / Low | 1,24 / 0,60 M | 1,24 / 0,60 M |
+| Potoki (High) | 64 | 56 |
+| GPU idle (na przemian) | 49,5 / 48,1 s | 46,3 / 50,2 s |
+
+Zrzut z 26 m (`2026-11-11/ridgeline-pojazdy/ciezarowka.jpg`): ciężarówka bez różnicy poza krawędziami
+(kolumna jedzie). Sondy przed i po w tym folderze.
+
+**Sondy pozostałych gier** (`2026-11-11/sonda-tanks/`, `sonda-contrail/`): Tanks High 985 wywołań
+(teren 310 w obrazie), 6,4 M trójkątów, cienie 3,3 M; Contrail 140 wywołań, 0,5 M trójkątów — bez
+problemu do rozwiązania.
+
 ## 2026-11-11 · Lagoon: cienie głazów i pni dżungli z uproszczonych siatek
 
 Sonda `passes.mjs --game castaway-lagoon`: na High 8,49 z 13,42 mln trójkątów w cieniach (3 kaskady);

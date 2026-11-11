@@ -1,0 +1,21 @@
+target   1632 calls    1.24 M triangles
+shadow     21 calls    0.02 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.270 M     1  target | grass-ring1 | grass
+  0.266 M     1  target | grass-ring0 | grass
+  0.190 M     1  target | terrain | terrain
+  0.133 M     1  target | grass-ring2 | grass
+  0.131 M     1  target | forest 7 m | forest
+  0.076 M    98  target | Mesh | tyre
+  0.074 M     1  target | forest 22 m | forest
+  0.028 M   757  target | Mesh | fittings
+  0.013 M   236  target | Mesh | running gear
+  0.011 M     4  shadow | Shadow Map [ ID: 23 ]/Mesh | warden mat_6-Main_Body_2.jpg
+  0.011 M     4  target | Mesh | warden mat_6-Main_Body_2.jpg
+  0.009 M    68  target | Mesh | vehicle olive
+  0.005 M    69  target | Mesh | vehicle glass
+  0.005 M   120  target | turret/Mesh | running gear
+  0.005 M     2  shadow | Shadow Map [ ID: 23 ]/Mesh | warden mat_5-Main_Body_1.jpg
+  0.005 M     2  target | Mesh | warden mat_5-Main_Body_1.jpg

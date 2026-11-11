@@ -2306,6 +2306,14 @@ triangles, Low 3.5 → 2.6 M, draw calls and pipelines unchanged, GPU idle uncha
 screenshot cannot isolate the change in a forest: the canopy's sunflecks move with the wind between runs;
 the error bound is the check.
 
+**Ridgeline's column: draw calls, not triangles** (2026-11-11). `passes.mjs --game ridgeline` showed
+1632 draw calls a frame on both presets for 1.2 M triangles: each target vehicle was dozens of small
+meshes (757 calls for the fittings alone). The template of each kind is now merged after its AO bake,
+one mesh per material and shadow flag, the hull in the vehicle's space and the turret in its own
+(`targetView.ts` `mergeByMaterial`; the materials read only position, normal and the baked `ao`, so the
+uvs go and every part becomes non-indexed). 1632 → 234 calls, pipelines 64 → 56, triangles and the
+picture unchanged. Build any detailed vehicle or prop from parts, then merge it before it is cloned.
+
 **And Lagoon** (2026-11-11): its boulders the same way (1 % error for the big ones, which are metres
 across), and the jungle's trunks with a stand-in built in the same function from the same random draws
 (half the rings, 6 sides for 9, the same sway attributes so the shadow moves with the trunk). High

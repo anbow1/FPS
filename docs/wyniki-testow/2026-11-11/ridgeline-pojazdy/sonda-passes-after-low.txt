@@ -1,0 +1,11 @@
+target    232 calls    0.60 M triangles
+shadow     21 calls    0.02 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.190 M     1  target | terrain | terrain
+  0.076 M    18  target | Mesh | tyre
+  0.063 M     1  target | grass-ring0 | grass
+  0.062 M     1  target | forest 8 m | forest
+  0.045 M     1  target | grass-ring1 | grass
+  0.033 M     1  target | forest 26 m | forest

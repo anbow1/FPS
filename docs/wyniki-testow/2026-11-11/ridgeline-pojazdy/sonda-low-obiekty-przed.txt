@@ -1,0 +1,54 @@
+target   1630 calls    0.60 M triangles
+shadow     21 calls    0.02 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.190 M     1  target | terrain | terrain
+  0.076 M    98  target | Mesh | tyre
+  0.063 M     1  target | grass-ring0 | grass
+  0.062 M     1  target | forest 8 m | forest
+  0.045 M     1  target | grass-ring1 | grass
+  0.033 M     1  target | forest 26 m | forest
+  0.028 M   757  target | Mesh | fittings
+  0.027 M     1  target | grass-ring2 | grass
+  0.013 M   236  target | Mesh | running gear
+  0.011 M     4  shadow | Shadow Map [ ID: 23 ]/Mesh | warden mat_6-Main_Body_2.jpg
+  0.011 M     4  target | Mesh | warden mat_6-Main_Body_2.jpg
+  0.009 M    68  target | Mesh | vehicle olive
+  0.005 M    69  target | Mesh | vehicle glass
+  0.005 M   120  target | turret/Mesh | running gear
+  0.005 M     2  shadow | Shadow Map [ ID: 23 ]/Mesh | warden mat_5-Main_Body_1.jpg
+  0.005 M     2  target | Mesh | warden mat_5-Main_Body_1.jpg
+  0.004 M     9  shadow | Shadow Map [ ID: 23 ]/Mesh | warden mat_4-Missile_1.jpg
+  0.004 M     9  target | Mesh | warden mat_4-Missile_1.jpg
+  0.004 M    38  target | turret/Mesh | vehicle olive
+  0.004 M     4  target | Mesh | rotor disc
+  0.003 M    33  target | Mesh | vehicle sand
+  0.003 M    56  target | Mesh | truck cover
+  0.002 M     1  target | sky dome | sky
+  0.002 M    46  target | Mesh | lamp glass
+  0.001 M    12  target | turret/Mesh | vehicle sand
+  0.001 M    40  target | Mesh | track
+  0.001 M     2  shadow | Shadow Map [ ID: 23 ]/Mesh | helmet
+  0.001 M     2  target | Mesh | helmet
+  0.000 M     2  target | Mesh | canopy
+  0.000 M     5  target | turret/Mesh | vehicle glass
+  0.000 M     2  shadow | Shadow Map [ ID: 23 ]/Mesh | seat
+  0.000 M     2  shadow | Shadow Map [ ID: 23 ]/Mesh | flight suit
+  0.000 M     2  target | Mesh | seat
+  0.000 M     2  target | Mesh | flight suit
+  0.000 M     4  target | RTT | RTT
+  0.000 M     2  target | Mesh | 
+  0.000 M     1  target | Bloom [ High Pass ] | Bloom_highPass
+  0.000 M     1  target | Bloom [ Blur Horizontal - 0 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Vertical - 0 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Horizontal - 1 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Vertical - 1 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Horizontal - 2 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Vertical - 2 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Horizontal - 3 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Vertical - 3 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Horizontal - 4 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Blur Vertical - 4 ] | Bloom_separable
+  0.000 M     1  target | Bloom [ Composite ] | Bloom_comp
+  0.000 M     1  screen | Render Pipeline | RenderPipeline

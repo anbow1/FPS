@@ -1,5 +1,6 @@
 import { float, mix, mx_noise_float, normalLocal, positionLocal, smoothstep, vec2, vec3 } from 'three/tsl';
-import { BoxGeometry, type BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, type Material, Mesh, MeshStandardNodeMaterial, type Node, type Scene, Shape, Vector2, type Vector3 } from 'three/webgpu';
+import { BoxGeometry, type BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, type Material, Matrix4, Mesh, MeshStandardNodeMaterial, type Node, type Object3D, type Scene, Shape, Vector2, type Vector3 } from 'three/webgpu';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { TargetKind } from '../config.ts';
 import type { GroundForce, GroundTarget } from '../sim/targets.ts';
 import { box } from './airframe.ts';
@@ -23,6 +24,55 @@ import { plain } from './jetMaterials.ts';
 // sides, and the baked AO puts grime in every corner. One template per kind
 // and paint is built and baked once; each vehicle is a clone of it (shared
 // geometry, so no bake and no hitch when a column appears).
+
+/**
+ * Merges a baked template's meshes into one per material and shadow flag: the hull's in the vehicle's
+ * space, the turret's in its own (it still turns when the vehicle is destroyed). Measured: the column's
+ * vehicles were ~1600 draw calls a frame on both presets (757 for the fittings alone), each a few
+ * hundred triangles. The materials read only position and normal (and the baked `ao`), all kept.
+ */
+function mergeByMaterial(root: Group): void {
+  root.updateMatrixWorld(true);
+  const turret = (root.getObjectByName('turret') as Group | undefined) ?? null;
+  const inTurret = (o: Object3D): boolean => {
+    for (let p = o.parent; p; p = p.parent) if (p === turret) return true;
+    return false;
+  };
+  for (const space of turret ? [root, turret] : [root]) {
+    const toSpace = new Matrix4().copy(space.matrixWorld).invert();
+    const sets = new Map<string, { material: Material; castShadow: boolean; geometries: BufferGeometry[] }>();
+    const merged: Mesh[] = [];
+    space.traverse((o) => {
+      if (!(o instanceof Mesh) || Array.isArray(o.material) || !(o.geometry as BufferGeometry).getAttribute('ao')) return;
+      if (inTurret(o) !== (space === turret)) return;
+      const source = o.geometry as BufferGeometry;
+      const g = source.index ? source.toNonIndexed() : source.clone();
+      for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'ao') g.deleteAttribute(name);
+      g.applyMatrix4(new Matrix4().multiplyMatrices(toSpace, o.matrixWorld));
+      const material = o.material as Material;
+      const key = `${material.uuid}|${o.castShadow}`;
+      const set = sets.get(key) ?? { material, castShadow: o.castShadow, geometries: [] as BufferGeometry[] };
+      set.geometries.push(g);
+      sets.set(key, set);
+      merged.push(o);
+    });
+    for (const o of merged) o.removeFromParent();
+    for (const { material, castShadow, geometries } of sets.values()) {
+      const geometry = mergeGeometries(geometries);
+      if (!geometry) throw new Error('vehicle template: parts did not merge');
+      const mesh = new Mesh(geometry, material);
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = true;
+      space.add(mesh);
+    }
+  }
+  // The wheels' groups are empty now.
+  const empty: Object3D[] = [];
+  root.traverse((o) => {
+    if (o !== root && o !== turret && !(o instanceof Mesh) && o.children.length === 0) empty.push(o);
+  });
+  for (const o of empty) o.removeFromParent();
+}
 
 /** Ground footprint half length and half width (m), for the contact shadows. */
 const FOOTPRINT: Record<TargetKind, [number, number]> = { tank: [3.9, 2.0], apc: [3.5, 1.55], truck: [3.8, 1.3] };
@@ -145,6 +195,7 @@ export class TargetView {
     if (!template) {
       template = this.build(kind, paintName === 'sand' ? this.sand : this.olive);
       bakeAmbientOcclusion(template);
+      mergeByMaterial(template);
       this.templates.set(key, template);
     }
     const root = template.clone(true);

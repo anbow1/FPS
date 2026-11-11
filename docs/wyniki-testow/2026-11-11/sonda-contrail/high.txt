@@ -1,0 +1,21 @@
+target    111 calls    0.45 M triangles
+shadow     28 calls    0.09 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.131 M     1  target | forest 11 m | forest
+  0.098 M     1  target | terrain | terrain
+  0.074 M     1  target | forest 34 m | forest
+  0.033 M     1  target | talon/Mesh | talon Cockpit
+  0.028 M     5  shadow | wraith/Mesh | wraith f35_paint_top
+  0.028 M     5  target | wraith/Mesh | wraith f35_paint_top
+  0.028 M     5  shadow | wraith/Mesh | wraith f35_paint_side
+  0.028 M     5  target | wraith/Mesh | wraith f35_paint_side
+  0.019 M     7  target | talon/Mesh | talon Body
+  0.018 M     5  shadow | wraith/Mesh | wraith f35_paint_bottom
+  0.018 M     5  target | wraith/Mesh | wraith f35_paint_bottom
+  0.009 M     2  shadow | wraith/Mesh | wraith PaletteMaterial001
+  0.009 M     2  target | wraith/Mesh | wraith PaletteMaterial001
+  0.007 M     2  target | canopy glass | canopy
+  0.002 M     1  target | sky dome | sky
+  0.001 M     1  shadow | wraith/Mesh | wraith PaletteMaterial003
