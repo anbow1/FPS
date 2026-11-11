@@ -2144,6 +2144,21 @@ What cut it, in the order of what it gave:
    finds its outputs by name, and a renamed colour texture has no output
    ("getNodeType of undefined"). Field Line's first aim through the scope: 41
    pipelines and 27 s on the software GPU before, none after.
+   **Only for a camera drawn now and then.** The twin also writes the scene
+   pass's other outputs (velocity, normal) and works out every vertex's
+   previous position. Tanks' water mirror, drawn every frame on High, as a
+   twin: 321 → 285 pipelines, GPU idle at load 114 → 104 s, but frames
+   5–9 % slower (alternated runs, 2026-11-11). Rejected: the patch is in
+   `docs/wyniki-testow/2026-11-11/tanks-lustro/`. For a mirror, warm it with
+   the same objects hidden as in play, and keep out of it any material with
+   its own `mrtNode` (next item).
+4a. **A material's own `mrtNode` needs an output in every target it is drawn
+   into.** Outputs are matched to the target's texture names; with none
+   matching, the fragment shader's output struct is empty and fails to compile
+   ("structures must have at least one member"), and the invalid pipeline
+   voids the command buffer it is in. Tanks' rain (`mrtNode {normal,
+   velocity}`) drawn into the water mirror (one texture, "water mirror") did
+   this on High; the rain is now hidden from the mirror.
 5. **Noise without trigonometry** (`core/noise.ts`): gradient noise took a
    cosine and a sine per lattice corner; a 65 536-entry table of directions,
    indexed by the hash's top bits, gives the same field to within 4·10⁻⁵
@@ -2207,7 +2222,8 @@ The other four games (`load.mjs`, High / Low, software WebGPU, 2026-11-10):
 Read across: the city's 16 M triangles and 700 draw calls on High are the largest frame cost in the five
 games (stage 1b, levels of detail, starts there); Tanks builds the most pipelines (321, stage 1c); Lagoon's
 High carries 454 MB of render targets. Tanks High logs a WGSL error ("structures must have at least one
-member", a `MeshBasicNodeMaterial` pipeline) before any of this stage's changes. Still to add: the phone's
+member", a `MeshBasicNodeMaterial` pipeline) before any of this stage's changes (found and fixed in stage
+1c: the rain drawn into the water mirror, §8.4 item 4a). Still to add: the phone's
 own numbers.
 
 **KTX2 pilot (stage 1a): the characters' atlases.** The MPFB soldiers' atlases were drawn into a canvas

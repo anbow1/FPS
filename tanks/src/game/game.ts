@@ -138,7 +138,11 @@ export class Game {
     this.water = new Water(world.hf, world.noise, this.lighting, initialDetail);
     for (const t of this.water.targets) pipeline.passTimer.name(t, 'water');
     this.scene.add(this.water.group);
-    this.water.setMirrorScene([world.grass.group], () => [this.lighting.sun, ...this.lighting.csm.lights]);
+    // Not in the mirror: the grass (too fine to read in a reflection), and the rain, whose streaks hang round the
+    // camera, and whose own MRT (normal, velocity: rain.ts) has no output in the mirror's plain target: its
+    // shader there failed to compile ("structures must have at least one member") and took the mirror's
+    // command buffer with it.
+    this.water.setMirrorScene([world.grass.group, this.rain.mesh], () => [this.lighting.sun, ...this.lighting.csm.lights]);
     hud.buildMinimap(world);
   }
 

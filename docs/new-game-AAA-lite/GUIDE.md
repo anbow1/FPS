@@ -68,8 +68,9 @@ in `games/new-game/DESCRIPTION.md`, photos in `games/new-game/references/`.
    simplifies to 1–2 % of the size in error. Give the shadow camera that layer
    *and* layer 0 (a mask with only bit 0 copies the view camera's).
 8. **Few shader variants:** one material per kind of surface, switches as
-   uniforms; static instanced meshes via `markStaticInstances`; extra cameras
-   draw into a twin of the scene pass's target. State pipeline count on every
+   uniforms; static instanced meshes via `markStaticInstances`; a camera drawn
+   now and then (scope) draws into a twin of the scene pass's target, one drawn
+   every frame (mirror) does not (+5–9 % a frame). State pipeline count on every
    change adding a material, instanced mesh or camera.
 9. **Bake what every start computes** if profile shows > 1 s (file or worker).
 10. **Pilot first** (100 × 100 m slice), then replicate.
@@ -302,6 +303,8 @@ number behind it.
 | Seconds per texture at first frame | `willReadFrequently: true` canvases |
 | Hundreds of shader builds | static instanced meshes past uniform-buffer limit |
 | Scope freezes on first use | its target cloned from the scene pass, warmed at load |
+| Every material twice in the pipeline count | a mirror drawn without the scene's MRT; a twin target costs 5–9 % a frame, so keep the mirror and warm it with what it hides in play |
+| "structures must have at least one member" | a material's own `mrtNode` drawn into a target without those outputs: hide it from that camera |
 | Plants only in shadows | fill instances before warm-up |
 | Scene recompiles at dusk | fixed light set, fade intensities |
 | Foliage draws solid quads | restore `alphaTest` after clone; no A2C without MSAA |

@@ -261,10 +261,14 @@ export class Water {
     this.shadowLights = shadowLights;
   }
 
-  /** Draw the mirror once at load, with everything the warm-up revealed: its plain-target pipelines compile now. */
+  /**
+   * Draw the mirror once at load, with everything the warm-up revealed: its plain-target pipelines compile now.
+   * Hidden as in play (mirrorHidden): warmed with only the water hidden it also built the grass's mirror
+   * pipeline, which no frame ever uses.
+   */
   warmMirror(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
     const mirror = this.mirror;
-    if (mirror) withHidden([this.group], () => mirror.render(renderer, scene, camera));
+    if (mirror) withHidden(this.mirrorHidden.length ? this.mirrorHidden : [this.group], () => mirror.render(renderer, scene, camera));
   }
 
   /** The frame governor's reflection step: a coarse mirror while it is off (the shader shows the sky then). */

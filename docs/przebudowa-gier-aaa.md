@@ -228,6 +228,13 @@ startu bez zmian (`docs/wyniki-testow/`). Widoczny trzeci poziom odrzucony (+112
 **Odbiór:** liczba potoków i gpu idle niższe niż w Etapie 0; zrzuty
 identyczne; 0 nowych potoków w trakcie gry.
 
+**Stan (2026-11-11):** Tanks — dwa potoki na materiał na High to lustro wody
+rysowane bez MRT sceny. Cel-bliźniak lustra (jak luneta Field Line) dał 321 →
+285 potoków, ale klatkę o 5–9 % dłuższą: odrzucony. Przyjęte: rozgrzewka
+lustra ukrywa to, co lustro w grze, a deszcz nie trafia do lustra (jego
+`mrtNode` łamał tam shader: błąd WGSL z Etapu 0). 321 → 319 potoków, gpu idle
+~9 % krócej, 0 błędów (`docs/wyniki-testow`). Dalej: Lagoon (271), P5.
+
 ### 1d. Wypiek generacji (R9)
 
 `profile.mjs`: każda funkcja powyżej 1 s czasu własnego podczas ładowania.

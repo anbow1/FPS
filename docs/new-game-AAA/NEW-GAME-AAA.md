@@ -76,8 +76,10 @@ showed. Each rule has its reason; the stages below refer to them by number
   shows where calls and triangles go).
 - **R8. Fewer shader variants.** One material per *kind* of surface with its
   switches as uniforms and attributes, not a material per prop; static
-  `InstancedMesh` objects marked with `markStaticInstances`; extra cameras
-  (scope, mirror) drawing into a twin of the scene pass's target. The pipeline
+  `InstancedMesh` objects marked with `markStaticInstances`; a camera drawn now
+  and then (scope) draws into a twin of the scene pass's target, but one drawn
+  every frame (mirror) does not: the twin's extra outputs cost Tanks 5–9 % a
+  frame; warm it with what it hides in play instead. The pipeline
   count is stated with every change that adds a material, an instanced mesh or
   a camera.
 - **R9. Bake what every start computes.** Height grids, scatter, procedural

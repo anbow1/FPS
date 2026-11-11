@@ -22,6 +22,42 @@ GPU (SwiftShader) porównują przebiegi na jednej maszynie; prawdziwe są z tele
 
 ---
 
+## 2026-11-11 · Tanks: lustro wody — cel-bliźniak odrzucony, rozgrzewka i deszcz poprawione
+
+Sonda potoków (High 321, Low 171): na High prawie każdy materiał miał dwa potoki, bo lustro wody rysuje
+scenę bez MRT do własnego celu. Pliki: `2026-11-11/tanks-lustro/`.
+
+**Wariant 1, cel lustra jako bliźniak celu sceny** (jak luneta w Field Line: klon celu przejścia sceny, to
+samo MRT, prędkość z projekcją lustra). Odbicie na zrzucie bez zmian (`jezioro-przed-po.jpg`, u góry przed).
+
+| | przed | po | po | przed |
+|---|---|---|---|---|
+| potoki High | 321 | 285 | 285 | 321 |
+| GPU idle (s) | 114,9 | 106,3 | 100,8 | 113,4 |
+| klatka przy jeziorze (s, 30 klatek) | 8,06 | 8,63 | 8,33 | 8,09 |
+| klatka na starcie (s) | 8,96 | 10,01 | 9,40 | 8,88 |
+
+**Odrzucony:** klatka o 5–9 % dłuższa (lustro zapisuje też prędkość i liczy poprzednią pozycję każdego
+wierzchołka, a rysuje się w każdej klatce). Łatka: `lustro-blizniak.patch`.
+
+**Wariant 2, przyjęty:** rozgrzewka lustra ukrywa to samo, co lustro w grze (wcześniej tylko wodę, więc
+kompilowała potok trawy dla lustra, którego żadna klatka nie używa), a deszcz jest ukryty w lustrze. Jego
+własne `mrtNode {normal, velocity}` nie miało wyjścia w jednoteksturowym celu lustra, więc shader nie
+kompilował się („structures must have at least one member”, ten sam błąd WGSL z sondy Etapu 0), a
+nieprawidłowy potok unieważniał bufor poleceń lustra.
+
+| | przed | po | po | przed |
+|---|---|---|---|---|
+| potoki High | 321 | 319 | 319 | 321 |
+| GPU idle (s) | 119,8 | 106,3 | 112,0 | 120,6 |
+| gotowe (s) | 92,3 | 90,4 | 95,3 | 93,1 |
+| błędy w konsoli | 4 | 0 | 0 | 4 |
+
+Rysowanie w grze bez zmian: trawa i tak była w lustrze ukryta, deszcz w lustrze się nie rysował. Pamięć
+celów 156,4 MB w obu.
+
+---
+
 ## 2026-11-11 · Tanks: dalekie kafle terenu scalane w regiony
 
 Sonda: 985 wywołań na High (teren ~310 w obrazie i odbiciu wody), 6,40 M trójkątów. Kafle 128 m na

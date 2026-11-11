@@ -75,8 +75,10 @@ Wynik obchodu pięciu gier i pomiarów ładowania. Każda reguła ma powód; num
   dokąd idą wywołania i trójkąty).
 - **R8. Mniej wariantów shaderów.** Jeden materiał na *rodzaj* powierzchni z
   przełącznikami jako uniformy i atrybuty, nie materiał na rekwizyt; statyczne
-  `InstancedMesh` oznaczone `markStaticInstances`; dodatkowe kamery (luneta,
-  lustro) z celem-bliźniakiem przebiegu sceny. Liczba potoków podawana przy
+  `InstancedMesh` oznaczone `markStaticInstances`; kamera rysowana od czasu do
+  czasu (luneta) z celem-bliźniakiem przebiegu sceny, ale nie kamera rysowana
+  w każdej klatce (lustro): dodatkowe wyjścia bliźniaka kosztowały Tanks 5–9 %
+  klatki; jej rozgrzewka ukrywa to, co w grze. Liczba potoków podawana przy
   każdej zmianie, która dodaje materiał, siatkę instancji albo kamerę.
 - **R9. Wypiek tego, co liczy się przy każdym starcie.** Siatki wysokości,
   rozsiew, tekstury proceduralne: jeśli profil (`tools/measure/profile.mjs`)

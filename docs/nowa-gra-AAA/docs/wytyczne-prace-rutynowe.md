@@ -453,7 +453,12 @@ Tylko mechaniczna część, bez zmiany wyglądu:
    przed pierwszą klatką, jak w `castaway-lagoon/src/render/view.ts`).
 3. Materiały identyczne co do parametrów, a tworzone osobno dla każdego
    rekwizytu — połącz przez pamięć podręczną (klucz = parametry).
-4. Odbiór: mniej potoków, zrzuty identyczne, zero błędów w konsoli, 0 nowych
+4. Druga kamera rysowana w każdej klatce (lustro wody): jej rozgrzewka ma
+   ukrywać dokładnie to, co ukrywa w grze (inaczej kompiluje potoki, których
+   nikt nie użyje), a materiał z własnym `mrtNode` (deszcz, cząstki) ukryj
+   przed nią. Nie zamieniaj jej celu na bliźniaka celu sceny: w Tanks to
+   −36 potoków, ale +5–9 % czasu klatki (playbook §8.4 punkt 4).
+5. Odbiór: mniej potoków, zrzuty identyczne, zero błędów w konsoli, 0 nowych
    potoków w trakcie gry (playbook §9.3).
 
 Scalanie różnych materiałów w jeden „uber-materiał” z przełącznikami to już

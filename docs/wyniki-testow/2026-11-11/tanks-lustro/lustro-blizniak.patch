@@ -1,0 +1,171 @@
+diff --git a/tanks/src/game/game.ts b/tanks/src/game/game.ts
+index 905c3ed..c649f0f 100644
+--- a/tanks/src/game/game.ts
++++ b/tanks/src/game/game.ts
+@@ -139,12 +139,15 @@ export class Game {
+     for (const t of this.water.targets) pipeline.passTimer.name(t, 'water');
+     this.scene.add(this.water.group);
+     this.water.setMirrorScene([world.grass.group], () => [this.lighting.sun, ...this.lighting.csm.lights]);
++    this.water.matchMirrorTo(this.pipeline.sceneTargetLike(1, 1));
+     hud.buildMinimap(world);
+   }
+ 
+   setQuality(q: QualityPreset): void {
+     this.quality = q;
+     this.pipeline.setQuality(q);
++    // The chain was rebuilt: the mirror follows its new scene pass (the field is unset in the constructor's first call).
++    this.water?.matchMirrorTo(this.pipeline.sceneTargetLike(1, 1));
+     this.lighting.setShadowQuality(q.shadowMapSize, q.shadowExtent);
+     this.effects.setMaxParticles(q.maxParticles);
+     this.effects.setWreckShadow(q.wreckShadow);
+diff --git a/tanks/src/render/pipeline.ts b/tanks/src/render/pipeline.ts
+index b7c035b..292f233 100644
+--- a/tanks/src/render/pipeline.ts
++++ b/tanks/src/render/pipeline.ts
+@@ -33,7 +33,7 @@ import {
+   vec4,
+   velocity,
+ } from 'three/tsl';
+-import { ACESFilmicToneMapping, AgXToneMapping, Color, HalfFloatType, type Node, type PerspectiveCamera, RenderPipeline, type Scene, SRGBColorSpace, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
++import { ACESFilmicToneMapping, AgXToneMapping, Color, FloatType, HalfFloatType, type Node, type PassNode, type PerspectiveCamera, type RenderTarget, RenderPipeline, type Scene, SRGBColorSpace, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+ import type { QualityPreset } from '../config';
+ import { hash12 } from './nodes';
+ import { isTouchDevice } from '../ui/touch.ts';
+@@ -124,6 +124,8 @@ export class Pipeline {
+   private quality: QualityPreset | null = null;
+   /** full chain, and the same chain without GTAO: both compiled at load, the governor picks one */
+   private full: RenderPipeline | null = null;
++  /** The scene pass of the current chain, for targets made like its own (sceneTargetLike). */
++  private scenePass: PassNode | null = null;
+   private lite: RenderPipeline | null = null;
+   private readonly uThermal = uniform(0);
+   private readonly uTime = uniform(0);
+@@ -158,6 +160,23 @@ export class Pipeline {
+     await this.renderer.init();
+   }
+ 
++  /**
++   * A target made like the scene pass's own, with its MRT: a second camera drawing into it uses the scene
++   * pass's shaders, and so its pipelines (playbook §8.4 item 4; Field Line stage.sceneTargetLike). Null
++   * before the chain is built.
++   */
++  sceneTargetLike(width: number, height: number): { target: RenderTarget; mrt: ReturnType<PassNode['getMRT']> } | null {
++    const p = this.scenePass;
++    if (!p) return null;
++    const target = p.renderTarget.clone();
++    target.setSize(width, height);
++    // What PassNode.setup gives the pass's own target on its first frame (three r186).
++    target.samples = p.options.samples ?? this.renderer.samples;
++    for (const t of target.textures) t.type = this.renderer.getOutputBufferType();
++    if (this.renderer.reversedDepthBuffer && target.depthTexture) target.depthTexture.type = FloatType;
++    return { target, mrt: p.getMRT() };
++  }
++
+   get backendName(): string {
+     const backend: unknown = this.renderer.backend;
+     const isWebGpu = typeof backend === 'object' && backend !== null && 'isWebGPUBackend' in backend;
+@@ -179,6 +198,7 @@ export class Pipeline {
+ 
+   private build(q: QualityPreset): void {
+     const scenePass = pass(this.scene, this.camera, { type: HalfFloatType });
++    this.scenePass = scenePass;
+     // TRAA on both presets: on a phone it is what keeps the 2× picture (grass, foliage, wires) from
+     // shimmering, and a velocity target costs far less than the pixels FXAA would need to match it.
+     // The normal target exists only for GTAO (config: off on both presets for now), so it costs nothing without it.
+diff --git a/tanks/src/render/planarMirror.ts b/tanks/src/render/planarMirror.ts
+index 67508b9..7a9d43a 100644
+--- a/tanks/src/render/planarMirror.ts
++++ b/tanks/src/render/planarMirror.ts
+@@ -1,4 +1,5 @@
+-import { HalfFloatType, type Object3D, PerspectiveCamera, Plane, RenderTarget, type Scene, Vector2, Vector3, Vector4, type WebGPURenderer } from 'three/webgpu';
++import { velocity } from 'three/tsl';
++import { HalfFloatType, type Object3D, type PassNode, PerspectiveCamera, Plane, RenderTarget, type Scene, type Texture, Vector2, Vector3, Vector4, type WebGPURenderer } from 'three/webgpu';
+ 
+ // A planar mirror for calm water: the scene drawn once more from the camera
+ // reflected in the water plane, into a target the water shader samples at its
+@@ -14,7 +15,9 @@ import { HalfFloatType, type Object3D, PerspectiveCamera, Plane, RenderTarget, t
+ // with `a` chosen to keep the far plane through the frustum's far corner.
+ 
+ export class PlanarMirror {
+-  readonly target: RenderTarget;
++  target: RenderTarget;
++  /** The scene pass's outputs, once the target is made like its (useTargetLike). */
++  private mrt: ReturnType<PassNode['getMRT']> = null;
+   readonly camera = new PerspectiveCamera();
+   /** Fraction of the drawing buffer's resolution. */
+   scale: number;
+@@ -36,6 +39,20 @@ export class PlanarMirror {
+     this.target.texture.name = 'water mirror';
+   }
+ 
++  /**
++   * Draw into a target made like the scene pass's, with its MRT, so the mirror uses the scene pass's
++   * shaders and pipelines. Measured: drawn into a plain half-float target the mirror compiled a second
++   * pipeline for every material (Tanks High 321 pipelines, against 171 on Low without the mirror).
++   * Returns the new colour texture, for the shader that samples the mirror.
++   */
++  useTargetLike(like: { target: RenderTarget; mrt: ReturnType<PassNode['getMRT']> }): Texture {
++    this.target.dispose();
++    // The names stay as the pass gave them: its MRT finds its outputs by name.
++    this.target = like.target;
++    this.mrt = like.mrt;
++    return this.target.texture;
++  }
++
+   /** Renders the reflection of `scene` seen from `camera` (call before the frame, outside any pass). */
+   render(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera): void {
+     renderer.getDrawingBufferSize(this.size);
+@@ -73,11 +90,18 @@ export class PlanarMirror {
+ 
+     const previous = renderer.getRenderTarget();
+     const previousMrt = renderer.getMRT();
+-    renderer.setMRT(null);
++    renderer.setMRT(this.mrt);
++    // The velocity output is the scene pass's: given the mirror camera's own projection, as TRAA gives it
++    // the main camera's (the projection is part of the generated shader).
++    if (this.mrt) velocity.setProjectionMatrix(v.projectionMatrix);
+     renderer.setRenderTarget(this.target);
+-    renderer.render(scene, v);
+-    renderer.setRenderTarget(previous);
+-    renderer.setMRT(previousMrt);
++    try {
++      renderer.render(scene, v);
++    } finally {
++      if (this.mrt) velocity.setProjectionMatrix(null);
++      renderer.setRenderTarget(previous);
++      renderer.setMRT(previousMrt);
++    }
+   }
+ }
+ 
+diff --git a/tanks/src/world/water.ts b/tanks/src/world/water.ts
+index 15b9722..6371d3b 100644
+--- a/tanks/src/world/water.ts
++++ b/tanks/src/world/water.ts
+@@ -179,7 +179,9 @@ export class Water {
+       // the frame governor turns the mirror down.
+       if (mirror) {
+         const shift = vec2(n.x, n.z).mul(0.05).div(dist.mul(0.015).add(1));
+-        const image = texture(mirror.target.texture, screenUV.flipX().add(shift)).rgb;
++        const imageNode = texture(mirror.target.texture, screenUV.flipX().add(shift));
++        this.mirrorImage = imageNode;
++        const image = imageNode.rgb;
+         refl = mix(refl, image, screenReflectionOn);
+       }
+ 
+@@ -272,6 +274,15 @@ export class Water {
+     this.mirrorOn = on;
+   }
+   private mirrorOn = true;
++  /** The shader's sample of the mirror, re-pointed when the mirror's target is replaced. */
++  private mirrorImage: ReturnType<typeof texture> | null = null;
++
++  /** The mirror draws into a target made like the scene pass's (pipeline.ts sceneTargetLike): its pipelines are the scene's. */
++  matchMirrorTo(like: Parameters<PlanarMirror['useTargetLike']>[0] | null): void {
++    if (!this.mirror || !like) return;
++    const tex = this.mirror.useTargetLike(like);
++    if (this.mirrorImage) this.mirrorImage.value = tex;
++  }
+ 
+   /** The FFT's offscreen targets (the per-pass GPU timer files them under "water"). */
+   get targets(): THREE.RenderTarget[] {
