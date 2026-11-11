@@ -20,6 +20,12 @@ in `games/new-game/DESCRIPTION.md`, photos in `games/new-game/references/`.
 - **Evidence, not opinion:** screenshots before/after at fixed views, numbers
   from `tools/measure/`. "Should work" is not a result. Never claim what you
   did not run.
+- **Log every result** in `games/new-game/RESULTS.md` (create it; entry format
+  in §6), newest first: date,
+  commit, what was measured and how, a before/after table, the raw JSON
+  (`load.mjs --json`, `benchView --save`) and comparison crops in
+  `games/new-game/results/<date>/`. Reverted attempts too, with the number
+  that decided it: half of the fixes guessed from screenshots turn out wrong.
 - **Budget is a contract:** no change raises frame time, loading or memory
   without numbers before/after and the user's consent. Over budget → fix with
   content, not a setting.
@@ -46,9 +52,17 @@ in `games/new-game/DESCRIPTION.md`, photos in `games/new-game/references/`.
    judged on a real device.
 5. **Detail near the eye** (from 0.45 m): edge wear, cavity dirt. Screen
    effects last.
-6. **KTX2 textures**, mips at encode; normal/ORM UASTC linear, far colour
-   ETC1S; `KTX2Loader.detectSupport(renderer)`, transcoder in the build.
+6. **KTX2 textures**, mips at encode; normal maps always UASTC; colour and ORM
+   ETC1S where it holds ≥ 40 dB PSNR (≥ 45 for first-person), else UASTC; far
+   LODs ETC1S. UASTC is 8 bits a texel and packs only ~1.5×: a detailed model
+   grows 4–5× on disk, so keep KTX2 where it saves ≥ 10 MB of GPU memory per
+   MB of file (`tools/assets/ktx2_glb.mjs` does the encoding and the PSNR).
+   `KTX2Loader().detectSupport(renderer)` after `renderer.init()`, **no
+   transcoder path** (three ships its own; a copy in `public/` ships it twice).
 7. **LOD:** 3 levels + impostor beyond 100 m, dithered hand-over, Meshopt.
+   **Shadows draw every caster again per cascade**: let the coarsest level cast
+   (a stand-in on a layer only the shadow cameras see adds no draw call); a
+   visible extra level adds a call per part, pass and model.
 8. **Few shader variants:** one material per kind of surface, switches as
    uniforms; static instanced meshes via `markStaticInstances`; extra cameras
    draw into a twin of the scene pass's target. State pipeline count on every
@@ -58,6 +72,30 @@ in `games/new-game/DESCRIPTION.md`, photos in `games/new-game/references/`.
 11. **Phone is the judge**; software GPU numbers only rank runs.
 12. **Honest ceiling:** good console game of a few years ago on desktop, a
     simpler consistent version on phone. Say plainly what cannot be done.
+
+## 2b. Quality bar: what gives the picture away
+
+Learnt from screenshot tours of five games; check each at the fixed views of
+Stage 4 and 8, on High and Low. **First find the pixel's owner** (hide one
+system at a time; meter exposure, do not guess), then fix with constants and
+geometry already in the scene before adding anything.
+
+| Look for | Usual cause → fix |
+|---|---|
+| Burnt-out sunflecks, pumping brightness | eye opening too far in shade → outdoors at most 2.5 stops under the preset's EV; 7 only where there are rooms |
+| Black bands: undersides of roofs, eaves, cars | one dark material on every face → the underside's own material (boards, primer); never ambient |
+| Origami trees, half-metre leaves | leaf texture drawn at card scale → several small sprays per card, leaves 5–15 cm; photo or scanned bark |
+| Pale dots / posts in far forests | impostor cards mirroring the sky → impostors matte (`specularIntensity: 0`) |
+| Violet or black ground under clouds | only blue sky lights the shade → cloud shadow keeps ~15 % of the sun |
+| Water meets grass on a line | no bank → wet silt band on the land side, lighter shallows |
+| Lilac or grey zenith | haze tinting the whole sky → zenith from the Rayleigh colour, haze toward the horizon |
+| Flat asphalt, walls, ground | one tone → wear and dirt at two scales (~25 m and ~3 m) and roughness varied with them; photo sets where you stand |
+| Grass in rows, a comb, a colour step at its edge | grid placement, own colour → jittered tiles, tint from the ground under it, blades ≥ 1.3 px (still open in two reference games: measure, playbook §5.6) |
+| Grey clay cockpits and interiors | the imported model's untextured inside → texture or replace it, check every downloaded model inside |
+| Robots and dolls for people | capsules and spheres → real bodies (MPFB, `tools/assets/people`), no two alike, mocap |
+| Everything clean and new | no use → edge wear, cavity dirt, decals, debris that stays (R5) |
+| Seams, acne, crawling edges, LOD pops | → see §5 acceptance; TRAA + sharpen on every preset |
+| Compression artefacts | → crop ×2 nearest-neighbour before/after + difference ×8 at 3–5 m; faces, insignia, lamps first |
 
 ## 3. Stages (each ends with its Check, a report, a stop)
 
@@ -93,7 +131,9 @@ release, not an artifact per run).
 APK starts on phone.
 
 **2. Asset pipeline (R6–R9).** KTX2 on one texture first, measure memory and
-upload vs PNG, write it down, then the rest. GLB + Meshopt, 3 LODs + impostor,
+upload vs PNG, write it down, then the rest. Atlases drawn at start (characters)
+are baked once to KTX2 (`tools/assets/bake_atlases.mjs`), near UASTC + RDO 1,
+far ETC1S; a model's textures by `ktx2_glb.mjs` (near `auto`, far LODs ETC1S). GLB + Meshopt, 3 LODs + impostor,
 prepared only with `tools/assets/` scripts. Material library (ground layers in
 a `DataArrayTexture`, ≤ 16 sampled textures per stage). Manifest + background
 streaming, progress from real bytes, nothing compiles in play. One tree, one
@@ -125,7 +165,8 @@ size now if it does not fit. **Stop. Nothing more is built before approval.**
 per block; full → light → impostor with complementary dithering (playbook
 §5.5); game objects placed via the same cover function.
 *Check:* draw calls flat while moving; no frame > 50 ms across the map; no new
-pipelines.
+pipelines; `tools/measure/passes.mjs` shows where triangles and calls go per
+pass (in a city the shadow cascades took 13.5 of 16.5 M triangles).
 
 **6. Gameplay and motion (R4).** Rules as fixed-step logic with unit tests
 (at least one outside reference value). Characters: skeleton, skinning with
@@ -205,6 +246,16 @@ what this platform cannot do.
 
 ## 5. Verification and acceptance
 
+**Measuring that holds:** before and after runs **alternate** (before, after,
+after, before) — a machine slows over a series and a fixed order once showed a
+5 % loss that reversed into a gain; read counts (pipelines, calls, triangles,
+memory) as exact and seconds only within one series. On the software GPU
+measure KTX2 with `load.mjs --hide-features texture-compression-astc,texture-compression-etc2`
+(SwiftShader decodes ASTC/ETC2 on every read, 2.8× slower: a phone does it in
+hardware). `benchView --gpu webgpu --no-present` (without it rows read 0).
+A whole game rarely reaches ready on headless WebGL2: check that backend on a
+small test page with the same loaders and materials.
+
 Run and report: `tsc --noEmit`; tests; production build served by
 `tools/measure/serve.mjs` (not the dev server); headless Chromium on WebGL2
 (`--use-angle=swiftshader --enable-unsafe-swiftshader`) and software WebGPU
@@ -230,6 +281,12 @@ objects; no sparkle or crawling edges; budgets met; 0 new pipelines, no hitch >
    ms, draws, tris, GPU ms per pass), pipelines, gpu idle.
 5. *Checks run* — which, how, screenshots.
 6. *Not done / known issues* — and why.
+
+`RESULTS.md` entry: `## <date> · <change> (commit <hash>)`, one line on how it
+was measured (script, preset, view, alternating runs), a table Before | After
+(pipelines, draw calls / triangles, texture memory, ready / GPU idle, build),
+the screenshot crops (before | after | difference ×8), the decision and the
+number behind it.
 
 ## 7. Top traps (r186)
 
@@ -257,6 +314,12 @@ objects; no sparkle or crawling edges; budgets met; 0 new pipelines, no hitch >
 | Headless OK, phone fails | test WebGPU too, then the phone |
 | Blurry on phones | 2× pixel ratio, TRAA + sharpen on every preset |
 | CI APK upload fails | one rolling release |
+| KTX2 transcodes to RGBA8, no memory saved | `detectSupport(renderer)` before `renderer.init()` |
+| Transcoder in the build twice | no `setTranscoderPath`, no copy in `public/` |
+| Files left out still in the build | Vite emits every `import.meta.glob` match: put it in a module imported only behind a build-time constant |
+| KTX2 "slower" in headless runs | SwiftShader decoding; `--hide-features` (§5) |
+| Millions of shadow triangles | unculled instances in every cascade → coarse shadow stand-in (R7) |
+| Bench rows all 0 | `--no-present` |
 
 ## 8. Where to look (open only the section you need)
 
