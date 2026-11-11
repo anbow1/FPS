@@ -1,0 +1,13 @@
+target    468 calls    3.07 M triangles
+shadow    273 calls    3.37 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.834 M    32  target | Mesh | 
+  0.406 M    14  shadow | Shadow Map [ ID: 974 ]/Mesh | 
+  0.406 M    14  shadow | Shadow Map [ ID: 978 ]/Mesh | 
+  0.406 M    14  shadow | Shadow Map [ ID: 982 ]/Mesh | 
+  0.328 M     2  target | Mesh | truck Body1Mtl
+  0.295 M   124  target | Mesh | terrain-fancy
+  0.267 M     2  target | Mesh | truck Material3
+  0.168 M     1  target | grass-ring0 | grass

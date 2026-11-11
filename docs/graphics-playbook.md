@@ -2309,6 +2309,15 @@ one mesh per material and shadow flag, the hull in the vehicle's space and the t
 uvs go and every part becomes non-indexed). 1632 → 234 calls, pipelines 64 → 56, triangles and the
 picture unchanged. Build any detailed vehicle or prop from parts, then merge it before it is cloned.
 
+**Tanks' terrain chunks** (2026-11-11): 256 chunks of 128 m, each its own draw call in the view, the
+water's reflection and the cascades (~310 in the view of the frame's 985). Chunks at LOD 2 and coarser
+are now merged per region of 2 × 2 chunks and level (`world/terrain.ts`), rebuilt when a chunk changes
+level; the near ones stay as they were. 985 → 742 calls on High, 496 → 374 on Low, triangles +0.6 %.
+Bigger regions cut more calls but cost triangles (a region is culled whole: 4 × 4, 679 calls and +1.6 %;
+one mesh per level, 626 and +4 %; 256 m chunks, 671 and +7 %, since a chunk takes its nearest point's
+detail). Trap: the warm-up renders hidden meshes to compile them, so an empty merged mesh (no attributes)
+built three pipelines of its own; keep empty ones out of the scene.
+
 **And Lagoon** (2026-11-11): its boulders the same way (1 % error for the big ones, which are metres
 across), and the jungle's trunks with a stand-in built in the same function from the same random draws
 (half the rings, 6 sides for 9, the same sway attributes so the shadow moves with the trunk). High

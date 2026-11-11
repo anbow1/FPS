@@ -11,10 +11,23 @@ import { CITY_LIGHT } from '../render/cityMaterial';
 import { cityPaving, LAMP_COLOUR } from '../render/cityGround';
 import type { Heightfield } from './heightfield';
 import { hyp2, hyp3 } from '../core/mathx';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const CHUNK_CELLS = 64; // 128 m chunks
 const LOD_STEPS = [1, 2, 4, 8, 16];
 const LOD_DIST = [170, 380, 760, 1400];
+/**
+ * Chunks at this LOD and coarser are drawn merged, one mesh per level and region, rebuilt when a chunk joins
+ * or leaves it. Measured (tools/measure/passes.mjs, High): the 256 chunks were ~310 draw calls in the view
+ * (and the water's reflection) of the frame's 985 and more in the cascades, most of them far chunks of a
+ * few hundred triangles.
+ * Merged per region of 2 × 2 chunks: 985 → 742 calls, triangles +0.6 % (a region is culled whole). One mesh
+ * per level over the map: 626 calls but +4 % triangles, drawn into every cascade; 256 m chunks: 671 calls
+ * and +7 %, each big chunk at its nearest point's detail.
+ */
+const MERGE_FROM_LOD = 2;
+/** Merged per region of this many chunks a side (256 m), so a region outside the view or a cascade is culled whole. */
+const MERGE_REGION = 2;
 
 type V2 = THREE.Node<'vec2'>;
 type V4 = THREE.Node<'vec4'>;
@@ -227,6 +240,13 @@ export class Terrain {
   private fancy: boolean;
   private farRing: THREE.Mesh;
   private chunks: Chunk[] = [];
+  /** The merged far chunks, per region and LOD (key regionKey()), and the keys whose set changed. */
+  private readonly merged = new Map<number, THREE.Mesh>();
+  private readonly mergedDirty = new Set<number>();
+
+  private static regionKey(ch: Chunk, lod: number): number {
+    return (Math.floor(ch.cj / MERGE_REGION) * 64 + Math.floor(ch.ci / MERGE_REGION)) * 8 + lod;
+  }
   private readonly hf: Heightfield;
   private readonly normals: Float32Array;
 
@@ -254,8 +274,38 @@ export class Terrain {
         this.group.add(mesh);
       }
     }
+    for (const ch of this.chunks) {
+      for (let lod = MERGE_FROM_LOD; lod < LOD_STEPS.length; lod++) {
+        const key = Terrain.regionKey(ch, lod);
+        if (this.merged.has(key)) continue;
+        const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
+        mesh.receiveShadow = true;
+        mesh.castShadow = true;
+        mesh.matrixAutoUpdate = false;
+        this.merged.set(key, mesh);
+      }
+    }
+    this.rebuildMerged();
     this.farRing = this.buildFarRing();
     this.group.add(this.farRing);
+  }
+
+  /** Rebuilds the merged mesh of every level whose set of chunks changed. */
+  private rebuildMerged(): void {
+    for (const key of this.mergedDirty) {
+      const mesh = this.merged.get(key);
+      if (!mesh) continue;
+      const lod = key % 8;
+      const parts = this.chunks.filter((ch) => ch.lod === lod && Terrain.regionKey(ch, lod) === key).map((ch) => ch.geoms[lod] as THREE.BufferGeometry);
+      mesh.geometry.dispose();
+      mesh.geometry = (parts.length > 0 ? mergeGeometries(parts, false) : null) ?? new THREE.BufferGeometry();
+      mesh.geometry.computeBoundingSphere();
+      // In the scene only while it holds chunks: the warm-up renders hidden meshes too, and an empty one
+      // (no attributes) built pipelines of its own (measured: 321 → 324).
+      if (parts.length > 0) this.group.add(mesh);
+      else mesh.removeFromParent();
+    }
+    this.mergedDirty.clear();
   }
 
   private computeNormals(): Float32Array {
@@ -358,7 +408,10 @@ export class Terrain {
       g = this.buildChunkGeometry(ch.ci, ch.cj, LOD_STEPS[lod]!);
       ch.geoms[lod] = g;
     }
+    if (ch.lod >= MERGE_FROM_LOD) this.mergedDirty.add(Terrain.regionKey(ch, ch.lod));
+    if (lod >= MERGE_FROM_LOD) this.mergedDirty.add(Terrain.regionKey(ch, lod));
     ch.mesh.geometry = g;
+    ch.mesh.visible = lod < MERGE_FROM_LOD;
     ch.lod = lod;
   }
 
@@ -382,6 +435,7 @@ export class Terrain {
         this.setLod(ch, lod);
       }
     }
+    if (this.mergedDirty.size > 0) this.rebuildMerged();
   }
 
   /** Stochastic tiling on/off: a different material (the menu's quality switch warms it up). */
@@ -391,6 +445,7 @@ export class Terrain {
     const old = this.material;
     this.material = terrainMaterial(this.noise, this.roadTex, this.ground, on, this.blocks);
     for (const ch of this.chunks) ch.mesh.material = this.material;
+    for (const mesh of this.merged.values()) mesh.material = this.material;
     this.farRing.material = this.material;
     old.dispose();
   }

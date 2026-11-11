@@ -22,6 +22,25 @@ GPU (SwiftShader) porównują przebiegi na jednej maszynie; prawdziwe są z tele
 
 ---
 
+## 2026-11-11 · Tanks: dalekie kafle terenu scalane w regiony
+
+Sonda: 985 wywołań na High (teren ~310 w obrazie i odbiciu wody), 6,40 M trójkątów. Kafle 128 m na
+poziomie szczegółów 2 i dalszych (po kilkaset trójkątów) scalane w jedną siatkę na region 2 × 2 kafle i
+poziom, przebudowywaną, gdy kafel wchodzi lub wychodzi; bliskie kafle bez zmian.
+
+| Wariant | Wywołania High | Trójkąty High | Wywołania Low | Trójkąty Low |
+|---|---|---|---|---|
+| przed | 985 | 6,40 M | 496 | 2,99 M |
+| kafle 256 m (odrzucony) | 671 | 6,87 M | | |
+| jedna siatka na poziom (odrzucony) | 626 | 6,68 M | | |
+| regiony 4 × 4 (odrzucony) | 679 | 6,50 M | 343 | 3,06 M |
+| **regiony 2 × 2 (przyjęty)** | **742** | **6,44 M** | **374** | **3,01 M** |
+
+Potoki: pierwsza wersja 321 → 324 (puste siatki regionów pokazane przez rozgrzewkę); po usunięciu ich ze
+sceny 321. GPU idle (na przemian): przed 135,7 / 114,9 s, po 135,8 / 121,2 s, po poprawce 114,0 s.
+Pamięć 97,1 MB bez zmian. Zrzuty: teren i wzgórza bez różnicy (start: różnice w trawie i drzewach na
+wietrze; skraj miasta 0,13/255).
+
 ## 2026-11-11 · Ridgeline: pojazdy kolumny scalone po materiale
 
 Sonda `passes.mjs --game ridgeline`: 1632 wywołania w obrazie na High **i** Low przy 1,2 / 0,6 mln

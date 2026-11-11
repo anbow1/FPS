@@ -324,6 +324,8 @@ number behind it.
 | KTX2 "slower" in headless runs | SwiftShader decoding; `--hide-features` (§5) |
 | Millions of shadow triangles | unculled instances in every cascade → coarse shadow stand-in (R7) |
 | Bench rows all 0 | `--no-present` |
+| A few new pipelines after a merge | empty meshes revealed by the warm-up: keep them out of the scene |
+| Hundreds of draw calls, few triangles | a model of many small meshes or a terrain of many chunks: merge per material after the bake; merge far chunks per small region (culling still works) |
 
 ## 8. Where to look (open only the section you need)
 

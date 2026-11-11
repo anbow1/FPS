@@ -1,0 +1,9 @@
+target    238 calls    1.17 M triangles
+shadow    135 calls    1.84 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.296 M    16  target | Mesh | 
+  0.285 M    14  shadow | Shadow Map [ ID: 962 ]/Mesh | 
+  0.285 M    14  shadow | Shadow Map [ ID: 966 ]/Mesh | 
+  0.164 M     1  shadow | Shadow Map [ ID: 962 ]/Mesh | truck Body1Mtl
