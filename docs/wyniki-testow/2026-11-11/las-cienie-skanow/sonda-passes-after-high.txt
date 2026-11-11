@@ -1,0 +1,19 @@
+target     80 calls    2.64 M triangles
+shadow    118 calls    3.05 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  1.525 M     5  shadow | foliage/Mesh | needles
+  0.447 M     2  target | foliage/Mesh | needles
+  0.336 M     1  target | terrain | terrainSplatLake
+  0.263 M    24  shadow | prop-rock-shadow | scan-rock_moss
+  0.250 M     6  target | prop-rock | scan-rock_moss
+  0.219 M     1  target | grass-ring1 | grass
+  0.213 M     1  target | grass-ring0 | grass
+  0.209 M     5  shadow | soldier-soldier_gunner-far | soldier-cast
+  0.207 M     5  shadow | soldier-soldier_rifleman-far | soldier-cast
+  0.182 M     5  shadow | soldier-rifle | soldier
+  0.147 M     2  target | Mesh | caustics-0.4m
+  0.147 M     2  target | Mesh | caustics-1.2m
+  0.146 M     4  shadow | prop-stump-shadow | scan-tree_stump_01
+  0.120 M     1  target | prop-deadLog | scan-dead_tree_trunk

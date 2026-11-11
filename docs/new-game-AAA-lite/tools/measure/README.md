@@ -15,7 +15,7 @@ node tools/measure/serve.mjs <game>/dist 4173 &          # never the dev server:
 node tools/measure/shots.mjs   --game <game> --out shots/before --views '[{"pitch":-0.1},{"turn":3.14}]'
 node tools/measure/load.mjs    --game <game>              # stages, pipelines, uploads, texture memory, ready, gpu idle
 node tools/measure/profile.mjs --game <game> --top 30     # CPU profile of loading
-node tools/measure/passes.mjs  --extra '&map=city'        # Field Line: draw calls and triangles per pass and object
+node tools/measure/passes.mjs  --game <game>              # draw calls and triangles per pass and object
 ```
 
 | Script | Use it when |

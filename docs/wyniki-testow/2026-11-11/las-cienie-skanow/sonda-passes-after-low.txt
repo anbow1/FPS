@@ -1,0 +1,13 @@
+target     80 calls    1.63 M triangles
+shadow     42 calls    1.01 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.385 M     2  shadow | foliage/Mesh | needles
+  0.336 M     1  target | terrain | terrainSplatLake
+  0.276 M     2  target | foliage/Mesh | needles
+  0.250 M     6  target | prop-rock | scan-rock_moss
+  0.132 M    12  shadow | prop-rock-shadow | scan-rock_moss
+  0.120 M     1  target | prop-deadLog | scan-dead_tree_trunk
+  0.107 M     1  target | prop-stump | scan-tree_stump_01
+  0.092 M     1  target | prop-stump | scan-tree_stump_02

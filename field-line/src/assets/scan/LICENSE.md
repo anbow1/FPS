@@ -16,3 +16,7 @@ in metres; the textures resized and re-encoded as JPEG (colour and normal
 | `tree_stump_01/`   | https://polyhaven.com/a/tree_stump_01        | Rob Tuytel     | stumps                             |
 | `tree_stump_02/`   | https://polyhaven.com/a/tree_stump_02        | Rob Tuytel     | stumps                             |
 | `dead_tree_trunk/` | https://polyhaven.com/a/dead_tree_trunk      | Rob Tuytel     | fallen trunks                      |
+
+`*_shadow.bin`: each scan's mesh simplified further (welded at its UV seams, 2 % of its size in error) by
+`tools/assets/shadow_mesh.mjs`, cast as the scan's shadow only (`render/props.ts`). Derived from the same
+CC0 scans.

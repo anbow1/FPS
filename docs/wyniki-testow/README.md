@@ -22,6 +22,28 @@ GPU (SwiftShader) porównują przebiegi na jednej maszynie; prawdziwe są z tele
 
 ---
 
+## 2026-11-11 · Las: cienie skanów (skały, pnie, kłoda) z uproszczonych siatek
+
+Sonda `passes.mjs` (las, start): z 7,66 mln trójkątów na High 5,02 mln w cieniach; skany z całej mapy
+(skały 1,0 M, pnie 1,0 M, kłoda 0,6 M) w każdej kaskadzie. Zastępcze siatki cienia
+(`tools/assets/shadow_mesh.mjs`, meshoptimizer, błąd ≤ 2 % rozmiaru: 1500–2500 → 256–847 trójkątów,
+pliki `*_shadow.bin`, razem 97 KB) na warstwie tylko dla kaskad; widoczne skany bez zmian.
+
+| | High przed | High po | Low przed | Low po |
+|---|---|---|---|---|
+| Trójkąty w klatce | 7,66 M | 5,69 M | 3,47 M | 2,64 M |
+| — w cieniach | 5,02 M | 3,05 M | 1,84 M | 1,01 M |
+| Wywołania | 202 | 199 | 123 | 123 |
+| Potoki | 171 | 171 | | |
+| Pamięć tekstur | 254,4 MB | 254,4 MB | | |
+| GPU idle (na przemian) | 171,6 / 166,5 s | 165,1 / 172,4 s | | |
+| Build | 77,26 MB | 77,36 MB | | |
+
+Zrzuty (`2026-11-11/las-cienie-skanow/`): pień z bliska z cieniem — sylwetka i cień te same; różnica
+pikseli duża (8,9/255), bo plamy słońca spod koron poruszanych wiatrem są w innym miejscu w każdym
+przebiegu (czas gry do zrzutu różni się o kilkanaście sekund). Granica geometryczna: stand-in odbiega od
+skanu najwyżej o 2 % jego rozmiaru (~2 cm na pniu metrowej wysokości, mniej niż teksel bliskiej kaskady).
+
 ## 2026-11-11 · Cienie dalekich aut z lod2 (Etap 1b, Field Line, miasto)
 
 Sonda `tools/measure/passes.mjs` (wywołania i trójkąty na przejście): z 16,5 mln trójkątów klatki na High

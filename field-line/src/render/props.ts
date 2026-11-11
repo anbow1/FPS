@@ -55,6 +55,11 @@ interface Part {
   material: Material;
   tinted?: boolean;
   castShadow?: boolean;
+  /**
+   * A coarser shape that casts the part's shadow in its place, drawn only by the sun's cascades
+   * (layers.ts): they draw every caster again, once per cascade, and a scan's detail means nothing there.
+   */
+  shadowGeometry?: BufferGeometry;
 }
 
 function box(sx: number, sy: number, sz: number, x: number, y: number, z: number): BufferGeometry {
@@ -371,15 +376,15 @@ function partsFor(kind: PropKind, variant: string, lib: MaterialLibrary): Part[]
       const scan = scanModel(`rock_moss_${variant}` as ScanId);
       // The scan is an ochre sandstone; in sun it read as golden lumps among the pines. Greyed toward the
       // granite of a conifer ridge, its moss kept.
-      return [{ geometry: scan.geometry.clone().scale(1.1, 1.1, 1.1), material: lib.scan('rock_moss', scan, { saturation: 0.5, gain: 0.8 }) }];
+      return [{ geometry: scan.geometry.clone().scale(1.1, 1.1, 1.1), shadowGeometry: scan.shadowGeometry.clone().scale(1.1, 1.1, 1.1), material: lib.scan('rock_moss', scan, { saturation: 0.5, gain: 0.8 }) }];
     }
     case 'stump': {
       const scan = scanModel(`tree_stump_${variant}` as ScanId);
-      return [{ geometry: scan.geometry, material: lib.scan(`tree_stump_${variant}`, scan) }];
+      return [{ geometry: scan.geometry, shadowGeometry: scan.shadowGeometry, material: lib.scan(`tree_stump_${variant}`, scan) }];
     }
     case 'deadLog': {
       const scan = scanModel('dead_tree_trunk');
-      return [{ geometry: scan.geometry, material: lib.scan('dead_tree_trunk', scan) }];
+      return [{ geometry: scan.geometry, shadowGeometry: scan.shadowGeometry, material: lib.scan('dead_tree_trunk', scan) }];
     }
     case 'hayBale':
       return [{ geometry: new CylinderGeometry(0.6, 0.6, 1.8, 14).rotateX(Math.PI / 2).translate(0, 0.6, 0), material: lib.get('hay') }];
@@ -456,6 +461,19 @@ export function buildProps(props: readonly MapProp[], lib: MaterialLibrary): Pro
       });
       mesh.computeBoundingSphere();
       group.add(mesh);
+      if (part.shadowGeometry && mesh.castShadow) {
+        // The stand-in casts instead (same instances, same material: the cascades draw depth only, and no
+        // texture or pipeline is added); the visible mesh keeps its detail for the view alone.
+        mesh.castShadow = false;
+        const stand = markStaticInstances(new InstancedMesh(part.shadowGeometry, part.material, list.length));
+        stand.name = `prop-${kind}-shadow`;
+        stand.layers.set(SHADOW_ONLY_LAYER);
+        stand.castShadow = true;
+        stand.receiveShadow = false;
+        stand.instanceMatrix.copy(mesh.instanceMatrix);
+        stand.computeBoundingSphere();
+        group.add(stand);
+      }
     }
   }
   return {

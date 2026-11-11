@@ -25,19 +25,42 @@ export interface ScanTextures {
 
 export interface ScanModel extends ScanTextures {
   geometry: BufferGeometry;
+  /**
+   * The same shape at ~1/4 the triangles (2 % of its size in error), drawn only by the sun's cascades
+   * (props.ts, layers.ts): made by tools/assets/shadow_mesh.mjs from mesh.bin as `<name>_shadow.bin`.
+   */
+  shadowGeometry: BufferGeometry;
 }
 
 // Vite copies each file into the build with a hashed name and rewrites these URLs.
-const MESHES: Record<ScanId, { mesh: string; textures: TextureId }> = {
-  rock_moss_01: { mesh: new URL('../assets/scan/rock_moss/mesh_01.bin', import.meta.url).href, textures: 'rock_moss' },
-  rock_moss_02: { mesh: new URL('../assets/scan/rock_moss/mesh_02.bin', import.meta.url).href, textures: 'rock_moss' },
-  rock_moss_03: { mesh: new URL('../assets/scan/rock_moss/mesh_03.bin', import.meta.url).href, textures: 'rock_moss' },
-  rock_moss_04: { mesh: new URL('../assets/scan/rock_moss/mesh_04.bin', import.meta.url).href, textures: 'rock_moss' },
-  rock_moss_05: { mesh: new URL('../assets/scan/rock_moss/mesh_05.bin', import.meta.url).href, textures: 'rock_moss' },
-  rock_moss_06: { mesh: new URL('../assets/scan/rock_moss/mesh_06.bin', import.meta.url).href, textures: 'rock_moss' },
-  tree_stump_01: { mesh: new URL('../assets/scan/tree_stump_01/mesh.bin', import.meta.url).href, textures: 'tree_stump_01' },
-  tree_stump_02: { mesh: new URL('../assets/scan/tree_stump_02/mesh.bin', import.meta.url).href, textures: 'tree_stump_02' },
-  dead_tree_trunk: { mesh: new URL('../assets/scan/dead_tree_trunk/mesh.bin', import.meta.url).href, textures: 'dead_tree_trunk' },
+const MESHES: Record<ScanId, { mesh: string; shadow: string; textures: TextureId }> = {
+  rock_moss_01: { mesh: new URL('../assets/scan/rock_moss/mesh_01.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_moss/mesh_01_shadow.bin', import.meta.url).href,
+    textures: 'rock_moss' },
+  rock_moss_02: { mesh: new URL('../assets/scan/rock_moss/mesh_02.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_moss/mesh_02_shadow.bin', import.meta.url).href,
+    textures: 'rock_moss' },
+  rock_moss_03: { mesh: new URL('../assets/scan/rock_moss/mesh_03.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_moss/mesh_03_shadow.bin', import.meta.url).href,
+    textures: 'rock_moss' },
+  rock_moss_04: { mesh: new URL('../assets/scan/rock_moss/mesh_04.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_moss/mesh_04_shadow.bin', import.meta.url).href,
+    textures: 'rock_moss' },
+  rock_moss_05: { mesh: new URL('../assets/scan/rock_moss/mesh_05.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_moss/mesh_05_shadow.bin', import.meta.url).href,
+    textures: 'rock_moss' },
+  rock_moss_06: { mesh: new URL('../assets/scan/rock_moss/mesh_06.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_moss/mesh_06_shadow.bin', import.meta.url).href,
+    textures: 'rock_moss' },
+  tree_stump_01: { mesh: new URL('../assets/scan/tree_stump_01/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/tree_stump_01/mesh_shadow.bin', import.meta.url).href,
+    textures: 'tree_stump_01' },
+  tree_stump_02: { mesh: new URL('../assets/scan/tree_stump_02/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/tree_stump_02/mesh_shadow.bin', import.meta.url).href,
+    textures: 'tree_stump_02' },
+  dead_tree_trunk: { mesh: new URL('../assets/scan/dead_tree_trunk/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/dead_tree_trunk/mesh_shadow.bin', import.meta.url).href,
+    textures: 'dead_tree_trunk' },
 };
 
 const TEXTURES: Record<TextureId, Record<'color' | 'normal' | 'orm', string>> = {
@@ -113,8 +136,8 @@ export async function loadScanModels(): Promise<void> {
   );
   await Promise.all(
     (Object.keys(MESHES) as ScanId[]).map(async (id) => {
-      const geometry = parseScanMesh(await (await fetch(MESHES[id].mesh)).arrayBuffer());
-      models.set(id, { geometry, ...(sets.get(MESHES[id].textures) as ScanTextures) });
+      const [geometry, shadowGeometry] = await Promise.all([MESHES[id].mesh, MESHES[id].shadow].map(async (url) => parseScanMesh(await (await fetch(url)).arrayBuffer())));
+      models.set(id, { geometry: geometry as BufferGeometry, shadowGeometry: shadowGeometry as BufferGeometry, ...(sets.get(MESHES[id].textures) as ScanTextures) });
     }),
   );
 }

@@ -2292,6 +2292,15 @@ depth material anyway; lod2's would upload 18 more textures). High: 16.5 → 9.7
 runs). Low (one set of cars, 1024² cascades): every car's shadow from lod2, 8.3 → 5.6 M triangles, same
 draw calls. Screenshots show no difference in the cars or their shadows (`docs/wyniki-testow/`).
 
+**The same for the forest's scans** (2026-11-11): rocks, stumps and the fallen trunk (1500–2500 triangles
+each, instanced over the whole map) were 2.6 M of the forest's 5 M shadow triangles on High. Their stand-ins
+come from `tools/assets/shadow_mesh.mjs`: welded by position (the scans split vertices at UV seams),
+simplified with meshoptimizer to 2 % of the mesh's size in error (256–847 triangles, a centimetre or two
+on a stump, under a near cascade's texel), written beside the scan as `<name>_shadow.bin`. High 7.7 → 5.7 M
+triangles, Low 3.5 → 2.6 M, draw calls and pipelines unchanged, GPU idle unchanged, 97 KB of files. A
+screenshot cannot isolate the change in a forest: the canopy's sunflecks move with the wind between runs;
+the error bound is the check.
+
 The cars' GLBs grow by 6.4 MB because the near level keeps UASTC where ETC1S would show (lamps, sharp
 edges); the far levels stay at the JPEGs' size. Every game that loads one of these files needs
 `GLTFLoader.setKTX2Loader`: check with `grep -rn "<model>_lod"` before re-encoding a shared model.
