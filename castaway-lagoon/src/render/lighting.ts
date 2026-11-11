@@ -1,4 +1,5 @@
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
+import { SHADOW_ONLY_LAYER } from './layers.ts';
 import { cameraPosition, exp, float, fog, positionWorld, smoothstep, texture } from 'three/tsl';
 import { DirectionalLight, PerspectiveCamera, PMREMGenerator, type RenderTarget, Scene, type Texture, Vector3, type WebGPURenderer } from 'three/webgpu';
 import { lightColour, type LinearRgb, preExposureFor } from './colour.ts';
@@ -46,6 +47,10 @@ export class LagoonLighting {
     l.shadow.mapSize.set(px, px);
     l.shadow.bias = -0.0003;
     l.shadow.normalBias = 0.035;
+    // The cascades also draw the shadow-only stand-ins (layers.ts). A shadow camera whose mask holds
+    // nothing but layer 0 takes the view camera's mask each frame; with this bit it keeps its own (0 and
+    // the stand-ins). CSMShadowNode clones this shadow per cascade.
+    l.shadow.camera.layers.enable(SHADOW_ONLY_LAYER);
     this.csm = new CSMShadowNode(l, { cascades: quality === 'high' ? 3 : 2, maxFar: GRAPHICS.shadowRangeM[quality], mode: 'practical', lightMargin: 60 });
     this.csm.fade = true;
     l.shadow.shadowNode = this.csm;

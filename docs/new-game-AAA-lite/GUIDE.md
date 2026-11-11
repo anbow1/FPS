@@ -60,9 +60,13 @@ in `games/new-game/DESCRIPTION.md`, photos in `games/new-game/references/`.
    `KTX2Loader().detectSupport(renderer)` after `renderer.init()`, **no
    transcoder path** (three ships its own; a copy in `public/` ships it twice).
 7. **LOD:** 3 levels + impostor beyond 100 m, dithered hand-over, Meshopt.
-   **Shadows draw every caster again per cascade**: let the coarsest level cast
-   (a stand-in on a layer only the shadow cameras see adds no draw call); a
-   visible extra level adds a call per part, pass and model.
+   **Shadows draw every caster again per cascade** (measured: 60–80 % of a
+   frame's triangles in a city and a forest): let the coarsest level cast — a
+   stand-in on a layer only the shadow cameras see adds no draw call; a visible
+   extra level adds a call per part, pass and model. Opaque meshes only (an
+   alpha-cut leaf needs its own UVs): `tools/assets/shadow_mesh.mjs` welds and
+   simplifies to 1–2 % of the size in error. Give the shadow camera that layer
+   *and* layer 0 (a mask with only bit 0 copies the view camera's).
 8. **Few shader variants:** one material per kind of surface, switches as
    uniforms; static instanced meshes via `markStaticInstances`; extra cameras
    draw into a twin of the scene pass's target. State pipeline count on every

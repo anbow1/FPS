@@ -1,4 +1,5 @@
 import { type BufferGeometry, Group, InstancedMesh, type Material, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
+import { SHADOW_ONLY_LAYER } from './layers.ts';
 import { Rng } from '../core/rng.ts';
 import { beachWidth, heightAt, LAGOON_CENTRE, normalAt, shoreDistance } from '../game/terrain.ts';
 import type { TreeInstance } from '../game/world.ts';
@@ -15,6 +16,13 @@ const VARIANT_HEIGHTS = [10, 13, 16, 19, 22];
 
 interface TreeParts {
   wood: BufferGeometry;
+  /**
+   * The wood again, coarser (half the trunk's rings, 6 sides for 9, buttresses and limbs with fewer),
+   * the same limbs from the same random draws: it casts the trunk's shadow in its place, drawn only by the
+   * sun's cascades (layers.ts), which draw every caster once each. Measured: the jungle's bark was 1.45 M
+   * of the bay's 8.5 M shadow triangles on High.
+   */
+  shadowWood: BufferGeometry;
   leaves: BufferGeometry;
 }
 
@@ -31,11 +39,14 @@ function buildTree(H: number, seed: number, cards: number, limbs: number, detail
     radii.push(baseR * (1 - 0.45 * t) + (t < 0.08 ? (0.08 - t) * baseR * 6 : 0));
   }
   const woodParts: BufferGeometry[] = [tube(detailed ? pts : pts.filter((_, i) => i % 3 === 0), detailed ? radii : radii.filter((_, i) => i % 3 === 0), detailed ? 9 : 5, 1.2)];
+  const shadowParts: BufferGeometry[] = [tube(pts.filter((_, i) => i % 2 === 0), radii.filter((_, i) => i % 2 === 0), 6, 1.2)];
   // Buttress fins: thin flared roots, typical of rainforest giants.
   for (let b = 0; b < (detailed ? 4 : 0); b++) {
     const a = (b / 4) * Math.PI * 2 + rng.range(-0.3, 0.3);
     const d = new Vector3(Math.cos(a), 0, Math.sin(a));
-    woodParts.push(tube([new Vector3(0, H * 0.09, 0), d.clone().multiplyScalar(baseR * 1.6).setY(H * 0.03), d.clone().multiplyScalar(baseR * 3).setY(-0.2)], [0.05, 0.07, 0.04], 5, 1.2));
+    const fin = [new Vector3(0, H * 0.09, 0), d.clone().multiplyScalar(baseR * 1.6).setY(H * 0.03), d.clone().multiplyScalar(baseR * 3).setY(-0.2)];
+    woodParts.push(tube(fin, [0.05, 0.07, 0.04], 5, 1.2));
+    shadowParts.push(tube(fin, [0.05, 0.07, 0.04], 3, 1.2));
   }
   const crown = new Vector3(lean.x, H * 0.74, lean.z);
   const rx = H * 0.34;
@@ -46,9 +57,13 @@ function buildTree(H: number, seed: number, cards: number, limbs: number, detail
     const end = crown.clone().add(new Vector3(Math.cos(a) * rx * 0.75, rng.range(-0.1, 0.4) * ry, Math.sin(a) * rx * 0.75));
     const mid = start.clone().lerp(end, 0.5).add(new Vector3(0, H * 0.06, 0));
     woodParts.push(tube([start, mid, end], [baseR * 0.45, baseR * 0.3, baseR * 0.12], detailed ? 6 : 4, 1.2));
+    shadowParts.push(tube([start, mid, end], [baseR * 0.45, baseR * 0.3, baseR * 0.12], 4, 1.2));
   }
   const wood = merge(woodParts, 'tree wood');
   addSway(wood, 0.05, () => 0, H);
+  // The same sway, so the shadow moves with the trunk it stands for.
+  const shadowWood = merge(shadowParts, 'tree wood shadow');
+  addSway(shadowWood, 0.05, () => 0, H);
 
   const leafParts: BufferGeometry[] = [];
   const out = new Vector3();
@@ -72,7 +87,7 @@ function buildTree(H: number, seed: number, cards: number, limbs: number, detail
   }
   const leaves = merge(leafParts, 'tree leaves');
   addSway(leaves, 0.05, (x, y, z) => 0.4 + rand(Math.floor(x * 7), Math.floor(z * 7 + y)) * 0.6, H);
-  return { wood, leaves };
+  return { wood, shadowWood, leaves };
 }
 
 /** Bends card normals toward "away from the crown centre" so the crown shades as one volume. */
@@ -118,6 +133,18 @@ export function buildJungle(trees: readonly TreeInstance[], quality: 'high' | 'l
       mesh.castShadow = shadows;
       mesh.receiveShadow = true;
       group.add(mesh);
+      if (shadows && geo === parts.wood) {
+        // The coarse wood casts instead (same instances and material: no texture or pipeline added).
+        mesh.castShadow = false;
+        const stand = markStaticInstances(new InstancedMesh(parts.shadowWood, mat, list.length));
+        stand.name = 'jungle-wood-shadow';
+        stand.instanceMatrix.copy(mesh.instanceMatrix);
+        stand.layers.set(SHADOW_ONLY_LAYER);
+        stand.castShadow = true;
+        stand.receiveShadow = false;
+        stand.computeBoundingSphere();
+        group.add(stand);
+      }
     }
   };
   VARIANT_HEIGHTS.forEach((H, v) => {

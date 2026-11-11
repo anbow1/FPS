@@ -1,0 +1,13 @@
+target    206 calls    2.46 M triangles
+shadow    265 calls    2.11 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.534 M     7  target | jungle/Mesh | bark-jungle
+  0.475 M    10  shadow | jungle-wood-shadow | bark-jungle
+  0.420 M     2  shadow | ground/Mesh | ground
+  0.286 M     2  target | ground/Mesh | ground
+  0.200 M     2  shadow | rock-boulder_01-shadow | rock-boulder_01
+  0.195 M     2  target | water | water
+  0.184 M     4  target | undergrowth/Mesh | scan-fern
+  0.157 M    16  shadow | palms/Mesh | leaf-palm

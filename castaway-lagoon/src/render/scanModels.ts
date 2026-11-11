@@ -40,18 +40,47 @@ export interface ScanTextures {
 
 export interface ScanModel extends ScanTextures {
   geometry: BufferGeometry;
+  /**
+   * Rocks only: the same shape with fewer triangles (1 % of its size in error for boulders, 2 % for
+   * stones), drawn only by the sun's cascades (rocks.ts, layers.ts); tools/assets/shadow_mesh.mjs.
+   */
+  shadowGeometry: BufferGeometry | null;
   /** Height over the horizontal half-extent (rocks) or in metres (plants): how tall the scan stands. */
   heightRatio: number;
 }
 
 // Vite copies each file into the build with a hashed name and rewrites these URLs.
-const MESHES: Record<ScanId, { mesh: string; textures: TextureId }> = {
-  boulder_01: { mesh: new URL('../assets/scan/boulder_01/mesh.bin', import.meta.url).href, textures: 'boulder_01' },
-  namaqualand_boulder_02: { mesh: new URL('../assets/scan/namaqualand_boulder_02/mesh.bin', import.meta.url).href, textures: 'namaqualand_boulder_02' },
-  namaqualand_boulder_04: { mesh: new URL('../assets/scan/namaqualand_boulder_04/mesh.bin', import.meta.url).href, textures: 'namaqualand_boulder_04' },
-  namaqualand_boulder_05: { mesh: new URL('../assets/scan/namaqualand_boulder_05/mesh.bin', import.meta.url).href, textures: 'namaqualand_boulder_05' },
-  rock_07: { mesh: new URL('../assets/scan/rock_07/mesh.bin', import.meta.url).href, textures: 'rock_07' },
-  rock_09: { mesh: new URL('../assets/scan/rock_09/mesh.bin', import.meta.url).href, textures: 'rock_09' },
+const MESHES: Record<ScanId, { mesh: string; shadow?: string; textures: TextureId }> = {
+  boulder_01: {
+    mesh: new URL('../assets/scan/boulder_01/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/boulder_01/mesh_shadow.bin', import.meta.url).href,
+    textures: 'boulder_01',
+  },
+  namaqualand_boulder_02: {
+    mesh: new URL('../assets/scan/namaqualand_boulder_02/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/namaqualand_boulder_02/mesh_shadow.bin', import.meta.url).href,
+    textures: 'namaqualand_boulder_02',
+  },
+  namaqualand_boulder_04: {
+    mesh: new URL('../assets/scan/namaqualand_boulder_04/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/namaqualand_boulder_04/mesh_shadow.bin', import.meta.url).href,
+    textures: 'namaqualand_boulder_04',
+  },
+  namaqualand_boulder_05: {
+    mesh: new URL('../assets/scan/namaqualand_boulder_05/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/namaqualand_boulder_05/mesh_shadow.bin', import.meta.url).href,
+    textures: 'namaqualand_boulder_05',
+  },
+  rock_07: {
+    mesh: new URL('../assets/scan/rock_07/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_07/mesh_shadow.bin', import.meta.url).href,
+    textures: 'rock_07',
+  },
+  rock_09: {
+    mesh: new URL('../assets/scan/rock_09/mesh.bin', import.meta.url).href,
+    shadow: new URL('../assets/scan/rock_09/mesh_shadow.bin', import.meta.url).href,
+    textures: 'rock_09',
+  },
   fern_a: { mesh: new URL('../assets/scan/fern/mesh_a.bin', import.meta.url).href, textures: 'fern' },
   fern_b: { mesh: new URL('../assets/scan/fern/mesh_b.bin', import.meta.url).href, textures: 'fern' },
   fern_c: { mesh: new URL('../assets/scan/fern/mesh_c.bin', import.meta.url).href, textures: 'fern' },
@@ -131,8 +160,12 @@ export async function loadScanModels(): Promise<void> {
   );
   await Promise.all(
     (Object.keys(MESHES) as ScanId[]).map(async (id) => {
-      const geometry = parseScanMesh(await (await fetch(MESHES[id].mesh)).arrayBuffer());
-      models.set(id, { geometry, heightRatio: geometry.boundingBox?.max.y ?? 1, ...(sets.get(MESHES[id].textures) as ScanTextures) });
+      const { mesh, shadow } = MESHES[id];
+      const [geometry, shadowGeometry] = await Promise.all([
+        fetch(mesh).then(async (r) => parseScanMesh(await r.arrayBuffer())),
+        shadow ? fetch(shadow).then(async (r) => parseScanMesh(await r.arrayBuffer())) : Promise.resolve(null),
+      ]);
+      models.set(id, { geometry, shadowGeometry, heightRatio: geometry.boundingBox?.max.y ?? 1, ...(sets.get(MESHES[id].textures) as ScanTextures) });
     }),
   );
 }

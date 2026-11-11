@@ -1,0 +1,117 @@
+{
+ "readyS": 110.909,
+ "idleS": 131.791,
+ "stages": [
+  {
+   "stage": "start: 0.00 s"
+  },
+  {
+   "stage": "Starting renderer: 0.21 s"
+  },
+  {
+   "stage": "Loading textures: 2.26 s"
+  },
+  {
+   "stage": "Shaping the island: 1.53 s"
+  },
+  {
+   "stage": "Growing palms: 0.18 s"
+  },
+  {
+   "stage": "Growing the jungle: 0.73 s"
+  },
+  {
+   "stage": "Undergrowth: 1.72 s"
+  },
+  {
+   "stage": "Rocks: 0.03 s"
+  },
+  {
+   "stage": "Building the shelter: 0.98 s"
+  },
+  {
+   "stage": "Filling the lagoon: 0.87 s",
+   "createShaderModule": {
+    "n": 37,
+    "s": 0.0008999999966472389
+   },
+   "createRenderPipeline": {
+    "n": 34,
+    "s": 0.00010000000149011611
+   }
+  },
+  {
+   "stage": "60 instanced meshes share their shaders",
+   "createShaderModule": {
+    "n": 6,
+    "s": 0.0002999999988824129
+   },
+   "createRenderPipeline": {
+    "n": 5,
+    "s": 0.0002999999988824129
+   }
+  },
+  {
+   "stage": "Lighting the sky → play: 101.06 s; total 109.58 s",
+   "createShaderModule": {
+    "n": 292,
+    "s": 0.03550000000186261
+   },
+   "createRenderPipeline": {
+    "n": 232,
+    "s": 0.009000000001862648
+   }
+  },
+  {
+   "stage": "(after the last stage)"
+  }
+ ],
+ "uploads": {
+  "HTMLImageElement 1024×1024": {
+   "n": 14,
+   "ms": 187.09999999962747
+  },
+  "HTMLCanvasElement 256×128": {
+   "n": 3,
+   "ms": 0.7000000011175871
+  },
+  "HTMLImageElement 512×512": {
+   "n": 18,
+   "ms": 69.39999999664724
+  },
+  "ImageBitmap 2048×2048": {
+   "n": 5,
+   "ms": 67.20000000111759
+  },
+  "HTMLCanvasElement 128×170": {
+   "n": 1,
+   "ms": 0.2000000011175871
+  },
+  "HTMLCanvasElement 512×360": {
+   "n": 1,
+   "ms": 0.900000000372529
+  },
+  "ImageBitmap 1024×1024": {
+   "n": 3,
+   "ms": 3.900000000372529
+  },
+  "HTMLImageElement 2048×2048": {
+   "n": 1,
+   "ms": 25.300000000745058
+  },
+  "HTMLCanvasElement 256×256": {
+   "n": 1,
+   "ms": 0.10000000149011612
+  },
+  "HTMLImageElement 256×256": {
+   "n": 3,
+   "ms": 1.4999999981373549
+  }
+ },
+ "textureMemory": {
+  "sampledMB": 380.4,
+  "targetsMB": 453.8,
+  "sampledCount": 167,
+  "compressedMB": 53.3
+ }
+}

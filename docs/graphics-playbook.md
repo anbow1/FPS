@@ -2301,6 +2301,13 @@ triangles, Low 3.5 → 2.6 M, draw calls and pipelines unchanged, GPU idle uncha
 screenshot cannot isolate the change in a forest: the canopy's sunflecks move with the wind between runs;
 the error bound is the check.
 
+**And Lagoon** (2026-11-11): its boulders the same way (1 % error for the big ones, which are metres
+across), and the jungle's trunks with a stand-in built in the same function from the same random draws
+(half the rings, 6 sides for 9, the same sway attributes so the shadow moves with the trunk). High
+13.4 → 12.2 M triangles, Low 5.4 → 4.6 M, draw calls and pipelines unchanged, GPU idle 7 % shorter. The
+ferns (2.7 M shadow triangles on High) stay: their shadow comes from the leaves' cut-out, which a
+stand-in without the leaf texture's uvs would lose.
+
 The cars' GLBs grow by 6.4 MB because the near level keeps UASTC where ETC1S would show (lamps, sharp
 edges); the far levels stay at the JPEGs' size. Every game that loads one of these files needs
 `GLTFLoader.setKTX2Loader`: check with `grep -rn "<model>_lod"` before re-encoding a shared model.

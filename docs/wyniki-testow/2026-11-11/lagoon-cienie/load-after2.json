@@ -1,0 +1,117 @@
+{
+ "readyS": 105.114,
+ "idleS": 124.261,
+ "stages": [
+  {
+   "stage": "start: 0.00 s"
+  },
+  {
+   "stage": "Starting renderer: 0.23 s"
+  },
+  {
+   "stage": "Loading textures: 2.41 s"
+  },
+  {
+   "stage": "Shaping the island: 1.53 s"
+  },
+  {
+   "stage": "Growing palms: 0.14 s"
+  },
+  {
+   "stage": "Growing the jungle: 0.59 s"
+  },
+  {
+   "stage": "Undergrowth: 1.80 s"
+  },
+  {
+   "stage": "Rocks: 0.03 s"
+  },
+  {
+   "stage": "Building the shelter: 1.08 s"
+  },
+  {
+   "stage": "Filling the lagoon: 0.94 s",
+   "createShaderModule": {
+    "n": 37,
+    "s": 0.000799999998882413
+   },
+   "createRenderPipeline": {
+    "n": 34,
+    "s": 0.0006000000014901161
+   }
+  },
+  {
+   "stage": "71 instanced meshes share their shaders",
+   "createShaderModule": {
+    "n": 6,
+    "s": 0.00019999999925494194
+   },
+   "createRenderPipeline": {
+    "n": 5,
+    "s": 0.00019999999925494194
+   }
+  },
+  {
+   "stage": "Lighting the sky → play: 95.36 s; total 104.10 s",
+   "createShaderModule": {
+    "n": 292,
+    "s": 0.025000000000000015
+   },
+   "createRenderPipeline": {
+    "n": 232,
+    "s": 0.009199999997392301
+   }
+  },
+  {
+   "stage": "(after the last stage)"
+  }
+ ],
+ "uploads": {
+  "HTMLImageElement 1024×1024": {
+   "n": 14,
+   "ms": 161.60000000335276
+  },
+  "HTMLCanvasElement 256×128": {
+   "n": 3,
+   "ms": 0.5999999977648258
+  },
+  "HTMLImageElement 512×512": {
+   "n": 18,
+   "ms": 63.6999999973923
+  },
+  "ImageBitmap 2048×2048": {
+   "n": 5,
+   "ms": 54.100000001490116
+  },
+  "HTMLCanvasElement 128×170": {
+   "n": 1,
+   "ms": 0.2999999988824129
+  },
+  "HTMLCanvasElement 512×360": {
+   "n": 1,
+   "ms": 0.6999999992549419
+  },
+  "ImageBitmap 1024×1024": {
+   "n": 3,
+   "ms": 6
+  },
+  "HTMLImageElement 2048×2048": {
+   "n": 1,
+   "ms": 27.90000000037253
+  },
+  "HTMLCanvasElement 256×256": {
+   "n": 1,
+   "ms": 0.09999999962747097
+  },
+  "HTMLImageElement 256×256": {
+   "n": 3,
+   "ms": 3.199999999254942
+  }
+ },
+ "textureMemory": {
+  "sampledMB": 380.4,
+  "targetsMB": 453.8,
+  "sampledCount": 167,
+  "compressedMB": 53.3
+ }
+}

@@ -27,3 +27,7 @@ others cut to ~1500–1800), one texture set per species at 1024 px:
 | `fern/`      | https://polyhaven.com/a/fern_02                 | Rob Tuytel, Rico Cilliers   | ferns round the camp, four plants |
 | `calathea/`  | https://polyhaven.com/a/calathea_orbifolia_01   | Rob Tuytel, Rico Cilliers   | broad-leaved ground plants       |
 | `anthurium/` | https://polyhaven.com/a/anthurium_botany_01     | Rob Tuytel, Rico Cilliers   | broad-leaved ground plants       |
+
+`*/mesh_shadow.bin` (the rocks): each scan's mesh simplified further (welded at its UV seams, 1 % of its
+size in error for the boulders, 2 % for the stones) by `tools/assets/shadow_mesh.mjs`, cast as the rock's
+shadow only (`render/rocks.ts`). Derived from the same CC0 scans.

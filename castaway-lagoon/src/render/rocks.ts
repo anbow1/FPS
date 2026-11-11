@@ -6,6 +6,7 @@ import { noiseMap, terrainSet } from './textures.ts';
 import { type ScanId, type ScanModel, scanModel } from './scanModels.ts';
 import { U } from './uniforms.ts';
 import { markStaticInstances } from './instancing.ts';
+import { SHADOW_ONLY_LAYER } from './layers.ts';
 
 // Coastal and jungle boulders from photoscans (scanModels.ts): three boulders
 // for anything over ~1.6 m across, three stones under it. Each keeps its own
@@ -51,6 +52,20 @@ export function buildRocks(rocks: readonly RockInstance[]): Group {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
+    if (scan.shadowGeometry) {
+      // The sun's cascades draw every caster again, once each: a coarser stand-in casts the rock's shadow
+      // (same instances and material, so no texture or pipeline is added) and the scan keeps its detail
+      // for the view alone (layers.ts).
+      mesh.castShadow = false;
+      const stand = markStaticInstances(new InstancedMesh(scan.shadowGeometry, mesh.material, list.length));
+      stand.name = `rock-${id}-shadow`;
+      stand.instanceMatrix.copy(mesh.instanceMatrix);
+      stand.layers.set(SHADOW_ONLY_LAYER);
+      stand.castShadow = true;
+      stand.receiveShadow = false;
+      stand.computeBoundingSphere();
+      group.add(stand);
+    }
   }
   return group;
 }

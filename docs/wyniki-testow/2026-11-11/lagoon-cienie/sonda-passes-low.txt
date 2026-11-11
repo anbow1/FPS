@@ -1,0 +1,30 @@
+target    206 calls    2.46 M triangles
+shadow    265 calls    2.93 M triangles
+screen      1 calls    0.00 M triangles
+
+largest (triangles per frame, calls per frame, pass | object | material):
+  0.968 M    10  shadow | jungle/Mesh | bark-jungle
+  0.534 M     7  target | jungle/Mesh | bark-jungle
+  0.420 M     2  shadow | ground/Mesh | ground
+  0.286 M     2  target | ground/Mesh | ground
+  0.259 M     2  shadow | rock-boulder_01 | rock-boulder_01
+  0.211 M     2  shadow | rock-namaqualand_boulder_04 | rock-namaqualand_boulder_04
+  0.195 M     2  target | water | water
+  0.184 M     4  target | undergrowth/Mesh | scan-fern
+  0.158 M     2  shadow | rock-namaqualand_boulder_02 | rock-namaqualand_boulder_02
+  0.157 M    16  shadow | palms/Mesh | leaf-palm
+  0.146 M     8  shadow | palms/Mesh | bark-palm
+  0.130 M     1  target | rock-boulder_01 | rock-boulder_01
+  0.114 M     6  shadow | jungle/Mesh | leaf-broadleaf
+  0.106 M     1  target | rock-namaqualand_boulder_04 | rock-namaqualand_boulder_04
+  0.087 M     4  target | undergrowth/Mesh | leaf-fern
+  0.084 M     4  shadow | jungle/Mesh | leaf-broadleafDark
+  0.079 M     1  target | rock-namaqualand_boulder_02 | rock-namaqualand_boulder_02
+  0.079 M     8  target | palms/Mesh | leaf-palm
+  0.074 M     4  target | jungle/Mesh | leaf-broadleaf
+  0.073 M     4  target | palms/Mesh | bark-palm
+  0.066 M     4  target | palms/Mesh | 
+  0.059 M     3  target | jungle/Mesh | leaf-broadleafDark
+  0.039 M     3  target | undergrowth/Mesh | scan-calathea
+  0.038 M     1  target | grass-ring0 | grass
+  0.037 M     1  target | grass-ring1 | grass

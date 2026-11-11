@@ -22,6 +22,27 @@ GPU (SwiftShader) porównują przebiegi na jednej maszynie; prawdziwe są z tele
 
 ---
 
+## 2026-11-11 · Lagoon: cienie głazów i pni dżungli z uproszczonych siatek
+
+Sonda `passes.mjs --game castaway-lagoon`: na High 8,49 z 13,42 mln trójkątów w cieniach (3 kaskady);
+największe: paprocie 2,7 M (cień zależy od wycięcia liści — bez zmian), pnie dżungli 1,45 M, głazy
+~0,9 M. Zastępcze siatki tylko dla kaskad: głazy (`shadow_mesh.mjs`, błąd 1 % dla dużych, 2 % dla
+kamieni: 2400 → 714–1854, 900 → 232–328 trójkątów), pnie dżungli generowane razem z widocznymi (ten sam
+los, połowa pierścieni, 6 boków zamiast 9, te same atrybuty kołysania).
+
+| | High przed | High po | Low przed | Low po |
+|---|---|---|---|---|
+| Trójkąty w klatce | 13,42 M | 12,19 M | 5,39 M | 4,57 M |
+| — w cieniach | 8,49 M | 7,26 M | 2,93 M | 2,11 M |
+| Wywołania | 720 | 720 | 472 | 472 |
+| Potoki | 271 | 271 | | |
+| Pamięć tekstur | 380,4 MB | 380,4 MB | | |
+| GPU idle (na przemian) | 136,2 / 131,8 s | 122,8 / 124,3 s | | |
+| Build | 36,81 MB | 36,91 MB | | |
+
+Zrzuty (`2026-11-11/lagoon-cienie/`): zatoka i dżungla z cieniami pni na zboczu — bez różnicy poza
+roślinnością i wodą w ruchu.
+
 ## 2026-11-11 · Las: cienie skanów (skały, pnie, kłoda) z uproszczonych siatek
 
 Sonda `passes.mjs` (las, start): z 7,66 mln trójkątów na High 5,02 mln w cieniach; skany z całej mapy
