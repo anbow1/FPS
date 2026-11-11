@@ -1,0 +1,13 @@
+per pass: {"target":{"calls":181.33333333333334,"tris":3043737.3333333335},"shadow?":{"calls":560,"tris":13460884},"screen":{"calls":1,"tris":1}}
+  5.401 M     45 calls  shadow? | prop-car-far-paint | car-paint
+  3.649 M     45 calls  shadow? | prop-car-far-wheels | car-wheels
+  1.080 M      9 calls  target | prop-car-far-paint | car-paint
+  0.730 M      9 calls  target | prop-car-far-wheels | car-wheels
+  0.549 M      5 calls  shadow? | prop-streetTree | bark
+  0.464 M     40 calls  shadow? | prop-car-near-paint | car-paint
+  0.446 M      5 calls  shadow? | prop-streetTree | leaves
+  0.353 M      5 calls  shadow? | prop-bollard | street paint
+  0.251 M     40 calls  shadow? | prop-car-near-wheels | car-wheels
+  0.209 M      5 calls  shadow? | soldier-soldier_gunner-far | soldier-cast
+  0.207 M      5 calls  shadow? | soldier-soldier_rifleman-far | soldier-cast
+  0.187 M      5 calls  shadow? | cornices | concrete

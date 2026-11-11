@@ -21,22 +21,62 @@ export interface VehiclePartMesh {
   castShadow: boolean;
 }
 
-/** Near (lod0) and far (lod1) part sets of one model; the same set twice when only the far one is loaded. */
+/**
+ * Near (lod0) and far (lod1) part sets of one model, the same set twice when only the far one is loaded
+ * (Low); and the distant level (lod2), which casts the far cars' shadows (props.ts; on Low every car's).
+ */
 export interface VehicleModel {
   near: VehiclePartMesh[];
   far: VehiclePartMesh[];
+  shadow: VehiclePartMesh[];
 }
 
-const URLS: Record<CarModelId, [string, string]> = {
-  compact: [new URL('../../../shared/vehicles/compact/compact_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/compact/compact_lod1.glb', import.meta.url).href],
-  coupe: [new URL('../../../shared/vehicles/coupe/coupe_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/coupe/coupe_lod1.glb', import.meta.url).href],
-  hatchback: [new URL('../../../shared/vehicles/hatchback/hatchback_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/hatchback/hatchback_lod1.glb', import.meta.url).href],
-  minivan: [new URL('../../../shared/vehicles/minivan/minivan_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/minivan/minivan_lod1.glb', import.meta.url).href],
-  offroad: [new URL('../../../shared/vehicles/offroad/offroad_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/offroad/offroad_lod1.glb', import.meta.url).href],
-  pickup: [new URL('../../../shared/vehicles/pickup/pickup_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/pickup/pickup_lod1.glb', import.meta.url).href],
-  sedan: [new URL('../../../shared/vehicles/sedan/sedan_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/sedan/sedan_lod1.glb', import.meta.url).href],
-  suv: [new URL('../../../shared/vehicles/suv/suv_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/suv/suv_lod1.glb', import.meta.url).href],
-  wagon: [new URL('../../../shared/vehicles/wagon/wagon_lod0.glb', import.meta.url).href, new URL('../../../shared/vehicles/wagon/wagon_lod1.glb', import.meta.url).href],
+const URLS: Record<CarModelId, [string, string, string]> = {
+  compact: [
+    new URL('../../../shared/vehicles/compact/compact_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/compact/compact_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/compact/compact_lod2.glb', import.meta.url).href,
+  ],
+  coupe: [
+    new URL('../../../shared/vehicles/coupe/coupe_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/coupe/coupe_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/coupe/coupe_lod2.glb', import.meta.url).href,
+  ],
+  hatchback: [
+    new URL('../../../shared/vehicles/hatchback/hatchback_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/hatchback/hatchback_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/hatchback/hatchback_lod2.glb', import.meta.url).href,
+  ],
+  minivan: [
+    new URL('../../../shared/vehicles/minivan/minivan_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/minivan/minivan_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/minivan/minivan_lod2.glb', import.meta.url).href,
+  ],
+  offroad: [
+    new URL('../../../shared/vehicles/offroad/offroad_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/offroad/offroad_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/offroad/offroad_lod2.glb', import.meta.url).href,
+  ],
+  pickup: [
+    new URL('../../../shared/vehicles/pickup/pickup_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/pickup/pickup_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/pickup/pickup_lod2.glb', import.meta.url).href,
+  ],
+  sedan: [
+    new URL('../../../shared/vehicles/sedan/sedan_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/sedan/sedan_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/sedan/sedan_lod2.glb', import.meta.url).href,
+  ],
+  suv: [
+    new URL('../../../shared/vehicles/suv/suv_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/suv/suv_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/suv/suv_lod2.glb', import.meta.url).href,
+  ],
+  wagon: [
+    new URL('../../../shared/vehicles/wagon/wagon_lod0.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/wagon/wagon_lod1.glb', import.meta.url).href,
+    new URL('../../../shared/vehicles/wagon/wagon_lod2.glb', import.meta.url).href,
+  ],
 };
 
 const models = new Map<CarModelId, VehicleModel>();
@@ -49,6 +89,7 @@ export function carModel(id: CarModelId): VehicleModel | undefined {
 /**
  * Loads every car model; a failure leaves the procedural cars in place (logged, not thrown). On Low (the
  * phones' preset) only the far level is fetched and serves near too: ~0.45 MB a model instead of ~2.3.
+ * Both load lod2 (~1/3 of lod1's triangles, ~0.2 MB) for the cars' shadows (props.ts).
  * The models' textures are KTX2 (gltf.ts).
  */
 export async function loadCarModels(quality: 'high' | 'low'): Promise<void> {
@@ -56,10 +97,12 @@ export async function loadCarModels(quality: 'high' | 'low'): Promise<void> {
   await Promise.all(
     CAR_MODELS.map(async (id) => {
       try {
-        const [nearUrl, farUrl] = URLS[id];
+        const [nearUrl, farUrl, shadowUrl] = URLS[id];
         const far = partsOf(id, (await loader.loadAsync(farUrl)).scene);
-        const near = quality === 'high' ? partsOf(id, (await loader.loadAsync(nearUrl)).scene) : far;
-        models.set(id, { near, far });
+        const high = quality === 'high';
+        const near = high ? partsOf(id, (await loader.loadAsync(nearUrl)).scene) : far;
+        const shadow = partsOf(id, (await loader.loadAsync(shadowUrl)).scene);
+        models.set(id, { near, far, shadow });
       } catch (err) {
         console.warn(`car model ${id} did not load; the procedural car stands in:`, err);
       }

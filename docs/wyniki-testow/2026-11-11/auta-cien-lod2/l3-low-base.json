@@ -1,0 +1,83 @@
+{
+ "readyS": 108.232,
+ "idleS": 121.519,
+ "stages": [
+  {
+   "stage": "start: 0.13 s"
+  },
+  {
+   "stage": "Starting renderer: 0.01 s"
+  },
+  {
+   "stage": "Loading textures: 0.77 s"
+  },
+  {
+   "stage": "Generating textures: 0.35 s"
+  },
+  {
+   "stage": "Building the world: 3.06 s"
+  },
+  {
+   "stage": "Planting trees: 0.00 s"
+  },
+  {
+   "stage": "Growing undergrowth: 0.00 s"
+  },
+  {
+   "stage": "Lighting: 0.02 s"
+  },
+  {
+   "stage": "70 instanced meshes share their shaders",
+   "createShaderModule": {
+    "n": 8,
+    "s": 0.00019999999925494194
+   },
+   "createRenderPipeline": {
+    "n": 4,
+    "s": 0.000300000000745058
+   }
+  },
+  {
+   "stage": "Raising clouds: 1.37 s"
+  },
+  {
+   "stage": "warm-up frames (every pipeline shown): 81.60 s",
+   "createShaderModule": {
+    "n": 222,
+    "s": 0.9544999999813752
+   },
+   "createRenderPipeline": {
+    "n": 163,
+    "s": 0.01259999999403954
+   }
+  },
+  {
+   "stage": "frame 1: 0.02 s"
+  },
+  {
+   "stage": "frame 2: 17.82 s"
+  },
+  {
+   "stage": "Ready → play: 99.45 s; total 105.16 s"
+  },
+  {
+   "stage": "(after the last stage)"
+  }
+ ],
+ "uploads": {
+  "ImageBitmap 1024×1024": {
+   "n": 6,
+   "ms": 11.199999999254942
+  },
+  "ImageBitmap 2048×2048": {
+   "n": 3,
+   "ms": 25.199999999254942
+  }
+ },
+ "textureMemory": {
+  "sampledMB": 233.2,
+  "targetsMB": 55.4,
+  "sampledCount": 148,
+  "compressedMB": 29
+ }
+}

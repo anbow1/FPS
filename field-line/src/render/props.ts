@@ -28,7 +28,8 @@ import { type ScanId, scanModel } from './scanModels.ts';
 import { swayingMaterial } from './foliage.ts';
 import { buildCar, type CarGeometry, type CarPart, type CarVariant } from './carModel.ts';
 import { streetPropParts } from './streetProps.ts';
-import { carModel, type VehicleModel } from './vehicleModels.ts';
+import { SHADOW_ONLY_LAYER } from './layers.ts';
+import { carModel, type VehicleModel, type VehiclePartMesh } from './vehicleModels.ts';
 import { carModelOf, type CarModelId } from '../maps/vehicles.ts';
 import { markStaticInstances } from './instancing.ts';
 
@@ -169,6 +170,13 @@ class CarLod {
  * A shared car model (render/vehicleModels.ts) for every car of that model: near and far part sets, the
  * instances moved between them as the camera moves, as CarLod does; the paint's colour per car goes in
  * a per-instance attribute, since three's instance colour would tint the glass and tyres too.
+ *
+ * The far cars' shadows (on Low every car's) come from the model's lod2 (~1/3 of lod1's triangles), drawn
+ * only by the sun's cascades (SHADOW_ONLY_LAYER), while the view keeps lod1. Measured in the city on High:
+ * the far cars were 9 M of the frame's 16.5 M triangles, nearly all of it in the cascades, since every
+ * parked car on the map is drawn into each. A visible third level would have cut as much but added a draw
+ * call per part, pass and model (742 → 854); a stand-in that only casts adds none, and a car's shadow
+ * shows no difference between lod1 and lod2 (nor on Low's 1024² cascades, even near).
  */
 class VehicleLod {
   private readonly near: InstancedMesh[] = [];
@@ -180,22 +188,48 @@ class VehicleLod {
     model: VehicleModel,
     group: Group,
   ) {
-    // One model for both ranges (Low loads only the far one): one set of meshes, every car in it.
-    const sets = model.near === model.far ? ([[model.far, this.near, 'far']] as const) : ([[model.near, this.near, 'near'], [model.far, this.far, 'far']] as const);
-    for (const [parts, into, name] of sets) {
-      for (const part of parts) {
-        const geometry = part.geometry.clone();
-        if (part.recolour) geometry.setAttribute('paintTint', new InstancedBufferAttribute(new Float32Array(cars.length * 3), 3));
-        const mesh = markStaticInstances(new InstancedMesh(geometry, part.material, cars.length));
-        mesh.name = `prop-car-${name}-${part.part}`;
-        mesh.castShadow = part.castShadow;
-        mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
-        mesh.count = 0;
+    const make = (part: VehiclePartMesh, name: string): InstancedMesh => {
+      const geometry = part.geometry.clone();
+      if (part.recolour) geometry.setAttribute('paintTint', new InstancedBufferAttribute(new Float32Array(cars.length * 3), 3));
+      const mesh = markStaticInstances(new InstancedMesh(geometry, part.material, cars.length));
+      mesh.name = `prop-car-${name}-${part.part}`;
+      mesh.castShadow = part.castShadow;
+      mesh.receiveShadow = true;
+      // The instances change set as the camera moves, so stored bounds would go stale.
+      mesh.frustumCulled = false;
+      mesh.count = 0;
+      group.add(mesh);
+      return mesh;
+    };
+    const shadowStandIns = (into: InstancedMesh[], like: readonly VehiclePartMesh[]): void => {
+      for (const part of model.shadow) {
+        if (!part.castShadow) continue;
+        // The cascades draw with their own depth material; a visible level's material keeps lod2's
+        // textures from ever being uploaded (measured: 18 more textures, 1.5 MB, with lod2's own).
+        const material = like.find((f) => f.part === part.part)?.material ?? part.material;
+        const mesh = make({ ...part, material }, 'shadow');
+        mesh.layers.set(SHADOW_ONLY_LAYER);
+        mesh.receiveShadow = false;
         into.push(mesh);
-        group.add(mesh);
       }
+    };
+    // One model for both ranges (Low loads only the far one): one set of meshes, every car in it.
+    if (model.near === model.far) {
+      for (const part of model.far) {
+        const mesh = make(part, 'far');
+        mesh.castShadow = false;
+        this.near.push(mesh);
+      }
+      shadowStandIns(this.near, model.far);
+      return;
     }
+    for (const part of model.near) this.near.push(make(part, 'near'));
+    for (const part of model.far) {
+      const mesh = make(part, 'far');
+      mesh.castShadow = false;
+      this.far.push(mesh);
+    }
+    shadowStandIns(this.far, model.far);
   }
 
   update(camera: Vector3): void {

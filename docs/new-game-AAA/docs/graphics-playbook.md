@@ -2282,6 +2282,21 @@ some of its maps; Ridgeline keeps its old loader). Result, one run each against 
 | Tanks (High) | 179 → 97 MB | 35.2 → 41.6 MB |
 | Contrail (High) | 184 → 94 MB | 21.8 → 28.9 MB |
 
+**Stage 1b, first step: the far cars' shadows from lod2** (2026-11-11). `tools/measure/passes.mjs` splits
+a frame's draw calls and triangles by pass and object. The city on High drew 16.5 M triangles, 13.5 M of
+them in shadow passes (four sun cascades and the weapon light), 9 M of those the far parked cars: lod1,
+every car on the map, in every cascade (instanced and unculled). A visible third level (lod2 beyond
+120 m) cut the triangles to 10.6 M but raised the draw calls from 742 to 913 (one per part, pass and
+model; 854 with bounding-sphere culling), so it was dropped. Taken instead: **a shadow-only stand-in**.
+The view keeps lod0/lod1; the far lod1 stops casting; lod2 casts in its place from a camera layer only
+the cascades draw (`render/layers.ts`: a shadow camera whose mask holds only layer 0 copies the view's
+mask each frame, so giving it a second bit makes it keep its own; CSMShadowNode clones the sun's shadow
+per cascade, layers included). The stand-in takes lod1's material (the cascades draw with their own
+depth material anyway; lod2's would upload 18 more textures). High: 16.5 → 9.7 M triangles (shadows
+13.5 → 6.6 M), draw calls 742 → 715, pipelines and texture memory unchanged, GPU idle unchanged (alternating
+runs). Low (one set of cars, 1024² cascades): every car's shadow from lod2, 8.3 → 5.6 M triangles, same
+draw calls. Screenshots show no difference in the cars or their shadows (`docs/wyniki-testow/`).
+
 The cars' GLBs grow by 6.4 MB because the near level keeps UASTC where ETC1S would show (lamps, sharp
 edges); the far levels stay at the JPEGs' size. Every game that loads one of these files needs
 `GLTFLoader.setKTX2Loader`: check with `grep -rn "<model>_lod"` before re-encoding a shared model.
@@ -2300,6 +2315,10 @@ edges); the far levels stay at the JPEGs' size. Every game that loads one of the
   three r186's loader then points at its own `basis_transcoder.js` / `.wasm` with `new URL(…, import.meta.url)`,
   which Vite emits into the build (the APK works offline). Setting a path *and* copying the files into
   `public/` ships them twice (0.6 MB each time), as the first version of the pilot did.
+- **Shadow cascades draw every caster again**, per cascade: an unculled instanced mesh spread over the
+  map (`frustumCulled = false`, as for instances that move between levels) goes into all of them. Count
+  them with `tools/measure/passes.mjs`; a coarser stand-in on a shadow-only layer cuts their triangles
+  without a draw call (see stage 1b above). A visible extra level adds a call per part, pass and model.
 - **A software GPU makes compressed textures look slow.** SwiftShader offers ASTC and ETC2, so KTX2Loader
   picks ASTC, and SwiftShader decodes ASTC and ETC2 on every texture read: twelve full-screen 1024² draws
   took 580 ms (ASTC) and 549 ms (ETC2) against 200 ms for RGBA8 and 255 ms for BC7, while the uploads were

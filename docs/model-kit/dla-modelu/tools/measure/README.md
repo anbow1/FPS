@@ -15,6 +15,7 @@ node tools/measure/serve.mjs <game>/dist 4173 &          # never the dev server:
 node tools/measure/shots.mjs   --game <game> --out shots/before --views '[{"pitch":-0.1},{"turn":3.14}]'
 node tools/measure/load.mjs    --game <game>              # stages, pipelines, uploads, texture memory, ready, gpu idle
 node tools/measure/profile.mjs --game <game> --top 30     # CPU profile of loading
+node tools/measure/passes.mjs  --extra '&map=city'        # Field Line: draw calls and triangles per pass and object
 ```
 
 | Script | Use it when |
@@ -23,6 +24,7 @@ node tools/measure/profile.mjs --game <game> --top 30     # CPU profile of loadi
 | `shots.mjs` | before and after any change to the picture, at the same views; `--extra '&q=low'` for the phone preset, `--gpu webgl` for the fallback |
 | `load.mjs` | after adding a material, an instanced mesh, a canvas texture, a second camera; write the pipeline count in the commit |
 | `profile.mjs` | a `[load]` stage got slower and you need the function |
+| `passes.mjs` | the frame has more triangles or draw calls than it should: which objects, in which pass (shadow cascades count every caster again) |
 
 `--game` picks an adapter in `lib.mjs` (how to skip the menu, when the game is
 ready, how to place the camera). The five games here each have one. **A new

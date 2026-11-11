@@ -22,7 +22,39 @@ GPU (SwiftShader) porównują przebiegi na jednej maszynie; prawdziwe są z tele
 
 ---
 
-## 2026-11-10 · KTX2 w modelach GLB (commit 136f8ee)
+## 2026-11-11 · Cienie dalekich aut z lod2 (Etap 1b, Field Line, miasto)
+
+Sonda `tools/measure/passes.mjs` (wywołania i trójkąty na przejście): z 16,5 mln trójkątów klatki na High
+13,5 mln szło na przejścia cieni (4 kaskady słońca + cień latarki broni), z tego 9 mln to dalekie
+zaparkowane auta (`lod1`, każde auto na mapie w każdej kaskadzie). `lod2` (1/3 trójkątów `lod1`) leżał
+nieużywany.
+
+**Próba 1 — widoczny trzeci poziom** (`lod2` dalej niż 120 m, z poprawką na lunetę): trójkąty 16,5 →
+10,6 mln, ale wywołania 742 → 913 (każdy poziom = część × przejście × model). Z odrzucaniem po sferze
+instancji: 854. **Odrzucona** (więcej wywołań, reguła 2 wytycznych).
+
+**Wersja przyjęta — `lod2` tylko w cieniu**: w kadrze bez zmian (`lod0` / `lod1`), dalekie `lod1` nie
+rzuca cienia, rzuca go `lod2` na warstwie widocznej tylko dla kamer kaskad (`render/layers.ts`); na Low
+(jeden zestaw aut) cień każdego auta z `lod2`. Materiał zastępcy = materiał `lod1` (inaczej +18 tekstur,
++1,5 MB).
+
+| | High przed | High po | Low przed | Low po |
+|---|---|---|---|---|
+| Trójkąty w klatce (spawn) | 16,50 M | 9,66 M | 8,27 M | 5,64 M |
+| — w kadrze | 3,04 M | 3,04 M | 2,99 M | 2,99 M |
+| — w cieniach | 13,46 M | 6,62 M | 5,28 M | 2,65 M |
+| Wywołania rysowania | 742 | 715 | 328 | 328 |
+| Potoki | 205 | 205 | 167 | 167 |
+| Pamięć tekstur | 469,9 MB | 469,9 MB | 233,2 MB | 233,2 MB |
+| GPU idle (przebiegi przed / po na przemian) | 171,6 / 169,3 / 193,8 s | 162,2 / 170,8 / 187,6 s | 121,5 s | 118,2 s |
+| Build | 75,6 MB | 77,3 MB (+ pliki `lod2`) | | |
+
+Zrzuty (`2026-11-11/auta-cien-lod2/`): auta przy ulicy z cieniami bez różnicy (`auta-ulica-high.jpg`),
+auto z bliska na Low 0,19/255 (`auto-z-bliska-low.jpg`); na placu różnice tylko w koronach drzew na
+wietrze (`plac-high.jpg`). Host był tego dnia wolniejszy (obciążenie ~2,8 bez pracy), stąd wyższe sekundy
+niż 2026-11-10 — porównuj tylko pary z tego samego dnia.
+
+ (commit 136f8ee)
 
 Narzędzie `tools/assets/ktx2_glb.mjs`, tryb `auto` (ETC1S, poniżej 40 dB UASTC; broń 45 dB), mapy
 normalnych zawsze UASTC. Wszystkie gry biorą loader z `render/gltf.ts`.

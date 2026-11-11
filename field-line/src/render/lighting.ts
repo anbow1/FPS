@@ -5,6 +5,7 @@ import { BackSide, DirectionalLight, FloatType, Mesh, MeshBasicNodeMaterial, Per
 import { EXPOSURE, LIGHTING, type LightingPreset, type LightingPresetId } from '../config.ts';
 import { lightColour, preExposureFor } from './colour.ts';
 import type { VolumeClouds } from './volumeClouds.ts';
+import { SHADOW_ONLY_LAYER } from './layers.ts';
 import { revealSun } from './facadeReveal.ts';
 import { environmentTexture, equirectU, groundIrradiance, type Hdri } from './hdri.ts';
 
@@ -83,6 +84,10 @@ export class Lighting {
     s.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024); // lighting sheet: 1024 is the Low budget
     s.shadow.bias = -0.0002;
     s.shadow.normalBias = 0.02;
+    // The cascades also draw the shadow-only stand-ins (layers.ts). A shadow camera whose mask holds
+    // nothing but layer 0 takes the view camera's mask each frame; with this bit it keeps its own (0 and
+    // the stand-ins; the view's viewmodel layer casts nothing). CSMShadowNode clones this shadow per cascade.
+    s.shadow.camera.layers.enable(SHADOW_ONLY_LAYER);
     this.csm = new CSMShadowNode(s, { cascades: quality === 'high' ? 4 : 2, maxFar: CSM_MAX_FAR_M[quality], mode: 'practical', lightMargin: 120 });
     this.csm.fade = true;
     s.shadow.shadowNode = this.csm;

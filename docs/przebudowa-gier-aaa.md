@@ -183,6 +183,11 @@ nie większy; zero błędów na obu zapleczach i na telefonie.
 
 ### 1b. Poziomy szczegółowości i kompresja siatek (R7)
 
+**Stan (2026-11-11):** pierwszy krok w mieście Field Line — cienie dalekich aut z `lod2` (proxy tylko w
+kaskadach, bez dodatkowych wywołań): High 16,5 → 9,7 mln trójkątów, Low 8,3 → 5,6 mln, obraz i czas
+startu bez zmian (`docs/wyniki-testow/`). Widoczny trzeci poziom odrzucony (+112–171 wywołań). Narzędzie:
+`tools/measure/passes.mjs`.
+
 1. Spis modeli: trójkąty, tekstury, czy ma LOD (pojazdy z `prepare_vehicle.py`
    mają; broń, skany, ludzie — sprawdź).
 2. Każdy model widoczny z ponad 100 m dostaje LOD1/LOD2 skryptem (decymacja z

@@ -1,0 +1,7 @@
+per pass: {"target":{"calls":181.33333333333334,"tris":3043737.3333333335},"shadow?":{"calls":533,"tris":6619338},"screen":{"calls":1,"tris":1}}
+  1.371 M     36 calls  shadow? | prop-car-shadow-paint | car-paint
+  1.080 M      9 calls  target | prop-car-far-paint | car-paint
+  0.939 M     36 calls  shadow? | prop-car-shadow-wheels | car-wheels
+  0.730 M      9 calls  target | prop-car-far-wheels | car-wheels
+  0.549 M      5 calls  shadow? | prop-streetTree | bark
+  0.464 M     40 calls  shadow? | prop-car-near-paint | car-paint
