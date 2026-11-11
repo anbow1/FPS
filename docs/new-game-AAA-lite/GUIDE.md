@@ -327,7 +327,7 @@ number behind it.
   sheets in `reference-sheets/` show the same; open one only if you need the
   picture.
 - `tools/measure/README.md` — debug contract and scripts.
-- `tools/assets/*/README.md` — Blender scripts for vehicles, guns, people, mocap.
+- `tools/assets/vehicles/README.md`, `tools/assets/people/README.md` — Blender scripts for vehicles, guns, people (mocap: the head of each `tools/assets/mocap/*.py`); `tools/assets/*.mjs` — KTX2 encoding.
 - `docs/graphics-playbook.md` sections (paths there point at reference games
   not in this folder; the techniques and numbers stand): §0b new game · §1
   renderer, units, post · §2 procedural textures · §3 terrain · §4 sky, sun,
