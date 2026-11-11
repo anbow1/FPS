@@ -52,6 +52,10 @@ lżejszego modelu, wykonujesz wg §1 i §2 tego pliku.
 9. Po każdej zmianie `docs/graphics-playbook.md`, `docs/graphics-rules-template.md`,
    `tools/measure/`, skryptów Blendera albo pliku wspólnego:
    `bash docs/model-kit/sync.sh` i commit kopii razem ze zmianą.
+10. **Wyniki testów zapisuj** (prośba użytkownika): każdy pomiar i każde porównanie zrzutów trafia do
+    `docs/wyniki-testow/README.md` (nowy wpis na górze: data, commit, tabela przed/po) z plikami JSON
+    (`load.mjs --json`, `benchView.mjs --save`) i zrzutami JPG w `docs/wyniki-testow/RRRR-MM-DD/`. Także
+    wynik ujemny i zmiana cofnięta — z liczbą, która o tym zdecydowała.
 
 ## 2. Procedura standardowa (kopiuj polecenia)
 

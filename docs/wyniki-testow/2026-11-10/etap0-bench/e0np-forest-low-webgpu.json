@@ -1,0 +1,59 @@
+{
+  "map": "forest",
+  "quality": "low",
+  "gpu": "webgpu",
+  "backend": "WebGPU",
+  "date": "2026-11-10T18:53:36.209Z",
+  "rows": [
+    {
+      "spot": "spawn",
+      "fps": 10,
+      "p95Ms": 200,
+      "cpuMs": 57.85,
+      "drawCalls": 123,
+      "triangles": 3462947,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "spawn-back",
+      "fps": 6,
+      "p95Ms": 250,
+      "cpuMs": 1762.03,
+      "drawCalls": 103,
+      "triangles": 2983621,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "squad",
+      "fps": 24,
+      "p95Ms": 50,
+      "cpuMs": 31.37,
+      "drawCalls": 123,
+      "triangles": 3382607,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "extraction",
+      "fps": 30,
+      "p95Ms": 49.9,
+      "cpuMs": 26,
+      "drawCalls": 123,
+      "triangles": 3368769,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "lake",
+      "fps": 40,
+      "p95Ms": 33.4,
+      "cpuMs": 20,
+      "drawCalls": 116,
+      "triangles": 3279457,
+      "gpuMs": null,
+      "gpu": {}
+    }
+  ]
+}

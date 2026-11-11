@@ -1,0 +1,47 @@
+{
+ "readyS": 22.387,
+ "idleS": 25.45,
+ "stages": [
+  {
+   "stage": "loading 5.06 s",
+   "createShaderModule": {
+    "n": 19,
+    "s": 0.0005000000001164154
+   },
+   "createRenderPipeline": {
+    "n": 13,
+    "s": 0.00030000000004656613
+   }
+  },
+  {
+   "stage": "first frames drawn at 8.24 s",
+   "createShaderModule": {
+    "n": 64,
+    "s": 0.0305999999998603
+   },
+   "createRenderPipeline": {
+    "n": 49,
+    "s": 0.0018000000001629818
+   }
+  },
+  {
+   "stage": "(after the last stage)"
+  }
+ ],
+ "uploads": {
+  "ImageBitmap 1024×1024": {
+   "n": 2,
+   "ms": 2.199999999953434
+  },
+  "ImageBitmap 128×64": {
+   "n": 1,
+   "ms": 0
+  }
+ },
+ "textureMemory": {
+  "sampledMB": 76.7,
+  "targetsMB": 82.1,
+  "sampledCount": 16,
+  "compressedMB": 0
+ }
+}

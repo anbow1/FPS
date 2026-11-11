@@ -1,0 +1,29 @@
+{
+  "map": "range",
+  "quality": "low",
+  "gpu": "webgpu",
+  "backend": "WebGPU",
+  "date": "2026-11-10T18:52:05.087Z",
+  "rows": [
+    {
+      "spot": "spawn",
+      "fps": 13,
+      "p95Ms": 250,
+      "cpuMs": 15.08,
+      "drawCalls": 107,
+      "triangles": 489397,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "spawn-back",
+      "fps": 60,
+      "p95Ms": 16.7,
+      "cpuMs": 6.05,
+      "drawCalls": 77,
+      "triangles": 488941,
+      "gpuMs": null,
+      "gpu": {}
+    }
+  ]
+}

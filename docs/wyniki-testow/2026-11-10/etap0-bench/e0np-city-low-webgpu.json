@@ -1,0 +1,49 @@
+{
+  "map": "city",
+  "quality": "low",
+  "gpu": "webgpu",
+  "backend": "WebGPU",
+  "date": "2026-11-10T18:55:51.178Z",
+  "rows": [
+    {
+      "spot": "spawn",
+      "fps": 7,
+      "p95Ms": 250,
+      "cpuMs": 24.1,
+      "drawCalls": 328,
+      "triangles": 8268530,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "spawn-back",
+      "fps": 10,
+      "p95Ms": 250,
+      "cpuMs": 2016.65,
+      "drawCalls": 288,
+      "triangles": 8162866,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "squad",
+      "fps": 34,
+      "p95Ms": 66.6,
+      "cpuMs": 17.75,
+      "drawCalls": 326,
+      "triangles": 8265530,
+      "gpuMs": null,
+      "gpu": {}
+    },
+    {
+      "spot": "extraction",
+      "fps": 48,
+      "p95Ms": 33.4,
+      "cpuMs": 17.05,
+      "drawCalls": 326,
+      "triangles": 8265530,
+      "gpuMs": null,
+      "gpu": {}
+    }
+  ]
+}

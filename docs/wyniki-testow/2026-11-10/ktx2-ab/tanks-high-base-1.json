@@ -1,0 +1,85 @@
+{
+ "readyS": 68.694,
+ "idleS": 88.421,
+ "stages": [
+  {
+   "stage": "(after the last stage)",
+   "createShaderModule": {
+    "n": 431,
+    "s": 0.051399999998975474
+   },
+   "createRenderPipelineAsync": {
+    "n": 1,
+    "s": 0.07839999999990686
+   },
+   "createRenderPipeline": {
+    "n": 320,
+    "s": 0.019600000000558806
+   }
+  }
+ ],
+ "uploads": {
+  "HTMLCanvasElement 128×256": {
+   "n": 2,
+   "ms": 0.2999999998137355
+  },
+  "HTMLCanvasElement 256×128": {
+   "n": 1,
+   "ms": 0.10000000009313226
+  },
+  "HTMLCanvasElement 256×256": {
+   "n": 1,
+   "ms": 0.20000000018626451
+  },
+  "ImageBitmap 1024×1024": {
+   "n": 16,
+   "ms": 27.799999999348074
+  },
+  "ImageBitmap 2048×2048": {
+   "n": 2,
+   "ms": 11.700000000651926
+  },
+  "ImageBitmap 256×64": {
+   "n": 1,
+   "ms": 0.10000000009313226
+  },
+  "ImageBitmap 512×512": {
+   "n": 1,
+   "ms": 0.20000000018626451
+  },
+  "ImageBitmap 256×256": {
+   "n": 1,
+   "ms": 0.09999999962747097
+  },
+  "ImageBitmap 2048×1024": {
+   "n": 1,
+   "ms": 3.1000000000931323
+  },
+  "ImageBitmap 256×128": {
+   "n": 1,
+   "ms": 0.09999999962747097
+  },
+  "ImageBitmap 1024×512": {
+   "n": 4,
+   "ms": 2.8000000002793968
+  },
+  "OffscreenCanvas 512×512": {
+   "n": 6,
+   "ms": 7.699999999254942
+  },
+  "HTMLCanvasElement 64×64": {
+   "n": 1,
+   "ms": 0
+  },
+  "HTMLCanvasElement 128×128": {
+   "n": 2,
+   "ms": 0.19999999972060323
+  }
+ },
+ "textureMemory": {
+  "sampledMB": 184.5,
+  "targetsMB": 156.4,
+  "sampledCount": 60,
+  "compressedMB": 0
+ }
+}

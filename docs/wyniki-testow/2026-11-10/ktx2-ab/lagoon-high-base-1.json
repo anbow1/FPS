@@ -1,0 +1,129 @@
+{
+ "readyS": 72.277,
+ "idleS": 85.804,
+ "stages": [
+  {
+   "stage": "start: 0.00 s"
+  },
+  {
+   "stage": "Loading textures: 1.29 s"
+  },
+  {
+   "stage": "Starting renderer: 0.02 s"
+  },
+  {
+   "stage": "Shaping the island: 1.14 s"
+  },
+  {
+   "stage": "Growing palms: 0.10 s"
+  },
+  {
+   "stage": "Growing the jungle: 0.45 s"
+  },
+  {
+   "stage": "Undergrowth: 1.19 s"
+  },
+  {
+   "stage": "Rocks: 0.02 s"
+  },
+  {
+   "stage": "Building the shelter: 0.67 s"
+  },
+  {
+   "stage": "Filling the lagoon: 0.59 s",
+   "createShaderModule": {
+    "n": 37,
+    "s": 0.00039999999990686776
+   },
+   "createRenderPipeline": {
+    "n": 34,
+    "s": 0.0002000000001862645
+   }
+  },
+  {
+   "stage": "60 instanced meshes share their shaders",
+   "createShaderModule": {
+    "n": 6,
+    "s": 0
+   },
+   "createRenderPipeline": {
+    "n": 5,
+    "s": 0.00010000000009313225
+   }
+  },
+  {
+   "stage": "Lighting the sky → play: 66.21 s; total 71.68 s",
+   "createShaderModule": {
+    "n": 292,
+    "s": 0.2258000000012108
+   },
+   "createRenderPipeline": {
+    "n": 229,
+    "s": 0.2451000000014902
+   }
+  },
+  {
+   "stage": "(after the last stage)"
+  }
+ ],
+ "uploads": {
+  "HTMLImageElement 1024×1024": {
+   "n": 14,
+   "ms": 132.6999999997206
+  },
+  "HTMLCanvasElement 256×128": {
+   "n": 3,
+   "ms": 0.40000000037252903
+  },
+  "OffscreenCanvas 512×512": {
+   "n": 6,
+   "ms": 15.900000000372529
+  },
+  "HTMLImageElement 512×512": {
+   "n": 18,
+   "ms": 48.19999999925494
+  },
+  "ImageBitmap 2048×2048": {
+   "n": 6,
+   "ms": 51.3000000002794
+  },
+  "ImageBitmap 1024×1024": {
+   "n": 13,
+   "ms": 23.600000000093132
+  },
+  "HTMLCanvasElement 128×170": {
+   "n": 1,
+   "ms": 0.10000000009313226
+  },
+  "HTMLCanvasElement 512×360": {
+   "n": 1,
+   "ms": 0.6000000000931323
+  },
+  "HTMLImageElement 2048×2048": {
+   "n": 1,
+   "ms": 38.299999999813735
+  },
+  "HTMLCanvasElement 256×256": {
+   "n": 1,
+   "ms": 0.10000000009313226
+  },
+  "HTMLImageElement 256×256": {
+   "n": 3,
+   "ms": 1.6000000000931323
+  },
+  "OffscreenCanvas 2048×2048": {
+   "n": 6,
+   "ms": 126
+  },
+  "ImageBitmap 512×512": {
+   "n": 2,
+   "ms": 0.7000000001862645
+  }
+ },
+ "textureMemory": {
+  "sampledMB": 540.4,
+  "targetsMB": 453.8,
+  "sampledCount": 167,
+  "compressedMB": 0
+ }
+}

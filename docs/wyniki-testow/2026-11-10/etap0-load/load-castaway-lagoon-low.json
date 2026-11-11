@@ -1,0 +1,125 @@
+{
+ "readyS": 65.131,
+ "idleS": 70.769,
+ "stages": [
+  {
+   "stage": "start: 0.00 s"
+  },
+  {
+   "stage": "Loading textures: 1.30 s"
+  },
+  {
+   "stage": "Starting renderer: 0.02 s"
+  },
+  {
+   "stage": "Shaping the island: 1.22 s"
+  },
+  {
+   "stage": "Growing palms: 0.09 s"
+  },
+  {
+   "stage": "Growing the jungle: 0.39 s"
+  },
+  {
+   "stage": "Undergrowth: 1.15 s"
+  },
+  {
+   "stage": "Rocks: 0.02 s"
+  },
+  {
+   "stage": "Building the shelter: 0.55 s"
+  },
+  {
+   "stage": "Filling the lagoon: 0.61 s",
+   "createShaderModule": {
+    "n": 20,
+    "s": 0.0007000000000116416
+   },
+   "createRenderPipeline": {
+    "n": 17,
+    "s": 0
+   }
+  },
+  {
+   "stage": "64 instanced meshes share their shaders",
+   "createShaderModule": {
+    "n": 6,
+    "s": 0.00019999999995343388
+   },
+   "createRenderPipeline": {
+    "n": 5,
+    "s": 0.00020000000001164152
+   }
+  },
+  {
+   "stage": "Lighting the sky → play: 59.47 s; total 64.81 s",
+   "createShaderModule": {
+    "n": 276,
+    "s": 0.2952000000002736
+   },
+   "createRenderPipeline": {
+    "n": 211,
+    "s": 0.006199999999982537
+   }
+  },
+  {
+   "stage": "(after the last stage)"
+  }
+ ],
+ "uploads": {
+  "HTMLImageElement 1024×1024": {
+   "n": 14,
+   "ms": 126.5000000000291
+  },
+  "HTMLCanvasElement 256×128": {
+   "n": 3,
+   "ms": 0.39999999999417923
+  },
+  "OffscreenCanvas 512×512": {
+   "n": 6,
+   "ms": 12.500000000029104
+  },
+  "HTMLImageElement 512×512": {
+   "n": 18,
+   "ms": 47.59999999994761
+  },
+  "ImageBitmap 2048×2048": {
+   "n": 6,
+   "ms": 46.700000000040745
+  },
+  "ImageBitmap 1024×1024": {
+   "n": 13,
+   "ms": 19.199999999982538
+  },
+  "HTMLImageElement 2048×2048": {
+   "n": 1,
+   "ms": 29.5
+  },
+  "HTMLCanvasElement 256×256": {
+   "n": 1,
+   "ms": 0.1999999999825377
+  },
+  "HTMLImageElement 256×256": {
+   "n": 3,
+   "ms": 1.5
+  },
+  "HTMLCanvasElement 128×170": {
+   "n": 1,
+   "ms": 0
+  },
+  "HTMLCanvasElement 512×360": {
+   "n": 1,
+   "ms": 0.7000000000116415
+  },
+  "ImageBitmap 512×512": {
+   "n": 2,
+   "ms": 1.5
+  }
+ },
+ "textureMemory": {
+  "sampledMB": 411.2,
+  "targetsMB": 56,
+  "sampledCount": 154,
+  "compressedMB": 0
+ }
+}
