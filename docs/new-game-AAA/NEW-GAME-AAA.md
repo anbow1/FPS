@@ -57,13 +57,23 @@ showed. Each rule has its reason; the stages below refer to them by number
   at encode time; normal and ORM maps in UASTC as linear data, far colour maps
   in ETC1S; foliage mipmaps keeping their alpha coverage. Decoding JPEG or PNG
   to RGBA8 takes about four times the memory and upload of a block format.
-  Loader: `KTX2Loader` with `detectSupport(renderer)`, the Basis transcoder
-  inside the build (it works offline in the APK). *The reference games have not
-  built this yet: the first step is one texture and a measurement.*
+  Loader: `KTX2Loader().detectSupport(renderer)` after `renderer.init()`, no
+  transcoder path (three ships its own into the build; the APK works offline).
+  Measured in the reference games: ETC1S where it holds ≥ 40 dB PSNR (≥ 45 for
+  first-person), else UASTC; normal maps always UASTC. UASTC is 8 bits a texel
+  and packs only ~1.5×, so a detailed model grows 4–5× on disk: keep KTX2 where
+  it saves ≥ 10 MB of GPU memory per MB of file (`tools/assets/ktx2_glb.mjs`,
+  `bake_atlases.mjs`; playbook §8.4).
 - **R7. Levels of detail.** Three levels plus an impostor for everything seen
   from more than 100 m; switched by size on screen, handed over with
   complementary dithering; meshes compressed (Meshopt), each further level's
-  textures half the size.
+  textures half the size. **Shadow cascades draw every caster again**, once
+  per cascade — measured 60–80 % of a frame's triangles in a city, a forest and
+  a bay: the coarsest level casts the shadow from a layer only the shadow
+  cameras see (no draw call added; `tools/assets/shadow_mesh.mjs` for opaque
+  scans). Many small meshes or terrain chunks cost draw calls, not triangles:
+  merge per material after the bake, far chunks per small region (`tools/measure/passes.mjs`
+  shows where calls and triangles go).
 - **R8. Fewer shader variants.** One material per *kind* of surface with its
   switches as uniforms and attributes, not a material per prop; static
   `InstancedMesh` objects marked with `markStaticInstances`; extra cameras
@@ -88,6 +98,26 @@ showed. Each rule has its reason; the stages below refer to them by number
   tracing. The reachable target: the look of a good console game of a few years
   ago on a desktop, and a simpler, consistent version of it on the phone. What
   cannot be done is said plainly.
+
+**The quality bar — what gives a picture away** (screenshot tours of five
+games; check at the fixed views of Stages 4 and 8, High and Low). First find
+the pixel's owner (hide one system at a time, meter exposure): half of the
+causes guessed from screenshots were wrong.
+
+| Look for | Usual cause → fix |
+|---|---|
+| Burnt-out sunflecks, pumping brightness | eye opening too far in shade → outdoors ≤ 2.5 stops under the preset |
+| Black undersides of roofs, eaves | one dark material on every face → the underside's own material, never ambient |
+| Origami trees, half-metre leaves | leaf texture at card scale → several small sprays per card, leaves 5–15 cm |
+| Pale dots in far forests | impostors mirroring the sky → impostors matte (`specularIntensity: 0`) |
+| Violet ground under clouds | only blue sky in the shade → cloud shadow keeps ~15 % of the sun |
+| Water meets grass on a line | no bank → wet silt band, lighter shallows |
+| Lilac or grey zenith | haze tinting the whole sky → zenith Rayleigh, haze toward the horizon |
+| Flat asphalt, walls, ground | one tone → wear at two scales (~25 m, ~3 m) and roughness with it; photo sets |
+| Grass in rows, a colour step at its edge | grid, own colour → jitter, tint from the ground, blades ≥ 1.3 px |
+| Grey clay cockpits, interiors | an imported model's bare inside → texture or replace it |
+| People like robots or dolls | capsules → real bodies (MPFB), no two alike, mocap |
+| Everything clean and new | → edge wear, cavity dirt, decals, debris that stays (R5) |
 
 ---
 

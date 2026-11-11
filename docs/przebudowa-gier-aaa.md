@@ -46,14 +46,25 @@ Wynik obchodu pięciu gier i pomiarów ładowania. Każda reguła ma powód; num
   liczone przy kodowaniu; mapy normalnych i ORM w UASTC jako dane liniowe,
   dalekie mapy koloru w ETC1S; mipmapy roślin z zachowaniem pokrycia alfa.
   Dziś gry dekodują JPG/PNG do RGBA8 — około czterokrotnie więcej pamięci i
-  wysyłki do GPU niż format blokowy. Loader: `KTX2Loader` +
-  `detectSupport(renderer)`, transkoder Basis w buildzie (działa offline w
-  APK). *Jeszcze niezbudowane w tym repozytorium: pierwszy krok to jedna
-  tekstura i pomiar.*
+  wysyłki do GPU niż format blokowy. Loader: `KTX2Loader().detectSupport(renderer)`
+  po `renderer.init()`, bez ścieżki transkodera (three dołącza własny do buildu;
+  APK działa offline). Zmierzone w grach wzorcowych: ETC1S tam, gdzie trzyma
+  ≥ 40 dB PSNR (≥ 45 dla widoku z pierwszej osoby), inaczej UASTC; mapy normalnych
+  zawsze UASTC. UASTC to 8 bitów na teksel i pakuje się tylko ~1,5×, więc
+  szczegółowy model rośnie na dysku 4–5×: KTX2 zostaje tam, gdzie oszczędza
+  ≥ 10 MB pamięci GPU na 1 MB pliku (`tools/assets/ktx2_glb.mjs`,
+  `bake_atlases.mjs`; playbook §8.4).
 - **R7. Poziomy szczegółowości.** Trzy LOD + impostor dla wszystkiego, co widać
   z ponad 100 m; przełączanie po rozmiarze na ekranie, przejście
   komplementarnym ditheringiem; siatki skompresowane (Meshopt), tekstury
-  dalszych poziomów o połowę mniejsze.
+  dalszych poziomów o połowę mniejsze. **Kaskady cieni rysują każdy obiekt
+  rzucający cień jeszcze raz**, w każdej kaskadzie — zmierzone 60–80 %
+  trójkątów klatki w mieście, lesie i zatoce: cień rzuca najprostszy poziom z
+  warstwy widocznej tylko dla kamer cieni (bez dodatkowego wywołania;
+  `tools/assets/shadow_mesh.mjs` dla nieprzezroczystych skanów). Wiele małych
+  siatek albo kafli terenu kosztuje wywołania, nie trójkąty: scal po materiale
+  po wypieku, dalekie kafle w małe regiony (`tools/measure/passes.mjs` pokazuje,
+  dokąd idą wywołania i trójkąty).
 - **R8. Mniej wariantów shaderów.** Jeden materiał na *rodzaj* powierzchni z
   przełącznikami jako uniformy i atrybuty, nie materiał na rekwizyt; statyczne
   `InstancedMesh` oznaczone `markStaticInstances`; dodatkowe kamery (luneta,

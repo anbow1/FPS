@@ -54,14 +54,25 @@ Wynik obchodu pięciu gier i pomiarów ładowania. Każda reguła ma powód; num
   liczone przy kodowaniu; mapy normalnych i ORM w UASTC jako dane liniowe,
   dalekie mapy koloru w ETC1S; mipmapy roślin z zachowaniem pokrycia alfa.
   Dziś gry dekodują JPG/PNG do RGBA8 — około czterokrotnie więcej pamięci i
-  wysyłki do GPU niż format blokowy. Loader: `KTX2Loader` +
-  `detectSupport(renderer)`, transkoder Basis w buildzie (działa offline w
-  APK). *Jeszcze niezbudowane w tym repozytorium: pierwszy krok to jedna
-  tekstura i pomiar.*
+  wysyłki do GPU niż format blokowy. Loader: `KTX2Loader().detectSupport(renderer)`
+  po `renderer.init()`, bez ścieżki transkodera (three dołącza własny do buildu;
+  APK działa offline). Zmierzone w grach wzorcowych: ETC1S tam, gdzie trzyma
+  ≥ 40 dB PSNR (≥ 45 dla widoku z pierwszej osoby), inaczej UASTC; mapy normalnych
+  zawsze UASTC. UASTC to 8 bitów na teksel i pakuje się tylko ~1,5×, więc
+  szczegółowy model rośnie na dysku 4–5×: KTX2 zostaje tam, gdzie oszczędza
+  ≥ 10 MB pamięci GPU na 1 MB pliku (`tools/assets/ktx2_glb.mjs`,
+  `bake_atlases.mjs`; playbook §8.4).
 - **R7. Poziomy szczegółowości.** Trzy LOD + impostor dla wszystkiego, co widać
   z ponad 100 m; przełączanie po rozmiarze na ekranie, przejście
   komplementarnym ditheringiem; siatki skompresowane (Meshopt), tekstury
-  dalszych poziomów o połowę mniejsze.
+  dalszych poziomów o połowę mniejsze. **Kaskady cieni rysują każdy obiekt
+  rzucający cień jeszcze raz**, w każdej kaskadzie — zmierzone 60–80 %
+  trójkątów klatki w mieście, lesie i zatoce: cień rzuca najprostszy poziom z
+  warstwy widocznej tylko dla kamer cieni (bez dodatkowego wywołania;
+  `tools/assets/shadow_mesh.mjs` dla nieprzezroczystych skanów). Wiele małych
+  siatek albo kafli terenu kosztuje wywołania, nie trójkąty: scal po materiale
+  po wypieku, dalekie kafle w małe regiony (`tools/measure/passes.mjs` pokazuje,
+  dokąd idą wywołania i trójkąty).
 - **R8. Mniej wariantów shaderów.** Jeden materiał na *rodzaj* powierzchni z
   przełącznikami jako uniformy i atrybuty, nie materiał na rekwizyt; statyczne
   `InstancedMesh` oznaczone `markStaticInstances`; dodatkowe kamery (luneta,
@@ -86,6 +97,26 @@ Wynik obchodu pięciu gier i pomiarów ładowania. Każda reguła ma powód; num
   promieni. Cel osiągalny: wygląd dobrej gry konsolowej sprzed kilku lat na
   komputerze i jej prostsza, spójna wersja na telefonie. Czego się nie da —
   mówi się wprost.
+
+**Poprzeczka jakości — co zdradza grafikę** (obchody pięciu gier; sprawdzaj w
+stałych widokach Etapów 4 i 8, High i Low). Najpierw znajdź właściciela piksela
+(ukrywaj po jednym systemie, mierz ekspozycję): połowa przyczyn zgadniętych ze
+zrzutów była błędna.
+
+| Szukaj | Zwykła przyczyna → poprawka |
+|---|---|
+| Przepalone plamy słońca, „pompująca” jasność | oko otwiera się za bardzo w cieniu → na zewnątrz najwyżej 2,5 EV pod presetem |
+| Czarne spody dachów, okapów | jeden ciemny materiał na każdej ścianie → własny materiał spodu, nigdy światło otoczenia |
+| Drzewa z origami, liście po pół metra | tekstura liścia w skali karty → kilka małych gałązek na kartę, liście 5–15 cm |
+| Jasne kropki w dalekim lesie | impostory odbijają niebo → impostory matowe (`specularIntensity: 0`) |
+| Fioletowa ziemia pod chmurami | w cieniu świeci tylko niebieskie niebo → cień chmury zostawia ~15 % słońca |
+| Woda styka się z trawą linią | brak brzegu → pas mokrego mułu, jaśniejsza płycizna |
+| Liliowy albo szary zenit | mgiełka barwi całe niebo → zenit z rozpraszania Rayleigha, mgiełka przy horyzoncie |
+| Płaski asfalt, ściany, ziemia | jeden ton → zużycie w dwóch skalach (~25 m, ~3 m) i z nim szorstkość; zestawy ze zdjęć |
+| Trawa w rzędach, schodek koloru na jej skraju | siatka, własny kolor → rozrzut, odcień z podłoża, źdźbła ≥ 1,3 px |
+| Szare „gliniane” kokpity i wnętrza | gołe wnętrze pobranego modelu → teksturuj albo wymień |
+| Ludzie jak roboty albo lalki | kapsuły → prawdziwe ciała (MPFB), żadnych dwóch takich samych, mocap |
+| Wszystko czyste i nowe | → zużyte krawędzie, brud w zagłębieniach, kalkomanie, szczątki, które zostają (R5) |
 
 ---
 
