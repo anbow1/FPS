@@ -10,10 +10,11 @@ fallback), each with its own `package.json`, tests and build:
 | [`contrail/`](contrail/) | **Contrail** — jet fighter simulator: a stealth fighter against a heavy twin-engine fighter, six-degree-of-freedom flight model, radar and threat warning, gun and missiles, an AI opponent, volumetric clouds in a physical sky; Duel, Intercept, Landing and Free flight. |
 | [`ridgeline/`](ridgeline/) | **Ridgeline** — attack helicopter simulator (in progress): a rotor flight model built from blade-element and momentum theory (torque and tail rotor, translational lift, ground effect, vortex ring state, retreating blade stall, autorotation), 20 km of ridges and valleys made for terrain masking, the helicopter HUD with its hover cue. |
 | [`paris/`](paris/) | **Paris** — not a game: ten seconds of a Haussmann boulevard at golden hour (traffic at a red light, people crossing and walking, café terraces, cyclists, pigeons, plane trees in autumn), rendered frame by frame to a video; the graphics playbook put to the test. |
+| [`marchland/`](marchland/) | **Marchland** — medieval real-time strategy against the computer (in progress): a town of production chains on building plots (grain to bread, pigs to sausages and hides, hides to armour, ore to weapons), regiments of up to a hundred men a side fighting in formation with morale, flanks and charges, archers, crossbows, ballistae and a trebuchet; strategy camera with zoom and pan; scanned CC0 ground, walls and roofs. |
 | [`tanks/`](tanks/) | **Tanks** — tank combat on open fields, lakes and a village: a modern MBT with a fire-control system, gunner's and thermal sights, AI tanks, infantry and drones. Moved here from the separate `anbow1/tanks` repository with its history. |
 
 ```powershell
-cd field-line        # or: cd castaway-lagoon, cd contrail, cd ridgeline, cd tanks
+cd field-line        # or: cd castaway-lagoon, cd contrail, cd ridgeline, cd tanks, cd marchland
 npm install
 npm run dev          # http://localhost:5173
 ```
