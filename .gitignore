@@ -18,3 +18,5 @@ paris/tools/people/out/
 paris/tools/vehicles/out/
 __pycache__/
 *.pyc
+# Style comparison page (marchland/compare.html)
+dist-compare/
