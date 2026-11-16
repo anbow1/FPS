@@ -21,6 +21,8 @@ const STAGES = {
   tanks: '({ renderer: window.__game.pipeline.renderer, scene: window.__game.pipeline.scene })',
   contrail: 'window.__contrail.stage',
   ridgeline: 'window.__ridgeline.stage',
+  // Marchland and any game on the generic contract that exposes its stage as window.__debug.game.view.stage.
+  generic: 'window.__debug.game.view.stage',
 };
 const stageExpr = STAGES[gameName];
 if (!stageExpr) throw new Error(`no renderer hook for '${gameName}': add it to STAGES`);
