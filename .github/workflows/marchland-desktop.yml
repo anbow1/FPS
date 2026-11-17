@@ -3,15 +3,15 @@
 # only with Electron: the game inside it updates by itself (marchland-web.yml), so this runs rarely.
 #
 # The exe is not code-signed: on first start Windows SmartScreen asks; "More info" → "Run anyway".
+#
+# Run by hand (Actions → Marchland for Windows → Run workflow). Creating the release needs Actions allowed
+# to write: Settings → Actions → General → Workflow permissions → "Read and write permissions"; without it
+# the publish step fails with HTTP 403 (as on 2026-11-17). The exe (~102 MB) is over GitHub's 100 MB file
+# limit, so it cannot go to the gh-pages branch instead.
 
 name: Marchland for Windows
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'marchland/desktop/**'
-      - '.github/workflows/marchland-desktop.yml'
   workflow_dispatch:
 
 permissions:

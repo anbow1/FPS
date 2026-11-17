@@ -20,3 +20,6 @@ __pycache__/
 *.pyc
 # Style comparison page (marchland/compare.html)
 dist-compare/
+
+# Marchland asset pack, built by marchland/tools/pack-assets.mjs
+asset-pack-out/
