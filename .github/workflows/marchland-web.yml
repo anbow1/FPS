@@ -1,0 +1,67 @@
+# Publishes Marchland on GitHub Pages at https://anbow1.github.io/FPS/marchland/ on every push to main
+# that touches it (and on demand). From there it installs for offline play: on an iPad from Safari
+# (Share → Add to Home Screen), on Android from Chrome (Install app), and the Windows shell
+# (marchland/desktop, built by marchland-desktop.yml) opens it. A new version reaches every installed
+# copy by itself: its service worker downloads only the files that changed (marchland/src/ui/offline.ts).
+#
+# One-time setup in the repository: Settings → Pages → Build and deployment → Source: GitHub Actions.
+
+name: Marchland on the web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marchland/**'
+      - '!marchland/desktop/**'
+      - '.github/workflows/marchland-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: marchland-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: marchland/package-lock.json
+
+      - name: Build
+        working-directory: marchland
+        run: |
+          npm ci
+          npm run build
+
+      # The site: the game under marchland/, and the root sends a visitor there.
+      - name: Assemble the site
+        run: |
+          mkdir -p site
+          cp -r marchland/dist site/marchland
+          printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=marchland/"><a href="marchland/">Marchland</a>\n' > site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}marchland/
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

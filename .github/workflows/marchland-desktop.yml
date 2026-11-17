@@ -1,0 +1,50 @@
+# Builds Marchland.exe (marchland/desktop: a window onto the game on GitHub Pages that keeps it on the
+# disk for offline play) and publishes it on the rolling "marchland-windows" release. The shell changes
+# only with Electron: the game inside it updates by itself (marchland-web.yml), so this runs rarely.
+#
+# The exe is not code-signed: on first start Windows SmartScreen asks; "More info" → "Run anyway".
+
+name: Marchland for Windows
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marchland/desktop/**'
+      - '.github/workflows/marchland-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marchland-desktop
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # electron-builder makes the Windows portable exe on Linux too (no signing, no Wine needed).
+      - name: Build Marchland.exe
+        working-directory: marchland/desktop
+        run: |
+          npm ci
+          npm run dist
+
+      - name: Publish the marchland-windows release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete marchland-windows --yes --cleanup-tag || true
+          gh release create marchland-windows marchland/desktop/dist/Marchland.exe \
+            --title "Marchland for Windows" \
+            --notes "Marchland.exe from ${GITHUB_SHA::7}. Start it once with the internet: the game downloads to the disk (about 60 MB) and then plays offline; new versions of the game come by themselves. Not code-signed: Windows asks on the first start (More info → Run anyway). F11: full screen." \
+            --target "$GITHUB_SHA"
